@@ -49,6 +49,8 @@ export default defineConfig(async () => ({
         rc: resolve(projectRoot, "rc.html"),
         rcask: resolve(projectRoot, "rcask.html"),
         todoisland: resolve(projectRoot, "todoisland.html"),
+        rec: resolve(projectRoot, "rec.html"),
+        reccontrol: resolve(projectRoot, "rec-control.html"),
       },
     },
   },

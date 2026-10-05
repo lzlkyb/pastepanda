@@ -7,7 +7,7 @@
  * ② 扫到码 → 输入框自动填上 + 一句人话（不是静默填上，用户不知道发生了什么）。
  * ③ 摄像头被拒 / 扫不到东西时，屏幕上**始终**留着「手动输入」的路
  *    （规则 15.3：失败路径不能只存在于 toast 里）。
- * ④ 出示态默认遮罩、亮 60 秒、到期换新、出示时 listen=true——与桌面
+ * ④ 出示态默认遮罩、亮码常驻、到期换新、出示时 listen=true——与桌面
  *    `RcA2PairExchange` 同一条流，手机上错了同样看不出来。
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -46,7 +46,7 @@ vi.mock("./useQrScan", () => ({
 
 /** 手机是输入方为主的一端：卡开起来默认就是输入区（出示要显式点）。 */
 function renderCard() {
-  render(<RcPairCard onClose={() => {}} onPaired={() => {}} />);
+  render(<RcPairCard onPaired={() => {}} />);
 }
 
 /** 当前亮着的那枚码（null = 遮着）。 */
@@ -54,6 +54,11 @@ function shownDigits(): string | null {
   const el = document.querySelector("[class*='bigCode']");
   return el?.textContent ?? null;
 }
+
+beforeEach(() => {
+  rc.shortPairCancel.mockResolvedValue(undefined);
+  rc.exchangeCheck.mockResolvedValue("waiting");
+});
 
 describe("出示二维码与输入解析是同一个口径", () => {
   it("二维码内容（PP-XXXX-XXXX）能被原样解析回 8 位码", () => {
@@ -94,7 +99,7 @@ describe("扫一扫", () => {
     scan.onFound?.(pairQrPayload("87654321"));
 
     await waitFor(() =>
-      expect((screen.getByLabelText("对方的配对码") as HTMLInputElement).value).toBe("87654321"),
+      expect((screen.getByLabelText("电脑的配对码") as HTMLInputElement).value).toBe("87654321"),
     );
     expect(screen.getByText("已识别对方的配对码，点「开始配对」即可。")).toBeTruthy();
   });
@@ -106,7 +111,7 @@ describe("扫一扫", () => {
     scan.onFound?.("8765 4321");
 
     await waitFor(() =>
-      expect((screen.getByLabelText("对方的配对码") as HTMLInputElement).value).toBe("87654321"),
+      expect((screen.getByLabelText("电脑的配对码") as HTMLInputElement).value).toBe("87654321"),
     );
   });
 
@@ -119,7 +124,16 @@ describe("扫一扫", () => {
     await waitFor(() =>
       expect(screen.getByText("扫到的不是配对码（应是 PP-XXXX-XXXX 或 8 位数字）。")).toBeTruthy(),
     );
-    expect((screen.getByLabelText("对方的配对码") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("电脑的配对码") as HTMLInputElement).value).toBe("");
+  });
+
+  it("取消扫码保留手动输入草稿，不自动连接", () => {
+    renderCard();
+    fireEvent.change(screen.getByLabelText("电脑的配对码"), { target: { value: "1234 5678" } });
+    fireEvent.click(screen.getByRole("button", { name: /扫一扫/ }));
+    fireEvent.click(screen.getByRole("button", { name: "取消，手动输入" }));
+    expect((screen.getByLabelText("电脑的配对码") as HTMLInputElement).value).toBe("1234 5678");
+    expect(rc.pinPairBegin).not.toHaveBeenCalled();
   });
 });
 
@@ -138,10 +152,10 @@ describe("出示态遮罩（设计稿 §3，与桌面同一套规则）", () => 
   it("默认遮罩：进卡看不到码值，点「出示」才向后端取码并亮码", async () => {
     renderCard();
     expect(shownDigits()).toBeNull();
-    expect(screen.getByText("配对码已收起")).toBeTruthy();
+    expect(rc.shortPairCode).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "出示" }));
+      fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     });
 
     await waitFor(() => expect(shownDigits()).toBe("4182 0620"));
@@ -153,7 +167,7 @@ describe("出示态遮罩（设计稿 §3，与桌面同一套规则）", () => 
     vi.useFakeTimers();
     renderCard();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "出示" }));
+      fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(shownDigits()).toBe("4182 0620");
@@ -168,12 +182,12 @@ describe("出示态遮罩（设计稿 §3，与桌面同一套规则）", () => 
   it("出示方发起会合时 listen=true（写死 false 的表现是点了没反应）", async () => {
     renderCard();
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "出示" }));
+      fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     });
     await waitFor(() => expect(shownDigits()).toBe("4182 0620"));
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /我出示这枚码/ }));
+      fireEvent.click(screen.getByRole("button", { name: "等待对方连接" }));
     });
     await waitFor(() => expect(rc.pinPairBegin).toHaveBeenCalledWith("41820620", true));
   });
@@ -186,7 +200,7 @@ describe("出示态遮罩（设计稿 §3，与桌面同一套规则）", () => 
     renderCard();
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "出示" }));
+      fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     });
     // 静默换代：没有提示条（与桌面同款拍板），新码直接亮出
     await waitFor(() => expect(shownDigits()).toBe("6042 9183"));

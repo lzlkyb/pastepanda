@@ -436,6 +436,7 @@ export function TransformCard({
           )}
           {isRemote && (
             <FollowupInput
+              className={styles.tcFollow}
               disabled={!!preview.followPending}
               onSubmit={(q) => void runFollowup(q)}
             />

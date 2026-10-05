@@ -18,11 +18,28 @@ fn active_session(id: &str, phase: SessionPhase) -> Session {
         started_ms: crate::rc::service::now_ms(),
         started_mono: crate::rc::mono::mono_ms(),
         granted: true,
+        bg_since_mono: 0,
     }
 }
 
 fn set_session(svc: &RcService, s: Session) {
     svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = Some(s);
+}
+
+#[tokio::test]
+async fn independent_media_refreshes_only_its_own_session_heartbeat() {
+    let svc = std::sync::Arc::new(RcService::new(store()));
+    set_session(&svc, active_session("media-alive", SessionPhase::OutboundActive));
+    let frame = crate::rc::video::VideoFrame {
+        width: 64, height: 64, jpeg: vec![1], at_ms: 1, full: true, rect: None,
+        codec: crate::rc::video::FrameCodec::H264, key: true, cap_ms: 0, enc_ms: 0,
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    svc.note_media_received("old-session", &frame);
+    assert_eq!(svc.link.last_inbound_ms(), 0, "旧 reader 不能给新会话续命");
+    svc.note_media_received("media-alive", &frame);
+    assert!(svc.link.last_inbound_ms() > 0,
+        "独立视频流仍在收到帧时，主控制流无 pong 不能误判整条连接死亡");
 }
 
 /// B2 的顺序钉子：收口必须把被按住的键**真的**补发 up 并清空集合。

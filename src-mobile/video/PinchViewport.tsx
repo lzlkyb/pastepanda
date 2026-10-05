@@ -9,13 +9,17 @@
  * 变换走 ref 直写 style（捏合是 60fps 连续操作，不走 setState 重渲染）；
  * 对外暴露命令式 handle：applyPinch（比例 + 中点位移 + 锚点）与 reset。
  */
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { clampRcViewportOffset } from "@/lib/utils";
 import styles from "./PinchViewport.module.css";
 import { PINCH_MAX, PINCH_MIN } from "../session/touchConstants";
 
+/** DOM 变换不会触发 ResizeObserver，通知覆盖层重新投影内容坐标。 */
+export const VIEWPORT_CHANGED = "rc-viewport-changed";
+
 export interface PinchViewportHandle {
   /**
-   * 应用一帧捏合。ratio 相对捏合起点（1.0 = 距离未变）；midDx/midDy 为中点
+   * 应用一帧捏合。ratio 相对上一帧（1.0 = 距离未变）；midDx/midDy 为中点
    * 平移（容器坐标）；锚点 client 坐标为当前双指中点（缩放围绕它，画面上的
    * 指尖内容不跑）。
    */
@@ -29,6 +33,7 @@ export interface PinchViewportHandle {
   /** 复位 1.0（工具条「画面」键）。 */
   reset(): void;
   getScale(): number;
+  reveal(clientX: number, clientY: number): void;
 }
 
 export const PinchViewport = forwardRef<
@@ -47,9 +52,19 @@ export const PinchViewport = forwardRef<
 
   const apply = () => {
     const el = wrapperRef.current;
-    if (!el) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!el || !rect) return;
+    tx.current = clampRcViewportOffset(tx.current, rect.width, scale.current);
+    ty.current = clampRcViewportOffset(ty.current, rect.height, scale.current);
     el.style.transform = `translate(${tx.current}px, ${ty.current}px) scale(${scale.current})`;
+    containerRef.current?.dispatchEvent(new Event(VIEWPORT_CHANGED));
   };
+  useEffect(() => {
+    // The visible viewport changes when the keyboard opens or the phone rotates.
+    const observer = new ResizeObserver(apply);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   useImperativeHandle(
     ref,
@@ -77,6 +92,14 @@ export const PinchViewport = forwardRef<
       },
       getScale() {
         return scale.current;
+      },
+      reveal(clientX, clientY) {
+        if (scale.current <= 1) return; // 完整画面已可见时不平移，避免制造空白边缘。
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        tx.current += clientX < rect.left + 24 ? rect.left + 24 - clientX : clientX > rect.right - 24 ? rect.right - 24 - clientX : 0;
+        ty.current += clientY < rect.top + 24 ? rect.top + 24 - clientY : clientY > rect.bottom - 24 ? rect.bottom - 24 - clientY : 0;
+        apply();
       },
     }),
     [],

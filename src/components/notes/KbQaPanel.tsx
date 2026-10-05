@@ -11,10 +11,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, X, Loader2, CornerDownLeft, ArrowLeft, Minus } from "lucide-react";
-import { useAutoGrow } from "@/hooks/useAutoGrow";
+import { Sparkles, X, Loader2, ArrowUp, ArrowLeft, Minus } from "lucide-react";
 import type { KbQaSession } from "@/hooks/useKbQa";
 import { QA_MAX_QUESTION_CHARS } from "@/lib/notes/kbQa";
+import { Composer } from "@/components/Composer";
 import { KbQaTurn } from "./KbQaTurn";
 import styles from "./KbQaPanel.module.css";
 
@@ -56,12 +56,10 @@ export function KbQaPanel({
   onOpenNote: (noteId: string) => void;
 }) {
   const [followup, setFollowup] = useState("");
-  /** 追问框随内容长高（A-61 ②）。与工具栏提问框同一份逻辑（规则 #11）。 */
-  // ❗ 把面板自身交给 `useAutoGrow`：追问框的上限跟面板高度走（面板高 40%，
-  //   夹在 3~10 行）。三栏时第三栏还要再上下切一刀，写死 4 行在那儿太短；
+  // ❗ 把面板自身交给 Composer（它内部走 `useAutoGrow`）：追问框的上限跟面板高度走
+  //   （面板高 40%，夹在 3~10 行）。三栏时第三栏还要再上下切一刀，写死 4 行在那儿太短；
   //   而写死成更大的行数又会在矮面板下把答案区吃光（`.foot` 是 flex-shrink:0）。
   const paneRef = useRef<HTMLDivElement>(null);
-  const askRef = useAutoGrow(followup, { containerRef: paneRef });
   const scrollRef = useRef<HTMLDivElement>(null);
   const { turns, pending } = session;
 
@@ -185,42 +183,29 @@ export function KbQaPanel({
       </div>
 
       <div className={styles.foot}>
-        <div className={styles.scope}>当前范围：{scopeLabel}</div>
-        <div className={styles.askRow}>
-          {/* ❗ `textarea` 而不是 `input`（A-61 ②）：追问同样会写长。
-              只改上面工具栏那个、这里留单行，就是新的不一致（规则 #11）。 */}
-          <textarea
-            ref={askRef}
-            className={styles.askInput}
-            value={followup}
-            rows={1}
-            maxLength={QA_MAX_QUESTION_CHARS}
-            /* 追问期间禁用：`ai-run-chunk` 的 payload 没有 per-call id，
-               同时跑两轮会两路 delta 混在一起（useAiStream 自述限制 2） */
-            disabled={busy}
-            onChange={(e) => setFollowup(e.target.value)}
-            onKeyDown={(e) => {
-              // ❗ `isComposing` 必须守：中文输入法选字的 Enter 不能当提交。
-              //   Shift+Enter 留给换行，所以只在不带 Shift 时 preventDefault。
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                // 不拦的话发送同时还会往框里插一个换行。
-                e.preventDefault();
-                submit();
-              }
-            }}
-            placeholder={busy ? "正在回答…" : "追问一句…（回车发送，Shift+回车换行）"}
-            aria-label="追问"
-          />
-          <button
-            type="button"
-            className={styles.askBtn}
-            onClick={submit}
-            disabled={busy || !followup.trim()}
-            aria-label="发送追问"
-          >
-            <CornerDownLeft size={12} />
-          </button>
-        </div>
+        {/* 提案 1（完整解剖）：输入在上，「当前范围」挪进下行的常驻提示位。
+            ❗ `multiline` 不能改回单行（A-61 ②）：追问同样会写长，
+               只改上面工具栏那个、这里留单行就是新的不一致（规则 #11）。 */}
+        <Composer
+          className={styles.askComposer}
+          variant="full"
+          multiline
+          value={followup}
+          onChange={setFollowup}
+          onSubmit={submit}
+          containerRef={paneRef}
+          maxLength={QA_MAX_QUESTION_CHARS}
+          /* 追问期间禁用：`ai-run-chunk` 的 payload 没有 per-call id，
+             同时跑两轮会两路 delta 混在一起（useAiStream 自述限制 2） */
+          disabled={busy}
+          sendDisabled={busy || !followup.trim()}
+          placeholder={busy ? "正在回答…" : "追问一句…（回车发送，Shift+回车换行）"}
+          ariaLabel="追问"
+          hint={`当前范围：${scopeLabel}`}
+          send={<ArrowUp size={14} />}
+          sendLabel="发送追问"
+          sendTitle="发送追问（回车）"
+        />
       </div>
     </motion.div>
   );

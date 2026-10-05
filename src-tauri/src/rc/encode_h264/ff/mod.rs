@@ -9,7 +9,7 @@
 //!（hwaccel FFI 是未探明区域，见 docs §7.2 批 3）。
 //!
 //! push→pull 垫层语义（实测判据）：
-//! - nvenc 恒 2 帧流水线延迟（流式发送**无累积**，滞后 ≤2 帧间隔）；qsv 1:1
+//! - NVENC 显式关闭输出等待；是否逐输入出包由硬件回归验证，不靠自报 delay
 //! - `send` 返回 ≠ 包已出；EAGAIN 是流控不是错误；B 帧=0 下无需 EOF flush
 //!   （会话性重开直接丢弃流水线残帧，与 MF 路径行为一致）
 //! - `ctx->delay` 自报不可信，判延迟一律用真实出包
@@ -60,6 +60,13 @@ type PrivOpts = &'static [(&'static str, &'static str)];
 /// qsv 建会话 1.4~1.7s 放最后（只在前面全失败时才付这笔钱）；amf 需 A 卡。
 type Candidate = (&'static str, PrivOpts, bool);
 
+fn private_options(cand: &Candidate) -> impl Iterator<Item = (&'static str, &'static str)> {
+    let nvenc = cand.0.ends_with("_nvenc");
+    // zerolatency 只禁止重排序；FFmpeg 默认仍缓存输出。在低 fps 下等待后续
+    // 采集会放大帧龄，也会拖住静止精修。所有 NVENC 标准统一覆盖输出等待。
+    cand.1.iter().copied().chain([("delay", "0")].into_iter().filter(move |_| nvenc))
+}
+
 /// (编码器名, 私有参数, cbr_align)
 const H264_CANDIDATES: [Candidate; 3] = [
     (
@@ -68,7 +75,8 @@ const H264_CANDIDATES: [Candidate; 3] = [
         // 码率曲线变平（IDR 尖峰正是拥塞塌窗的引信）。不支持的 DLL/驱动由
         // av_opt_set 的非致命路径忽略；与 ForceKeyFrame 并存（损坏恢复仍可
         // 强制整帧 IDR）。
-        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1")],
+        // NVENC 默认把强制 I 帧当作普通 intra；新接收流必须用 IDR 才能恢复。
+        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1"), ("forced-idr", "1")],
         false,
     ),
     ("h264_qsv", &[("preset", "veryfast"), ("look_ahead", "0"), ("async_depth", "1")], true),
@@ -80,7 +88,7 @@ const H264_CANDIDATES: [Candidate; 3] = [
 const HEVC_CANDIDATES: [Candidate; 3] = [
     (
         "hevc_nvenc",
-        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1")],
+        &[("preset", "p4"), ("tune", "ll"), ("rc", "cbr"), ("rc-lookahead", "0"), ("zerolatency", "1"), ("intra-refresh", "1"), ("forced-idr", "1")],
         false,
     ),
     ("hevc_qsv", &[("preset", "veryfast"), ("look_ahead", "0"), ("async_depth", "1")], true),
@@ -144,6 +152,7 @@ pub struct FfEncoder {
     /// force_key 请求：下一帧 pict_type 置 I（弱网花屏自愈）。
     /// `Cell`：`force_key()` 须保持 `&self`（调用方 `as_ref()` 链），MF 同款语义。
     force_next_idr: std::cell::Cell<bool>,
+    dynamic_bitrate: bool,
 }
 
 // FF 句柄常驻 + 会话任务串行访问（与 MfH264Encoder 同一约定）。
@@ -190,7 +199,7 @@ impl FfEncoder {
         fps: u32,
         bitrate: u32,
     ) -> Result<Self, String> {
-        let (codec_name, extra, cbr_align) = *cand;
+        let (codec_name, _, cbr_align) = *cand;
         let cname = CString::new(codec_name).map_err(|_| "编码器名含 NUL")?;
         let codec_def = unsafe { (ff.avcodec_find_encoder_by_name)(cname.as_ptr()) };
         if codec_def.is_null() {
@@ -208,6 +217,7 @@ impl FfEncoder {
             height: height as i32,
             frames_in: 0,
             force_next_idr: std::cell::Cell::new(false),
+            dynamic_bitrate: cand.0.ends_with("_nvenc"),
         };
         let (w, h, fp) = (width as i32, height as i32, fps.max(1) as i32);
         unsafe {
@@ -221,6 +231,11 @@ impl FfEncoder {
             c.time_base = AVRational::new(1, fp);
             c.framerate = AVRational::new(fp, 1);
             c.bit_rate = bitrate as i64;
+            if cand.0.ends_with("_nvenc") {
+                // 默认 VBV 可积攒数秒；桌面实时媒体只给 200ms 码率缓冲。
+                c.rc_max_rate = bitrate as i64;
+                c.rc_buffer_size = (bitrate / 5).max(16_000) as i32;
+            }
             if cbr_align {
                 // 🔴 qsv 落 CBR 的唯一入口：rc_max_rate == bit_rate
                 //（qsvenc.c:570 select_rc_mode 由公共字段推导，无 rc_mode 私有选项）
@@ -250,11 +265,14 @@ impl FfEncoder {
             ));
         }
 
-        // 后端私有参数：设不上只 debug 日志（三个后端 option 集不同，不致命）。
-        for (k, v) in extra {
-            let (ck, cv) = (CString::new(*k).map_err(|_| "参数名含 NUL")?, CString::new(*v).map_err(|_| "参数值含 NUL")?);
+        // 恢复 IDR 和输出等待是实时推流的必要条件；其余兼容性参数允许回落。
+        for (k, v) in private_options(cand) {
+            let (ck, cv) = (CString::new(k).map_err(|_| "参数名含 NUL")?, CString::new(v).map_err(|_| "参数值含 NUL")?);
             let r = unsafe { (ff.av_opt_set)(ctx as *mut c_void, ck.as_ptr(), cv.as_ptr(), AV_OPT_SEARCH_CHILDREN) };
             if r < 0 {
+                if k == "forced-idr" || k == "delay" {
+                    return Err(format!("{codec_name} 不支持实时推流所需的 {k}={v}：{}", ff.err_str(r)));
+                }
                 log::debug!("[RC] 参数 {k}={v} 不被 {codec_name} 接受：{}", ff.err_str(r));
             }
         }
@@ -311,6 +329,19 @@ impl FfEncoder {
 
     pub fn size(&self) -> (u32, u32) {
         (self.width as u32, self.height as u32)
+    }
+
+    /// NVENC 在逐帧编码时读取 AVCodecContext 的码率并发起 reconfigure。
+    /// QSV/AMF 未经动态重配验证，留给会话层稳定窗口重开。
+    pub fn set_bitrate(&mut self, bps: u32) -> bool {
+        if !self.dynamic_bitrate { return false; }
+        let Ok(ff) = ff() else { return false; };
+        for (key, value) in [("b", bps), ("maxrate", bps), ("bufsize", (bps / 5).max(16_000))] {
+            let key = CString::new(key).unwrap();
+            let value = CString::new(value.to_string()).unwrap();
+            if unsafe { (ff.av_opt_set)(self.ctx.cast(), key.as_ptr(), value.as_ptr(), 0) } < 0 { return false; }
+        }
+        true
     }
 
     /// 请求下一帧强制 IDR。返回是否受理（FF 侧经 `pict_type` 恒可用）。
@@ -429,6 +460,7 @@ impl FfEncoder {
             };
             if let Some((data, flags)) = taken {
                 out.push(H264Packet {
+                    at_ms: 0, // 会话层按无 B 帧的输出顺序回填采集时刻。
                     data,
                     key: flags & AV_PKT_FLAG_KEY != 0,
                     width: self.width as u32,
@@ -463,6 +495,72 @@ impl Drop for FfEncoder {
 mod tests {
     use super::*;
 
+    #[test]
+    fn nvenc_output_wait_is_disabled_for_every_codec_and_future_candidates() {
+        for codec in [VideoCodec::H264, VideoCodec::Hevc, VideoCodec::Av1] {
+            for cand in candidates(codec) {
+                let delay = private_options(cand).filter(|(key, _)| *key == "delay").last();
+                assert_eq!(delay, cand.0.ends_with("_nvenc").then_some(("delay", "0")));
+            }
+        }
+        assert_eq!(private_options(&("future_nvenc", &[("delay", "2")], false)).last(), Some(("delay", "0")));
+    }
+
+    #[test]
+    #[ignore = "需要本机 NVENC，验证输出等待而非仅核对参数"]
+    fn nvenc_outputs_each_input_without_waiting_for_the_next_capture() {
+        for codec in [VideoCodec::H264, VideoCodec::Hevc] {
+            let mut enc = FfEncoder::open_one(ff().unwrap(), &candidates(codec)[0], codec, 960, 540, 10, 400_000).unwrap();
+            let mut pixels = vec![128; 960 * 540 * 3 / 2];
+            for n in 0..12 {
+                pixels[..128].fill((32 + n * 12) as u8);
+                let packets = enc.encode_nv12(&pixels).unwrap();
+                assert_eq!(packets.len(), 1, "{} 第 {} 次输入仍在等待下一次采集", codec.as_str(), n + 1);
+                assert!(!packets[0].data.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn ff_dynamic_bitrate_changes_actual_packets_without_reopening() {
+        if dll_dir().is_err() { return; }
+        let mut enc = FfEncoder::open(VideoCodec::H264, 1280, 720, 30, 4_000_000).unwrap();
+        if !enc.dynamic_bitrate { return; } // QSV/AMF 采用稳定窗口重开。
+        let ctx = enc.ctx;
+        let mut pixels = vec![128; 1280 * 720 * 3 / 2];
+        let mut seed = 73u32;
+        let mut encode_window = |enc: &mut FfEncoder| {
+            let mut bytes = 0usize;
+            for frame in 0..120 {
+                // 移动块而非每像素白噪声：后者在 QP 上限也可能超过目标码率，
+                // 会把压缩能力下限误判为动态重配失效。
+                for y in 0..45 {
+                    for x in 0..80 {
+                        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+                        for dy in 0..16 {
+                            pixels[(y * 16 + dy) * 1280 + x * 16..(y * 16 + dy) * 1280 + x * 16 + 16]
+                                .fill(seed as u8);
+                        }
+                    }
+                }
+                for packet in enc.encode_nv12(&pixels).unwrap() {
+                    if frame >= 30 { bytes += packet.data.len(); }
+                }
+            }
+            bytes
+        };
+        let high = encode_window(&mut enc);
+        assert!(enc.set_bitrate(800_000));
+        let low = encode_window(&mut enc);
+        let mut fresh = FfEncoder::open(VideoCodec::H264, 1280, 720, 30, 800_000).unwrap();
+        let fresh_low = encode_window(&mut fresh);
+        eprintln!("dynamic bitrate: high={high}B low={low}B fresh={fresh_low}B");
+        assert_eq!(enc.ctx, ctx, "动态改码率不能重建编码器");
+        assert!(low * 2 < high, "目标下降 80% 后实际出包量必须明显下降");
+        assert!(low.abs_diff(fresh_low) < fresh_low / 4,
+            "动态修改后的出包量应接近同码率新编码器，不能只看相对旧预算下降");
+    }
+
     /// 真机冒烟（H264/HEVC 各跑一遍）：加载 DLL → 候选链打开 → 编 5 帧渐变
     /// NV12 → 首包必须是 Annex-B。DLL 目录缺失时 skip（CI/无硬件环境不红）。
     /// 开发机跑法：`PASTEPANDA_FF_DLL_DIR=D:/AItool/ffbuild/stripdist cargo test ff_smoke`
@@ -487,8 +585,7 @@ mod tests {
         for (i, b) in nv12.iter_mut().enumerate() {
             *b = (i % 251) as u8;
         }
-        // ⚠️ nvenc 恒 2 帧流水线延迟（探针实测首包@第 3 帧）—— 不能按帧断言出包，
-        // 只能验「5 帧内出了包 + 包是 Annex-B」。
+        // 该冒烟也覆盖 QSV/AMF 回落；NVENC 的逐输入出包另由硬件回归钉住。
         let mut first: Option<H264Packet> = None;
         let mut total = 0usize;
         for _ in 0..5 {
@@ -506,8 +603,21 @@ mod tests {
             "输出必须是 Annex-B（首包首字节 {:?}）",
             &p.data[..4.min(p.data.len())]
         );
-        // force_key 受理路径（弱网花屏自愈的接口契约）
+        // 重建接收流后必须拿到可独立解码的 IDR；只受理请求不代表恢复成功。
         assert!(enc.force_key());
+        let mut recovered = None;
+        for _ in 0..8 {
+            for packet in enc.encode_nv12(&nv12).expect("恢复帧编码失败") {
+                if packet.key {
+                    recovered = Some(packet);
+                }
+            }
+        }
+        let recovered = recovered.expect("force_key 后 8 帧内没有恢复关键帧");
+        if codec == VideoCodec::H264 {
+            assert!(recovered.data.windows(4).any(|b| b[..3] == [0, 0, 1] && b[3] & 0x1f == 5),
+                "H264 恢复关键帧必须包含 IDR NAL，普通 I 帧不能启动新解码器");
+        }
     }
 
     #[test]

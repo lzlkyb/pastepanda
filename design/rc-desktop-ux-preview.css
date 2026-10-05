@@ -1,0 +1,14 @@
+.ux-preview { max-width: 1360px; margin: 0 auto; padding: 24px; color: var(--text-primary); font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+.ux-intro h1 { font-size: 24px; margin: 0 0 8px; }
+.ux-intro p, .ux-tool-page > p, .ux-feedback { color: var(--text-secondary); line-height: 1.6; }
+.ux-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.ux-preview button { cursor: pointer; }
+.ux-controls button, .ux-setting button { padding: 8px 14px; border-radius: 8px; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-primary); }
+.ux-controls button[aria-pressed="true"] { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.ux-window { width: 100%; height: 640px; min-width: 760px; border: 1px solid var(--border-color); border-radius: 12px; }
+.ux-tool-page { padding: 28px; overflow: auto; }
+.ux-tool-page h2 { margin: 0 0 8px; font-size: 22px; }
+.ux-empty { margin-top: 24px; padding: 40px 24px; text-align: center; color: var(--text-secondary); background: var(--section-bg); border-radius: 12px; }
+.ux-setting { display: flex; align-items: center; gap: 12px; padding: 20px; border-radius: 12px; background: var(--section-bg); }
+.ux-setting > div { flex: 1; }
+.ux-setting p { margin: 6px 0 0; color: var(--danger); }

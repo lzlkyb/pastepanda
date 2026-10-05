@@ -114,6 +114,20 @@ describe("设备可达性结果", () => {
     rcProbeTargets.mockReset();
   });
 
+  it("重新检查后立即显示补齐的手机名称和平台", async () => {
+    const useRcStore = await loadStore();
+    await useRcStore.getState().refresh();
+    rcTargets.mockResolvedValueOnce([{ node_id: "phone", source: "rc", name: "新设备", os: "" }]);
+    await useRcStore.getState().refreshTargets();
+    rcProbeTargets.mockResolvedValue({ phone: true });
+    rcTargets.mockResolvedValue([{ node_id: "phone", source: "rc", name: "Google Pixel 9", os: "Android" }]);
+    await useRcStore.getState().probeTargets();
+    expect(rcProbeTargets).toHaveBeenCalledWith(["phone"]);
+    expect(useRcStore.getState().targets[0]?.name).toBe("Google Pixel 9");
+    expect(useRcStore.getState().targets[0]?.os).toBe("Android");
+    expect(useRcStore.getState().reachability.phone?.state).toBe("reachable");
+  });
+
   it("短连接的成功和失败结果分别留在内存中供设备行显示", async () => {
     const useRcStore = await loadStore();
     await useRcStore.getState().refresh();

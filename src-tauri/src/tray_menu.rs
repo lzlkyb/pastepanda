@@ -75,6 +75,7 @@ pub const ID_SETTINGS: &str = "tray-native:settings";
 pub const ID_EXIT: &str = "tray-native:exit";
 pub const ID_RC: &str = "tray-native:rc_connect";
 pub const ID_RECENT_BASE: &str = "tray-native:recent";
+pub const ID_SCREEN_REC: &str = "tray-native:screen_rec";
 
 const RECENT_LIMIT: usize = 3;
 
@@ -117,6 +118,7 @@ pub fn plan_items(snap: &MenuSnapshot) -> Vec<EntrySpec> {
         out.push(EntrySpec::Sep);
     }
     out.push(EntrySpec::Item { id: ID_SHOW, index: 0, title: "显示主窗口".into(), enabled: true });
+    out.push(EntrySpec::Item { id: ID_SCREEN_REC, index: 0, title: "🎬 屏幕录制".into(), enabled: true });
     out.push(EntrySpec::Item {
         id: ID_TOGGLE_MONITOR,
         index: 0,
@@ -412,6 +414,15 @@ mod imp {
                 if let Err(e) = crate::commands::toggle_monitor(a) {
                     log::warn!("[TrayMenu] 切换监听失败: {}", e);
                 }
+            });
+        } else if id == ID_SCREEN_REC {
+            // 录屏统一入口：录制中=停止，否则开选区窗（rec/mod.rs 的 open_selector_window）
+            let a = app.clone();
+            std::thread::spawn(move || {
+                #[cfg(windows)]
+                crate::rec::open_selector_window(&a);
+                #[cfg(not(windows))]
+                let _ = a;
             });
         } else if id == ID_PINNED {
             let a = app.clone();

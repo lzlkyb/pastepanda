@@ -4,7 +4,7 @@
  * 设计稿（触摸语义与坐标系 §6）定的是「尊重系统旋转锁」——用户系统锁了竖屏
  * 时旋转手势够不着，所以入口改成显式按钮（用户拍板：连上画面后自己点）：
  * 点「横屏」= 请求全屏 + 锁 landscape；点「竖屏」= 解锁 + 退全屏。朝向真正
- * 变化后，useImmersiveCapsule 的 matchMedia 监听自动接管沉浸显隐——本 hook
+ * 变化后，共用的 useMobileLayout 自动接管会话布局——本 hook
  * 只负责旋转，不碰工具条状态（单一数据源：按钮文案也由 capsule.landscape 决定）。
  *
  * Android WebView 的 screen.orientation.lock 要求文档先进全屏（wry 的
@@ -14,20 +14,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useOrientationLock() {
-  /** 操作反馈一句话（几秒自清）；空串 = 不占位。 */
+  /** Failure stays until recovered or dismissed; it must not expire mid-reading. */
   const [hint, setHint] = useState("");
   const lockedRef = useRef(false);
-  const hintTimer = useRef<number | null>(null);
-
-  const say = useCallback((msg: string) => {
-    setHint(msg);
-    if (hintTimer.current != null) window.clearTimeout(hintTimer.current);
-    if (msg) hintTimer.current = window.setTimeout(() => setHint(""), 4000);
-  }, []);
+  const say = useCallback((msg: string) => setHint(msg), []);
+  const clearHint = useCallback(() => setHint(""), []);
 
   const enterLandscape = useCallback(async () => {
+    // 全屏与旋转锁是两道闸，失败原因不同、修法不同，提示必须分开说（规则 15.3）。
+    let fullscreenBlocked = false;
     try {
       if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    } catch {
+      fullscreenBlocked = true; // 全屏被拒时锁横屏多半也会失败，但仍先试：有的 ROM 只拦全屏
+    }
+    try {
       // TS 的 ScreenOrientation 暂无 lock/unlock（即将进 lib.dom）——运行时
       // Android Chrome/WebView 稳定支持，先断言再调（失败走 catch 提示）。
       const orient = screen.orientation as ScreenOrientation & {
@@ -38,11 +39,14 @@ export function useOrientationLock() {
       lockedRef.current = true;
       say("");
     } catch {
-      say("这台手机没让锁横屏，试试打开系统自动旋转");
+      say(fullscreenBlocked
+        ? "这台手机不允许进入全屏，横屏锁定被跳过；试试打开系统的自动旋转"
+        : "系统没有让锁定横屏，试试打开系统的自动旋转");
     }
   }, [say]);
 
   const exitLandscape = useCallback(() => {
+    setHint("");
     try {
       const orient = screen.orientation as ScreenOrientation & {
         lock: (o: string) => Promise<void>;
@@ -71,5 +75,5 @@ export function useOrientationLock() {
     [],
   );
 
-  return { hint, enterLandscape, exitLandscape };
+  return { hint, clearHint, enterLandscape, exitLandscape };
 }

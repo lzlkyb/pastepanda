@@ -474,48 +474,42 @@ fn resume_hints(dir: &Path) -> Vec<ResumeHint> {
     file_proto::clamp_resume_hints(out)
 }
 
-/// 默认接收目录：桌面 = `<下载>/PastePanda 接收/`；Android = 应用外部私有目录下的
-/// `PastePanda 接收/`（无需存储权限、一定可写；用户经数据线/MTP 或支持
-/// `Android/data` 的文件管理器可达）。
+/// 默认接收目录：桌面在系统下载目录下；Android 在系统提供的应用下载目录下。
 ///
 /// 🔴 桌面**不能拼 `~/Downloads`**：中文系统那个目录叫「下载」，而且用户可能把
 /// 整个下载目录重定向到别的盘。所以要问系统（`SHGetKnownFolderPath`），不能猜。
 /// 系统不认（罕见）时退回 `~/Downloads`——宁可落到一个不太准的默认值，
-/// 也不能没有默认值。Android 上 `USERPROFILE`/`HOME` 都没有，`home_dir()` 必错，
-/// 所以要走 `EXTERNAL_STORAGE` 这条路。
+/// 也不能没有默认值。Android 只取 setup 缓存的系统路径，失败时明确报错，不猜目录。
 pub fn default_receive_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    let base = known_downloads_dir();
     #[cfg(target_os = "android")]
-    let base = android_app_files_dir();
-    #[cfg(not(any(target_os = "windows", target_os = "android")))]
-    let base = None;
-    let base = match base {
-        Some(d) => d,
-        None => crate::user_paths::home_dir()?.join("Downloads"),
-    };
-    Ok(base.join("PastePanda 接收"))
+    {
+        return ANDROID_RECEIVE_DIR
+            .get()
+            .cloned()
+            .ok_or_else(|| "手机接收位置尚未准备好，请重新打开 PastePanda 后重试".into());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        #[cfg(target_os = "windows")]
+        let base = known_downloads_dir();
+        #[cfg(not(target_os = "windows"))]
+        let base = None;
+        let base = match base {
+            Some(d) => d,
+            None => crate::user_paths::home_dir()?.join("Downloads"),
+        };
+        Ok(base.join("PastePanda 接收"))
+    }
 }
 
-/// Android 应用外部私有目录的包名段。与 `tauri.conf.json` 的 `identifier` 必须一致，
-/// 守卫测试 `android_app_id_与_tauri配置一致` 钉着。
-pub const ANDROID_APP_ID: &str = "com.pastepanda.app";
-
-/// `<外部存储>/Android/data/<包名>/files`——应用自己的外部目录：
-/// 不需要任何存储权限就能读写（Android 4.4+ 语义，覆盖全部在役机型），
-/// 且比内部存储（`/data/user/0/…`）对用户可达。
 #[cfg(target_os = "android")]
-fn android_app_files_dir() -> Option<PathBuf> {
-    // Android 运行时给应用进程设了这个环境变量（通常 /storage/emulated/0）；
-    // 没有就按 AOSP 的一贯取值兜底——真机上两者等价。
-    let root = std::env::var("EXTERNAL_STORAGE").unwrap_or_else(|_| "/storage/emulated/0".into());
-    Some(
-        PathBuf::from(root)
-            .join("Android")
-            .join("data")
-            .join(ANDROID_APP_ID)
-            .join("files"),
-    )
+static ANDROID_RECEIVE_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Android 11+ 的应用外部目录必须由系统创建；自行拼路径再 mkdir 可能被拒绝。
+/// setup 传入 PathResolver::download_dir()，它调用 getExternalFilesDir(DIRECTORY_DOWNLOADS)。
+#[cfg(target_os = "android")]
+pub fn init_android_receive_dir(system_downloads: PathBuf) {
+    let _ = ANDROID_RECEIVE_DIR.set(system_downloads.join("PastePanda 接收"));
 }
 
 /// 生效的接收目录 = 用户在设置里配置的覆盖目录，未配置回落 [`default_receive_dir`]。

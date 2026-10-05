@@ -1213,15 +1213,9 @@
   font-size: 13px;
 }
 
-.joinGlobal p {
-  margin: 0 0 10px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.65;
-}
-
-/* 配对/入站申请条的行内元素。
-   D11：这些间距原先是内联 style 写死的；顺便让上面的 .joinGlobal h4/p 真正被用上
+/* 配对敲门条（RcPairJoins）的行内元素；入站申请卡 2026-10-01 已删（方案甲，
+   决策现场收口到置顶浮层 RcAskPop），仅剩配对这一种"敲门"。
+   D11：这些间距原先是内联 style 写死的；顺便让上面的 .joinGlobal h4 真正被用上
    ——此前它们一直是没人引用的死规则，因为组件里用的是带内联样式的 div。 */
 .joinItem {
   margin-bottom: 8px;
@@ -1229,12 +1223,6 @@
 .joinFp {
   font-family: ui-monospace, Consolas, monospace;
   font-weight: 700;
-}
-.joinMeta {
-  margin-bottom: 4px;
-}
-.joinNote {
-  margin: 6px 0 8px;
 }
 .joinHint {
   margin: 4px 0 8px;

@@ -1,0 +1,84 @@
+/* 手机端启动防空白（2026-10-02）：WebView 冷启动到 React 挂载之间，
+   body 无背景 → 整段白屏（dev 模式 vite 编译慢时白得尤其久）。
+   这里铺近似底色 + 一个极简启动占位（logo + 三点呼吸），main.tsx 挂载后移除。
+   底色对齐 ocean 的 --app-bg 起点（浅）/ midnight 的 --app-bg 终点（深）。
+
+   🔴 必须保持 <link> 外链而非 <style> 内联——vite 7.3.6 build 对 HTML
+   内联 <style> 会报 No matching HTML proxy module found（2026-09-21 实测，
+   卡死 7.2.3 发版 build；同款教训见 rc-boot.css）。外链样式表同样是
+   渲染阻塞资源，防白屏效果不变。
+
+   主题只认系统深浅（prefers-color-scheme）：设置里强制「浅色/深色」的
+   用户在 JS 读写 localStorage 之前无从知晓，短暂偏差可接受——
+   比「人人白屏一秒」好得多。 */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #f4f8fc;
+}
+
+@media (prefers-color-scheme: dark) {
+  html,
+  body {
+    background: #0b0b13;
+  }
+}
+
+#boot {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: #334155;
+}
+
+@media (prefers-color-scheme: dark) {
+  #boot {
+    color: #94a3b8;
+  }
+}
+
+#boot img {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+}
+
+.boot-dots {
+  display: flex;
+  gap: 7px;
+}
+
+.boot-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.3;
+  animation: boot-pulse 1.2s ease-in-out infinite;
+}
+
+.boot-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.boot-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes boot-pulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.22;
+  }
+  40% {
+    opacity: 0.85;
+  }
+}

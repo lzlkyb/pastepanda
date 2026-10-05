@@ -98,9 +98,9 @@ pub fn rc_file_receive_dir_set(store: State<'_, DataStore>, dir: String) -> Resu
         if !p.is_absolute() {
             return Err("接收目录必须是绝对路径".into());
         }
-        std::fs::create_dir_all(&p).map_err(|e| format!("创建目录失败：{e}"))?;
         p
     };
+    std::fs::create_dir_all(&effective).map_err(|e| format!("创建接收目录失败：{e}"))?;
     let mut config = store.get_config()?;
     let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
     obj.insert(
@@ -211,15 +211,8 @@ fn write_blob_chunk(
     if chunk.len() > BLOB_CHUNK_MAX {
         return Err(format!("单块超过 {} MB", BLOB_CHUNK_MAX / 1024 / 1024));
     }
-    // upload_id 是路径组件，前端给什么都不能全信：只放行 UUID 的字符集
-    if upload_id.is_empty()
-        || !upload_id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-    {
-        return Err("上传标识不合法".into());
-    }
-    let safe = crate::rc::file_proto::safe_file_name(name)?;
+    let path = blob_spool_path(dir, upload_id, name)?;
+    // upload_id 和文件名的路径校验统一由 blob_spool_path 负责。
     // 协议上限同源：file_send 那一步还会再查一次，这里提前给人话
     if total > crate::rc::file_proto::MAX_FILE_BYTES {
         return Err(format!(
@@ -241,7 +234,6 @@ fn write_blob_chunk(
         ));
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("暂存目录建不出来：{e}"))?;
-    let path = dir.join(format!("{upload_id}-{safe}"));
     use std::io::{Seek, SeekFrom, Write};
     let mut f = std::fs::OpenOptions::new()
         .create(true)
@@ -258,6 +250,33 @@ fn write_blob_chunk(
         }
     }
     Ok(path)
+}
+
+fn blob_spool_path(dir: &std::path::Path, upload_id: &str, name: &str) -> Result<PathBuf, String> {
+    if upload_id.is_empty()
+        || !upload_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err("上传标识不合法".into());
+    }
+    let safe = crate::rc::file_proto::safe_file_name(name)?;
+    Ok(dir.join(format!("{upload_id}-{safe}")))
+}
+
+fn discard_blob_spool(dir: &std::path::Path, upload_id: &str, name: &str) -> Result<(), String> {
+    let path = blob_spool_path(dir, upload_id, name)?;
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("暂存清理失败：{e}")),
+    }
+}
+
+/// 仅清理当前尚未提交的准备文件；前端在分块写入返回后才调用。
+#[tauri::command]
+pub fn rc_file_send_blob_abort(upload_id: String, name: String) -> Result<(), String> {
+    discard_blob_spool(&send_spool_dir(), &upload_id, &name)
 }
 
 /// 手机端发文件（分块上载）。
@@ -307,6 +326,21 @@ pub async fn rc_file_send_blob(
 #[cfg(test)]
 mod blob_tests {
     use super::*;
+
+    #[test]
+    fn 取消暂存_路径受限且不删除其他文件() {
+        let dir = std::env::temp_dir().join(format!("pp-blob-cancel-{}", std::process::id()));
+        let own = write_blob_chunk(&dir, "cancel-1", "报告.bin", 4, 0, false, &[1, 2]).unwrap();
+        let other = write_blob_chunk(&dir, "keep-2", "报告.bin", 2, 0, true, &[3, 4]).unwrap();
+        assert!(discard_blob_spool(&dir, "../keep-2", "报告.bin").is_err());
+        assert!(own.is_file() && other.is_file());
+        discard_blob_spool(&dir, "cancel-1", "报告.bin").unwrap();
+        assert!(!own.exists());
+        assert_eq!(std::fs::read(&other).unwrap(), vec![3, 4]);
+        discard_blob_spool(&dir, "cancel-1", "报告.bin").unwrap();
+        std::fs::remove_file(other).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
 
     #[test]
     fn percent_decode_中文与普通字符() {

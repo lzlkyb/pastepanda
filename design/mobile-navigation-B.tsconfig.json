@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["mobile-navigation-B.tsx", "mobile-navigation-B-panels.tsx", "mobile-navigation-B-pager.ts", "../src/**/*.d.ts"]
+}

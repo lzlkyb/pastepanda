@@ -300,9 +300,7 @@ pub fn lan_pair_start(app: tauri::AppHandle, device_id: String) -> Result<(), St
         v: crate::lan_pair::PAIR_PROTO_V,
         kind: crate::lan_pair::KIND_REQ.into(),
         from_id: lan.device_id().into(),
-        from_name: hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_default(),
+        from_name: crate::device_identity::local_device_name(),
         to_id: device_id,
         pk: my_pk,
         nonce: String::new(),

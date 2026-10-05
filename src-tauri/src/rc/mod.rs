@@ -12,6 +12,7 @@ pub mod file_proto;
 pub mod file_state;
 pub mod file_transfer;
 pub mod history;
+pub mod host_capability;
 pub mod inbound;
 pub mod inbound_tasks;
 pub mod input;
@@ -21,10 +22,13 @@ pub mod jpeg;
 /// stub 返回 `None`，推流任务的字段因此不必写 cfg（与 [`wic_jpeg`] 同一处理）。
 /// ⚠️ 与 Android 端那条前台服务保活不是一回事：那条管进程不被冻结，这条管机器不睡。
 pub mod keep_awake;
+/// RC 会话前台服务保活（B 方案）。仅 Android 装载 Kotlin 插件，桌面 no-op。
+pub mod keepalive;
 pub mod link;
 pub mod local_input;
+pub(crate) mod media;
+pub(crate) mod media_flow;
 pub mod mono;
-pub mod net;
 pub mod notify;
 pub mod outbound;
 pub mod pace;
@@ -38,6 +42,7 @@ pub mod service;
 pub mod short_pair;
 pub mod session;
 pub mod stream_cfg;
+pub(crate) mod underlay;
 pub mod uno;
 pub mod unop;
 pub mod video;
@@ -63,15 +68,13 @@ pub mod vid_dgram;
 #[cfg(test)]
 mod tests;
 
-/// 本机设备名（主机名）。
+/// 本机设备名：电脑主机名 / Android 原生设备名称或型号。
 ///
 /// 放在 rc 域而不是命令层：**局域网配对要把名字随握手包自报给对方**
 /// （`rc/pin.rs` 的会话 + `rc/discovery.rs` 的发送），而命令层也要用它显示。
 /// 两处各写一份 `hostname::get()` 就是两个数据源，迟早不一致。
 pub fn local_device_name() -> String {
-    hostname::get()
-        .map(|h| h.to_string_lossy().trim().to_string())
-        .unwrap_or_default()
+    crate::device_identity::local_device_name()
 }
 
 /// 本机操作系统短标签（`Windows 11` / `Windows 10` / `macOS` / `Linux`）。

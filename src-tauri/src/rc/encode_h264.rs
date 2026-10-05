@@ -180,6 +180,8 @@ pub fn bitrate_for(width: u32, fps: u32) -> u32 {
 }
 
 pub struct H264Packet {
+    /// 原始采集时刻；硬编可能延迟数帧出包，不能用当前输入帧的时刻代替。
+    pub at_ms: i64,
     pub data: Vec<u8>,
     pub key: bool,
     pub width: u32,
@@ -191,6 +193,7 @@ mod ff;
 pub use ff::av1_hw_available;
 mod mf;
 mod session;
+mod scale;
 
 pub use mf::*;
 pub use session::*;

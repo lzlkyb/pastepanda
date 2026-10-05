@@ -3,13 +3,14 @@
 //! # 🔴 不认识 tauri
 //!
 //! 与 `sync/` 同一条界线。身份仍是共用的 `NodeIdentity`，
-//! 但**设备信任表是 `rc_devices`**，通道在 `rc_enabled` 时自建 Endpoint。
+//! 但**设备信任表是 `rc_devices`**，通道在 `rc_enabled` 时注册到共享端点
+//! （`crate::shared_ep`，多业务按 ALPN 分派——同身份双端点会在公网按-id
+//! 路由时互相抢答，见 shared_ep 模块文档）。
 
 use super::clipboard::{ClipWait, ClipboardState};
 use super::discovery::{Discovery, PairedFn};
 use super::join::{self, RcJoins};
 use super::link::LinkState;
-use super::net::{accept_loop, bind_rc_endpoint};
 use super::notify::{NotifyFn, NotifyState, PathNotifyFn, ScopeNotifyFn};
 use super::protocol::{Capability, RcFrame, SessionPhase, ALPN};
 use super::session::{
@@ -235,10 +236,10 @@ pub struct InboundKnock {
 }
 
 struct Running {
-    endpoint: Endpoint,
+    /// 共享端点句柄（`crate::shared_ep`）。**永不关闭**——stop 只摘 ALPN 注册，
+    /// 关端点会把 sync 等同身份业务的在途连接一起杀掉。
+    endpoint: Arc<Endpoint>,
     presence: Arc<PresenceTable>,
-    /// accept 循环停止标志：true = 退出。
-    stop: Arc<AtomicBool>,
     /// presence 的 running（true = 在跑）；stop 时置 false。
     presence_running: Arc<AtomicBool>,
     #[allow(dead_code)]
@@ -320,6 +321,7 @@ pub struct RcService {
     pub(super) pass_gate: unop::BruteGate,
     /// 推流参数（画质 / 截取范围 / 强制 JPEG）+ RTT（见 `stream_cfg.rs`）。
     stream: StreamCfg,
+    media_state: Mutex<media_control::MediaState>,
     /// 会话链路：数据走哪条路 + 心跳新鲜度（见 `link.rs`）。
     ///
     /// ❗ 与 `stream` 的 `last_rtt_ms` 刻意分开：那个供**码率自适应**用
@@ -637,6 +639,7 @@ impl RcService {
             uno: uno::UnoCodes::default(),
             pass_gate: unop::BruteGate::default(),
             stream: StreamCfg::new(),
+            media_state: Mutex::new(media_control::MediaState::default()),
             link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
             #[cfg(target_os = "windows")]
@@ -664,6 +667,7 @@ impl RcService {
 
 // —— impl RcService 按功能组平移到子模块（2026-09-22 体量合规）——
 mod streaming;
+mod media_control;
 mod notify_audio;
 mod frames_clip;
 mod trust;
@@ -678,12 +682,25 @@ mod input_gate;
 // 要读暂停轮询周期这一个常量，为它在 service 上再开一层转发方法不值。
 pub(super) mod video_pause;
 
+/// `rc_enabled` 的缺省值：**开**。
+///
+/// 🔴 2026-10-03 真机教训：原先缺省 `false`，新装 App 的「远程通道」开关默认关着，
+///    手机设备页的「远程控制 / 只看画面」按钮直接置灰（原因只缩在按钮下一行小字）；
+///    而配对流程会把通道拉起来，页头按 `running` 显示「远程通道已开启」——状态说
+///    开着、动作说不行，用户两头挨打。配对本身就是双方都同意的动作，缺省开不放大
+///    攻击面：没配对的设备照样被 [`gate_inbound`](crate::rc::session::gate_inbound)
+///    第一层 `Gate::NotPaired` 拦在门外。
+///
+///    只治「从没碰过开关」的安装——`rc_set_enabled` 显式写过 `false` 的照旧关着。
+pub const CFG_ENABLED_DEFAULT: bool = true;
+
+/// 「允许被远程」的唯一读取点（`RcService::enabled` 转调这里，别处不再各读一份）。
 pub fn cfg_enabled(store: &DataStore) -> bool {
     store
         .get_config()
         .ok()
         .and_then(|c| c.get(CFG_ENABLED).and_then(|v| v.as_bool()))
-        .unwrap_or(false)
+        .unwrap_or(CFG_ENABLED_DEFAULT)
 }
 
 /// `rc_keep_awake` 的缺省值：**关**。

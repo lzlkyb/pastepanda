@@ -39,16 +39,12 @@
  * 与「提权为可控」的既有语义一致。
  */
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { X } from "lucide-react";
-import { FocusTrap } from "@/components/FocusTrap";
-import { useDialogAnim } from "@/lib/dialogMotion";
-import { useDialogEscape } from "@/hooks/useDialogEscape";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 import { GeneratePane } from "./RcUnoGeneratePane";
 import { JoinPane } from "./RcUnoJoinPane";
 import { PassPane } from "./RcUnoPassPane";
+import { RcConnectionShell } from "./RcConnectionShell";
 import styles from "../rc/RemoteComputer.module.css";
 
 export type UnoSide = "generate" | "join" | "pass";
@@ -65,33 +61,13 @@ export function RcUnoDialog({
   side: UnoSide;
   onClose: () => void;
 }) {
-  const anim = useDialogAnim();
-  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）：本层同样挂在 RcPairLayer 下，
-  // 宿主可能是设置页（RcSection.tsx:304）。不接的话 Esc 走全局链 →
-  // `close_dialog: "settings"` → 整页设置连同刚生成的接入码一起没。
-  // 详见 hooks/useDialogEscape.ts 头注释。
-  useDialogEscape(onClose);
+  // 统一外壳负责 Esc 与焦点；无人值守仍使用独立授权语义。
   // 乙方案 §5 流程③：出码/收码是同一凭证的两面，收进一个弹层的两个标签——
   // 「凭证是设备属性，不是入口」。`side` 只决定初始那一页。
   const [tab, setTab] = useState<UnoSide>(side === "pass" ? "pass" : side);
   const code = tab !== "pass";
   return (
-    <motion.div key="rc-uno" {...anim.backdrop} className="dialog-backdrop" onClick={onClose}>
-      <FocusTrap>
-        <motion.div
-          {...anim.panel}
-          className="dialog-box"
-          style={{ width: "min(480px, 94vw)" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="dialog-header">
-            <h2 className="dialog-title">
-              {tab === "pass" ? "无人值守固定密码" : "无人值守"}
-            </h2>
-            <button className="dialog-close" onClick={onClose} aria-label="关闭">
-              <X size={15} />
-            </button>
-          </div>
+    <RcConnectionShell title={tab === "pass" ? "无人值守固定密码" : "无人值守"} onClose={onClose}>
           {code && (
             <div className={styles.adhocTabs} role="tablist" aria-label="无人值守方式">
               <button
@@ -123,8 +99,6 @@ export function RcUnoDialog({
               <JoinPane rc={rc} toast={toast} onClose={onClose} />
             )}
           </div>
-        </motion.div>
-      </FocusTrap>
-    </motion.div>
+    </RcConnectionShell>
   );
 }

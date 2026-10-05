@@ -132,15 +132,16 @@ describe("配对码遮罩（设计稿 §1）", () => {
     vi.useRealTimers();
   });
 
-  it("出示方点「我出示这枚码」用这枚码发起，角色固定 listen=true", async () => {
+  it("亮码即自动监听：不点任何按钮就以 listen=true 发起（2026-10-03 教训）", async () => {
     vi.useFakeTimers();
     renderPane();
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(shownDigits()).toBe("4182 0620");
-
-    fireEvent.click(screen.getByRole("button", { name: "我出示这枚码" }));
+    // 过去：扫码后还得再点「我出示这枚码」才开始监听，扫码方永远干等。
+    // 现在：码一亮就自动挂上监听，按钮已删除。
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(rc.pinPairBegin).toHaveBeenCalledWith("41820620", true);
+    expect(screen.queryByRole("button", { name: "我出示这枚码" })).toBeNull();
     vi.useRealTimers();
   });
 
@@ -152,6 +153,27 @@ describe("配对码遮罩（设计稿 §1）", () => {
     });
 
     await waitFor(() => expect(rc.pinPairBegin).toHaveBeenCalledWith("87654321", false));
+  });
+
+  it("拨号失败回到 idle 后，亮着的码自动重新挂监听（2026-10-03 教训收尾）", async () => {
+    // 第一次 = 亮码自动监听；第二次 = 手动拨号且失败；第三次 = 回 idle 后自动重挂。
+    rc.pinPairBegin
+      .mockResolvedValueOnce({ node_id: "peer-1", name: "那台手机", expires_at: EXPIRES_AT })
+      .mockRejectedValueOnce(new Error("对方未在监听"));
+    renderPane();
+    await waitFor(() => expect(rc.pinPairBegin).toHaveBeenCalledWith("41820620", true));
+    expect(rc.pinPairBegin).toHaveBeenCalledTimes(1);
+
+    // 拨号失败 → error 态（码仍亮着）。监听成功后按钮文案是「等待中」，两种都要认。
+    fireEvent.change(screen.getByLabelText("对方的配对码"), { target: { value: "87654321" } });
+    fireEvent.click(screen.getByRole("button", { name: /对方给我这枚码|等待中/ }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(rc.pinPairBegin).toHaveBeenCalledTimes(2);
+
+    // 改输入回到 idle：监听自己回来——否则码只是「摆着」，扫码方继续干等
+    fireEvent.change(screen.getByLabelText("对方的配对码"), { target: { value: "8765432" } });
+    await waitFor(() => expect(rc.pinPairBegin).toHaveBeenCalledTimes(3));
+    expect(rc.pinPairBegin).toHaveBeenLastCalledWith("41820620", true);
   });
 });
 

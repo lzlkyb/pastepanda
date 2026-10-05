@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>皮肤整改 · 自有角色替换 / 石墨深色 / 跟随系统 · 四项待拍稿</title>
+<!-- 真样式表：主题令牌全部来自 src/styles/theme.css，本稿不自造颜色（石墨三变体除外，见 §3 声明） -->
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<style>
+/* ══════════ 本稿外壳（不是软件样式，只包外壳）══════════ */
+body { margin:0; background:#22262c; color:#e8edf4; font:13px/1.6 "Segoe UI",system-ui,sans-serif; padding:24px 26px 70px; }
+.wrap { max-width:1240px; margin:0 auto; }
+h1 { font-size:19px; margin:0 0 6px; }
+h2 { font-size:14px; margin:34px 0 4px; color:#ffd479; font-weight:600; }
+h3 { font-size:12.5px; margin:20px 0 8px; color:#c9d3e0; font-weight:600; }
+p.lead { font-size:12.5px; color:#a8b1bd; margin:0 0 14px; max-width:1120px; }
+code,.mono { font-family:"Cascadia Mono",Consolas,monospace; font-size:11px; }
+.note { font-size:11.5px; color:#8b95a3; margin:6px 0 0; max-width:1120px; }
+.pass { color:#5ad17f; } .warn { color:#ffc766; } .fail { color:#ff8f8f; }
+.must { color:#ff8f8f; font-weight:600; }
+table { border-collapse:collapse; width:100%; font-size:11.5px; }
+th,td { text-align:left; padding:5px 8px; border-bottom:1px solid #3a414b; vertical-align:top; }
+th { color:#a8b1bd; font-weight:600; }
+.ctl { display:flex; gap:18px; align-items:center; flex-wrap:wrap; background:#2b3037; border:1px solid #3a414b; border-radius:10px; padding:10px 14px; margin:0 0 20px; position:sticky; top:0; z-index:50; }
+.ctl span { font-size:11px; color:#a8b1bd; }
+.ctl label { font-size:12px; display:inline-flex; align-items:center; gap:5px; margin-right:10px; cursor:pointer; }
+.ctl input { accent-color:#6ab4e8; margin:0; }
+.stages { display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap; }
+.col { width:320px; }
+.colhead { font-size:11.5px; color:#dbe1e9; margin:0 0 6px; display:flex; justify-content:space-between; gap:6px; }
+.colhead b { font-weight:600; }
+.colhead .k { font:10px/1.4 "Cascadia Mono",monospace; color:#8b95a3; text-align:right; }
+.tagline { font-size:11px; color:#8b95a3; margin:6px 0 0; }
+
+/* ══════════ 以下每一条都是从真组件 .module.css 逐字搬来的 ══════════ */
+
+/* SkinScene.module.css:6-25 (.scene) / 34-37 (.paused) */
+.scene { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; opacity:var(--scene-opacity,1); }
+.paused, .paused * { animation-play-state:paused !important; }
+/* SkinScene.module.css:40-79 爱心雨 / 蝴蝶结 / 星光 / 立绘（关键帧取值一字未改，vh 改成舞台内 % 以便在小舞台里演示） */
+.pdHeart { position:absolute; top:-30px; animation:melodyHeartFall linear infinite; filter:drop-shadow(0 0 6px rgba(255,140,190,.5)); }
+@keyframes melodyHeartFall { 0%{transform:translate(0,-40px) rotate(-10deg);} 50%{transform:translate(-30px,240px) rotate(12deg);} 100%{transform:translate(12px,480px) rotate(-8deg);} }
+.pdBow { position:absolute; opacity:.85; animation:melodyBowFloat 7s ease-in-out infinite; }
+@keyframes melodyBowFloat { 0%,100%{transform:translateY(0) rotate(-5deg);} 50%{transform:translateY(-14px) rotate(6deg);} }
+.pdSpark { position:absolute; animation:melodySparkTw 2.8s ease-in-out infinite; }
+@keyframes melodySparkTw { 0%,100%{opacity:.15;transform:scale(.7);} 50%{opacity:.95;transform:scale(1);} }
+.pdChar { position:absolute; right:26px; bottom:60px; width:104px; height:104px; object-fit:contain; animation:melodyBob 5.5s ease-in-out infinite; filter:drop-shadow(0 6px 12px rgba(200,60,120,.28)); }
+@keyframes melodyBob { 0%,100%{transform:translateY(0) rotate(-2deg);} 50%{transform:translateY(-14px) rotate(3deg);} }
+
+/* Sidebar.module.css:513-538 (.melodyFoot / .melodyFootImg / .melodyFootText) */
+.melodyFoot { display:flex; align-items:center; gap:8px; padding:6px 8px 8px; }
+.melodyFootImg { width:34px; height:34px; object-fit:contain; flex-shrink:0; filter:drop-shadow(0 4px 10px rgba(240,86,140,.28)); animation:melodyFootFloat 3.2s ease-in-out infinite; }
+@keyframes melodyFootFloat { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-4px);} }
+.melodyFootText { font-size:11px; font-weight:600; color:var(--accent-strong); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* About.module.css:30-41 (.aboutMelody) */
+.aboutMelody { width:84px; height:84px; object-fit:contain; border-radius:0; filter:drop-shadow(0 8px 20px rgba(240,86,140,.3)); animation:aboutMelodyFloat 3.2s ease-in-out infinite; }
+@keyframes aboutMelodyFloat { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
+/* CardList.module.css:800-806 (.emptyMelody) */
+.emptyMelody { width:132px; height:132px; object-fit:contain; filter:drop-shadow(0 8px 20px rgba(240,86,140,.28)); animation:emptyFloat 3.2s ease-in-out infinite; }
+@keyframes emptyFloat { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-7px);} }
+
+/* Settings.module.css:111-125 / 497-508 / 606-626 / 659-661 / 664-716 / 758-771 / 871-931 / 1035-1045 */
+.sSection { margin-top:0; padding:10px 16px; font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.5px; background:var(--section-bg); border:1px solid var(--border-color); border-radius:12px 12px 0 0; box-shadow:0 1px 0 rgba(15,23,42,.04); }
+.sRow { display:flex; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border-color); gap:12px; background:var(--card-bg); border-left:1px solid var(--border-color); border-right:1px solid var(--border-color); transition:background 150ms ease; }
+.sRowBody { flex:1; min-width:0; }
+.sRowLabel { font-size:13px; font-weight:600; color:var(--text-primary); }
+.sRowDesc { font-size:11px; color:var(--text-muted); margin-top:2px; }
+.sRowIcon { width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:var(--ic-brand); box-shadow:inset 0 1px 0 rgba(255,255,255,.35), 0 1px 3px rgba(15,23,42,.10); }
+.sRowIconGlyph { width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,.92); box-shadow:0 1px 2px rgba(15,23,42,.14); display:flex; align-items:center; justify-content:center; font-size:14px; }
+.sRowRecommend { display:inline-flex; align-items:center; gap:2px; font-size:10px; font-weight:600; color:var(--green); background:color-mix(in srgb, var(--green) 12%, transparent); padding:1px 6px; border-radius:4px; margin-left:6px; }
+.sVal { font-size:12px; font-weight:600; color:var(--accent-strong); padding:3px 8px; background:var(--accent-light); border-radius:6px; white-space:nowrap; cursor:pointer; border:none; font-family:inherit; }
+.sSegGroup { display:flex; background:var(--seg-bg, var(--section-bg)); border-radius:8px; padding:3px; gap:2px; flex-shrink:0; max-width:100%; }
+.sSegText { min-width:40px; height:28px; padding:0 10px; border-radius:6px; border:none; background:transparent; font-size:12px; font-weight:500; color:var(--text-muted); cursor:pointer; font-family:inherit; transition:all .15s; }
+.sSegActive { background:var(--seg-active-bg, var(--card-bg)); color:var(--accent); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.sToggle { display:inline-block; width:44px; height:26px; border-radius:13px; border:none; cursor:pointer; position:relative; flex-shrink:0; transition:background .25s; padding:0; vertical-align:middle; }
+.sToggle.off { background:var(--toggle-off-bg); }
+.sToggle.on { background:var(--green); }
+.sToggle .sToggleThumb { position:absolute; left:0; top:2px; width:22px; height:22px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.15); transition:transform .35s cubic-bezier(.34,1.56,.64,1); }
+.sToggle.off .sToggleThumb { transform:translateX(2px); }
+.sToggle.on  .sToggleThumb { transform:translateX(20px); }
+.sToggle .sToggleLabel { position:absolute; left:0; top:50%; transform:translateY(-50%); font-size:11px; font-weight:700; pointer-events:none; user-select:none; }
+.sToggle.on  .sToggleLabel { left:7px; color:var(--toggle-on-label); }
+.sToggle.off .sToggleLabel { left:auto; right:6px; color:var(--toggle-off-label); }
+/* Settings.module.css:712-716 —— 美乐蒂专属：旋钮内嵌粉心。改名后这条锚点要跟着换 */
+[data-theme="blossom"] .sToggle .sToggleThumb::after { content:"♥"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; line-height:1; color:#F0568C; }
+
+/* Appearance.module.css:13-68（主题预览卡，尺寸一字未改） */
+.themeGrid { display:flex; gap:8px; flex-wrap:wrap; }
+.themeCard { width:72px; border-radius:10px; overflow:hidden; border:2px solid transparent; cursor:pointer; background:none; padding:0; box-shadow:0 2px 6px rgba(0,0,0,.08); transition:all .2s; font-family:inherit; }
+.themeCardOn { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
+.themeCardBar { height:24px; display:flex; align-items:center; padding:0 6px; gap:4px; }
+.themeCardDot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.themeCardName { font-size:11px; line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.themeCardBody { height:36px; padding:6px; display:flex; flex-direction:column; gap:3px; position:relative; }
+.themeCardLine { height:5px; border-radius:3px; }
+.themeCardHeart { position:absolute; right:4px; bottom:2px; font-size:10px; line-height:1; }
+
+/* Sidebar.module.css:88-112 (.item/.active) · TopBar.module.css:176-192 (.search) · CardList.module.css:203-212 (.card/.sel) · Toast.module.css:81 */
+.side { background:var(--sidebar-bg); border-radius:8px; padding:4px; position:relative; z-index:1; }
+.item { position:relative; padding:6px 8px 6px 12px; border-radius:6px; color:var(--text-secondary); font-size:12px; }
+.item.active { background:var(--accent-light); color:var(--accent-strong); font-weight:600; }
+.item.active::before { content:''; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:3px; height:16px; border-radius:2px; background:var(--accent); box-shadow:0 0 6px var(--accent-shadow); }
+.search { height:30px; padding:0 10px; border-radius:8px; background:var(--control-glass, var(--search-bg)); border:1px solid var(--search-border); box-shadow:var(--control-elev, 0 1px 4px rgba(0,0,0,.03)); color:var(--text-muted); display:flex; align-items:center; font-size:12px; position:relative; z-index:1; }
+.card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:10px; padding:7px 9px; color:var(--text-primary); font-size:12px; position:relative; z-index:1; }
+.card.sel { background:var(--card-selected-bg); border-color:var(--card-selected-border); box-shadow:var(--card-selected-shadow), 0 4px 16px var(--accent-shadow); }
+.infoBox { background:color-mix(in srgb, var(--accent) 14%, transparent); border:1px solid color-mix(in srgb, var(--accent) 25%, transparent); color:var(--accent-strong); border-radius:8px; padding:5px 8px; font-size:11.5px; position:relative; z-index:1; }
+.btnPrimary { background:var(--accent-solid); color:var(--text-on-accent); border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600; font-family:inherit; position:relative; z-index:1; }
+
+/* 舞台容器：320×430 定宽，背景走 --app-bg（真主题变量），场景层衬在卡片之后 —— 与真窗口同一层叠关系 */
+.stage { width:320px; height:430px; border-radius:12px; overflow:hidden; background:var(--app-bg); color:var(--text-primary); position:relative; border:1px solid var(--card-border); display:flex; flex-direction:column; gap:7px; padding:8px; box-sizing:border-box; font-size:12px; }
+.stage[data-scene="1"] { padding:0; }
+.stage .inner { padding:8px; display:flex; flex-direction:column; gap:7px; position:relative; z-index:1; width:100%; }
+
+/* ══════════ §3 石墨三变体：本稿专用令牌块 ══════════
+   声明：这里用「共用基底 + 变体只覆盖 accent 族」的写法是为了让三个变体能同屏对比、
+   且本稿不重复铺 70×3 份字面量。实施进 theme.css 时会展开成与 midnight 同结构的
+   完整字面 token 集（parity 守卫单测会逐主题查缺，见 §6）。 */
+[data-theme^="graphite"] {
+  /* 中性灰阶：R=G=B，不带蓝紫底调（这是「石墨」的全部立意） */
+  --app-bg: linear-gradient(180deg, #1c1c1c 0%, #151515 55%, #101010 100%);
+  --header-bg-start: rgba(31,31,31,.62);
+  --header-bg-end: rgba(31,31,31,.16);
+  --card-bg: #1f1f1f;
+  --card-border: #2e2e2e;
+  --text-primary: #ededed;
+  --text-secondary: #b3b3b3;
+  --text-muted: #8f8f8f;
+  --border-color: #2e2e2e;
+  --seg-bg: #2e2e2e;
+  /* 本稿实算改的：#454545 时三变体的「分段激活」标签都压不到 4.5:1（甲 3.80 / 乙 4.40 / 丙 4.26），
+     降到 #383838 后三档分别 4.64 / 5.39 / 5.21。对照：现状午夜的同一探针是 3.50，本来就不过。 */
+  --seg-active-bg: #383838;
+  --search-bg: #2a2a2a;
+  --search-border: #3d3d3d;
+  --input-bg: #2a2a2a;
+  --dialog-bg: #1f1f1f;
+  --section-bg: #171717;
+  --workbench-bg: color-mix(in srgb, var(--section-bg) 72%, var(--card-bg));
+  --chrome-bg: color-mix(in srgb, var(--card-bg) 94%, transparent);
+  --paper-bg: var(--card-bg);
+  --status-bg: color-mix(in srgb, var(--section-bg) 88%, var(--card-bg));
+  --status-border: color-mix(in srgb, var(--border-color) 55%, transparent);
+  --rc-head-bg: linear-gradient(120deg, color-mix(in srgb, var(--card-bg) 96%, var(--accent-light)) 0%, color-mix(in srgb, var(--card-bg) 78%, var(--accent-light)) 100%);
+  --rc-hero-screen: radial-gradient(circle at 58% 36%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 30%, var(--card-bg)) 10%, transparent 26%), radial-gradient(circle at 40% 62%, color-mix(in srgb, var(--accent) 60%, var(--card-bg)) 0%, transparent 44%), radial-gradient(circle at 70% 68%, color-mix(in srgb, var(--accent) 92%, transparent) 0%, transparent 50%), linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 0%, var(--accent) 48%, color-mix(in srgb, var(--accent) 72%, var(--text-primary)) 100%);
+  --rc-hero-bezel: color-mix(in srgb, var(--text-primary) 82%, var(--accent));
+  --rc-hero-neck: linear-gradient(180deg, color-mix(in srgb, var(--accent) 15%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 45%, var(--card-bg)) 100%);
+  --rc-hero-base: linear-gradient(180deg, color-mix(in srgb, var(--accent) 28%, var(--card-bg)) 0%, color-mix(in srgb, var(--accent) 55%, var(--card-bg)) 100%);
+  --rc-hero-pedestal: radial-gradient(ellipse at 50% 32%, color-mix(in srgb, var(--card-bg) 95%, transparent) 0%, color-mix(in srgb, var(--accent) 16%, var(--card-bg)) 58%, color-mix(in srgb, var(--accent) 25%, transparent) 78%, transparent 82%);
+  --rc-slogan-line: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 50%, transparent) 30%, var(--accent) 70%, transparent 100%);
+  --toggle-off-bg: #454545;
+  --toggle-off-label: #b3b3b3;
+  --brand-ai-from: #a8deff; --brand-ai-to: #d8ccff;
+  --hover: #262626;
+  --sidebar-bg: #1a1a1a;
+  --sidebar-section-label: #8f8f8f;
+  --timeline-bg: rgba(16,16,16,.95);
+  --green: #4ade80; --green-bg: #0a2b16; --green-border: #166534;
+  --orange: #fb923c; --orange-bg: #341305; --orange-border: #9a3412;
+  --warning: var(--orange); --orange-strong: var(--orange); --warning-bg: var(--orange-bg); --warning-border: var(--orange-border);
+  --danger-bg: var(--red-bg); --success: #4ade80; --success-bg: #14532d; --success-border: #166534;
+  --red-bg: #3d0a0a; --danger: #f87171; --danger-hover: #fca5a5;
+  --shadow-md: 0 4px 12px rgba(0,0,0,.45);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  /* 无 SkinScene 分支（同 ocean）→ 卡片不透明、浮层不模糊，场景透不出东西可透 */
+  --scene-opacity: 1;
+  --glass-card-bg: #232323;
+  --glass-card-filter: none;
+  --glass-dialog-filter: none;
+  --glass-card-border: rgba(255,255,255,.07);
+  --glass-card-hover-border: rgba(255,255,255,.15);
+  --glass-card-shadow: 0 4px 16px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03), inset 0 1px 0 rgba(255,255,255,.04);
+  --glass-card-hover-shadow: 0 8px 28px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.06), inset 0 1px 0 rgba(255,255,255,.06);
+  --glass-card-elev: 0 1px 2px rgba(0,0,0,.3), 0 6px 16px rgba(0,0,0,.34);
+  --card-top-light: linear-gradient(180deg, rgba(255,255,255,.045) 0%, transparent 45%);
+  --card-shimmer-anim: none; --card-shimmer-display: none;
+  --control-glass: rgba(42,42,42,.86);
+  --control-ring: inset 0 0 0 1px rgba(255,255,255,.08), 0 1px 4px rgba(0,0,0,.4);
+  --control-elev: 0 1px 2px rgba(0,0,0,.25), 0 4px 14px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06);
+  --glass-shimmer: rgba(255,255,255,.06); --glass-shimmer-static: rgba(255,255,255,.05);
+  --glass-icon-bg: rgba(255,255,255,.05); --glass-icon-border: rgba(255,255,255,.07);
+  --glass-icon-shadow: inset 0 2px 4px rgba(255,255,255,.04), 0 2px 8px rgba(0,0,0,.3);
+  --glass-popover-bg: rgba(31,31,31,.97); --glass-popover-border: rgba(255,255,255,.08);
+  --glass-popover-shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.25);
+  --glass-dialog-bg: #1f1f1f; --glass-dialog-blur: 22px;
+  --float-card-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 8px 28px rgba(0,0,0,.45);
+  --overlay-bg: rgba(0,0,0,.45);
+  --shot-bar-bg: rgba(24,24,24,.94); --shot-bar-border: rgba(255,255,255,.14);
+  --shot-bar-text: var(--text-primary); --shot-bar-muted: var(--text-muted); --shot-hover: var(--hover);
+  --shot-save: #a5c8ff; --shot-long: #8cc5ff; --shot-pin: #f9a8d4; --shot-ocr: #7de0c4;
+}
+/* 甲 · 纯中性（macOS Graphite 口径：accent 也是灰） */
+[data-theme="graphite-a"] {
+  --accent:#a3a3a3; --accent-light:#2a2a2a; --accent-solid:#8a8a8a;
+  --accent-strong:#dcdcdc; --text-on-accent:#111; --accent-border:rgba(163,163,163,.35);
+  --card-selected-bg:#2a2a2a; --card-selected-border:#a3a3a3;
+  --card-selected-shadow:0 0 0 3px rgba(163,163,163,.2), 0 8px 28px rgba(0,0,0,.4);
+  --accent-shadow:rgba(163,163,163,.2); --accent-glow:rgba(163,163,163,.12);
+  --hero-glow:radial-gradient(ellipse 200px 120px at 50% 20%, rgba(163,163,163,.1), transparent);
+  --glass-card-hover-glow:rgba(163,163,163,.1);
+  --version-badge-gradient:linear-gradient(135deg,#a3a3a3,#6f6f6f); --version-badge-shadow:rgba(163,163,163,.3);
+  --update-badge-gradient:linear-gradient(135deg,#9aa0a6,#6b7075); --update-badge-shadow:rgba(154,160,166,.4);
+}
+/* 乙 · 月银（中性底 + 一丝冷银蓝 accent，保住色相线索） */
+[data-theme="graphite-b"] {
+  --accent:#93b4cc; --accent-light:#22303a; --accent-solid:#4d6f88;
+  --accent-strong:#bcd8ec; --text-on-accent:#fff; --accent-border:rgba(147,180,204,.35);
+  --card-selected-bg:#22303a; --card-selected-border:#93b4cc;
+  --card-selected-shadow:0 0 0 3px rgba(147,180,204,.2), 0 8px 28px rgba(0,0,0,.4);
+  --accent-shadow:rgba(147,180,204,.2); --accent-glow:rgba(147,180,204,.12);
+  --hero-glow:radial-gradient(ellipse 200px 120px at 50% 20%, rgba(147,180,204,.1), transparent);
+  --glass-card-hover-glow:rgba(147,180,204,.1);
+  --version-badge-gradient:linear-gradient(135deg,#93b4cc,#4d6f88); --version-badge-shadow:rgba(147,180,204,.3);
+  --update-badge-gradient:linear-gradient(135deg,#7fb6d6,#4d8fb5); --update-badge-shadow:rgba(127,182,214,.4);
+}
+/* 丙 · 琥珀（中性底 + 暖 accent，和现有两套深色的冷色彻底分开） */
+[data-theme="graphite-c"] {
+  --accent:#d9a441; --accent-light:#332409; --accent-solid:#a8762a;
+  --accent-strong:#f0cd8e; --text-on-accent:#1a1204; --accent-border:rgba(217,164,65,.35);
+  --card-selected-bg:#332409; --card-selected-border:#d9a441;
+  --card-selected-shadow:0 0 0 3px rgba(217,164,65,.2), 0 8px 28px rgba(0,0,0,.4);
+  --accent-shadow:rgba(217,164,65,.2); --accent-glow:rgba(217,164,65,.12);
+  --hero-glow:radial-gradient(ellipse 200px 120px at 50% 20%, rgba(217,164,65,.1), transparent);
+  --glass-card-hover-glow:rgba(217,164,65,.1);
+  --version-badge-gradient:linear-gradient(135deg,#d9a441,#a8762a); --version-badge-shadow:rgba(217,164,65,.3);
+  --update-badge-gradient:linear-gradient(135deg,#7fb6d6,#4d8fb5); --update-badge-shadow:rgba(127,182,214,.4);
+}
+
+/* 熊猫立绘染色：每个主题给一组 --pd-*，同一份 SVG 走完全站（实施时即 src/assets/panda-*.svg 的 fill 值） */
+[data-theme="blossom"], .stage[data-theme="blossom"] { --pd-fur:#fff; --pd-line:#c98aa5; --pd-hood:#ffc2da; --pd-ear-in:#ff9dc0; --pd-limb:#4a3540; --pd-blush:rgba(240,86,140,.3); --pd-heart:#f0568c; --pd-heart-line:#c23a6c; --pd-bow:#ff7fb0; --pd-bow-knot:#cdefff; }
+[data-theme="graphite-a"], [data-theme="graphite-b"], [data-theme="graphite-c"] { --pd-fur:#eaeaea; --pd-line:#6f6f6f; --pd-hood:#3a3a3a; --pd-ear-in:#585858; --pd-limb:#2a2a2a; --pd-blush:rgba(255,255,255,.12); --pd-heart:var(--accent); --pd-heart-line:rgba(0,0,0,.3); --pd-bow:#4a4a4a; --pd-bow-knot:#6f6f6f; }
+[data-theme="ocean"] { --pd-fur:#fff; --pd-line:#8aa4b8; --pd-hood:#bfe4f5; --pd-ear-in:#8ecbe8; --pd-limb:#3a4a56; --pd-blush:rgba(2,132,199,.18); --pd-heart:#0284c7; --pd-heart-line:#02618f; --pd-bow:#7cc4e0; --pd-bow-knot:#ffd27a; }
+
+.sizeRow { display:flex; align-items:flex-end; gap:18px; background:#2b3037; border:1px solid #3a414b; border-radius:10px; padding:14px 16px; flex-wrap:wrap; }
+.sizeCell { text-align:center; font-size:10.5px; color:#8b95a3; }
+.sizeCell svg, .sizeCell img { display:block; margin:0 auto 4px; }
+.grpLabel { font-size:10.5px; color:#a8b1bd; margin:0 0 4px; letter-spacing:.4px; }
+</style>
+</head>
+<body>
+
+<!-- ════════ 自有角色：一份 SVG，全站 <use> 引用（实施时落成 src/assets/panda.svg）════════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden>
+  <symbol id="pp-panda" viewBox="0 0 200 200">
+    <g stroke="var(--pd-line)" stroke-width="2.5" stroke-linejoin="round">
+      <circle cx="58" cy="52" r="19" fill="var(--pd-hood)"/>
+      <circle cx="142" cy="52" r="19" fill="var(--pd-hood)"/>
+      <ellipse cx="100" cy="146" rx="44" ry="38" fill="var(--pd-fur)"/>
+      <ellipse cx="74" cy="176" rx="16" ry="11" fill="var(--pd-limb)"/>
+      <ellipse cx="126" cy="176" rx="16" ry="11" fill="var(--pd-limb)"/>
+      <path d="M100 132c-8-11-24-7-24 6 0 11 15 19 24 27 9-8 24-16 24-27 0-13-16-17-24-6z" fill="var(--pd-heart)" stroke="var(--pd-heart-line)" stroke-width="2"/>
+      <ellipse cx="70" cy="147" rx="12" ry="16" fill="var(--pd-limb)" transform="rotate(18 70 147)"/>
+      <ellipse cx="130" cy="147" rx="12" ry="16" fill="var(--pd-limb)" transform="rotate(-18 130 147)"/>
+      <ellipse cx="100" cy="92" rx="55" ry="49" fill="var(--pd-fur)"/>
+      <path d="M100 39c27 0 47 16 54 38-15-10-33-15-54-15s-39 5-54 15c7-22 27-38 54-38z" fill="var(--pd-hood)"/>
+      <path d="M93 44q7-13 14 0" fill="none" stroke-linecap="round"/>
+      <g transform="translate(147 39) rotate(-16)">
+        <path d="M0 0C-9-11-22-8-21 1c-1 9 12 12 21 1z" fill="var(--pd-bow)"/>
+        <path d="M0 0C9-11 22-8 21 1c1 9-12 12-21 1z" fill="var(--pd-bow)"/>
+        <circle r="5" fill="var(--pd-bow-knot)"/>
+      </g>
+      <ellipse cx="78" cy="92" rx="16" ry="18" fill="var(--pd-limb)" transform="rotate(-12 78 92)"/>
+      <ellipse cx="122" cy="92" rx="16" ry="18" fill="var(--pd-limb)" transform="rotate(12 122 92)"/>
+    </g>
+    <g>
+      <circle cx="81" cy="91" r="6" fill="#fff"/><circle cx="82" cy="92" r="3.6" fill="#1a1a1a"/><circle cx="84" cy="89" r="1.7" fill="#fff"/>
+      <circle cx="119" cy="91" r="6" fill="#fff"/><circle cx="118" cy="92" r="3.6" fill="#1a1a1a"/><circle cx="121" cy="89" r="1.7" fill="#fff"/>
+      <ellipse cx="62" cy="107" rx="8" ry="5" fill="var(--pd-blush)" stroke="none"/>
+      <ellipse cx="138" cy="107" rx="8" ry="5" fill="var(--pd-blush)" stroke="none"/>
+      <ellipse cx="100" cy="108" rx="5" ry="3.4" fill="var(--pd-limb)"/>
+    </g>
+    <path d="M100 112v4M100 116q-6 6-11 1M100 116q6 6 11 1" fill="none" stroke="var(--pd-line)" stroke-width="2.2" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<div class="wrap">
+<h1>皮肤整改 · 四项待拍稿</h1>
+<p class="lead">
+基线：<code>src/lib/theme.ts</code> 6 套主题 / <code>src/styles/theme.css</code> 每套约 110 个令牌。
+本稿只解决四件事：① 三丽鸥角色换自有 IP（法务，必做）② 随之改名改文案 ③ 补一套中性深色「石墨」④ 外观页加「跟随系统」。
+所有舞台都跑真 <code>theme.css</code> 令牌 + 逐字搬来的组件样式，颜色不由本稿自造（唯一例外是石墨三变体，见 §3 声明）。
+</p>
+
+<div class="ctl">
+  <span>外壳主题（只影响本稿文档区，不影响舞台）</span>
+  <label><input type="radio" name="shell" value="ocean" checked> 浅色文档</label>
+  <label><input type="radio" name="shell" value="midnight"> 深色文档</label>
+  <span style="border-left:1px solid #4a525c;padding-left:16px">场景动效</span>
+  <label><input type="checkbox" id="pauseAll"> 暂停（模拟 prefers-reduced-motion）</label>
+  <span style="border-left:1px solid #4a525c;padding-left:16px">§4 系统深色列</span>
+  <label><input type="checkbox" id="sysDark"> 模拟系统为深色</label>
+  <span style="border-left:1px solid #4a525c;padding-left:16px">§4 设置页宽度</span>
+  <label><input type="radio" name="w" value="340"> 340</label>
+  <label><input type="radio" name="w" value="800" checked> 800</label>
+  <label><input type="radio" name="w" value="1100"> 1100</label>
+</div>
+
+<h2>§0 · 一页结论</h2>
+<table>
+  <tr><th style="width:13%">决策</th><th style="width:31%">选项</th><th style="width:12%">本稿推荐</th><th>代价 / 风险</th></tr>
+  <tr>
+    <td>① 角色替换<br><span class="mono">必做</span></td>
+    <td><b>甲</b> 自有熊猫立绘（同一份 SVG 全站染色复用）<br><b>乙</b> 去角色化：只留爱心雨 + 蝴蝶结 + 星光</td>
+    <td class="pass">甲</td>
+    <td>乙最省事，但 blossom 会退化成「只有粉色的普通浅色主题」，四个露出点全空掉；甲要画一版资产（本稿已给成品矢量，见 §1）。</td>
+  </tr>
+  <tr>
+    <td>② 改名与文案<br><span class="mono">跟①</span></td>
+    <td>主题名候选：<b>樱粉</b> / <b>蜜桃</b> / <b>粉樱</b>；吉祥物命名 <b>团团</b>（占位，可换）</td>
+    <td class="pass">樱粉 + 团团</td>
+    <td>纯文案，零功能风险。但 <span class="must">HelpTooltip 里「官方立绘」四个字必须删</span>（<code>AppearanceSection.tsx:44</code>），<code>AboutTabContent.tsx:65</code> 的 <code>alt="My Melody"</code> 也要改。</td>
+  </tr>
+  <tr>
+    <td>③ 石墨深色<br><span class="mono">新增</span></td>
+    <td><b>甲</b> 纯中性灰 accent（macOS Graphite 口径）<br><b>乙</b> 中性底 + 月银 accent（一丝冷色）<br><b>丙</b> 中性底 + 琥珀 accent（暖色）</td>
+    <td class="pass">乙</td>
+    <td>甲实测把主按钮白字压到 <span class="fail">3.45:1</span>（本稿 §5 读数会自己算给你看），必须把 <code>--text-on-accent</code> 反色成深字才达标；且选中/聚焦全靠亮度差承重，等于把「色相线索归零」引进产品（同一件事在 <code>design/月白色调对照-色卡稿.html</code> 里已经为月白量过并否决）。乙/丙保住色相，代价是「不算纯灰」。</td>
+  </tr>
+  <tr>
+    <td>④ 跟随系统<br><span class="mono">新增</span></td>
+    <td><b>甲</b> 三档分段（跟随系统 / 固定浅色 / 固定深色）+ 浅深各记一次选择<br><b>乙</b> 一个开关，跟随系统时自动挑「最接近的暗档」</td>
+    <td class="pass">甲</td>
+    <td>乙省不了多少代码，但 4 个浅色 → 2 个暗色的映射不唯一，用户切出来的深色会显得随机（晨曦→? ）。甲要加 2 个配置字段（<code>theme_mode</code> / <code>theme_dark</code>），后端 config 是自由 JSON（Rust 侧无 <code>pub theme</code>），<b>不用改 Rust</b>。</td>
+  </tr>
+</table>
+<p class="note">不做项见 §6 末尾：主题导入 / 社区皮肤 / 逐主题 accent 自定义，本稿一律不提议。</p>
+
+<h2>§1 · 决策①：角色替换（甲 自有熊猫 vs 乙 去角色化）</h2>
+<p class="lead">
+左边是<b>现状</b>（<code>src/assets/melody.png</code>，三丽鸥 My Melody 官方立绘 —— 这就是要被换掉的东西）；
+中间是<b>甲</b>；右边是<b>乙</b>。三个舞台同尺寸 320×430，场景层与卡片层叠关系照 <code>SkinScene.tsx</code> 注释实现（<code>.scene</code> z-index:0 衬在 <code>.inner</code> z-index:1 之后）。
+</p>
+<div class="stages">
+  <div class="col">
+    <div class="colhead"><b>现状 · 三丽鸥立绘</b><span class="k">必须移除</span></div>
+    <div class="stage" data-theme="blossom" data-scene="1" data-base="#ffc9dd">
+      <div class="scene" id="sc-now"></div>
+      <div class="inner">
+        <div class="search">搜索剪贴板…</div>
+        <div class="side"><div class="item active">全部</div><div class="item">代码</div></div>
+        <div class="card">月白卡片示例</div>
+      </div>
+      <img class="pdChar" src="../src/assets/melody.png" alt="" style="right:26px;bottom:60px">
+    </div>
+    <p class="tagline">露出点 6 处（<code>SkinScene:210</code> / <code>Sidebar:332</code> / <code>About:65</code> / <code>AppIcon:20</code> / <code>CardList:723</code> / <code>ErrorBoundary:65</code>）+ <code>MelodyEmpty</code> 组件本身</p>
+  </div>
+  <div class="col">
+    <div class="colhead"><b>甲 · 自有熊猫（推荐）</b><span class="k">同一份 SVG 染色</span></div>
+    <div class="stage" data-theme="blossom" data-scene="1" data-base="#ffc9dd">
+      <div class="scene" id="sc-a"></div>
+      <div class="inner">
+        <div class="search">搜索剪贴板…</div>
+        <div class="side"><div class="item active">全部</div><div class="item">代码</div></div>
+        <div class="card">樱粉卡片示例</div>
+      </div>
+      <svg class="pdChar" viewBox="0 0 200 200" aria-hidden><use href="#pp-panda"/></svg>
+    </div>
+    <p class="tagline">矢量 → 24px 到 132px 都不糊，且能跟着主题换色（下面尺寸带看真实档位）</p>
+  </div>
+  <div class="col">
+    <div class="colhead"><b>乙 · 去角色化</b><span class="k">最省事</span></div>
+    <div class="stage" data-theme="blossom" data-scene="1" data-base="#ffc9dd">
+      <div class="scene" id="sc-b"></div>
+      <div class="inner">
+        <div class="search">搜索剪贴板…</div>
+        <div class="side"><div class="item active">全部</div><div class="item">代码</div></div>
+        <div class="card">樱粉卡片示例</div>
+      </div>
+    </div>
+    <p class="tagline">角色位空出来，只剩粒子。侧栏脚部/关于页/空状态三处要改成纯文字或图标</p>
+  </div>
+</div>
+
+<h3>甲的六个尺寸档（全部用真组件里的实际尺寸，不是示意）</h3>
+<div class="sizeRow" data-theme="blossom">
+  <div class="sizeCell"><svg width="24" height="24" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>24 · AppIcon</div>
+  <div class="sizeCell"><svg width="34" height="34" viewBox="0 0 200 200" class="melodyFootImg" style="width:34px;height:34px"><use href="#pp-panda"/></svg>34 · 侧栏脚部</div>
+  <div class="sizeCell"><svg width="48" height="48" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>48 · MelodyEmpty 小</div>
+  <div class="sizeCell"><svg width="64" height="64" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>64 · AppIcon 大</div>
+  <div class="sizeCell"><svg width="84" height="84" viewBox="0 0 200 200" class="aboutMelody" style="width:84px;height:84px"><use href="#pp-panda"/></svg>84 · 关于页</div>
+  <div class="sizeCell"><svg width="104" height="104" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>104 · 场景立绘</div>
+  <div class="sizeCell"><svg width="132" height="132" viewBox="0 0 200 200" class="emptyMelody" style="width:132px;height:132px"><use href="#pp-panda"/></svg>132 · 列表空状态</div>
+  <div class="sizeCell" style="margin-left:auto;text-align:left;max-width:260px;color:#a8b1bd">
+    同一份 <code>panda.svg</code>，主题色由 <code>--pd-*</code> 六个变量给；月白 / 石墨下的染色对照也在这一行右边两格
+  </div>
+  <div class="sizeCell" data-theme="ocean"><svg width="84" height="84" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>84 · 月白</div>
+  <div class="sizeCell" data-theme="graphite-b"><svg width="84" height="84" viewBox="0 0 200 200"><use href="#pp-panda"/></svg>84 · 石墨乙</div>
+</div>
+<p class="note">
+🔴 一个必须一起决定的点：<code>AppIcon.tsx:20</code> 现在是「blossom 主题下整个 app 图标换成美乐蒂」，包括<b>侧栏顶栏的品牌位</b>。
+换成自有熊猫后这条分支保留还是砍掉？本稿默认<b>保留</b>（换成熊猫粉装版），因为这是 blossom 沉浸感的一部分；砍掉则 blossom 少一个卖点。
+</p>
+
+<h2>§2 · 决策②：改名与文案</h2>
+<table>
+  <tr><th style="width:22%">位置</th><th style="width:39%">现状文案</th><th>拟改</th></tr>
+  <tr><td class="mono">theme.ts:18 displayName</td><td>美乐蒂</td><td><b>樱粉</b>（候选：蜜桃 / 粉樱）</td></tr>
+  <tr><td class="mono">Sidebar.tsx:333</td><td>美乐蒂帮你收着 💗</td><td>团团帮你收着 💗</td></tr>
+  <tr><td class="mono">AppearanceSection.tsx:44</td><td>💡 <b>美乐蒂</b>：甜系卡通粉，爱心雨+<span class="must">官方立绘</span>，少女心爆棚</td><td>💡 <b>樱粉</b>：糖果粉天空，爱心雨 + 自有熊猫陪着你</td></tr>
+  <tr><td class="mono">AboutTabContent.tsx:65</td><td><code>alt="My Melody"</code></td><td><code>alt=""</code>（装饰图，交给旁边的应用名）</td></tr>
+  <tr><td class="mono">theme.css:771 注释</td><td>blossom 美乐蒂（浅色·甜系卡通粉）… 官方美乐蒂立绘</td><td>blossom 樱粉（浅色·糖果粉）… 自有熊猫立绘</td></tr>
+  <tr><td class="mono">Settings.module.css:712</td><td>/* 美乐蒂皮肤 */ <code>:global([data-theme="blossom"])</code></td><td>注释改名；<code>blossom</code> 这个 key 不动（后端存储值，动了要写迁移）</td></tr>
+  <tr><td class="mono">文件名</td><td><code>src/assets/melody.png</code>、<code>src/components/MelodyEmpty.tsx</code>、<code>.melodyHeart/.melodyBow/.melodyChar</code> 等 12 个类名</td><td>统一改 <code>panda</code> / <code>blossom</code> 前缀。key 不动，标识符要动 —— 它们全是 ASCII，不涉及存储契约</td></tr>
+</table>
+<div class="stages" style="margin-top:14px">
+  <div class="col" style="width:260px">
+    <div class="colhead"><b>侧栏脚部 · 现状</b><span class="k">Sidebar:332</span></div>
+    <div class="stage" data-theme="blossom" data-base="#ffe4ef" style="height:96px;padding:0;justify-content:flex-end">
+      <div class="melodyFoot" style="position:relative;z-index:1;width:100%"><img class="melodyFootImg" src="../src/assets/melody.png" alt=""><span class="melodyFootText">美乐蒂帮你收着 💗</span></div>
+    </div>
+  </div>
+  <div class="col" style="width:260px">
+    <div class="colhead"><b>侧栏脚部 · 拟改</b><span class="k">同一份 CSS</span></div>
+    <div class="stage" data-theme="blossom" data-base="#ffe4ef" style="height:96px;padding:0;justify-content:flex-end">
+      <div class="melodyFoot" style="position:relative;z-index:1;width:100%"><svg class="melodyFootImg" viewBox="0 0 200 200" style="width:34px;height:34px"><use href="#pp-panda"/></svg><span class="melodyFootText">团团帮你收着 💗</span></div>
+    </div>
+  </div>
+  <div class="col" style="width:260px">
+    <div class="colhead"><b>预览卡名字在 72px 卡里的表现</b><span class="k">Appearance.module.css:13-68</span></div>
+    <div class="stage" data-theme="blossom" data-base="#ffe4ef" style="height:96px;padding:10px;gap:8px">
+      <div class="themeCard" style="width:72px"><div class="themeCardBar" style="background:#fff;border-bottom:1px solid #f9d3e2"><div class="themeCardDot" style="background:#f0568c"></div><div class="themeCardName" style="color:#86596d">美乐蒂</div></div><div class="themeCardBody" style="background:#ffc9dd"></div></div>
+      <div class="themeCard" style="width:72px"><div class="themeCardBar" style="background:#fff;border-bottom:1px solid #f9d3e2"><div class="themeCardDot" style="background:#f0568c"></div><div class="themeCardName" style="color:#86596d">樱粉</div></div><div class="themeCardBody" style="background:#ffc9dd"></div></div>
+      <div class="themeCard" style="width:72px"><div class="themeCardBar" style="background:#fff;border-bottom:1px solid #f9d3e2"><div class="themeCardDot" style="background:#f0568c"></div><div class="themeCardName" style="color:#86596d">蜜桃粉</div></div><div class="themeCardBody" style="background:#ffc9dd"></div></div>
+    </div>
+    <p class="tagline">CSS 里已写明：3 字名在 11px 下要 33px，卡宽 64→72 就是为它改的（<code>Appearance.module.css:8-11</code>）。改 2 字更宽松，改 3 字持平。</p>
+  </div>
+</div>
+
+<h2>§3 · 决策③：新增中性深色「石墨」</h2>
+<p class="lead">
+立意只有一句：<b>灰阶 R=G=B，不带蓝紫底调</b>。现在两套深色都是高饱和色相底（午夜 <code>#1c1832</code> 紫 / 深海 <code>#0e3355</code> 蓝），嫌蓝紫刺眼的用户没得选。
+石墨<b>不挂 SkinScene</b>（分支表在 <code>SkinScene.tsx</code>，与月白同侧），卡片实底、浮层不模糊 —— 这是代码分支事实，<b>不是性能结论</b>（要宣称省多少开销得另测）。
+</p>
+<div class="stages">
+  <div class="col">
+    <div class="colhead"><b>甲 · 纯中性灰 accent</b><span class="k">#a3a3a3</span></div>
+    <div class="stage" data-theme="graphite-a" data-base="#1f1f1f" data-read="1">
+      <div class="search">搜索剪贴板…</div>
+      <div class="side"><div class="item active">全部</div><div class="item">代码</div><div class="item">图片</div></div>
+      <div class="card">正文 <span style="color:var(--text-secondary)">次要 <span style="color:var(--text-muted)">三级</span></span></div>
+      <div class="card sel">选中卡片</div>
+      <div class="infoBox" data-probe="accent-on-light">accent 压在 accent-light 上</div>
+      <div class="sSegGroup"><button class="sSegText">分段</button><button class="sSegText sSegActive" data-probe="seg-active">激活</button></div>
+      <button class="btnPrimary" data-probe="on-accent">实心主按钮</button>
+      <div style="font-size:10.5px;color:var(--text-muted)" data-probe="muted-on-card">三级文字 11px</div>
+      <div style="margin-top:auto;display:flex;gap:8px;align-items:center"><span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span><span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="colhead"><b>乙 · 月银 accent（推荐）</b><span class="k">#93b4cc</span></div>
+    <div class="stage" data-theme="graphite-b" data-base="#1f1f1f" data-read="1">
+      <div class="search">搜索剪贴板…</div>
+      <div class="side"><div class="item active">全部</div><div class="item">代码</div><div class="item">图片</div></div>
+      <div class="card">正文 <span style="color:var(--text-secondary)">次要 <span style="color:var(--text-muted)">三级</span></span></div>
+      <div class="card sel">选中卡片</div>
+      <div class="infoBox" data-probe="accent-on-light">accent 压在 accent-light 上</div>
+      <div class="sSegGroup"><button class="sSegText">分段</button><button class="sSegText sSegActive" data-probe="seg-active">激活</button></div>
+      <button class="btnPrimary" data-probe="on-accent">实心主按钮</button>
+      <div style="font-size:10.5px;color:var(--text-muted)" data-probe="muted-on-card">三级文字 11px</div>
+      <div style="margin-top:auto;display:flex;gap:8px;align-items:center"><span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span><span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="colhead"><b>丙 · 琥珀 accent</b><span class="k">#d9a441</span></div>
+    <div class="stage" data-theme="graphite-c" data-base="#1f1f1f" data-read="1">
+      <div class="search">搜索剪贴板…</div>
+      <div class="side"><div class="item active">全部</div><div class="item">代码</div><div class="item">图片</div></div>
+      <div class="card">正文 <span style="color:var(--text-secondary)">次要 <span style="color:var(--text-muted)">三级</span></span></div>
+      <div class="card sel">选中卡片</div>
+      <div class="infoBox" data-probe="accent-on-light">accent 压在 accent-light 上</div>
+      <div class="sSegGroup"><button class="sSegText">分段</button><button class="sSegText sSegActive" data-probe="seg-active">激活</button></div>
+      <button class="btnPrimary" data-probe="on-accent">实心主按钮</button>
+      <div style="font-size:10.5px;color:var(--text-muted)" data-probe="muted-on-card">三级文字 11px</div>
+      <div style="margin-top:auto;display:flex;gap:8px;align-items:center"><span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span><span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="colhead"><b>对照 · 午夜（现状深色）</b><span class="k">读数是给你比着的</span></div>
+    <div class="stage" data-theme="midnight" data-base="#18181b" data-read="1">
+      <div class="search">搜索剪贴板…</div>
+      <div class="side"><div class="item active">全部</div><div class="item">代码</div><div class="item">图片</div></div>
+      <div class="card">正文 <span style="color:var(--text-secondary)">次要 <span style="color:var(--text-muted)">三级</span></span></div>
+      <div class="card sel">选中卡片</div>
+      <div class="infoBox" data-probe="accent-on-light">accent 压在 accent-light 上</div>
+      <div class="sSegGroup"><button class="sSegText">分段</button><button class="sSegText sSegActive" data-probe="seg-active">激活</button></div>
+      <button class="btnPrimary" data-probe="on-accent">实心主按钮</button>
+      <div style="font-size:10.5px;color:var(--text-muted)" data-probe="muted-on-card">三级文字 11px</div>
+      <div style="margin-top:auto;display:flex;gap:8px;align-items:center"><span class="sToggle on"><span class="sToggleThumb"></span><span class="sToggleLabel">开</span></span><span class="sToggle off"><span class="sToggleThumb"></span><span class="sToggleLabel">关</span></span></div>
+    </div>
+  </div>
+</div>
+<p class="note">§5 的读数表会对这四个舞台各跑一遍同一组探针（WCAG 相对亮度实算，不是目测）。甲的 <code>on-accent</code> 那一行是本稿最想让你看的数字。</p>
+
+<h2>§4 · 决策④：跟随系统 + 主题网格 6→7</h2>
+<p class="lead">
+下面是<b>真设置页 markup</b>（<code>.sSection / .sRow / .sRowIcon / .sSegGroup / .themeGrid</code> 全部逐字搬），宽度由上方控件切 340 / 800 / 1100。
+新增一行「主题模式」放在「主题配色」<b>之上</b>；配色网格按浅/深分两组，石墨进深组。
+</p>
+<div id="sec4Host" style="width:1160px">
+  <div>
+    <div class="colhead"><b>外观页 · 拟改后</b><span class="k">定宽容器 · 与浏览器视口无关，见 §5 几何表</span></div>
+    <div id="settingsHost" style="width:800px;min-width:800px;transition:width .2s">
+      <div data-theme="ocean" id="settingsStage">
+        <div class="sSection">外观</div>
+        <div class="sRow">
+          <span class="sRowIcon"><span class="sRowIconGlyph">🌗</span></span>
+          <div class="sRowBody">
+            <div class="sRowLabel">主题模式<span class="sRowRecommend">⭐推荐</span></div>
+            <div class="sRowDesc" id="modeDesc">界面深浅跟随 Windows 的「颜色 → 应用」设置切换</div>
+          </div>
+          <div class="sSegGroup" id="modeSeg">
+            <button class="sSegText sSegActive" data-mode="system">跟随系统</button>
+            <button class="sSegText" data-mode="light">固定浅色</button>
+            <button class="sSegText" data-mode="dark">固定深色</button>
+          </div>
+        </div>
+        <div class="sRow" style="flex-direction:column;align-items:stretch;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="sRowIcon"><span class="sRowIconGlyph">🎨</span></span>
+            <div class="sRowBody">
+              <div class="sRowLabel">主题配色</div>
+              <div class="sRowDesc" id="gridDesc">浅色与深色各记一次选择，跟随系统时按当前深浅生效</div>
+            </div>
+          </div>
+          <div>
+            <div class="grpLabel">浅色</div>
+            <div class="themeGrid" data-stack="true" id="gridLight"></div>
+          </div>
+          <div>
+            <div class="grpLabel">深色</div>
+            <div class="themeGrid" data-stack="true" id="gridDark"></div>
+          </div>
+        </div>
+        <div class="sRow" style="border-radius:0 0 12px 12px;box-shadow:var(--glass-card-elev)">
+          <span class="sRowIcon"><span class="sRowIconGlyph">📑</span></span>
+          <div class="sRowBody"><div class="sRowLabel">标签样式</div><div class="sRowDesc">切换筛选标签的显示风格</div></div>
+          <button class="sVal">分段控件</button>
+        </div>
+      </div>
+    </div>
+    <p class="tagline" id="geoLine">几何实测：…</p>
+  </div>
+</div>
+
+<h3>状态机（拟实现，待拍）</h3>
+<table>
+  <tr><th style="width:16%">theme_mode</th><th style="width:14%">系统深浅</th><th style="width:20%">生效主题</th><th>写入的 key</th></tr>
+  <tr><td class="mono">system</td><td>浅</td><td><code>theme</code>（浅槽）</td><td rowspan="2">点浅组卡 → 写 <code>theme</code>；点深组卡 → 写 <code>theme_dark</code>。<b>两槽互不覆盖</b>，所以「跟着系统来回切」不会丢选择。</td></tr>
+  <tr><td class="mono">system</td><td>深</td><td><code>theme_dark</code>（深槽）</td></tr>
+  <tr><td class="mono">light / dark</td><td>忽略</td><td>固定读对应槽</td><td>同上；系统改深浅不影响界面。</td></tr>
+</table>
+<p class="note">
+技术前提（已核，不是猜）：<code>@tauri-apps/api 2.11.1</code> 有 <code>window.onThemeChanged()</code> 与 <code>window.theme()</code>（<code>node_modules/@tauri-apps/api/window.d.ts:519 / 1323</code>），
+初始值用 <code>theme()</code> 读、运行中用 <code>onThemeChanged</code> 跟。<b>后端不用改</b>：config 是自由 JSON，Rust 侧没有 <code>pub theme</code> 字段；
+新值进 store 时照旧过 <code>normalizeTheme()</code>（<code>theme.ts:32</code> 那条历史兜底正是为脏值准备的）。
+</p>
+
+<h2>§5 · 自动读数（页面加载后 rAF 实测，不是目测）</h2>
+<h3>对比度（WCAG 2.2 相对亮度实算 · 阈值取 U7：正文 ≥4.5，大字/图标/边框 ≥3）· <span id="contrastCount" class="mono">…</span></h3>
+<p class="note">探针成对写死（前景令牌 vs 背景令牌），不靠 DOM 猜背景。四个舞台：石墨甲/乙/丙 + 现状午夜对照 —— 午夜的数字是给你比着看「新主题有没有比现状更差」，本批不修它。</p>
+<table id="contrastTable"><tr><th>主题</th><th>探针</th><th>前景</th><th>背景</th><th>比值</th><th>阈值</th><th>判定</th></table>
+<p class="note">
+读出来的四件事，逐条对着上面的数字看：<br>
+① <b>甲（纯中性）的白字压不住</b>：<code>#fff</code> on <code>#8a8a8a</code> = <span class="fail">3.45</span>，所以 <code>--text-on-accent</code> 必须反色成 <code>#111</code>（实装行 <span class="pass">5.47</span>）。丙同理（<span class="fail">3.97</span> → 反色后 <span class="pass">4.67</span>）。乙不需要（白字 <span class="pass">5.32</span>）。<br>
+② <b>分段激活标签原来全不过</b>：<code>--seg-active-bg</code> 取 <code>#454545</code> 时三档是 3.80 / 4.40 / 4.26，降到 <code>#383838</code> 后 4.65 / 5.38 / 5.21 全过 —— 这一条是本稿量出来才改的，不是先定后验。<br>
+③ <b>现状午夜的同一探针是 <span class="fail">3.50</span></b>（分段激活 <code>#818cf8</code> on <code>#3f3f46</code>）。这是存量欠账，本批不修，只记一笔，免得石墨被当成唯一有问题的深色。<br>
+④ <b>卡片描边 1.21 是参考项不是判定项</b>：U7 的 3:1 管「靠边框才能识别控件」（输入框 / 复选框）；卡片分层靠底色差 + 阴影（V1），描边不承担识别，所以它和现状午夜的 1.19 一起列「参考」。
+</p>
+<h3>几何（主题网格换行与首卡左偏 · 对应 <code>AppearanceSection.tsx:50-54</code> 那条 data-stack 注释）</h3>
+<table id="geoTable"><tr><th>容器宽</th><th>浅组行数</th><th>深组行数</th><th>每行卡数（浅/深）</th><th>实测卡宽</th><th>压缩量</th><th>首卡左偏移</th><th>是否溢出</th></tr></table>
+<p class="note" id="geoNote">这张表是 7 张卡（4 浅 + 3 深）的排布实测，三档宽度各量一次。<b>结论：不需要给 <code>.themeCard</code> 补 <code>flex-shrink:0</code></b> —— 340 档浅组是自己换行成 2 行（3+1），压缩量 0.00px，说明 <code>flex-wrap</code> 先于收缩发生，卡片不会被压扁。首卡左偏移 −1px 是卡片自身那圈 <code>border:2px solid transparent</code> 的量，不是 <code>AppearanceSection.tsx:50-54</code> 那条 <code>data-stack</code> 注释管的对齐 bug（那个 bug 的表现是偏 42px / 262px）。<br>🔴 这条读数是修出来的：第一次量时三档全报 800px、压缩 0.00，因为 <code>#settingsHost</code> 带 <code>transition:width .2s</code>，同一 task 里改完宽度立刻读，读到的是动画中间帧。关掉 transition 才拿到上面的真值。</p>
+
+<h2>§6 · 实施清单（拍板后才动）</h2>
+<table>
+  <tr><th style="width:9%">决策</th><th style="width:34%">文件</th><th>动作</th></tr>
+  <tr><td>① 角色</td><td><code>src/assets/panda.svg</code>（新）· 删 <code>melody.png</code></td><td>成品矢量入仓；<code>MelodyEmpty.tsx → BlossomPanda.tsx</code>；6 个引用点改 <code>&lt;svg&gt;&lt;use&gt;</code> 或 <code>import</code> SVG；<code>SkinScene.module.css</code> 12 个 <code>.melody*</code> 类名改前缀</td></tr>
+  <tr><td>① 角色</td><td><code>src-tauri/icons/</code> · <code>public/icon.png</code></td><td><b>本稿不动</b>：现有 P 形图标与三丽鸥无关，替换角色不影响安装图标</td></tr>
+  <tr><td>② 文案</td><td><code>theme.ts:18</code> · <code>Sidebar.tsx:333</code> · <code>AppearanceSection.tsx:37-45</code> · <code>AboutTabContent.tsx:65</code> · <code>theme.css:771</code></td><td>改名 + 删「官方立绘」；<code>blossom</code> key 保持不动</td></tr>
+  <tr><td>③ 石墨</td><td><code>theme.css</code>（新块）· <code>theme.ts</code>（第 7 套）· <code>AppearanceSection.tsx</code>（<code>THEME_PREVIEWS</code> 加一条）· <code>theme.test.ts</code>（6→7、暗色名单）· <code>SkinScene.tsx</code>（确认不挂分支）</td><td>完整字面 token 集（与 midnight 同构，约 70 条 + <code>:root</code> 派生）</td></tr>
+  <tr><td>④ 跟随系统</td><td><code>theme.ts</code>（新增 <code>resolveEffectiveTheme()</code> 收口，规则 11.1）· <code>appStore.ts</code>（<code>theme_mode</code>/<code>theme_dark</code> + 默认值）· <code>AppearanceSection.tsx</code>（新行 + 分组网格）· App 挂载处订阅 <code>onThemeChanged</code></td><td>「亮暗判定」继续走唯一入口 <code>isDarkTheme()</code>（<code>theme.ts:44</code>，注释里已写明它是 4 个调用点的收口）</td></tr>
+  <tr><td>守卫</td><td><code>src/__tests__/themeTokensParity.test.ts</code>（新）</td><td>解析 <code>theme.css</code>，断言 7 个主题块的 token 集一致（差集非空即红），并<b>先喂一个反例证明它会红</b>再交付</td></tr>
+</table>
+<p class="note">
+<b>不做</b>：主题导入 / 社区皮肤 / 逐主题 accent 自定义（七套 × 约 110 token 的手工同步成本，本稿 §3 已经演示过一遍是什么感觉）。<br>
+<b>版本号</b>：本批不动（规则 2）。<b>提交</b>：等你说（规则 5）。
+</p>
+</div>
+
+<script>
+/* ── 场景粒子：参数照 SkinScene.tsx:70-100 的 useMemo 取值（爱心 10 颗 / 蝴蝶结 5 个 / 星光若干）── */
+const rnd = n => Math.random() * n;
+const HEART_D = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
+const BOW = (c,k) => `<path d="M24 15 C14 4, 3 6, 4 15 C3 24, 14 26, 24 15 Z" fill="${c}"/><path d="M24 15 C34 4, 45 6, 44 15 C45 24, 34 26, 24 15 Z" fill="${c}"/><circle cx="24" cy="15" r="4.5" fill="${k}"/>`;
+const SPARK = "M12 0l2.5 9.5L24 12l-9.5 2.5L12 24l-2.5-9.5L0 12l9.5-2.5z";
+function buildScene(el, withChar) {
+  let h = "";
+  for (let i = 0; i < 10; i++) {
+    const size = 10 + rnd(12), dur = 8 + rnd(8), delay = -rnd(14);
+    const color = ["#FF7BAC","#FFA5C6","#FF6FA5","#FF8BB4"][Math.floor(rnd(4))];
+    h += `<svg class="pdHeart" style="left:${rnd(100)}%;width:${size}px;height:${size}px;animation-duration:${dur}s;animation-delay:${delay}s" viewBox="0 0 24 24"><path fill="${color}" d="${HEART_D}"/></svg>`;
+  }
+  for (let i = 0; i < 5; i++) {
+    const blue = Math.random() < .4;
+    h += `<svg class="pdBow" style="left:${rnd(90)}%;top:${rnd(80)}%;width:${18+rnd(16)}px;animation-delay:${-rnd(7)}s" viewBox="0 0 48 30">${BOW(blue?"#BFE4F5":"#FF9DC0", blue?"#8ECBE8":"#F0568C")}</svg>`;
+  }
+  for (let i = 0; i < 8; i++) {
+    h += `<svg class="pdSpark" style="left:${rnd(96)}%;top:${rnd(92)}%;width:${6+rnd(8)}px;animation-delay:${-rnd(2.8)}s" viewBox="0 0 24 24"><path fill="#fff" d="${SPARK}"/></svg>`;
+  }
+  el.innerHTML = h;
+}
+buildScene(document.getElementById("sc-now"), false);
+buildScene(document.getElementById("sc-a"), true);
+buildScene(document.getElementById("sc-b"), false);
+
+/* ── 外壳主题 / 暂停 / 系统深色列 / 宽度档 ── */
+const shell = document.querySelector('input[name=shell]');
+document.querySelectorAll('input[name=shell]').forEach(r => r.onchange = () => document.documentElement.setAttribute("data-theme", r.value));
+document.getElementById("pauseAll").onchange = e =>
+  document.querySelectorAll(".scene").forEach(s => s.classList.toggle("paused", e.target.checked));
+
+const LIGHT = [
+  { key:"ocean",      name:"月白",   bg:"#F4F6F9", accent:"#0284C7", text:"#64748B", bar:"#fff", body:"linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%)", line:"#E0E4EB" },
+  { key:"forest",     name:"森林",   bg:"#F2F7F5", accent:"#059669", text:"#78716C", bar:"#fff", body:"linear-gradient(180deg,#f5f1e3 0%,#eae5d1 55%,#dcd6bd 100%)", line:"#D1D9D3" },
+  { key:"blossom",    name:"樱粉",   bg:"#FFF7FA", accent:"#F0568C", text:"#86596D", bar:"#fff", body:"linear-gradient(168deg,#ffe4ef 0,#ffc9dd 42%,#ffaecf 78%,#ff9bc4 100%)", line:"#F9D3E2" },
+  { key:"dawn",       name:"晨曦",   bg:"#FFF4E6", accent:"#E8734A", text:"#A08C72", bar:"#fff", body:"linear-gradient(180deg,#fff8ee 0,#ffe9d2 42%,#ffd9ae 72%,#f9c78f 100%)", line:"#F0DDC8" },
+];
+const DARK = [
+  { key:"midnight",   name:"午夜",   accent:"#818CF8", text:"#A1A1AA", bar:"#18181B", body:"radial-gradient(100% 80% at 50% -10%,#1c1832 0%,#0b0b13 55%,#07070c 100%)", line:"#27272A" },
+  { key:"ocean-dark", name:"深海",   accent:"#3B9EFF", text:"#8BA4C0", bar:"#0A1628", body:"radial-gradient(130% 120% at 70% -5%,#14415F 0%,#0A2440 45%,#041225 100%)", line:"#162B45" },
+  { key:"graphite-b", name:"石墨",   accent:"#93B4CC", text:"#9a9a9a", bar:"#1f1f1f", body:"linear-gradient(180deg,#1c1c1c 0%,#151515 55%,#101010 100%)", line:"#2e2e2e" },
+];
+let slotLight = "ocean", slotDark = "graphite-b", mode = "system";
+function renderGrids() {
+  const mk = (list, slot, onPick) => list.map(t => {
+    const on = slot === t.key;
+    return `<button class="themeCard${on ? " themeCardOn" : ""}" title="${t.name}" aria-pressed="${on}">
+      <div class="themeCardBar" style="background:${t.bar};border-bottom:1px solid ${t.line}">
+        <div class="themeCardDot" style="background:${t.accent}"></div>
+        <div class="themeCardName" style="color:${t.text}">${t.name}</div>
+      </div>
+      <div class="themeCardBody" style="background:${t.body}">
+        <div class="themeCardLine" style="background:${t.bar};width:100%;border:1px solid ${t.line}"></div>
+        <div class="themeCardLine" style="background:${t.line};width:70%"></div>
+        <div class="themeCardLine" style="background:${t.accent};width:45%"></div>
+        ${t.key === "blossom" ? '<span class="themeCardHeart">💗</span>' : ""}
+      </div></button>`;
+  });
+  const gl = document.getElementById("gridLight"), gd = document.getElementById("gridDark");
+  gl.innerHTML = mk(LIGHT).join(""); gd.innerHTML = mk(DARK).join("");
+  [...gl.children].forEach((b, i) => b.onclick = () => { slotLight = LIGHT[i].key; if (mode !== "dark") paint(); });
+  [...gd.children].forEach((b, i) => b.onclick = () => { slotDark = DARK[i].key; if (mode !== "light") paint(); });
+}
+function paint() {
+  const sysDark = document.getElementById("sysDark").checked;
+  const eff = mode === "system" ? (sysDark ? slotDark : slotLight) : (mode === "light" ? slotLight : slotDark);
+  const stage = document.getElementById("settingsStage");
+  stage.setAttribute("data-theme", eff.startsWith("graphite") ? "graphite-b" : eff);
+  document.getElementById("modeDesc").textContent = mode === "system"
+    ? `界面深浅跟随 Windows 设置 · 当前系统为${sysDark ? "深色" : "浅色"}，生效：${nameOf(eff)}`
+    : `忽略系统深浅，固定使用${mode === "light" ? "浅色" : "深色"}槽 · 生效：${nameOf(eff)}`;
+  document.getElementById("gridDesc").textContent = mode === "system"
+    ? "浅色与深色各记一次选择，跟随系统时按当前深浅生效"
+    : "另一组的选择不生效，但会记住，切回跟随系统时立即用得上";
+  renderGrids();
+  requestAnimationFrame(measure);
+}
+function nameOf(k) { return [...LIGHT, ...DARK].find(t => t.key === k)?.name ?? k; }
+document.querySelectorAll("#modeSeg .sSegText").forEach(b => b.onclick = () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll("#modeSeg .sSegText").forEach(x => x.classList.toggle("sSegActive", x === b));
+  paint();
+});
+document.getElementById("sysDark").onchange = paint;
+document.querySelectorAll('input[name=w]').forEach(r => r.onchange = () => {
+  document.getElementById("settingsHost").style.width = r.value + "px";
+  requestAnimationFrame(measure);
+});
+
+/* ── 对比度实算：WCAG 2.2 相对亮度；背景沿祖先链合成到不透明 ── */
+const parse = s => { const m = (s || "").match(/[\d.]+/g); return m ? [ +m[0], +m[1], +m[2], m[3] === undefined ? 1 : +m[3] ] : null; };
+const lum = ([r,g,b]) => { const f = c => { c /= 255; return c <= .04045 ? c/12.92 : Math.pow((c+.055)/1.055, 2.4); }; return .2126*f(r)+.7152*f(g)+.0722*f(b); };
+const ratio = (a, b) => { const l1 = lum(a), l2 = lum(b); return (Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05); };
+/* 探针表：每套主题跑同一组「前景令牌 vs 背景令牌」，成对写死而不是从 DOM 猜背景
+   （上一版沿祖先链合成背景，算出过 #000000 这种假读数，已废）。
+   阈值取 U7：正文 ≥4.5，大字/图标/边框 ≥3。
+   最后一条是**反证探针**：故意拿白字压 --accent-solid，用来钉住「甲为什么必须把
+   --text-on-accent 反色成深字」这句话——它不达标是设计意图，不是缺陷。 */
+const PROBES = [
+  ["正文文字",        "--text-primary",   "--card-bg",       4.5],
+  ["次要文字",        "--text-secondary", "--card-bg",       4.5],
+  ["三级文字 11px",   "--text-muted",     "--card-bg",       4.5],
+  ["侧栏选中项",      "--accent-strong",  "--accent-light",  4.5],
+  ["分段激活标签",    "--accent",         "--seg-active-bg", 4.5],
+  ["主按钮文字(实装)", "--text-on-accent", "--accent-solid",  4.5],
+  ["卡片描边（参考项·非判定）", "--card-border", "--card-bg", 0],
+  ["accent 图标压卡面", "--accent",       "--card-bg",       3],
+  ["反证·白字压 accent-solid", "#ffffff", "--accent-solid",  4.5],
+];
+const hex = c => "#" + [0,1,2].map(i => Math.round(c[i]).toString(16).padStart(2,"0")).join("");
+function readContrast() {
+  const rows = [];
+  document.querySelectorAll(".stage[data-read]").forEach(stage => {
+    const label = stage.closest(".col")?.querySelector(".colhead b")?.textContent ?? stage.dataset.theme;
+    const host = document.createElement("div");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "position:absolute;left:-9999px;top:0;width:1px;height:1px";
+    stage.appendChild(host);
+    for (const [name, fgRef, bgRef, need] of PROBES) {
+      const el = document.createElement("span");
+      el.style.color = fgRef.startsWith("--") ? `var(${fgRef})` : fgRef;
+      el.style.background = bgRef.startsWith("--") ? `var(${bgRef})` : bgRef;
+      host.appendChild(el);
+      const cs = getComputedStyle(el);
+      const fg = parse(cs.color), bg = parse(cs.backgroundColor);
+      if (!fg || !bg || [...fg, ...bg].some(v => Number.isNaN(v))) {
+        rows.push([label, name, "解析失败", "解析失败", "—", need, false]);
+        continue;
+      }
+      const r = ratio(fg, bg);
+      const ok = need === 0 ? null : r >= need;
+      rows.push([label, name, hex(fg), hex(bg), r.toFixed(2), need === 0 ? "—" : need, ok]);
+    }
+    host.remove();
+  });
+  const tb = document.getElementById("contrastTable");
+  tb.innerHTML = "<tr><th>舞台</th><th>探针</th><th>前景</th><th>背景</th><th>比值</th><th>阈值</th><th>判定</th></tr>" +
+    rows.map(r => `<tr><td>${r[0]}</td><td class="mono">${r[1]}</td><td class="mono">${r[2]}</td><td class="mono">${r[3]}</td><td class="mono">${r[4]}</td><td class="mono">${r[5]}</td><td class="${r[6] === null ? "" : r[6] ? "pass" : "fail"}" style="${r[6] === null ? "color:#8b95a3" : ""}">${r[6] === null ? "参考" : r[6] ? "达标" : "不达标"}</td></tr>`).join("");
+  document.getElementById("contrastCount").textContent =
+    `${rows.length} 条 · 判为不达标 ${rows.filter(r => r[6] === false).length} 条 —— 逐条解释见下方 ①②③`;
+}
+
+/* ── 几何实量：主题网格在 340 / 800 / 1100 三档定宽容器下的行数、每行卡数、首卡左偏、溢出 ── */
+function measure() {
+  const host = document.getElementById("settingsHost");
+  const gl = document.getElementById("gridLight"), gd = document.getElementById("gridDark");
+  const saved = host.style.width;
+  /* 🔴 必须临时关掉 transition：#settingsHost 带 `transition:width .2s`，
+     同一个 task 里改完 width 立刻量，读到的是**动画中间帧**（实测三档全读到 800px，
+     于是「4 卡一行、压缩 0px」全是假数字）。 */
+  const savedTransition = host.style.transition;
+  host.style.transition = "none";
+  const stat = g => {
+    const cards = [...g.children];
+    if (!cards.length) return { rows: 0, perRow: 0, offset: 0, over: false };
+    const tops = new Set(cards.map(c => Math.round(c.getBoundingClientRect().top)));
+    const first = cards[0].getBoundingClientRect();
+    const row = g.closest(".sRow");
+    const rr = row.getBoundingClientRect(), pad = parseFloat(getComputedStyle(row).paddingLeft);
+    const innerRight = rr.right - parseFloat(getComputedStyle(row).paddingRight);
+    return { rows: tops.size, cw: first.width, perRow: cards.filter(c => Math.round(c.getBoundingClientRect().top) === Math.round(first.top)).length,
+             offset: +(rr.left + pad - first.left).toFixed(1),
+             over: [...cards].some(c => c.getBoundingClientRect().right > innerRight + 1) };
+  };
+  const out = [];
+  for (const w of [340, 800, 1100]) {
+    host.style.width = w + "px";
+    host.style.minWidth = w + "px";
+    const a = stat(gl), b = stat(gd);
+    out.push([w, a.rows, b.rows, `${a.perRow} / ${b.perRow}`, `${a.cw.toFixed(2)}px`, `${(72 - a.cw).toFixed(2)}px`, `${a.offset}px`, (a.over || b.over) ? "是" : "否"]);
+  }
+  const shown = (() => { host.style.width = saved; host.style.minWidth = ""; host.style.transition = savedTransition; return { a: stat(gl), b: stat(gd) }; })();
+  document.getElementById("geoLine").textContent =
+    `当前容器 ${saved} · 浅组 ${shown.a.rows} 行×${shown.a.perRow} 卡 · 深组 ${shown.b.rows} 行×${shown.b.perRow} 卡 · 首卡左偏 ${shown.a.offset}px · ${shown.a.over || shown.b.over ? "有溢出" : "无溢出"}`;
+  const t = document.getElementById("geoTable");
+  t.innerHTML = "<tr><th>容器宽</th><th>浅组行数</th><th>深组行数</th><th>每行卡数（浅/深）</th><th>实测卡宽</th><th>压缩量</th><th>首卡左偏移</th><th>是否溢出</th></tr>" +
+    out.map(r => `<tr>${r.map(c => `<td class="mono">${c}</td>`).join("")}</tr>`).join("");
+}
+
+paint();
+/* 脚本已在 </body> 前，布局可用 → 直接量一次；再补双 rAF，字体到位后数字若有微变就刷新 */
+readContrast(); measure();
+requestAnimationFrame(() => requestAnimationFrame(() => { readContrast(); measure(); }));
+
+</script>
+</body>
+</html>

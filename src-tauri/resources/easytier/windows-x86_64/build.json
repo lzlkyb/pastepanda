@@ -1,0 +1,22 @@
+{
+  "source": "https://codeload.github.com/EasyTier/EasyTier/zip/refs/tags/v2.6.4",
+  "source_sha256": "b08ecc378b7ad679b3f4188fa5b9f6417670b5e3c1e5f53b2f19d06c021814cb",
+  "features": [
+    "wireguard",
+    "smoltcp",
+    "socks5",
+    "websocket"
+  ],
+  "default_features": false,
+  "recipe": "scripts/build-easytier.py",
+  "versions": {
+    "easytier-core.exe": "easytier-core 2.6.4-pp-underlay",
+    "easytier-cli.exe": "easytier-cli 2.6.4-pp-underlay"
+  },
+  "windows_punch_pace_sha256": "56231336238b45caaf05a0d7ab71f5f1305fbde5b76a8661e77a8955428848f1",
+  "pnet_datalink_source_sha256": "e79e70ec0be163102a332e1d2d5586d362ad76b01cec86f830241f2b6452a7b7",
+  "sha256": {
+    "easytier-core.exe": "c23e84b67a699df78e256c45b6364990c0f2b50223a4611e2fee7dca7f21da70",
+    "easytier-cli.exe": "4dc14db15ca8291a6c8f0d33e8c468035d430d28c59a88cdccf769da1990ce15"
+  }
+}

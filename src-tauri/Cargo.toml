@@ -16,6 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+easytier-underlay = []
+
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "devtools", "protocol-asset"] }
 tauri-plugin-opener = "2"
@@ -67,6 +70,8 @@ ring = "0.17"
 iroh = { version = "1.1", default-features = false, features = [
     "tls-ring",
     "portmapper",
+    # 只开放已有探测结果的 watcher，不新增探测器或端点。
+    "unstable-net-report",
 ] }
 # 局域网发现要「逐块网卡收发组播」（见 lan_sync::multicast_ifaces 的注释）：
 #   netdev  —— 枚举本机网卡
@@ -97,6 +102,8 @@ chardetng = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 # v6.10 流式输出：SSE 逐块解析（reqwest bytes_stream 的 StreamExt）
 futures-util = "0.3"
+# Android 自更新（方案甲）：apk 下载后按 manifest sha256 校验完整性
+sha2 = "0.10"
 # 知识库 MCP Server（M4）的 HTTP 传输层。MCP 协议本身是手写的（src/mcp/protocol.rs），
 # 不引任何 MCP SDK；axum 只管 HTTP。
 # 体积：hyper / tower / http 已由 reqwest 带进 Cargo.lock，实测 axum 只增 ~160 KB、
@@ -162,6 +169,7 @@ tiny_http = "0.12"
 # 一条测试都跑不了）。MCP 过线测试因此不用 mock_app，见 src/mcp/tests.rs。
 
 [target.'cfg(windows)'.dependencies]
+pastepanda-rc-scale = { path = "crates/rc-scale" }
 windows = { version = "0.58", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
@@ -233,6 +241,17 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
+# 实时缩放的 SIMD 热路径需要优化；只优化该依赖，保留主工程 dev 调试能力。
+[profile.dev.package.fast_image_resize]
+opt-level = 3
+
+# 卷积是泛型，实例化发生在调用方；仅优化依赖无法优化主工程的实例化。
+[profile.dev.package.pastepanda-rc-scale]
+opt-level = 3
+
+[profile.release.package.pastepanda-rc-scale]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = "fat"
@@ -251,3 +270,6 @@ panic = "unwind"
 # 不再联网下载。
 [patch.crates-io]
 ocr-rs = { path = "vendor/ocr-rs" }
+
+# Keep iroh and the application on one noq-proto type, with the tested BBR backport.
+noq-proto = { path = "vendor/noq-proto" }

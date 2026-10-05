@@ -126,12 +126,16 @@ fn loss_码率缩放分档() {
     assert_eq!(bitrate_scale_for_loss(70), 40);
     assert_eq!(bitrate_scale_for_loss(200), 25);
     // RTT 满速但丢包高 → 取更差的那条
+    // 🔴 user 显式钉 100：本测试只验证 auto 分层判据，不掺默认 200（那个在
+    // `码率倍率默认200_与自动缩放相乘_越界被拒` 里钉）
     let s = c();
+    s.set_user_bitrate_pct(100).expect("合法");
     s.set_peer_rtt(10);
     s.note_stream_health(10, 60, 0);
     assert_eq!(s.bitrate_scale(), 40);
     // 只有 RTT 时不受 loss 影响（未采样 = 0 = 满速）
     let s2 = c();
+    s2.set_user_bitrate_pct(100).expect("合法");
     s2.set_peer_rtt(300);
     assert_eq!(s2.bitrate_scale(), 40, "rtt 200~399 档 = 40%");
 }
@@ -145,32 +149,73 @@ fn rtt_码率缩放分档() {
     assert_eq!(bitrate_scale_for_rtt(250), 40);
     assert_eq!(bitrate_scale_for_rtt(800), 25);
     let s = c();
+    s.set_user_bitrate_pct(100).expect("合法"); // 只测 auto 分层，见 loss 同款注释
     assert_eq!(s.set_peer_rtt(200), 40);
     assert_eq!(s.bitrate_scale(), 40);
 }
 
 #[test]
-fn 码率倍率与自动缩放相乘_越界被拒() {
+fn 码率倍率默认200_与自动缩放相乘_越界被拒() {
     let s = c();
-    // 默认 100：与既有行为完全一致（不干预）
-    assert_eq!(s.set_peer_rtt(300), 40);
-    assert_eq!(s.bitrate_scale(), 40);
-    // 乘法语义：弱网 40% × 用户 200% = 80%（抬天花板但仍在保护内）
-    s.set_user_bitrate_pct(200).expect("合法");
+    // 🔴 默认 200（2026-10-02 用户拍板「最高档起步，弱网自动降」）：
+    // 未测通不能按高速 LAN 起步；收到健康样本后尊重默认倍率。
+    assert_eq!(s.bitrate_scale(), 25, "未知链路保守起播");
+    s.set_user_bitrate_pct(200).unwrap();
+    assert_eq!(s.bitrate_scale(), 25, "倍率不能绕过未知链路保护");
+    s.set_peer_rtt(10);
+    assert_eq!(s.bitrate_scale(), 200, "健康链路恢复默认倍率");
+    // 弱网自动压回：40% × 200% = 80%——抬天花板但弱网保护不被绕过
+    s.set_peer_rtt(300);
     assert_eq!(s.bitrate_scale(), 80);
-    // 局域网满速 × 50% = 省带宽一半
+    // 显式选 100（跟随链路）：回到 auto 本身，旧默认降级为显式选项
+    s.set_user_bitrate_pct(100).expect("合法");
+    assert_eq!(s.bitrate_scale(), 40);
+    // 健康链路 auto=100 × 200% = 200（清晰优先）
+    s.set_user_bitrate_pct(200).expect("合法");
     s.set_peer_rtt(10);
     s.note_stream_health(10, -1, 0);
+    assert_eq!(s.bitrate_scale(), 200);
+    // 局域网满速 × 50% = 省带宽一半
     s.set_user_bitrate_pct(50).expect("合法");
     assert_eq!(s.bitrate_scale(), 50);
     // 越界拒绝且不改状态
     assert!(s.set_user_bitrate_pct(49).is_err());
     assert!(s.set_user_bitrate_pct(201).is_err());
     assert_eq!(s.bitrate_scale(), 50, "被拒就不能留下半截改动");
-    // 新会话复位：上一场的用户倍率不带走
+    // 新会话复位：上一场的用户倍率不带走，回归默认 200
     s.reset_from_cfg(super::super::video::EncodeProfile::default(), true, false, StreamCodec::Auto, false);
     s.set_peer_rtt(300);
-    assert_eq!(s.bitrate_scale(), 40, "复位后回到纯自动缩放");
+    assert_eq!(s.bitrate_scale(), 80, "复位后回到默认 200 × 弱网 40%");
+}
+
+/// 🔴 雪崩倍率旁路（2026-10-03）：帧龄 EMA 破秒 = 队列单调积累（08:22 真机
+/// 会话帧龄一路涨到 46s），200%×15%=30% 的「底线」照样把队列灌死——硬保护
+/// 不该被「清晰优先」乘回去。断言序列按 α=1/2 EMA 逐步推算。
+#[test]
+fn 帧龄破秒雪崩时绕过用户倍率() {
+    let s = c();
+    s.set_user_bitrate_pct(200).expect("合法");
+    s.set_peer_rtt(10);
+    s.set_peer_queue_ms(2000);
+    s.set_peer_queue_ms(2000);
+    assert_eq!(
+        s.bitrate_scale(),
+        15,
+        "破秒区只听链路的（queue>500 档 = 15%），倍率不参与"
+    );
+    // 2000 → (2000+100)/2 = 1050，仍在破秒区
+    s.set_peer_queue_ms(100);
+    assert_eq!(s.bitrate_scale(), 15);
+    // 1050 → 575 → 337 → 218：回到 1s 内，倍率恢复参与（45% × 200%）
+    s.set_peer_queue_ms(100);
+    s.set_peer_queue_ms(100);
+    s.set_peer_queue_ms(100);
+    assert_eq!(s.bitrate_scale(), 90, "队列回到 1s 内恢复 45%×200%");
+    // 218 →(×10 EMA)→ 收敛到 10：健康链路 100% × 200%
+    for _ in 0..12 {
+        s.set_peer_queue_ms(10);
+    }
+    assert_eq!(s.bitrate_scale(), 200);
 }
 
 #[test]
@@ -316,6 +361,29 @@ fn skew_坏锚在连续离群后重锚() {
     assert_eq!(s.clock_skew_ms(), 40, "重锚后新样本立锚");
 }
 
+#[test]
+fn skew_路径持续变慢不能永远锁住旧锚() {
+    let s = c();
+    s.note_clock_skew(1_056, 40);
+    for _ in 0..20 {
+        s.note_clock_skew(2, 500);
+    }
+    assert_eq!(s.clock_skew_ms(), 0, "RTT 过滤的连续拒绝也必须触发重锚");
+    s.note_clock_skew(2, 500);
+    assert_eq!(s.clock_skew_ms(), 2, "新路径上的样本必须能重新校准");
+}
+
+#[test]
+fn skew_偶发慢样本不应清掉健康锚() {
+    let s = c();
+    s.note_clock_skew(10, 40);
+    for _ in 0..30 {
+        s.note_clock_skew(900, 990);
+        s.note_clock_skew(10, 40);
+    }
+    assert_eq!(s.clock_skew_ms(), 10);
+}
+
 // ── NetHint 档位滞回（2026-09-27）──
 
 #[test]
@@ -364,6 +432,7 @@ fn bw_码率缩放分档() {
 #[test]
 fn bw_采样后参与三信号取min() {
     let s = c();
+    s.set_user_bitrate_pct(100).expect("合法"); // 只测 auto 分层，见 loss 同款注释
     s.note_stream_health(10, 0, 1_000); // RTT 好、丢包 0、带宽估计只有 1Mbps
     assert_eq!(
         s.bitrate_scale(),
@@ -395,6 +464,8 @@ fn 排队压力分段_90ms内不约束_超500砍到15() {
 #[test]
 fn 排队压力EMA_升快降慢() {
     let s = c();
+    s.set_peer_rtt(10);
+    s.set_user_bitrate_pct(100).expect("合法"); // 只测 auto 分层，见 loss 同款注释
     s.set_peer_queue_ms(170);
     assert_eq!(s.bitrate_scale(), 70); // 170ms → 立刻压
     // 队列暴涨：升 α=1/2——两拍就到位大半
@@ -415,6 +486,7 @@ fn 排队压力EMA_升快降慢() {
 #[test]
 fn 帧粒度丢包反馈_与本端丢包取max() {
     let s = c();
+    s.set_peer_rtt(10);
     // 本端 0 丢包，对端反馈 80‰ → 应按 80‰ 的档位压
     s.note_peer_frame_loss(80);
     let with_hint = s.bitrate_scale();
@@ -428,4 +500,116 @@ fn 帧粒度丢包反馈_与本端丢包取max() {
     s2.note_peer_frame_loss(0);
     s2.note_peer_frame_loss(-1);
     assert!(s2.bitrate_scale() < 100);
+}
+
+#[test]
+fn 视频数据报放行判据_未采样保守_采样达标才开() {
+    use super::video_dgram_allowed;
+    // 未采样（0，含全部中继路径）= 不放行：默认可靠流，防数据报灌爆链路
+    // （2026-10-02 19:05 会话实测：中继路径 rtt 恒 0，降级判据失明，
+    //  视频数据报把桌面↔中继连接堵死，pong/控制帧/JPEG 流全出不去）
+    assert!(!video_dgram_allowed(0, 0));
+    assert!(!video_dgram_allowed(0, 500));
+    // 局域网：采样到达且快 → 放行（~1s 内完成切换）
+    assert!(video_dgram_allowed(5, 0));
+    assert!(video_dgram_allowed(120, 80));
+    // 公网直连：RTT 越线不放行（18:15 会话 886ms 数据报全丢）
+    assert!(!video_dgram_allowed(300, 0));
+    assert!(!video_dgram_allowed(886, 10));
+    // 丢包越线同样不放行
+    assert!(!video_dgram_allowed(50, 150));
+    assert!(video_dgram_allowed(50, 149));
+    // 边界钉住：299 放行、300 不放
+    assert!(video_dgram_allowed(299, 0));
+    assert!(!video_dgram_allowed(300, 0));
+}
+
+/// 🔴 起播宽限的信号源（2026-10-03）：`peer_net_seen` 必须**两路都置位**
+/// （SetBitratePct 与 NetHint 各一条路），且**每场会话清零**——否则
+/// ① 某条路不置位 → 宽限只能等满，倍率永远开不对；
+/// ② 换场不清 → 新会话宽限被上一场残留立刻收闸，回到老 bug。
+#[test]
+fn 对端发言信号_两路置位_每场清零() {
+    let s = c();
+    assert!(!s.peer_net_seen(), "会话建立时默认没收到过");
+    // 第一路：SetBitratePct（倍率偏好）
+    s.set_user_bitrate_pct(150).expect("150 合法");
+    assert!(s.peer_net_seen(), "倍率偏好到了就算对端发言");
+    // 换场清零（reset_from_cfg 的参数与起播宽限无关，随便挑合法的）
+    s.reset_from_cfg(
+        super::super::video::EncodeProfile::default(),
+        false,
+        false,
+        StreamCodec::Auto,
+        true,
+    );
+    assert!(!s.peer_net_seen(), "换场必须清零");
+    // 第二路：NetHint（RTT 上报）单独也能置位
+    s.set_peer_rtt(20);
+    assert!(s.peer_net_seen(), "链路信息到了也算对端发言");
+    // 越界倍率被拒 = 没写入成功，但拒绝发生在 store 之前，
+    // 所以此刻仍应保持 false（上一次 reset 之后只有被拒的尝试）
+    let s2 = c();
+    assert!(s2.set_user_bitrate_pct(300).is_err(), "300 越界被拒");
+    assert!(!s2.peer_net_seen(), "被拒的倍率不算对端发言");
+}
+/// 会话 RTT 下限的守卫（2026-10-05 中继死循环）：只有「安静样本」能定锚，
+/// 高于下限每次只收敛 1/4。拥塞尖峰一旦能把下限抬到自己头上，
+/// 超额延迟判据当场失明——这条就是防那个。
+#[test]
+fn rtt下限_只认安静样本_尖峰只收敛四分之一() {
+    // 没收到过帧龄上报（旧对端）→ 下限永不建立，行为退回绝对 RTT
+    assert_eq!(next_rtt_floor(0, 600, false, 70, 0), 0, "无帧龄上报不能定锚");
+    // 首个安静样本直接立锚
+    assert_eq!(next_rtt_floor(0, 600, true, 70, 0), 600);
+    // 队列/丢包任一不安静 → 下限不动（反棘轮的核心）
+    assert_eq!(next_rtt_floor(600, 2_600, true, 1_035, 0), 600, "排队样本不能抬下限");
+    assert_eq!(next_rtt_floor(600, 2_600, true, 40, 60), 600, "丢包样本不能抬下限");
+    assert_eq!(next_rtt_floor(600, 0, true, 40, 0), 600, "非正值不算样本");
+    // 安静但更慢：只升 1/4（LAN→中继这类迁移不能拿一两个样本重锚）
+    assert_eq!(next_rtt_floor(600, 1_000, true, 40, 0), 700);
+    // 低于下限立即生效（抢回直连不能等收敛）
+    assert_eq!(next_rtt_floor(600, 30, true, 40, 0), 30);
+}
+
+/// 🔴 中继会话（传播 ~600ms、零丢包、帧龄 70ms）不再被当成拥塞：
+/// 2026-10-05 实测这条路径上码率被砍到 25%×200% = 50%，字看不清。
+/// 建下限后超额=0 走全速；真排队时超额照涨，保护不失效。
+/// 最后一段是旧对端回退——去掉 floor 那行，前两段会红。
+#[test]
+fn 中继固有延迟不砍码率_旧对端保守回退() {
+    let s = c();
+    s.set_peer_queue_ms(70); // 帧龄必须先到（inbound.rs 的顺序契约）
+    assert_eq!(s.set_peer_rtt(600), 200, "600ms 全是传播 → 超额 0 → 全速×默认倍率");
+    // 排队尖峰：floor 收敛到 725，超额 375ms → 40% 档 × 200% = 80%
+    assert_eq!(s.set_peer_rtt(1_100), 80, "比安静时刻慢 500ms 必须还砍得动");
+    s.set_peer_queue_ms(2_000); // EMA 升到 1035 → 雪崩熔断，倍率不参与
+    assert_eq!(s.set_peer_rtt(2_600), 15, "帧龄破秒只听链路的");
+    let legacy = c();
+    assert_eq!(legacy.set_peer_rtt(600), 50, "没有安静样本可依据时不许放开");
+}
+
+/// 自动档与码控同口径看超额延迟：中继固有传播持续 20s 也不该把梯子
+/// 踩到 smooth（实测正是这样糊掉文字的）；旧对端没有安静样本，
+/// 仍按绝对延迟降档——第二段是反例，判据改回绝对 RTT 它不会红，
+/// 但第一段会。
+#[test]
+fn 自动档看超额延迟_中继传播不踩档() {
+    let base = 1_758_000_000_000i64;
+    let s = c();
+    s.set_quality("auto").expect("合法");
+    s.set_peer_queue_ms(70);
+    s.set_peer_rtt(600); // 建立下限：600ms 全是传播
+    for i in 0..40i64 {
+        s.auto_note_frame(10_000, base + i * 500);
+    }
+    assert_eq!(s.auto_tier_name(), "balanced", "固有延迟不该降档");
+
+    let legacy = c();
+    legacy.set_quality("auto").expect("合法");
+    legacy.set_peer_rtt(600); // 无帧龄上报 → 超额 = 绝对 600ms
+    for i in 0..40i64 {
+        legacy.auto_note_frame(10_000, base + i * 500);
+    }
+    assert_eq!(legacy.auto_tier_name(), "smooth", "无安静样本时按绝对延迟照降");
 }

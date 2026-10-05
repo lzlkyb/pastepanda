@@ -36,11 +36,15 @@ pub(super) fn auto_ladder(has_gpu: bool) -> Vec<&'static str> {
     }
 }
 
-/// RTT ≥ 200ms 持续这么久 → 降一档（与码率缩放最差档的门槛同源）。
+/// 超额延迟（RTT − 会话下限，见 `stream_cfg::excess_rtt_ms`）≥ 200ms 持续
+/// 这么久 → 降一档。2026-10-05：口径从绝对 RTT 改为超额延迟——中继固有
+/// ~600ms 传播延迟不该触发降档（实测那样会把梯子一路踩到 smooth、字看不清），
+/// 只有「比本场安静时刻还慢 200ms」才是排队信号。
 const AUTO_DOWN_RTT_MS: i64 = 200;
 const AUTO_DOWN_HOLD_MS: i64 = 10_000;
-/// RTT < 50ms 持续这么久才升档——只有稳的局域网才值得往上走。
-const AUTO_UP_RTT_MS: i64 = 50;
+/// 稳定公网直连也允许恢复；超额口径下中继会话同样可能达标（这是有意的——
+/// 换路重测容量的活由 `Flow::budget` 负责，这里只管档位）。
+const AUTO_UP_RTT_MS: i64 = 100;
 const AUTO_UP_HOLD_MS: i64 = 30_000;
 /// 两次换档之间的冷却：档位来回跳会让画面尺寸忽大忽小，比糊更难受。
 const AUTO_COOLDOWN_MS: i64 = 15_000;
@@ -48,6 +52,11 @@ const AUTO_COOLDOWN_MS: i64 = 15_000;
 const AUTO_UP_BYTES: usize = 60_000;
 /// 参与 auto 判定的近帧窗口（与 `EncoderState::adapt` 的 8 帧同口径）。
 const AUTO_FRAME_WINDOW: usize = 8;
+/// 🔴 帧龄（排队压力）≥ 300ms 视同链路差（2026-10-03）：与码率缩放
+/// `bitrate_scale_for_queue` 的 300ms 档同源（≈19 帧排队）。RTT 是 pong 测的，
+/// 队列深时 pong 一起被堵，RTT 反而「钝」；帧龄是拥塞最直接的观测，
+/// 该独立参与降档，不能只搭 RTT 的便车。
+const AUTO_DOWN_QUEUE_MS: i64 = 300;
 
 // 当前档画面持续重过本档预算 → 降档。阈值与该档自适应的 adapt_down 同源：
 // 一个档位自己的 q 值自适应都压不住的帧大小，说明这个档对这条链路太重了。
@@ -78,7 +87,10 @@ pub(super) struct LinkSample {
     pub ladder_len: usize,
     /// 当前档的降档预算（`of_name(ladder[tier]).adapt_down`）。
     pub down_bytes: usize,
+    /// 超额延迟（ms）= RTT − 会话下限；下限未建立时等于绝对 RTT。
     pub rtt_ms: i64,
+    /// 发起端帧龄 EMA（NetHint queue_ms）。0 = 未采样。
+    pub queue_ms: i64,
     pub avg_bytes: usize,
     pub loss_permille: u64,
     pub high_since: Option<i64>,
@@ -95,6 +107,7 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
         ladder_len,
         down_bytes,
         rtt_ms,
+        queue_ms,
         avg_bytes,
         loss_permille,
         high_since,
@@ -102,15 +115,24 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
         last_change_ms,
         now_ms,
     } = s;
-    // 链路「差」的判据：RTT 高 **或** 丢包重（≥5%），任一成立都算差
-    let link_bad = rtt_ms >= AUTO_DOWN_RTT_MS || loss_permille >= 50;
+    // queue == 0 仍表示未采样，保留老客户端的丢包保护；有界交付不因随机丢包反复降档。
+    let measured_queue = (queue_ms > 0).then_some(queue_ms);
+    // 高 RTT / 深排队独立降档，丢包需与交付压力一起判断。
+    let link_bad = rtt_ms >= AUTO_DOWN_RTT_MS
+        || super::media::loss_pressure(measured_queue, loss_permille, 50)
+        || queue_ms >= AUTO_DOWN_QUEUE_MS;
     let high_since = if link_bad {
         Some(high_since.unwrap_or(now_ms))
     } else {
         None
     };
-    // rtt == 0 = 还没测到，不能当「很好」处理；丢包 ≥2% 同样挡住升档
-    let low_since = if rtt_ms > 0 && rtt_ms < AUTO_UP_RTT_MS && loss_permille < 20 {
+    // 未测到 RTT 不能升档；丢包造成交付压力或队列过深时同样挡住升档。
+    let low_since = if rtt_ms > 0
+        && rtt_ms < AUTO_UP_RTT_MS
+        && !super::media::loss_pressure(measured_queue, loss_permille, 20)
+        // 码控在 150ms 以上已经降速，自动画质不能在同一队列状态下反向升档。
+        && queue_ms < 150
+    {
         Some(low_since.unwrap_or(now_ms))
     } else {
         None
@@ -170,7 +192,7 @@ pub(super) const FRAME_WINDOW: usize = AUTO_FRAME_WINDOW;
 #[cfg(test)]
 mod tests {
     use super::super::stream_cfg::StreamCfg;
-    use super::FRAME_WINDOW;
+    use super::{auto_decide, LinkSample, FRAME_WINDOW};
 
     const T0: i64 = 1_758_000_000_000;
 
@@ -240,6 +262,39 @@ mod tests {
         assert!(hit_sharp, "应先经过清晰档");
         assert!(hit_ultra, "条件持续满足应升到超清");
         assert_ne!(s.auto_tier_name(), "uhd", "自动档天花板是超清，不是原生");
+    }
+
+    #[test]
+    fn 稳定公网时延可恢复画质但排队仍挡升档() {
+        let sample = |queue_ms| LinkSample {
+            tier: 0, ladder_len: 4, down_bytes: 150_000,
+            rtt_ms: 80, queue_ms, avg_bytes: 5_000, loss_permille: 0,
+            high_since: None, low_since: Some(0), last_change_ms: 0, now_ms: 30_000,
+        };
+        assert_eq!(auto_decide(sample(80)).0, Some(1),
+            "已稳定 30 秒的公网直连不能因不是局域网 RTT 永久保留 smooth");
+        assert_eq!(auto_decide(sample(160)).0, None, "码控已降速的队列不能升画质");
+        let mut high_rtt = sample(80);
+        high_rtt.rtt_ms = 150;
+        assert_eq!(auto_decide(high_rtt).0, None, "更慢链路不满足恢复条件");
+    }
+
+    #[test]
+    fn bounded_lossy_delivery_can_restore_quality_but_congestion_still_downgrades() {
+        let sample = |queue_ms| LinkSample {
+            tier: 0, ladder_len: 4, down_bytes: 150_000,
+            rtt_ms: 40, queue_ms, avg_bytes: 5_000, loss_permille: 60,
+            high_since: None, low_since: Some(0), last_change_ms: 0, now_ms: 30_000,
+        };
+        let healthy = auto_decide(sample(50));
+        assert_eq!(healthy.0, Some(1));
+        assert_eq!(healthy.1, None, "bounded delivery is not sustained congestion");
+        let mut congested = sample(120);
+        congested.tier = 1;
+        congested.high_since = Some(0);
+        let bad = auto_decide(congested);
+        assert_eq!(bad.0, Some(0));
+        assert_eq!(bad.2, None, "loss with queue pressure cannot restore quality");
     }
 
     #[test]
@@ -343,5 +398,43 @@ mod tests {
         }
         assert_ne!(s2.auto_tier_name(), "fps60", "无硬编机器梯子不含 fps60");
         assert_eq!(s2.auto_tier_name(), "ultra", "无硬编天花板仍是超清");
+    }
+
+    /// 🔴 帧龄参与判档（2026-10-03）：RTT 是 pong 测的，队列深时 pong 一起被堵，
+    /// RTT 反而「钝」；帧龄是拥塞最直接的观测，≥300ms 独立参与降档，
+    /// 不能只搭 RTT 的便车。节奏与「自动档下rtt持续差10s会降档」同源。
+    #[test]
+    fn 帧龄持续破300ms会降档() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(20); // RTT 好，纯靠帧龄判据
+        s.set_peer_queue_ms(500);
+        s.set_peer_queue_ms(500);
+        // 每 1s 一帧：第 8 帧窗口收口首判（high_since 从那时起算），
+        // i=23 时持续 16s ≥ 10s → 降档
+        for i in 0..24 {
+            let changed = feed(&s, 10_000, i);
+            assert_eq!(changed, i == 23, "第 {i} 帧换档预期不符");
+        }
+        assert_eq!(s.auto_tier_name(), "smooth");
+    }
+
+    #[test]
+    fn 帧龄深时不升档_且持续后降档() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(20); // RTT 极好，但队列深
+        s.set_peer_queue_ms(500);
+        s.set_peer_queue_ms(500);
+        for i in 0..60 {
+            if feed(&s, 1_000, i) {
+                assert_eq!(
+                    s.auto_tier_name(),
+                    "smooth",
+                    "队列深只许往低档走（RTT 再好也不许升）"
+                );
+            }
+        }
+        assert_eq!(s.auto_tier_name(), "smooth", "帧龄深最终应降到最低档");
     }
 }

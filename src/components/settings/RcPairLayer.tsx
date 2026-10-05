@@ -23,11 +23,15 @@ import type { ToastFn } from "@/components/Toast";
 import { RcPairDialog } from "./RcPairDialog";
 import { RcAdhocDialog } from "./RcAdhocDialog";
 import { RcUnoDialog } from "./RcUnoDialog";
+import { RcLegacyPairDialog } from "./RcLegacyPairDialog";
 
-/** `null` = 没有弹层。七种意图各占一个值，调用方不用再维护第二个布尔量。
+/** `null` = 没有弹层。各连接意图占一个值，调用方不用再维护第二个布尔量。
     `help` = 方案 A 的「帮助一屏」：一个弹层里用页签收齐 helpMe / helpOther。 */
 export type RcPairLayerMode =
   | "pair"
+  | "pairCode"
+  | "pairNearby"
+  | "pairLegacy"
   | "helpMe"
   | "helpOther"
   | "help"
@@ -57,10 +61,12 @@ export function RcPairLayer({
   onPairAccepted?: (peerId: string) => void;
 }) {
   if (!mode) return null;
-  if (mode === "pair") {
+  if (mode === "pairLegacy") return <RcLegacyPairDialog rc={rc} toast={toast} onClose={onClose} onPairAccepted={onPairAccepted} />;
+  if (mode === "pair" || mode === "pairCode" || mode === "pairNearby") {
     return (
       <RcPairDialog
         rc={rc}
+        initialTab={mode === "pairCode" ? "code" : mode === "pairNearby" ? "nearby" : "scan"}
         toast={toast}
         onClose={onClose}
         onPairAccepted={onPairAccepted}

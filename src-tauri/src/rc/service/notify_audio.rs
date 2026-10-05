@@ -36,9 +36,9 @@ impl RcService {
         self.notify.set_file_notify(f);
     }
 
-    /// 被控端上报的光标形状变化 → 抛给发起端前端。
-    pub(in crate::rc) fn set_remote_cursor(&self, shape: String) {
-        self.notify.emit_cursor_changed(&shape);
+    /// 被控端上报的光标遥测（形状 + 归一化位置）→ 抛给发起端前端。
+    pub(in crate::rc) fn set_remote_cursor(&self, cur: crate::rc::input::RemoteCursor) {
+        self.notify.emit_cursor_changed(&cur);
     }
 
     /// 注入「会话换路了」的回调（lib.rs 在 manage 之后调用）。

@@ -4485,8 +4485,6 @@ dependencies = [
 [[package]]
 name = "noq-proto"
 version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a46813e306c29c4f86357b6ffa39a8e1c97bb274b9a296a19a56d62e4111225"
 dependencies = [
  "aes-gcm",
  "bytes",
@@ -5134,6 +5132,7 @@ dependencies = [
  "netdev 0.46.2",
  "noq-proto",
  "ocr-rs",
+ "pastepanda-rc-scale",
  "pinyin",
  "rcgen",
  "regex",
@@ -5147,6 +5146,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "socket2",
  "tauri",
  "tauri-build",
@@ -5182,6 +5182,13 @@ dependencies = [
  "uuid",
  "windows 0.58.0",
  "winreg 0.52.0",
+]
+
+[[package]]
+name = "pastepanda-rc-scale"
+version = "0.1.0"
+dependencies = [
+ "fast_image_resize",
 ]
 
 [[package]]

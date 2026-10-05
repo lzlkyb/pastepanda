@@ -61,8 +61,19 @@ impl Capability {
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum RcFrame {
     /// 只查询双方是否都已粘贴对方的配对码；不创建远程会话。
-    PairCheck,
-    PairStatus { paired: bool },
+    PairCheck {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        os: Option<String>,
+    },
+    PairStatus {
+        paired: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        os: Option<String>,
+    },
     /// 发起端申请会话。
     Request {
         capability: Capability,
@@ -94,6 +105,21 @@ pub enum RcFrame {
         /// 关了声音——被控端不开音频采集。与 `vid_dgram` 同款兼容三件套。
         #[serde(default, skip_serializing_if = "Option::is_none")]
         audio: Option<bool>,
+        /// 发起端视频能力位：true = 支持在**独立单向流**上收视频（2026-10-03
+        /// 「传输分 plane」方案）。`None`/false = 旧版发起端——被控端把视频
+        /// 继续写在会话半流里（与 pong/输入共流，积压不可丢弃的历史形态）。
+        /// 置位后被控端把 H.264 帧写到专属 uni 流（`PPVID1` 流头，见
+        /// `video::wire`），积压熔断可持续超阈时**整流重建**（丢弃积压），
+        /// 且视频写不再阻塞 pong/输入。兼容三件套：旧版被控端不认识这个
+        /// 字段照常受理（视频留在半流，行为同今天）。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        video_plane: Option<bool>,
+        /// JPEG 及其元数据也支持独立媒体流；旧 video_plane 仅支持 H.264。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_plane: Option<bool>,
+        /// 完整接收及实际上屏反馈；缺省为旧客户端，不等待它不存在的 ACK。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_feedback: Option<bool>,
     },
     /// 被控端同意。
     Accept {
@@ -208,11 +234,28 @@ mod tests {
     }
 
     #[test]
+    fn pair_identity_is_compatible_with_older_frames() {
+        assert_eq!(RcFrame::decode(br#"{"t":"pair_check"}"#).unwrap(),
+            RcFrame::PairCheck { name: None, os: None });
+        assert_eq!(RcFrame::decode(br#"{"t":"pair_status","paired":true}"#).unwrap(),
+            RcFrame::PairStatus { paired: true, name: None, os: None });
+        let frame = RcFrame::PairCheck { name: Some("Pixel 9".into()), os: Some("Android".into()) };
+        assert_eq!(RcFrame::decode(&frame.encode().unwrap()).unwrap(), frame);
+        // Older peers ignore new optional fields on both variants.
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "t", rename_all = "snake_case")]
+        enum Legacy { PairCheck, PairStatus { paired: bool } }
+        assert!(matches!(serde_json::from_slice::<Legacy>(&frame.encode().unwrap()).unwrap(), Legacy::PairCheck));
+        let response = RcFrame::PairStatus { paired: true, name: Some("PC".into()), os: Some("Windows 11".into()) };
+        assert!(matches!(serde_json::from_slice::<Legacy>(&response.encode().unwrap()).unwrap(), Legacy::PairStatus { paired: true }));
+    }
+
+    #[test]
     fn frame_roundtrip() {
-        assert_eq!(RcFrame::decode(&RcFrame::PairCheck.encode().unwrap()).unwrap(), RcFrame::PairCheck);
+        assert_eq!(RcFrame::decode(&RcFrame::PairCheck { name: None, os: None }.encode().unwrap()).unwrap(), RcFrame::PairCheck { name: None, os: None });
         assert_eq!(
-            RcFrame::decode(&RcFrame::PairStatus { paired: true }.encode().unwrap()).unwrap(),
-            RcFrame::PairStatus { paired: true }
+            RcFrame::decode(&RcFrame::PairStatus { paired: true, name: None, os: None }.encode().unwrap()).unwrap(),
+            RcFrame::PairStatus { paired: true, name: None, os: None }
         );
         let f = RcFrame::Request {
             capability: Capability::Control,
@@ -221,6 +264,9 @@ mod tests {
             vid_dgram: Some(true),
             fec_rs: Some(true),
             audio: None,
+            video_plane: Some(true),
+            media_plane: Some(true),
+            media_feedback: Some(true),
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -232,11 +278,16 @@ mod tests {
             vid_dgram: None,
             fec_rs: None,
             audio: None,
+            video_plane: None,
+            media_plane: None,
+            media_feedback: None,
         };
         let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
         assert!(!s.contains("uno_code"));
         assert!(!s.contains("uno_pass"));
         assert!(!s.contains("vid_dgram"));
+        assert!(!s.contains("media_feedback"));
+        assert!(!s.contains("video_plane"), "缺省位不占线上字节");
     }
 
     #[test]
@@ -248,6 +299,9 @@ mod tests {
             vid_dgram: None,
             fec_rs: None,
             audio: None,
+            video_plane: None,
+            media_plane: None,
+            media_feedback: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -261,10 +315,32 @@ mod tests {
             vid_dgram: None,
             fec_rs: None,
             audio: None,
+            video_plane: None,
+            media_plane: None,
+            media_feedback: None,
         };
         let s2 = String::from_utf8(f2.encode().unwrap()).unwrap();
         assert!(!s2.contains("uno_pass"));
         assert_eq!(RcFrame::decode(s2.as_bytes()).unwrap(), f2);
+    }
+
+    #[test]
+    fn media_feedback_capability_is_independent_of_media_plane() {
+        // 上一轮版本支持独立视频流，却没有媒体 ACK；不能把两个能力混为一谈。
+        let old = br#"{"t":"request","capability":"view","media_plane":true}"#;
+        assert!(matches!(RcFrame::decode(old).unwrap(), RcFrame::Request {
+            media_plane: Some(true), media_feedback: None, ..
+        }));
+        let new = br#"{"t":"request","capability":"view","media_plane":true,"media_feedback":true}"#;
+        assert!(matches!(RcFrame::decode(new).unwrap(), RcFrame::Request {
+            media_plane: Some(true), media_feedback: Some(true), ..
+        }));
+        #[derive(Deserialize)]
+        #[serde(tag = "t", rename_all = "snake_case")]
+        enum Legacy { Request { capability: Capability, media_plane: Option<bool> } }
+        assert!(matches!(serde_json::from_slice::<Legacy>(new).unwrap(), Legacy::Request {
+            capability: Capability::View, media_plane: Some(true)
+        }));
     }
 
     #[test]
@@ -276,19 +352,25 @@ mod tests {
             vid_dgram: None,
             fec_rs: None,
             audio: None,
+            video_plane: None,
+            media_plane: None,
+            media_feedback: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
         // 旧版对端发来的 Request 没有 uno_code/uno_pass 字段，也要能解（default 补 None）
         let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
         match RcFrame::decode(old).unwrap() {
-            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, fec_rs, audio } => {
+            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, fec_rs, audio, video_plane, media_plane, media_feedback } => {
                 assert_eq!(capability, Capability::Control);
                 assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
                 assert_eq!(uno_pass, None, "固定密码位同理（方案 C）");
                 assert_eq!(vid_dgram, None, "能力位同理");
                 assert_eq!(fec_rs, None, "RS FEC 能力位同理（P3.1）");
                 assert_eq!(audio, None, "音频申请位同理（G3）");
+                assert_eq!(media_plane, None);
+                assert_eq!(media_feedback, None);
+                assert_eq!(video_plane, None, "视频独立通道位同理（传输分 plane）");
             }
             other => panic!("unexpected {other:?}"),
         }

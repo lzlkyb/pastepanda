@@ -74,8 +74,8 @@ target/
 
 # ── 2026-10-01 审查工作区时补的四类（213 项变更里逐个确认过）──
 # Android 生成工程：`tauri android init` 产物，1.3GB 且内嵌本机 NDK 路径，
-# 从未入库（惯例就是本地生成）。❗manifest 的 CAMERA 必需改动登记在
-# docs/dev-运行手册.md「Android 探针 / P1 环境」一节，init 后要照抄补回。
+# 原生源码在 src-tauri/android/，scripts/prepare-android.mjs 在 android:* 前
+# 自动恢复 Kotlin 类和清单权限；初始化后无需手工补回。
 src-tauri/gen/
 # 误操作把 gen 拷进了自己（src-tauri/src-tauri/gen/android/…），嵌套副本勿入库
 src-tauri/src-tauri/

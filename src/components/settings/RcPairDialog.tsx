@@ -1,230 +1,76 @@
-/**
- * RcPairDialog — 远程配对向导的**壳**：背景、头部、以及「现在该显示哪一屏」。
- *
- * 设计稿：`design/远程电脑-配对流程重做-设计稿.html`。
- *
- * # 2026-09-17 拆过一次（A3）
- *
- * 这个文件原本 286 行，装了**两条流程**的全部状态。A3 加了局域网这条路之后，
- * 再塞就过红线（`.tsx ≤ 300`）。拆法按屏幕切，每块各管各的状态：
- *
- * | 屏 | 文件 |
- * |---|---|
- * | 入口屏（附近设备主路 + 折叠「高级」两条码路） | `RcPairModeSelect` + `RcNearbyList` |
- * | 生成配对码 | `RcPairCreatePane`（原有） |
- * | 粘贴配对码（含剪贴板「填入」询问） | `RcPairPastePane`（拆出） |
- * | 配对码核对（8 位） | `RcPairPin`（拆出） |
- *
- * 局域网那一侧的状态与轮询在 `hooks/useRcNearbyPair`。
- *
- * # 2026-09-26 乙方案瘦身
- *
- * 主路只剩「附近设备」；邀请码两条路折进「高级」（留一版观察）；
- * 剪贴板检测到码的询问从首屏挪进粘贴屏——已经决定粘码的人才是帮忙，
- * 一开屏就拦是打扰（跨网第一次连接的正路已改走「帮助」流程）。
- * **完成屏（RcPairDone）删除**：成功那一刻直接关窗 + toast + 选中新设备。
- *
- * # 显示优先级：局域网配对**压过**两条码路那两屏
- *
- * 对方在局域网里主动发起时，用户可能正停在「生成配对码」那一屏。
- * 配对码是**安全相关的提示**，不能让它在别的屏后面等着——所以只要有一轮
- * 配对在进行，就盖住上面。取消后回到原来那一屏（`mode` 没被清掉）。
- *
- * # 按钮可用性的唯一判据
- *
- * 邀请码那条路是 `canSubmitPair`（`src/lib/rcPairState.ts`），防死锁回归。
- * 方案 C 之后发起侧不再有勾选框——那两个确认点原本要用户各做一次，而发起侧
- * 那次**防不住中间人**（论证见 `sync/invite.rs` 模块头）。
- */
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { X } from "lucide-react";
-import { FocusTrap } from "@/components/FocusTrap";
-import { useDialogAnim } from "@/lib/dialogMotion";
-import { useDialogEscape } from "@/hooks/useDialogEscape";
-import { useRcNearbyPair } from "@/hooks/useRcNearbyPair";
-import { usePairCodeVisibility } from "@/hooks/usePairCodeVisibility";
-import { fingerprintOf } from "@/lib/fingerprint";
+import { Keyboard, QrCode, Radar, RefreshCw } from "lucide-react";
+import { NEARBY_IDLE_POLL_MS, NEARBY_POLL_MS, useRcNearbyPair } from "@/hooks/useRcNearbyPair";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
-import { RcPairModeSelect } from "./RcPairModeSelect";
-import { RcPairCreatePane } from "./RcPairCreatePane";
-import { RcPairPastePane } from "./RcPairPastePane";
+import { RcConnectionShell } from "./RcConnectionShell";
+import { RcShortPairPane } from "./RcShortPairPane";
+import { RcNearbyList } from "./RcNearbyList";
 import { RcPairPin } from "./RcPairPin";
-import styles from "../rc/RemoteComputer.module.css";
+import styles from "./RcConnect.module.css";
 
-export function RcPairDialog({
-  rc,
-  toast,
-  onClose,
-  onPairAccepted,
-}: {
-  rc: UseRc;
-  toast: ToastFn;
-  onClose: () => void;
-  /**
-   * 局域网配对成功那一刻的通知（乙方案 §6：完成屏已删——「配对成功的设备
-   * 会自动出现在列表里」不该再多一次点击）。工作台拿它选中新设备；
-   * 设置页不传，那边只 toast。
-   */
-  onPairAccepted?: (peerId: string) => void;
+export type RcPairTab = "scan" | "code" | "nearby";
+const TABS = [{ id: "scan", label: "手机扫码", icon: QrCode }, { id: "code", label: "配对码", icon: Keyboard }, { id: "nearby", label: "附近设备", icon: Radar }] as const;
+
+/** 三种入口共用一个向导；非附近页只低频观察必须核对的来访请求。 */
+export function RcPairDialog({ rc, toast, onClose, onPairAccepted, initialTab = "scan" }: {
+  rc: UseRc; toast: ToastFn; onClose: () => void; onPairAccepted?: (id: string) => void; initialTab?: RcPairTab;
 }) {
-  const anim = useDialogAnim();
-  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）。RcPairLayer 挂在设置页里
-  // （RcSection.tsx:304），App 那条全局 Esc 链**不认识**这个弹窗，按 Esc 会
-  // 一路落到 `close_dialog: "settings"` —— 整个设置页被关掉，正在核对的
-  // 正在核对的配对码 / 刚生成的配对码一起丢（与 useDialogEscape 头注释里 2026-09-06
-  // 那次事故同型）。捕获期 + stopPropagation 抢在全局链之前截断。
-  useDialogEscape(onClose);
-  const near = useRcNearbyPair();
-  /** 出示屏（PP1 凭证）的遮罩 / 亮码。规则见 usePairCodeVisibility。 */
-  const cred = usePairCodeVisibility();
-  const [mode, setMode] = useState<"create" | "paste" | null>(null);
-  const [name, setName] = useState(rc.identity?.device_name ?? "");
-  const [created, setCreated] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState(0);
-  const [now, setNow] = useState(Date.now());
-  const [busy, setBusy] = useState(false);
-
-  // 配对码倒计时（只在生成了码之后跑）。
-  useEffect(() => {
-    if (!created || !expiresAt) return;
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [created, expiresAt]);
-
-  const handleCreate = async () => {
-    setBusy(true);
-    try {
-      const r = await rc.createInvite(name.trim() || rc.identity?.device_name || "");
-      setCreated(r.code);
-      setExpiresAt(r.expires_at);
-      setNow(Date.now());
-      try {
-        await navigator.clipboard.writeText(r.code);
-        toast("配对码已复制，请发给对方", "success");
-      } catch {
-        toast("配对码已生成，请手动复制", "info");
-      }
-    } catch (e) {
-      toast(String(e), "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleConfirmPin = async () => {
-    try {
-      const out = await near.confirm();
-      // `waiting` 不是错误（两端的确认有先后），核对屏自己会显示「等对方核对…」。
-      if (out.state === "gone") {
-        toast("这次配对已经结束了，请重新发起", "error");
-      }
-    } catch (e) {
-      toast(stringify(e, "确认失败"), "error");
-    }
-  };
-
-  /**
-   * 乙方案 §6：**完成屏删了**——成功那一刻关窗、toast、把新设备选出来。
-   * `near.done` 由 `useRcNearbyPair` 按 `at_ms` 去重、一次会话只给一次，
-   * 这个 ref 只是挂载内的第二道保险（effects 双跑时不弹两条 toast）。
-   */
-  const doneHandled = useRef(false);
-  useEffect(() => {
-    const d = near.done;
-    if (!d || doneHandled.current) return;
-    doneHandled.current = true;
-    const name = d.peer_name.trim() || fingerprintOf(d.peer_id);
-    toast(`已与「${name}」配对，设备已进列表${d.initiator ? "，点「连接」即可发起" : ""}`, "success");
-    void rc.refreshTargets();
-    onPairAccepted?.(d.peer_id);
+  const [tab, setTab] = useState<RcPairTab>(initialTab);
+  const near = useRcNearbyPair({ idlePollMs: tab === "nearby" ? NEARBY_POLL_MS : NEARBY_IDLE_POLL_MS });
+  const [ended, setEnded] = useState(false);
+  const wasPairing = useRef(false);
+  const completed = useRef(false);
+  const accepted = async (id: string, name: string) => {
+    if (completed.current) return;
+    completed.current = true;
+    await rc.refreshTargets();
+    toast(`已与「${name || "新设备"}」配对，设备已加入列表`, "success");
+    onPairAccepted?.(id);
     onClose();
-    // 只跟 near.done 走：rc/toast/onClose 都是稳定引用，进依赖会让副作用被无关渲染重触发。
+  };
+  useEffect(() => {
+    if (near.done) void accepted(near.done.peer_id, near.done.peer_name);
+    // 只处理这一轮的完成状态，回调引用变化不能重复完成。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [near.done]);
-
-  return (
-    <motion.div
-      key="rc-pair"
-      {...anim.backdrop}
-      className="dialog-backdrop"
-      onClick={onClose}
-    >
-      <FocusTrap>
-        <motion.div
-          {...anim.panel}
-          className="dialog-box"
-          style={{ width: "min(480px, 94vw)" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="dialog-header">
-            <h2 className="dialog-title">远程配对</h2>
-            <button className="dialog-close" onClick={onClose} aria-label="关闭">
-              <X size={15} />
-            </button>
-          </div>
-          <div className={styles.body}>
-            {near.pair ? (
-              <RcPairPin
-                prompt={near.pair}
-                busy={near.busy}
-                onConfirm={() => void handleConfirmPin()}
-                onCancel={() => void near.cancel()}
-              />
-            ) : mode === "create" ? (
-              <RcPairCreatePane
-                name={name}
-                setName={setName}
-                created={created}
-                expiresAt={expiresAt}
-                now={now}
-                busy={busy}
-                myFp={rc.identity?.fingerprint ?? "读取中…"}
-                selfName={rc.identity?.device_name ?? ""}
-                toast={toast}
-                onGenerate={handleCreate}
-                onBack={() => setMode(null)}
-                revealed={cred.vis === "shown"}
-                onReveal={() => {
-                  // 已生成过就直接亮；否则先生成再亮（遮罩态不留任何明文）
-                  if (!created) void handleCreate().then(() => cred.show());
-                  else cred.show();
-                }}
-              />
-            ) : mode === "paste" ? (
-              <RcPairPastePane
-                previewInvite={rc.previewInvite}
-                pair={rc.pair}
-                selfNodeId={rc.identity?.node_id}
-                toast={toast}
-                onBack={() => setMode(null)}
-                onPaired={(n) => {
-                  toast(`已配对远程设备「${n || "新设备"}」`, "success");
-                  onClose();
-                }}
-              />
-            ) : (
-              <RcPairModeSelect
-                neighbors={near.neighbors}
-                busy={near.busy}
-                onPair={(n) =>
-                  void near
-                    .startPair(n.node_id)
-                    .catch((e) => toast(stringify(e, "发起配对失败"), "error"))
-                }
-                onCreate={() => setMode("create")}
-                onPaste={() => setMode("paste")}
-              />
-            )}
-          </div>
-        </motion.div>
-      </FocusTrap>
-    </motion.div>
-  );
-}
-
-/** 后端错误是字符串，异常可能是 Error——两种都要能变成人话。 */
-function stringify(e: unknown, fallback: string): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : fallback;
+  useEffect(() => {
+    if (wasPairing.current && !near.pair && !near.done) setEnded(true);
+    wasPairing.current = Boolean(near.pair);
+  }, [near.pair, near.done]);
+  const close = () => { if (near.pair) void near.cancel(); onClose(); };
+  const confirm = async () => {
+    try {
+      const result = await near.confirm();
+      if (result.state === "gone") setEnded(true);
+      if (result.state === "committed") void accepted(result.peer_id, result.peer_name);
+    } catch (error) { toast(`确认失败：${String(error)}`, "error"); }
+  };
+  return <RcConnectionShell title="添加设备" subtitle="选择一种方式，配对后设备会保留在列表中。" onClose={close}>
+    <div className={styles.tabs} role="tablist" aria-label="添加设备方式" onKeyDown={(event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+      if (!buttons.length) return;
+      event.preventDefault();
+      const index = buttons.indexOf(event.target as HTMLButtonElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next].click(); buttons[next].focus();
+    }}>
+      {TABS.map(({ id, label, icon: Icon }) => <button key={id} id={`rc-tab-${id}`} type="button" role="tab"
+        tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} aria-controls="rc-pair-panel" disabled={Boolean(near.pair)} onClick={() => { setTab(id); setEnded(false); }}><Icon size={16} aria-hidden="true" />{label}</button>)}
+    </div>
+    <div id="rc-pair-panel" role="tabpanel" aria-labelledby={`rc-tab-${tab}`} className={styles.body}>
+      {near.pair ? <RcPairPin prompt={near.pair} busy={near.busy} onConfirm={() => void confirm()} onCancel={() => void near.cancel()} />
+        : tab !== "nearby" ? <RcShortPairPane key={tab} scan={tab === "scan"} toast={toast} onPaired={(id, name) => void accepted(id, name)} />
+        : <>
+          <div className={styles.nearHead}><p className={styles.hint}>发现同一 Wi-Fi / 局域网里的未配对设备。</p><button type="button" className={styles.button} disabled={near.busy} onClick={() => void near.refresh()}><RefreshCw size={14} />重新查找</button></div>
+          {ended && <div className={`${styles.status} ${styles.error}`} role="alert">这次配对已结束，对方取消或确认超时。可以重新发起。</div>}
+          {near.error ? <div className={`${styles.status} ${styles.error}`} role="alert">附近设备读取失败，请重新查找。{near.error}</div>
+            : near.loading ? <div className={styles.empty} role="status">正在查找附近设备…</div>
+            : near.neighbors.length === 0 ? <div className={styles.empty}><Radar size={36} aria-hidden="true" /><h3>暂未发现附近设备</h3><p className={styles.hint}>让另一台电脑打开最新版 PastePanda，<br />并连接同一个 Wi-Fi 或局域网。</p><div className={styles.actions}><button type="button" className={styles.button} onClick={() => setTab("code")}>改用配对码</button></div></div>
+            : <RcNearbyList neighbors={near.neighbors} busy={near.busy} onPair={(device) => { setEnded(false); void near.startPair(device.node_id).catch((error) => toast(`发起配对失败：${String(error)}`, "error")); }} />}
+        </>}
+    </div>
+    <div className={styles.footer}>配对只用于识别设备。远程控制和文件接收仍按对方的权限设置确认。</div>
+  </RcConnectionShell>;
 }

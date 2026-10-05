@@ -10,6 +10,7 @@
 import type { AppConfig } from "@/stores/appStore";
 import { ScreenshotRows } from "./ScreenshotRows";
 import { StackRows } from "./StackRows";
+import { RecRows, RecSectionTitle } from "./RecRows";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
 
@@ -25,6 +26,8 @@ export function CaptureSection({ config, updateAndSave, chains }: CaptureSection
       <div className={styles.sSection}>截图与栈</div>
       <ScreenshotRows config={config} updateAndSave={updateAndSave} chains={chains} />
       <StackRows config={config} updateAndSave={updateAndSave} />
+      <RecSectionTitle />
+      <RecRows config={config} updateAndSave={updateAndSave} chains={chains} />
     </>
   );
 }

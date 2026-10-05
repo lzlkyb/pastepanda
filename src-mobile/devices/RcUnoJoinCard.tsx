@@ -13,12 +13,16 @@
  *
  * 凭证才是天花板：一律申请「可控」，被控端会压档并回传真实档（桌面同语义）。
  */
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { fingerprintOf } from "@/lib/fingerprint";
-import { parseUnoInput, unoCodeShapeOk, unoPassCharsOk } from "@/lib/rcUno";
+import { parseUnoInput, unoCodeShapeOk, unoPassCharsOk, UNO_PASS_MIN_CHARS, UNO_PASS_MAX_CHARS } from "@/lib/rcUno";
+import { rcDisplayName } from "@/lib/rcDevice";
+import { RcDeviceMeta } from "@/components/rc/RcDeviceMeta";
+import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 import type { UseRc } from "@/hooks/useRc";
 import { RcScanOverlay } from "./RcScanOverlay";
-import { useQrScan } from "./useQrScan";
+import { MobileNotice } from "../ui/MobileNotice";
+import { rcErrorText } from "./rcErrorText";
 import styles from "./RcDevices.module.css";
 
 type CredMode = "code" | "pass";
@@ -39,6 +43,8 @@ export function RcUnoJoinCard({
   const [credMode, setCredMode] = useState<CredMode>("code");
   const [input, setInput] = useState("");
   const [pass, setPass] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const passHintId = useId();
   const [picked, setPicked] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -51,12 +57,13 @@ export function RcUnoJoinCard({
 
   // 目标三来源（优先级）：面板锁定的 > 完整串自带的 > 列表里认的
   const target = fixedTarget ?? parsed?.nodeId ?? picked;
-  const targetName = targets.find((t) => t.node_id === target)?.display_name ?? "";
+  const targetInfo = targets.find((t) => t.node_id === target);
+  const targetName = targetInfo ? rcDisplayName(targetInfo) : "未配对设备";
   const isSelf = !!target && target === rc.identity?.node_id;
   // 裸码/密码没有定位，又没锁定目标：要在列表里认机器
   const needPick = !fixedTarget && !parsed?.nodeId;
   const canConnect =
-    !busy &&
+    !busy && !rc.busy && rc.status?.enabled !== false &&
     !isSelf &&
     !!target &&
     (credMode === "code" ? !!parsed && shapeOk : passOk) &&
@@ -74,7 +81,7 @@ export function RcUnoJoinCard({
   };
 
   const connect = async () => {
-    if (!target) return;
+    if (!canConnect || !target) return;
     setBusy(true);
     setErr("");
     try {
@@ -89,6 +96,8 @@ export function RcUnoJoinCard({
       // ❗ 读 getState()——闭包里的 rc 是点击那一帧的快照（桌面 JoinPane 同款教训）
       const { useRcStore } = await import("@/stores/rcStore");
       setErr(useRcStore.getState().error ?? "发起失败");
+    } catch (error) {
+      setErr(rcErrorText(error));
     } finally {
       setBusy(false);
     }
@@ -111,6 +120,7 @@ export function RcUnoJoinCard({
           type="button"
           role="radio"
           aria-checked={credMode === "code"}
+          disabled={busy}
           className={`${styles.peerChip} ${credMode === "code" ? styles.peerChipOn : ""}`}
           onClick={() => setCredMode("code")}
         >
@@ -120,6 +130,7 @@ export function RcUnoJoinCard({
           type="button"
           role="radio"
           aria-checked={credMode === "pass"}
+          disabled={busy}
           className={`${styles.peerChip} ${credMode === "pass" ? styles.peerChipOn : ""}`}
           onClick={() => setCredMode("pass")}
         >
@@ -134,33 +145,39 @@ export function RcUnoJoinCard({
             aria-label="无人值守接入码"
             placeholder="粘贴 8 位码（7K2M-9PQX）或完整串（PPU- 开头）"
             value={input}
+            disabled={busy}
             onChange={(e) => {
               setInput(e.target.value);
               setErr("");
             }}
           />
-          <button type="button" className={styles.ghostBtn} onClick={() => setScanning(true)}>
+          <button type="button" className={styles.ghostBtn} disabled={busy} onClick={() => setScanning(true)}>
             扫一扫（扫电脑上出示的码）
           </button>
           {input.trim() && !parsed && (
-            <div className={styles.noticeError} role="alert">
+            <MobileNotice error compact>
               认不出无人值守码：请粘 8 位展示码或 PPU- 开头的完整串。
-            </div>
+            </MobileNotice>
           )}
           {parsed && !shapeOk && (
-            <div className={styles.noticeError} role="alert">
+            <MobileNotice error compact>
               码里有无效字符（0/O、1/I/L 会自动纠正；其余请核对原码）。
-            </div>
+            </MobileNotice>
           )}
           {parsed?.nodeId && (
             <div className={styles.unoFp}>机器指纹 {fingerprintOf(parsed.nodeId)}</div>
           )}
         </>
       ) : (
+        <>
         <input
-          type="password"
+          type={showPass ? "text" : "password"}
           className={styles.unoInput}
           aria-label="对方的固定密码"
+          aria-describedby={passHintId}
+          aria-invalid={!!pass && !passOk}
+          autoComplete="current-password"
+          disabled={busy}
           placeholder="对方设置的固定密码"
           value={pass}
           onChange={(e) => {
@@ -168,34 +185,40 @@ export function RcUnoJoinCard({
             setErr("");
           }}
         />
+        <button type="button" className={styles.ghostBtn} disabled={busy} aria-pressed={showPass} onClick={() => setShowPass((value) => !value)}>
+          {showPass ? "隐藏密码" : "显示密码"}
+        </button>
+        <div id={passHintId}>{pass && !passOk ? <MobileNotice error compact>{`密码长度不符合要求，请输入 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。`}</MobileNotice> : <p className={styles.dirHint}>{`密码需为 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。`}</p>}</div>
+        </>
       )}
 
+      {target && <div className={styles.unoFp}>连接对象：{targetName}{targetInfo && <RcDeviceMeta os={targetInfo.os} />}</div>}
+
       {/* 密码模式必须填设备号；手机上不让人手打 52 位——从已配对设备里认 */}
-      {(credMode === "pass" || (credMode === "code" && needPick)) && (
+      {!fixedTarget && needPick && (
         <div className={styles.unoPickBlock}>
           <div className={styles.unoFp}>
-            {fixedTarget
-              ? `连接对象：${targetName || "已锁定"}`
-              : credMode === "pass"
-                ? "选要连的电脑（固定密码按机器生效）："
-                : "裸码不带机器定位，从配对过的电脑里认："}
+            {credMode === "pass" ? "请选择设置了此密码的设备：" : "这枚接入码未包含设备信息，请选择连接对象："}
           </div>
-          {fixedTarget ? null : targets.length === 0 ? (
-            <div className={styles.noticeError} role="alert">
+          {targets.length === 0 ? (
+            <MobileNotice>
               还没有配对过的电脑。让对方发 PPU- 开头的完整串（可扫），或先回「设备」页配对。
-            </div>
+            </MobileNotice>
           ) : (
-            <div className={styles.peerPick} role="radiogroup" aria-label="选择电脑">
+            <div className={styles.peerPick} role="radiogroup" aria-label="选择设备">
               {targets.map((t) => (
                 <button
                   key={t.node_id}
                   type="button"
                   role="radio"
+                  aria-label={rcDisplayName(t)}
                   aria-checked={picked === t.node_id}
+                  disabled={busy}
                   className={`${styles.peerChip} ${picked === t.node_id ? styles.peerChipOn : ""}`}
                   onClick={() => setPicked(t.node_id)}
                 >
-                  {t.display_name || t.name} · {fingerprintOf(t.node_id)}
+                  <RcDeviceIcon os={t.os} size={34} />
+                  <span className={styles.peerDetails}><strong>{rcDisplayName(t)}</strong><RcDeviceMeta os={t.os} className={styles.deviceType} /><small>{fingerprintOf(t.node_id)}</small></span>
                 </button>
               ))}
             </div>
@@ -204,15 +227,15 @@ export function RcUnoJoinCard({
       )}
 
       {isSelf && (
-        <div className={styles.noticeError} role="alert">
-          这是本机自己，连自己是没有用的。
-        </div>
+        <MobileNotice error compact>
+          这是本机，请选择其他设备。
+        </MobileNotice>
       )}
       {err && (
-        <div className={styles.noticeError} role="alert">
-          {err}
-        </div>
+        <MobileNotice error title="未能连接无人值守电脑" detail={rcErrorText(err)} onDismiss={() => setErr("")} />
       )}
+      {rc.status?.enabled === false && <MobileNotice tone="warning">请先在设置中开启远程通道。</MobileNotice>}
+      {!target && targets.length > 0 && <p className={styles.dirHint}>请先选择要连接的设备。</p>}
 
       <button type="button" className={styles.primaryBtn} disabled={!canConnect} onClick={() => void connect()}>
         {busy ? "发起中…" : "连接"}
@@ -220,7 +243,7 @@ export function RcUnoJoinCard({
       <div className={styles.dirHint}>
         连上即视为普通配对会话：对方屏幕会出现常驻横幅，随时可以结束。
       </div>
-      <button type="button" className={styles.ghostBtn} onClick={onClose}>
+      <button type="button" className={styles.ghostBtn} disabled={busy} onClick={onClose}>
         返回
       </button>
     </div>

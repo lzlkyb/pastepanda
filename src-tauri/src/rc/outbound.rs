@@ -15,6 +15,15 @@ use super::video::{read_incoming, Incoming};
 use crate::rc::jpeg::jpeg_dimensions;
 use std::sync::Arc;
 
+/// 心跳间隔（发起端 → 被控端）。
+///
+/// 🔴 后台保活（2026-10-02）：心跳从前端 JS（`useRcHeartbeat`，已删）**下沉到
+/// Rust**。手机上 WebView 随 Activity 一 pause，JS 定时器全停——前端心跳跟着
+/// 死，被控端 15s 看门狗把会话收口，用户看到的就是「切后台再回来远程就断了」。
+/// Rust 线程不受 WebView 生命周期影响：只要进程活着（哪怕 WebView 冻了），
+/// ping 就一直在。只有进程本身被系统冻结/杀掉才停——那是 BgPause TTL 管的事。
+pub const HEARTBEAT_PING_MS: u64 = 1000;
+
 pub(super) struct OutboundVideo {
     svc: Arc<RcService>,
     peer: String,
@@ -96,9 +105,13 @@ impl OutboundVideo {
     pub(super) async fn run(mut self) {
         // Q5：会话建立即把本机配置的码率倍率推给被控端（一次）。用户在会话中
         // 改下拉走 rc_send_input；这里兜「上次设置的偏好要对这场会话生效」。
-        // 100 = 跟随链路，不用发。此刻必是 OutboundActive（try_new 已核过）。
+        // 🔴 **无条件推**（2026-10-02）：默认从 100 改成 200（最高档起步）后，
+        // 旧写法 `pct != 100 才推` 有个陷阱——用户显式选「跟随链路 100%」时
+        // 不推，被控端停在自己的默认 200 上，意愿被无声覆盖。无条件推之后，
+        // 被控端的初值只是推送到达前的一瞬，两处的默认值不再要求一致。
+        // 此刻必是 OutboundActive（try_new 已核过）。
         let pct = self.svc.user_bitrate_pct_from_cfg();
-        if pct != 100 {
+        {
             let svc = self.svc.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = svc
@@ -106,13 +119,40 @@ impl OutboundVideo {
                     .await;
             });
         }
+        // 🔴 心跳任务（后台保活，2026-10-02）：见 `HEARTBEAT_PING_MS` 注释。
+        // 只服务本会话：`session_id_is` 按 id 认领——LAN 快速重连时同 peer 的
+        // 新会话起来后，旧任务下一拍自动退出，不会和新任务的 ping 叠成双份。
+        {
+            let svc = self.svc.clone();
+            let my_id = self.my_id.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(HEARTBEAT_PING_MS)).await;
+                    if !svc.session_id_is(&my_id) {
+                        return;
+                    }
+                    // ts 沿用 epoch ms：pong 用它测 RTT / 两机时钟偏差，
+                    // 两端唯一公共基座是墙钟（原 JS 实现同口径）。
+                    // 发送失败 = 会话已收口/正在收口，静默退出。
+                    if svc
+                        .send_input(&super::input::InputEvent::Ping {
+                            ts: Some(now_ms()),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            });
+        }
         // P0-4：发起端本端采样丢包率（收视频流的这条路 = 画质路径），
         // 500ms 一拍喂给 status，HUD 显示「丢包 x.x%」。
         self.spawn_loss_sampler();
         // P2-1：视频数据报读取（P 帧低延迟通道），与可靠流并行
         self.spawn_video_dgram_reader();
-        // G3：音频流接收（被控端另开的单向流），与视频两条路并行
-        self.spawn_audio_acceptor();
+        // 单入口派发音视频：旧对端仍可从主流送帧，新流到来无需等旧流排空。
+        self.spawn_media_acceptor();
         // 🔴 P1-5：半开链路看门狗（判据不在这个循环里，原因见该方法注释）
         self.spawn_heartbeat_watchdog();
         // 断流的真实理由（Err 路径才有）；其它退出路径维持原来的「画面流中断」。
@@ -226,7 +266,8 @@ impl OutboundVideo {
                 if !svc.outbound_heartbeat_stale() {
                     continue;
                 }
-                log::info!("[RC] 被控端失联（心跳超时），自动结束会话");
+                log::info!("[RC] 被控端失联（心跳超时），自动结束会话，恢复窗口={}ms",
+                    svc.heartbeat_timeout_ms());
                 // Q6：收口前取走能力/设备名——force_end 之后会话就没了
                 let ended = svc.session_brief_if(&my_id);
                 svc.force_end_if_session(&my_id, "对端失联（心跳超时）")
@@ -299,6 +340,7 @@ impl OutboundVideo {
                     }
                     push_h264_frame(
                         &svc,
+                        &my_id,
                         f.key,
                         f.width,
                         f.height,
@@ -318,106 +360,6 @@ impl OutboundVideo {
         }
     }
 
-    /// G3：音频流接收。被控端为音频**另开**单向 QUIC 流：先写 `PPAUD1` 头 +
-    /// AAC 配置（采样率/声道/ASC），其后每包 `u32 len | u8 type | u64 pts | payload`。
-    /// 本循环持续 accept_uni：被控端静音→恢复会换新流，旧流 EOF 后新流会被这里
-    /// 兜住。非音频流（旧版本对端不会发；陌生协议）头识别失败直接关。
-    /// 有界退出同 P0-1 B5：500ms 一拍查会话。
-    fn spawn_audio_acceptor(&self) {
-        #[cfg(target_os = "windows")]
-        {
-            let svc = self.svc.clone();
-            // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id（LAN 快速
-            // 重连时新旧会话 peer 相同，旧 acceptor 会误判自己仍存活、继续 accept
-            // 旧连接上的流；id 化后下一拍正确退出）。spawn 前捕获本会话 id。
-            let my_id = self.my_id.clone();
-            let conn = self.conn.clone();
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    if !svc.session_id_is(&my_id) {
-                        break;
-                    }
-                    let mut stream = tokio::select! {
-                        r = conn.accept_uni() => match r {
-                            Ok(s) => s,
-                            Err(_) => break,
-                        },
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
-                    };
-                    // ── 流头 ──
-                    let mut head = [0u8; super::audio::MAGIC.len() + 4];
-                    if stream.read_exact(&mut head).await.is_err() {
-                        continue;
-                    }
-                    let json_len = u32::from_le_bytes(head[super::audio::MAGIC.len()..].try_into().unwrap()) as usize;
-                    if json_len == 0 || json_len > 4096 {
-                        continue;
-                    }
-                    let mut json = vec![0u8; json_len];
-                    if stream.read_exact(&mut json).await.is_err() {
-                        continue;
-                    }
-                    let mut whole = Vec::with_capacity(head.len() + json.len());
-                    whole.extend_from_slice(&head);
-                    whole.extend_from_slice(&json);
-                    let Some((cfg, _used)) = super::audio::try_parse_stream_header(&whole) else {
-                        log::debug!("[RC] 收到非音频单向流，已忽略");
-                        continue;
-                    };
-                    log::info!(
-                        "[RC] 音频流已接通：{}Hz 立体声 {}kbps",
-                        cfg.sr,
-                        cfg.br
-                    );
-                    svc.audio_begin(cfg);
-                    // ── 包循环 ──
-                    // 🔴 再审计 P3-5（2026-09-25）：包循环的 read_exact 是**裸读**，
-                    // 对端流静默（不关流也不发数据）时会陪挂到连接死亡。不能 select
-                    // 包住超时——read_exact 非取消安全，弃读会把半截包留在流里碎帧
-                    //（P1-5 / A3 同因）；沿用既定的伴生看门狗模式：500ms 拍查会话，
-                    // 会话没了 close 连接把裸读解出来。每条流配一个看门狗，包循环
-                    // 退出即 abort，不陪外层 accept 循环空转到会话结束。
-                    let w_svc = svc.clone();
-                    let w_id = my_id.clone();
-                    let w_conn = conn.clone();
-                    let closer = tauri::async_runtime::spawn(async move {
-                        loop {
-                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                            if !w_svc.session_id_is(&w_id) {
-                                // 理由码对端不解析，只为解阻塞
-                                w_conn.close(0u32.into(), b"rc-audio-acceptor-exit");
-                                return;
-                            }
-                        }
-                    });
-                    loop {
-                        let mut lb = [0u8; 4];
-                        if stream.read_exact(&mut lb).await.is_err() {
-                            break;
-                        }
-                        let n = u32::from_le_bytes(lb) as usize;
-                        // type(1) + pts(8) + payload；上限 64KB（128kbps 一帧几百字节）
-                        if !(9..=64 * 1024).contains(&n) {
-                            break;
-                        }
-                        let mut body = vec![0u8; n];
-                        if stream.read_exact(&mut body).await.is_err() {
-                            break;
-                        }
-                        let pts = u64::from_le_bytes(body[1..9].try_into().unwrap());
-                        svc.audio_push(pts, body[9..].to_vec());
-                    }
-                    // 包循环退出（流 EOF / 脏包 / 断链）：看门狗交棒
-                    closer.abort();
-                }
-            });
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (&self.svc, &self.peer, &self.conn);
-        }
-    }
-
     /// P0-4：发起端丢包率采样。用本端 QUIC stats 的窗口增量算 ‰，
     /// EMA 平滑后写入 svc；窗口没有新包就不更新。
     fn spawn_loss_sampler(&self) {
@@ -428,26 +370,15 @@ impl OutboundVideo {
         let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
-            let mut prev: Option<(u64, u64)> = None;
-            let mut ema: u64 = 0;
-            let mut has_ema = false;
+            let mut loss_sampler = crate::rc::media::LossSampler::default();
             loop {
                 if !svc.session_id_is(&my_id) {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let st = conn.stats();
-                // iroh 扁平计数：分母用本端发出的 UDP 包数
-                let (lost, sent) = (st.lost_packets, st.udp_tx.datagrams);
-                if let Some((pl, ps)) = prev {
-                    if sent > ps {
-                        let d_lost = lost.saturating_sub(pl);
-                        let pm = d_lost * 1000 / (sent - ps).max(1);
-                        ema = if has_ema { (ema * 7 + pm * 3) / 10 } else { has_ema = true; pm };
-                        svc.note_remote_loss(ema as u32);
-                    }
+                if let Some((_, loss)) = loss_sampler.sample(&conn) {
+                    if loss >= 0 { svc.note_remote_loss(loss as u32); }
                 }
-                prev = Some((lost, sent));
             }
         });
     }
@@ -486,10 +417,35 @@ impl OutboundVideo {
                             self.pending_enc_ms = v["enc"].as_u64().unwrap_or(0).min(u16::MAX as u64) as u16;
                         }
                         Some("cursor") => {
-                            // P1-6：远端光标形状（变化才发）
-                            if let Some(sh) = v.get("s").and_then(|x| x.as_str()) {
-                                self.svc.set_remote_cursor(sh.to_string());
-                            }
+                            // 🔴 B 方案（2026-10-02）：P1-6 的“只有形状”升级成
+                            // 形状 + 归一化位置。x/y 缺省 = 对端此刻不可见
+                            // （游戏/演示藏了光标），位置必须留空——
+                            // 拿旧坐标填一个假位置，前端会把光标摆在不存在的地方。
+                            let shape = v
+                                .get("s")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let nx = v.get("x").and_then(|x| x.as_u64());
+                            let ny = v.get("y").and_then(|x| x.as_u64());
+                            // u16 之外的数（历史/畸形包）丢弃成 None：宁可收起
+                            // 光标，也不要把一个溢出的坐标摆到画面上。
+                            let clamp_u16 = |n: u64| u16::try_from(n).ok();
+                            let cur = super::input::RemoteCursor {
+                                shape,
+                                x: nx.and_then(clamp_u16),
+                                y: ny.and_then(clamp_u16),
+                            };
+                            // 两个坐标必须成对：只有一个是残缺帧，位置不可信
+                            let cur = match (cur.x, cur.y) {
+                                (Some(_), None) | (None, Some(_)) => super::input::RemoteCursor {
+                                    x: None,
+                                    y: None,
+                                    ..cur
+                                },
+                                _ => cur,
+                            };
+                            self.svc.set_remote_cursor(cur);
                         }
                         Some("clip") => {
                             if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
@@ -564,6 +520,7 @@ impl OutboundVideo {
                                                 rtt_ms: ema,
                                                 queue_ms: q,
                                                 frame_loss_pm,
+                                                media: None,
                                             })
                                             .await;
                                     });
@@ -667,6 +624,7 @@ impl OutboundVideo {
     /// 🔴 帧同时进 `frame_outbox`：H.264 的 P 帧与 JPEG 脏块帧**都不能丢**，
     /// 槽位 latest-wins 只能给旧命令兜底；新前端走 outbox 全序批量取。
     fn handle_jpeg(&mut self, f: super::video::VideoFrame) {
+        self.svc.note_inbound();
         let rect = self.pending_rect.take();
         // P2-10：用被控端采集时刻（vts 帧带来）；旧对端没带就退回收包时刻
         let ts = self
@@ -702,6 +660,7 @@ impl OutboundVideo {
             enc_ms,
         };
         self.svc.set_frame(frame.clone());
+        self.svc.note_media_received(&self.my_id, &frame);
         self.svc.push_outbox(frame);
     }
 
@@ -729,12 +688,13 @@ impl OutboundVideo {
                 .unwrap_or_else(|p| p.into_inner())
                 .reset_after_stream_key(sq);
         }
-        push_h264_frame(&self.svc, key, width, height, data, ts, cap_ms, enc_ms, codec);
+        push_h264_frame(&self.svc, &self.my_id, key, width, height, data, ts, cap_ms, enc_ms, codec);
         // D2：锚定后按序补交付缓冲完整的 P 帧——走流的关键帧被拥塞延迟时，
         // 先到的数据报 P 帧已缓存，等锚一到就能续播（不再整 GOP 作废）。
         for f in drained {
             push_h264_frame(
                 &self.svc,
+                &self.my_id,
                 f.key,
                 f.width,
                 f.height,
@@ -748,6 +708,7 @@ impl OutboundVideo {
     }
 }
 
+mod media;
 mod push;
 use push::push_h264_frame;
 

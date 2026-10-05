@@ -3,9 +3,9 @@
  *
  * 职责边界（design §2）：本 hook 只做「事件 → 判定 → 回调」的搬运，
  * 不做归一化、不发任何远端事件——那些在 RcMobileSession 的回调里经
- * `useRcMobileInput` 完成。热区拦截（横屏唤出）以 `interceptDown` 注入：
- * 返回 true 的 down 被本地吃掉，绝不进手势状态机（design §5.5 红线：
- * 输入分发顺序 = 热区判定 → 手势状态机 → 远端）。
+ * `useRcMobileInput` 完成。`onDown` 只用来在按下瞬间记录基准位置
+ * （浮动鼠标/视野导航的相对位移起点），不做任何拦截：所有触点一律进
+ * 手势状态机（横屏热区拦截已随 R2 显式把手退役）。
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { TouchClassifier, realClock, type TouchCallbacks } from "./touchClassifier";
@@ -13,21 +13,27 @@ import { TouchClassifier, realClock, type TouchCallbacks } from "./touchClassifi
 export function useTouchGestures({
   surfaceRef,
   enabled,
-  interceptDown,
+  onDown,
   callbacks,
+  onCancel,
+  tapMaxMs,
 }: {
   /** 手势附着面：未 transform 的容器（画布在其内部被 PinchViewport 缩放）。 */
   surfaceRef: React.RefObject<HTMLElement | null>;
   enabled: boolean;
-  /** down 拦截：返回 true = 本地消费（热区唤出），该触点不进手势机。 */
-  interceptDown?: (clientX: number, clientY: number) => boolean;
+  /** down 基准：按下瞬间记录位置（相对位移的起点），不消费事件。 */
+  onDown?: (clientX: number, clientY: number) => void;
   callbacks: TouchCallbacks;
+  onCancel?: () => void;
+  tapMaxMs?: number;
 }) {
   // 回调用 ref 承接：判定期内恒取最新，避免每次渲染重绑监听器
   const cbRef = useRef(callbacks);
   cbRef.current = callbacks;
-  const interceptRef = useRef(interceptDown);
-  interceptRef.current = interceptDown;
+  const cancelRef = useRef(onCancel);
+  cancelRef.current = onCancel;
+  const downRef = useRef(onDown);
+  downRef.current = onDown;
 
   const classifier = useMemo(
     () =>
@@ -46,8 +52,9 @@ export function useTouchGestures({
           onPinchUpdate: (r, dx, dy, mx, my) => cbRef.current.onPinchUpdate(r, dx, dy, mx, my),
         },
         realClock,
+        tapMaxMs,
       ),
-    [],
+    [tapMaxMs],
   );
 
   const cancelAll = useCallback(() => classifier.cancelAll(), [classifier]);
@@ -55,45 +62,46 @@ export function useTouchGestures({
   useEffect(() => {
     const el = surfaceRef.current;
     if (!el || !enabled) return;
-    let suppressed = new Set<number>(); // 被热区吃掉的 pointerId（后续 move/up 不喂状态机）
+    const active = new Set<number>();
 
     const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      active.add(e.pointerId);
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
         /* 捕获失败只丢「画外抬起」兜底，不断手势（真实指针不会走到这） */
       }
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      if (interceptRef.current?.(e.clientX, e.clientY)) {
-        suppressed.add(e.pointerId);
-        return;
-      }
+      downRef.current?.(e.clientX, e.clientY);
       classifier.down(e.pointerId, e.clientX, e.clientY);
     };
     const onMove = (e: PointerEvent) => {
-      if (suppressed.has(e.pointerId)) return;
       classifier.move(e.pointerId, e.clientX, e.clientY);
     };
     const onUp = (e: PointerEvent) => {
-      if (suppressed.delete(e.pointerId)) return;
+      active.delete(e.pointerId);
       classifier.up(e.pointerId, e.clientX, e.clientY);
     };
     const onCancel = (e: PointerEvent) => {
-      suppressed.delete(e.pointerId);
+      if (!active.has(e.pointerId)) return; // Capture is also lost normally after pointerup.
+      active.clear();
       // 单点取消 = 该指终止；多点/系统手势直接全量复位（上层随后 releaseAll 补发 up）
       classifier.cancelAll();
+      cancelRef.current?.();
     };
 
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onCancel);
+    el.addEventListener("lostpointercapture", onCancel);
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onCancel);
-      suppressed = new Set();
+      el.removeEventListener("lostpointercapture", onCancel);
+      active.clear();
       classifier.cancelAll();
     };
   }, [surfaceRef, enabled, classifier]);

@@ -25,6 +25,8 @@ pub struct HotkeyConfig {
     /// 待办灵动岛唤起（critique P1-1）：唤岛直进输入态。默认 Alt+T（Todo 的 T；
     /// 上面已占 Ctrl+Alt+V/Q/K/P/D、Alt+V、Ctrl+Q，Alt+T 无冲突）。
     pub todo_island: String,
+    /// 屏幕录制（rec/ 模块）：录制中再按 = 停止。默认 Ctrl+Alt+R。
+    pub screen_record: String,
 }
 
 impl Default for HotkeyConfig {
@@ -47,6 +49,8 @@ impl Default for HotkeyConfig {
             daily_note: "Ctrl+Alt+D".to_string(),
             // 待办岛唤起（T=Todo）。与上面全部已有热键不冲突。
             todo_island: "Alt+T".to_string(),
+            // 屏幕录制（R=Record）。与上面全部已有热键不冲突。
+            screen_record: "Ctrl+Alt+R".to_string(),
         }
     }
 }
@@ -374,6 +378,30 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的待办岛热键: {}", config.todo_island));
+    }
+
+    // 屏幕录制。统一入口 rec_toggle 已含「录制中再按 = 停止」分支（rec/mod.rs）。
+    // 只 emit 不做事会导致录制状态判定分裂，直接调 rec 模块（同截图热键直调 open_screenshot_window）。
+    // rec 模块 Windows 专属（lib.rs cfg(windows)），非桌面/非 Windows 下热键注册保留但回调空转。
+    if config.screen_record.trim().is_empty() {
+        log::info!("[HotkeyManager] 录屏热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.screen_record) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                log::info!("[HotkeyManager] 录屏热键触发");
+                #[cfg(windows)]
+                crate::rec::open_selector_window(app);
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册录屏热键: {}", config.screen_record),
+            Err(e) => {
+                let msg = format!("录屏热键 '{}' 注册失败: {}", config.screen_record, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的录屏热键: {}", config.screen_record));
     }
 
     if errors.is_empty() {

@@ -1,0 +1,18 @@
+/* rc.html 防闪黑：JS/主题 CSS 就绪前先铺近似底色，避免 WebView 露出系统黑底。
+   与后端 rc_open_workbench 的 visible(false)+background_color 叠加生效。
+   色值对齐 ocean / ocean-dark 的 --app-bg 起点。
+   注意：必须保持 <link> 外链而非 <style> 内联——vite 7.3.6 build 对 HTML
+   内联 <style> 会报 No matching HTML proxy module found（2026-09-21 实测，
+   卡死 7.2.3 发版 build）；外链样式表同样是渲染阻塞资源，防闪黑效果不变。 */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #f4f8fc;
+}
+@media (prefers-color-scheme: dark) {
+  html,
+  body {
+    background: #0b0b13;
+  }
+}

@@ -27,13 +27,22 @@ const h = vi.hoisted(() => ({
   probeTargets: vi.fn().mockResolvedValue(undefined),
   refreshTargets: vi.fn(),
   visible: true,
+  end: vi.fn().mockResolvedValue(true),
+  stageMount: vi.fn(),
+  stageUnmount: vi.fn(),
 }));
 /** 批7 审查补：toast 要能被断言——「通道未启动时点检测」的修复靠的就是它。 */
 const toastSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("@/components/Toast", () => ({ useToast: () => ({ toast: toastSpy }) }));
 vi.mock("@/components/settings/RcPairLayer", () => ({ RcPairLayer: () => null }));
-vi.mock("./RcStage", () => ({ RcStage: () => <div>会话画面（已 mock）</div> }));
+vi.mock("./RcStage", async () => {
+  const { useEffect } = await import("react");
+  return { RcStage: () => {
+    useEffect(() => { h.stageMount(); return () => { h.stageUnmount(); }; }, []);
+    return <div>会话画面（已 mock）</div>;
+  } };
+});
 vi.mock("@/hooks/useRc", () => ({
   useRc: () => ({
     status: h.status,
@@ -49,7 +58,7 @@ vi.mock("@/hooks/useRc", () => ({
     refreshTargets: h.refreshTargets,
     probeTargets: h.probeTargets,
     startChannel: vi.fn().mockResolvedValue(true),
-    end: vi.fn().mockResolvedValue(true),
+    end: h.end,
     setEnabled: vi.fn(),
     setDeviceAllowed: vi.fn(),
     setDeviceTrust: vi.fn(),
@@ -101,6 +110,45 @@ vi.mock("@/hooks/useRcHistory", () => ({
 }));
 
 import { RcWorkbench } from "./RcWorkbench";
+
+describe("等待/被控期间的工具导航", () => {
+  beforeEach(() => {
+    h.targets = [];
+    h.end.mockReset().mockResolvedValue(true);
+    h.stageMount.mockClear(); h.stageUnmount.mockClear(); toastSpy.mockClear();
+  });
+  it.each(["outbound_pending", "inbound_active"] as const)("%s 期间可打开全部工具页且始终能停止会话", async (phase) => {
+    h.status = status(phase, true);
+    render(<RcWorkbench />);
+    const stopLabel = phase === "outbound_pending" ? "取消申请" : "结束会话";
+    for (const page of ["文件", "记录", "设置"]) {
+      fireEvent.click(screen.getByRole("button", { name: page }));
+      expect(screen.getByRole("region", { name: "当前远程会话" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: stopLabel })).toBeTruthy();
+      expect(screen.getByText("会话画面（已 mock）").closest("[hidden]")).toBeTruthy();
+    }
+    expect(screen.getByRole("group", { name: "默认发起方式" })).toBeTruthy();
+    expect(h.end).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: stopLabel }));
+    await waitFor(() => expect(h.end).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toastSpy).toHaveBeenCalledWith(phase === "outbound_pending" ? "已取消远程申请" : "已结束远程会话", "success"));
+  });
+  it("等待中切工具页和返回、收到同意后保持同一会话组件", () => {
+    h.status = status("outbound_pending", true);
+    const view = render(<RcWorkbench />);
+    fireEvent.click(screen.getByRole("button", { name: "记录" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回会话" }));
+    expect(screen.getByText("会话画面（已 mock）").closest("[hidden]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "记录" }));
+    h.status = status("outbound_active", true);
+    view.rerender(<RcWorkbench />);
+    expect(screen.queryByRole("region", { name: "当前远程会话" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "会话记录" })).toBeNull();
+    expect(screen.getByText("会话画面（已 mock）").closest("[hidden]")).toBeNull();
+    expect(h.stageMount).toHaveBeenCalledTimes(1);
+    expect(h.stageUnmount).not.toHaveBeenCalled();
+  });
+});
 
 /** 后端只回传会话位；这里只摆本用例会用到的字段。 */
 function status(phase: RcSession["phase"] | null, running = false): RcStatus {

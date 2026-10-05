@@ -609,6 +609,14 @@
   56%, 100% { opacity: 0; }
 }
 
+/* 追问框在卡片里必须有侧距：`.card` 是 `overflow: hidden`（为了 12px 圆角），
+   而 Composer 的焦点态是**画在盒子外面**的 `0 0 0 3px` 环——不留侧距就被卡片
+   边界切掉，读成「只有上下两条光环」。13px 不是新值：它就是 `.cardPreview` 的
+   `margin: 0 13px`，追问框与上面的结果框同一列宽。 */
+.tcFollow {
+  margin: 0 13px; /* ui-rule-ok: 13px 沿用本卡片 .cardPreview 的既有侧距，不是随手值 */
+}
+
 /* v6.10 追问轮次（变换中心） */
 .followTurns {
   margin-top: 8px;

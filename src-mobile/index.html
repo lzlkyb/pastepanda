@@ -9,10 +9,18 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#0b1220" />
+    <!-- 启动防空白（2026-10-02）：WebView 冷启动到 React 挂载之间铺底色 +
+         极简占位。🔴 必须外链不能内联 <style>（vite build 卡死，教训见该 css） -->
+    <link rel="stylesheet" href="/mobile-boot.css" />
     <title>PastePanda 远程</title>
   </head>
 
   <body>
+    <!-- 启动占位：main.tsx 挂载后立即移除（见该文件）。aria-hidden：纯装饰 -->
+    <div id="boot" aria-hidden="true">
+      <img src="/icon.png" alt="" width="72" height="72" />
+      <div class="boot-dots"><i></i><i></i><i></i></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src-mobile/main.tsx"></script>
   </body>

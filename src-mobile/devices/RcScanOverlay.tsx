@@ -12,6 +12,8 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { useQrScan } from "./useQrScan";
+import { rcErrorText } from "./rcErrorText";
+import { MobileNotice } from "../ui/MobileNotice";
 import styles from "./RcDevices.module.css";
 
 export function RcScanOverlay({
@@ -32,7 +34,7 @@ export function RcScanOverlay({
     scan.state === "starting"
       ? "正在打开摄像头…"
       : scan.state === "denied"
-        ? "没有摄像头权限。可以在系统设置里给 PastePanda 开权限，或者返回手动输入那串码。"
+        ? rcErrorText("NotAllowedError", "camera")
         : scan.state === "unavailable"
           ? "这台设备取不到摄像头画面，请返回手动输入那串码。"
           : "把对方的配对码放进取景框";
@@ -52,7 +54,8 @@ export function RcScanOverlay({
         playsInline
         aria-label="摄像头取景"
       />
-      <div className={styles.scanHint}>{hint}</div>
+      <MobileNotice tone={scan.state === "denied" || scan.state === "unavailable" ? "error" : scan.state === "starting" ? "pending" : "info"} title={hint}
+        action={(scan.state === "denied" || scan.state === "unavailable") && <button type="button" className={styles.ghostBtn} onClick={() => void scan.start()}>重新尝试扫码</button>} />
       <button type="button" className={styles.ghostBtn} onClick={onClose}>
         取消，手动输入
       </button>

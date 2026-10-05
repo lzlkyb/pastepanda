@@ -197,6 +197,14 @@
   overflow: hidden;
 }
 
+.stageHost {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.stageHost[hidden] { display: none; }
+
 .errorSlot {
   flex: none;
   padding: 8px 12px 0;
@@ -651,7 +659,7 @@
   min-width: 0;
   min-height: 48px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
   padding: 4px;
@@ -692,8 +700,8 @@
 
 .deviceIcon {
   position: relative;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
 }
 
 .deviceIcon::after {
@@ -1256,6 +1264,14 @@
   flex: 0 0 200px;
   width: 200px;
   height: 170px;
+}
+
+.heroNativeDevice {
+  position: absolute;
+  left: 34px;
+  top: 6px;
+  color: var(--accent);
+  stroke-width: 1.2;
 }
 
 .heroMonitor {

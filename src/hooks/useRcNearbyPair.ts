@@ -23,10 +23,8 @@
  * 这类一次性副作用——正因如此**去重必须可靠**，重开对话框重播那条 toast 会变成噪音。
  * 按 `at_ms` 去重（去重归界面，后端不归）。
  *
- * ❗ **模块级 `shownDoneAtMs` 去重的代价**：同一时刻只有一个 hook 实例看得到某一条
- * `done`。配对从常驻卡发起时对话框通常没挂，所以基本总是卡拿到；但用户完全可能在
- * 卡处于核对态时又从侧栏打开对话框——那种边角下对话框赢、卡不 toast。两条路径都会
- * 各自刷新设备列表，用户不会卡在「配好了但列表不更新」，可接受。
+ * 首页观察者只消费被请求方的 done；主动配对的完成留给统一弹窗。
+ * 弹窗接手时首页观察者暂停，避免一次完成被隐藏组件抢先消费。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { logger } from "@/lib/logger";
@@ -79,6 +77,8 @@ export interface RcNearbyPair {
   /** 刚配上的那一台。**一直留着**，直到本 hook 卸载（对话框关闭）。 */
   done: RcPairDone | null;
   busy: boolean;
+  loading: boolean;
+  error: string | null;
   /** 手动刷一次（配对前后用，免得等满一个轮询周期）。 */
   refresh: () => Promise<void>;
   /** 对一台邻居发起配对。失败抛出，由调用方 toast。 */
@@ -90,6 +90,8 @@ export interface RcNearbyPair {
 }
 
 export interface UseRcNearbyPairOpts {
+  enabled?: boolean;
+  incomingOnly?: boolean;
   /**
    * 空闲态（没有配对在进行）的轮询间隔，默认 [`NEARBY_POLL_MS`]。
    *
@@ -104,9 +106,13 @@ export function useRcNearbyPair(opts?: UseRcNearbyPairOpts): RcNearbyPair {
   const [pair, setPair] = useState<RcPairPrompt | null>(null);
   const [done, setDone] = useState<RcPairDone | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const aliveRef = useRef(true);
   const visible = useWindowVisible();
   const idlePollMs = opts?.idlePollMs ?? NEARBY_POLL_MS;
+  const enabled = opts?.enabled ?? true;
+  const incomingOnly = opts?.incomingOnly ?? false;
   /** 有没有配对在进行。轮询 effect 只认这个布尔（见那边的 🔴 注释）。 */
   const pairing = pair !== null;
 
@@ -114,24 +120,28 @@ export function useRcNearbyPair(opts?: UseRcNearbyPairOpts): RcNearbyPair {
     try {
       const st = await rcNearbyStatus();
       if (!aliveRef.current) return;
+      setError(null);
       setNeighbors(st.neighbors);
       // 后端是唯一权威：它说没有会话了就是没有了（过期 / 被对方取消）。
       setPair(st.pair);
       // ❗ 只在拿到时写入，不拿 None 去清——见文件头。
       // A4：去重收口到模块级 `shownDoneAtMs`（见其注释）——同一条既不逐 2s 重渲染，
       // 也不会在重开对话框时重播。
-      if (st.done && st.done.at_ms > shownDoneAtMs) {
+      if (st.done && (!incomingOnly || !st.done.initiator) && st.done.at_ms > shownDoneAtMs) {
         shownDoneAtMs = st.done.at_ms;
         setDone(st.done);
       }
     } catch (e) {
       // 不 toast：这是 2 秒一次的轮询，失败弹一次就是刷屏。
       logger.warn("获取附近设备失败", e);
+      if (aliveRef.current) setError(String(e));
+    } finally {
+      if (aliveRef.current) setLoading(false);
     }
-  }, []);
+  }, [incomingOnly]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !enabled) return;
     aliveRef.current = true;
     void refresh();
     // 配对在进行中走 2 秒（重传与确认都等不起），空闲走 idlePollMs。
@@ -148,7 +158,7 @@ export function useRcNearbyPair(opts?: UseRcNearbyPairOpts): RcNearbyPair {
       aliveRef.current = false;
       window.clearInterval(t);
     };
-  }, [refresh, visible, pairing, idlePollMs]);
+  }, [refresh, visible, pairing, idlePollMs, enabled]);
 
   const startPair = useCallback(async (peerId: string) => {
     setBusy(true);
@@ -185,5 +195,5 @@ export function useRcNearbyPair(opts?: UseRcNearbyPairOpts): RcNearbyPair {
     await refresh();
   }, [refresh]);
 
-  return { neighbors, pair, done, busy, refresh, startPair, confirm, cancel };
+  return { neighbors, pair, done, busy, loading, error, refresh, startPair, confirm, cancel };
 }

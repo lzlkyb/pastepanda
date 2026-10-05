@@ -14,7 +14,8 @@
 //! 直接 Sleep）。所以「2.5s 没有新帧」是**正常状态**，不是链路故障。
 //! 前端曾经拿它当断链证据（`stalled`），结果是用户看一屏静止桌面 2.5 秒
 //! 就见到「画面已停滞」+「心跳超时」，而 ping/pong 一直通着——必然误报。
-//! 现在帧静默归 UI 侧的中性观测，链路活性只认本模块的 pong 时间戳。
+//! 现在帧静默归 UI 侧的中性观测，链路活性认 pong 或当前会话的入站数据，
+//! 不能拿本地仍在采集、编码或发送当作对端仍在线的证据。
 //!
 //! **也不答「在不在线」。** 那是 `devices.last_ok_ms` + 组播的事。
 //!
@@ -45,6 +46,32 @@ use std::sync::Mutex;
 /// 否则「一侧认为还活着、另一侧已经收口」。
 pub const LINK_STALE_KICK_MS: i64 = 15_000;
 
+/// 中继曾测到 8 秒级往返；15 秒仅够一两轮恢复，不能按快速直连判死。
+/// 保留有限上界，不以本地持续发送或画面静止为对端仍在线的证据。
+pub fn foreground_heartbeat_timeout_ms(relay: bool, rtt_ms: i64) -> i64 {
+    if !relay { return LINK_STALE_KICK_MS; }
+    rtt_ms.max(0).saturating_mul(4).saturating_add(5_000).clamp(30_000, 45_000)
+}
+
+#[cfg(test)]
+mod relay_timeout_tests {
+    use super::*;
+
+    #[test]
+    fn slow_relay_recovers_before_a_bounded_disconnect() {
+        let timeout = foreground_heartbeat_timeout_ms(true, 8_307);
+        assert_eq!(timeout, 38_228);
+        assert_eq!(peer_bg_watchdog(0, 100_000, 100_000, 115_001, timeout), None);
+        assert_eq!(peer_bg_watchdog(0, 100_000, 100_000, 138_229, timeout), Some("对端失联（心跳超时）"));
+        assert_eq!(peer_bg_watchdog(0, 100_000, 138_000, 138_229, timeout), None);
+        assert_eq!(foreground_heartbeat_timeout_ms(true, 0), 30_000);
+        assert_eq!(foreground_heartbeat_timeout_ms(true, i64::MAX), 45_000);
+        assert_eq!(foreground_heartbeat_timeout_ms(false, 8_307), LINK_STALE_KICK_MS);
+        assert_eq!(peer_bg_watchdog(0, 100_000, 100_000, 115_001, LINK_STALE_KICK_MS), Some("对端失联（心跳超时）"));
+        assert_eq!(peer_bg_watchdog(100_000, 100_000, 100_000, 400_000, timeout), Some("对端后台失联（心跳超时）"));
+    }
+}
+
 /// 半开判定（纯函数，时间由调用方传入 —— 同 `stream_cfg` 的假时钟纪律）：
 /// 这条链路是不是已经**没有任何证据**了？
 ///
@@ -73,6 +100,37 @@ pub fn link_stale_kick(started_ms: i64, last_evidence_ms: i64, now_ms: i64, time
 /// 三者同为单调 ms 口径，`0` = 尚未有过。返回 `0` 表示「一次证据都没有」。
 pub fn heartbeat_evidence(attached_ms: i64, last_pong_ms: i64, last_inbound_ms: i64) -> i64 {
     attached_ms.max(last_pong_ms).max(last_inbound_ms)
+}
+
+/// 发起端在后台的宽限上限（后台保活，2026-10-02）。
+///
+/// 手机进后台后 WebView 随 Activity 暂停、进程随后被系统冻结——心跳断是
+/// **预期内**的，不能按 [`LINK_STALE_KICK_MS`] 的 15s 失联收口。宽限给到
+/// 5 分钟的连续无入站证据才收口；前台服务持续发送心跳时不限制后台时长。
+pub const PEER_BG_TTL_MS: i64 = 5 * 60_000;
+
+/// 被控端看门狗判定（纯函数，时间由调用方传入 —— 同 [`link_stale_kick`] 的
+/// 假时钟纪律）。返回 `Some(reason)` = 该收口了。
+///
+/// - 对端在**前台**（`bg_since_mono <= 0`）：行为与旧看门狗一致，
+///   按调用方传入的前台恢复窗口判定；
+/// - 对端在**后台**：以最近入站证据为锚，连续失联超过 5 分钟才收口。
+///   进入后台的时刻保证刚冻结的进程获得完整宽限；健康心跳会持续刷新锚。
+/// - `bg_since_mono <= 0` 永远按前台算（`0` = 没进过后台，也是残值的保守
+///   回退，与 `started_mono` 遇 0 不触发的纪律一致）。
+pub fn peer_bg_watchdog(
+    bg_since_mono: i64,
+    started_mono: i64,
+    evidence_mono: i64,
+    now_mono: i64,
+    foreground_timeout_ms: i64,
+) -> Option<&'static str> {
+    if bg_since_mono <= 0 {
+        return link_stale_kick(started_mono, evidence_mono, now_mono, foreground_timeout_ms)
+            .then_some("对端失联（心跳超时）");
+    }
+    let last_seen = bg_since_mono.max(started_mono).max(evidence_mono);
+    (now_mono - last_seen >= PEER_BG_TTL_MS).then_some("对端后台失联（心跳超时）")
 }
 
 /// 会话收尾时交回的东西：这一程**走的是哪条路** + **网速摘要**。
@@ -317,6 +375,40 @@ impl LinkState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 🔴 后台保活（2026-10-02）看门狗判据。场景背景：手机切后台 WebView/进程
+    /// 冻结，心跳断是预期——旧判据 15s 就把会话收口（「切后台再回来远程就断了」
+    /// 的根因）。这里钉死新判据的四条边。
+    #[test]
+    fn test_后台保活看门狗_前台照旧后台放宽() {
+        // 前台 + 心跳超时 → 照旧收口（对端没进过后台，bg_since=0）
+        assert_eq!(
+            peer_bg_watchdog(0, 100_000, 100_000, 115_001, LINK_STALE_KICK_MS),
+            Some("对端失联（心跳超时）")
+        );
+        // 前台 + 心跳正常 → 不收口
+        assert_eq!(peer_bg_watchdog(0, 100_000, 115_000, 115_001, LINK_STALE_KICK_MS), None);
+        // 后台 4 分 59 秒：就算心跳全断（进程已冻结）也不许收口
+        assert_eq!(
+            peer_bg_watchdog(100_000, 90_000, 100_000, 100_000 + PEER_BG_TTL_MS - 1, LINK_STALE_KICK_MS),
+            None,
+            "TTL 内的后台必须扛住失联判定，否则保活白做"
+        );
+        // 后台满 5 分钟：收口（进程冻结后对端连 BgResume 都发不出来，
+        // 这个 TTL 是唯一的最后期限，绝不能放宽成「永不收口」）
+        assert_eq!(
+            peer_bg_watchdog(100_000, 90_000, 100_000, 100_000 + PEER_BG_TTL_MS, LINK_STALE_KICK_MS),
+            Some("对端后台失联（心跳超时）")
+        );
+        // 健康后台超过 5 分钟仍保活；最后心跳丢失后才开始累计失联时间。
+        assert_eq!(
+            peer_bg_watchdog(100_000, 90_000, 700_000, 700_001, LINK_STALE_KICK_MS),
+            None
+        );
+        assert_eq!(peer_bg_watchdog(100_000, 90_000, 700_000, 700_000 + PEER_BG_TTL_MS - 1, LINK_STALE_KICK_MS), None);
+        assert_eq!(peer_bg_watchdog(100_000, 90_000, 700_000, 700_000 + PEER_BG_TTL_MS, LINK_STALE_KICK_MS), Some("对端后台失联（心跳超时）"));
+        assert_eq!(peer_bg_watchdog(0, 0, 0, 700_000, LINK_STALE_KICK_MS), None);
+    }
 
     #[test]
     fn test_没有会话时没有路径也没有心跳() {

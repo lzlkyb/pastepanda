@@ -771,7 +771,12 @@ pub fn rc_boot(app: &AppHandle) {
         };
         if let Err(e) = svc.start(&dir, true).await {
             log::warn!("[RC] 启动远程通道失败：{}", e);
+            return;
         }
+        // 🔴 Android 不预热确认浮层（2026-10-03 回归撤除）：wry 在 Android 上
+        // 每个 Activity 只有一块 webview，建第二块窗走 `setContentView` 会把
+        // 主界面整块顶掉（打开 App 白屏的真因）。手机端敲门确认走主界面设备页
+        // 的内联申请卡（RcInboundAskCard），不需要任何第二块窗。
     });
 }
 
@@ -1825,6 +1830,30 @@ pub fn rc_session_history(
         .collect();
     overlay_history_display_names(&mut list, &notes);
     Ok(list)
+}
+
+/// RC 会话前台服务保活开关（B 方案，2026-10-02）。
+///
+/// 会话壳（`useRcSessionKeepalive`）进入会话视图时调 `on=true`、卸载时
+/// `on=false`。Android 上启停 `RcSessionForegroundService`（见
+/// `rc::keepalive` 模块注释）；**桌面无此问题**（无进程冻结），no-op 返回 Ok
+/// ——两壳共用同一 hook 时不必分支。
+#[tauri::command]
+pub fn rc_keepalive_set(app: AppHandle, on: bool, title: String) -> Result<(), String> {
+    // 两个 cfg 块各留一个做**块尾表达式**，不能写 return（块语句类型会是 ()）
+    #[cfg(target_os = "android")]
+    {
+        match app.try_state::<crate::rc::keepalive::RcKeepalive<tauri::Wry>>() {
+            Some(k) => k.set(on, &title),
+            // 插件未装载（装载失败也不至于把会话打挂）：诚实返回，调用方静默
+            None => Err("前台服务插件未就绪".into()),
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, on, title);
+        Ok(())
+    }
 }
 
 /// 把备注覆盖进历史条目的 `display_name` 键（纯函数，可单测）。

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { TouchClassifier, type ClassifierClock, type TouchCallbacks } from "./touchClassifier";
-import { LONG_PRESS_MS, TAP_MAX_MS } from "./touchConstants";
+import { LONG_PRESS_MS } from "./touchConstants";
 
 /** 手动时钟：advance 逐档推进并触发到点任务（同刻多任务按加入序）。 */
 function fakeClock() {
@@ -120,25 +120,27 @@ describe("touchClassifier — 单指", () => {
     expect(events[4].args).toEqual([170, 110]);
   });
 
-  it(`按住 ${TAP_MAX_MS}-550ms 之间抬起且未动 = 无事件（防误触窗）`, () => {
+  it(`充能前（${LONG_PRESS_MS}ms 内）原位抬起 = 左键单击，无防误触死窗`, () => {
+    // 2026-10-05 口径收口：220–550ms「无事件死窗」在接线（useSessionPointer
+    // 传 550）上从未生效，点按窗与长按窗合一——充能前抬起都可能是一次点按。
     const clock = fakeClock();
     const { cb, events } = recorder();
     const c = new TouchClassifier(cb, clock);
     c.down(1, 100, 100);
     clock.advance(380);
     c.up(1, 100, 100);
-    expect(events).toEqual([]);
+    expect(kinds(events)).toEqual(["tap"]);
   });
 
-  it("超点按窗且超距的抬起 = 无事件", () => {
+  it("位移超阈值的抬起不是点按（转移动，抬起无点击）", () => {
     const clock = fakeClock();
     const { cb, events } = recorder();
     const c = new TouchClassifier(cb, clock);
     c.down(1, 100, 100);
     clock.advance(300);
-    c.move(1, 108, 100); // 8px：未达拖动阈值，但已超点按位移
-    c.up(1, 108, 100);
-    expect(events).toEqual([]);
+    c.move(1, 120, 100); // 20px：超过 TAP_MAX_PX，转纯移动
+    c.up(1, 120, 100);
+    expect(kinds(events)).toEqual(["move"]);
   });
 });
 
@@ -164,7 +166,7 @@ describe("touchClassifier — 双指", () => {
     expect(kinds(events)).not.toContain("pinchStart");
   });
 
-  it("双指张开 → 捏合（ratio 相对起点），无滚动事件", () => {
+  it("双指张开 → 捏合（ratio 相对上一帧），无滚动事件", () => {
     const clock = fakeClock();
     const { cb, events } = recorder();
     const c = new TouchClassifier(cb, clock);
@@ -177,17 +179,17 @@ describe("touchClassifier — 双指", () => {
     c.move(2, 260, 300); // 间距 220
     c.up(1, 40, 300);
     c.up(2, 260, 300);
-    // 分类帧本身也带一次 update（间距 100→140 的变化不能丢，否则缩放首帧跳变）
+    // 两指起手都到达后分类；等待期间累计的 100→180 间距变化不能丢。
     expect(kinds(events)).toEqual([
       "pinchStart",
       "pinchUpdate",
       "pinchUpdate",
       "pinchUpdate",
-      "pinchUpdate",
     ]);
-    expect(events[1].args[0]).toBeCloseTo(1.4, 5);
-    expect(events[2].args[0]).toBeCloseTo(1.8, 5);
-    expect(events[4].args[0]).toBeCloseTo(2.2, 5);
+    expect(events[1].args[0]).toBeCloseTo(1.8, 5);
+    expect(events[2].args[0]).toBeCloseTo(200 / 180, 5);
+    expect(events[3].args[0]).toBeCloseTo(220 / 200, 5);
+    expect(events.slice(1).reduce((scale, e) => scale * Number(e.args[0]), 1)).toBeCloseTo(2.2, 5);
   });
 
   it("左键拖拽进行中第二指被忽略：拖拽不冻结、不卡键", () => {
@@ -248,4 +250,64 @@ describe("touchClassifier — 兜底", () => {
     c.up(2, 200, 200);
     expect(kinds(events)).toEqual(["charge", "chargeCancel"]);
   });
+});
+
+it("R2：静止 350ms 抬起仍是点击，不落入无反馈时间窗", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock, LONG_PRESS_MS);
+  c.down(1, 50, 50); clock.advance(350); c.up(1, 50, 50);
+  expect(kinds(events)).toEqual(["tap"]);
+});
+
+it("连续捏合按帧增量缩放，不重复乘起点比例", () => {
+  const clock = fakeClock(), { cb, events } = recorder(); const c = new TouchClassifier(cb, clock);
+  c.down(1, 0, 0); c.down(2, 100, 0);
+  c.move(2, 130, 0); clock.advance(48); c.move(2, 150, 0);
+  const updates = events.filter(e => e.ev === "pinchUpdate");
+  expect(updates).toHaveLength(2);
+  expect(Number(updates[0].args[0]) * Number(updates[1].args[0])).toBeCloseTo(1.5);
+});
+
+it("两指先后横向移动也识别滚动，第一指事件不提前锁成捏合", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock);
+  c.down(1, 100, 100); c.down(2, 200, 100);
+  c.move(1, 125, 100);
+  expect(events).toEqual([]);
+  c.move(2, 225, 100);
+  expect(kinds(events)).toEqual(["scroll"]);
+  expect(events[0].args.slice(0, 2)).toEqual([25, 0]);
+});
+
+it("慢速双指累计位移仍触发滚动，不丢起手距离", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock);
+  c.down(1, 100, 100); c.down(2, 200, 100);
+  for (let d = 1; d <= 15; d++) { c.move(1, 100, 100 + d); c.move(2, 200, 100 + d); }
+  expect(kinds(events)).not.toContain("pinchStart");
+  expect(events.reduce((total, e) => total + Number(e.args[1]), 0)).toBe(15);
+});
+
+it("双指起手等待中抬指取消定时识别，不产生迟到的缩放或单击", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock);
+  c.down(1, 0, 0); c.down(2, 100, 0); c.move(2, 130, 0);
+  c.up(2, 130, 0); clock.advance(100); c.up(1, 0, 0);
+  expect(events).toEqual([]);
+});
+
+it("充能后取消清除预告，重开手势不会沿用双击状态", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock);
+  c.down(1, 100, 100); clock.advance(550); c.cancelAll();
+  expect(kinds(events)).toEqual(["charge", "chargeCancel"]);
+  c.down(1, 100, 100); clock.advance(30); c.up(1, 100, 100);
+  expect(events[events.length - 1]?.args[2]).toBe(false);
+});
+
+it("充能后在阈值外抬起且未收到移动事件，也清除预告", () => {
+  const clock = fakeClock(), { cb, events } = recorder();
+  const c = new TouchClassifier(cb, clock);
+  c.down(1, 100, 100); clock.advance(550); c.up(1, 120, 100);
+  expect(kinds(events)).toEqual(["charge", "chargeCancel"]);
 });

@@ -2,7 +2,7 @@
   "identifier": "desktop-plugins",
   "description": "桌面专属插件权限。clipboard-manager / global-shortcut 两个插件只在桌面依赖段声明（Cargo.toml 的 cfg(not(android/ios)) 段），Android/iOS 目标不编译——tauri_build 解析 capabilities 时按当前目标可用插件校验权限，故这两条必须随平台限定拆出，否则 Android 目标 build.rs 直接失败（探针 A 实测）。窗口清单与 default.json 保持一致，桌面侧行为不变。",
   "platforms": ["macOS", "windows", "linux"],
-  "windows": ["main", "tray-popup", "md-editor", "quick-paste", "screenshot", "longshot-status", "stack-hud", "rc-workbench", "todo-island", "rc-ask"],
+  "windows": ["main", "tray-popup", "md-editor", "quick-paste", "screenshot", "longshot-status", "stack-hud", "rc-workbench", "todo-island", "rc-ask", "rec-select", "rec-control"],
   "permissions": [
     "clipboard-manager:default",
     "global-shortcut:default"

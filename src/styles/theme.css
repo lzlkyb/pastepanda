@@ -225,6 +225,31 @@
   --control-elev:
     0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.85);
 
+  /* ===== 提问框光晕（Composer）· design/PastePanda-提问框渐变光晕Composer-设计稿.html =====
+     只此一处：暖端取本主题 --orange、主端取 --accent，六套主题自动派生，
+     任何 [data-theme] 块都不许再覆写 --composer-*（守卫单测钉这条，反例喂过）。
+     消费方是 src/components/Composer.module.css，它只认 --composer-halo-* 语义名——
+     U6「新代码不许出现色名变量」管的不是这一行：这里是**令牌定义处**（建尺子的地方），
+     同 --diagram-edge-line 消费 --accent 的先例。
+
+     🔴 端点**不混色**，这是稿 §4 试到第三次才定的量：
+        ① color-mix(in oklch, accent 42%, orange) 在 ocean 解析成 #bf477a；
+        ② 改成 orange 72% + accent 仍穿紫（oklch 走短弧 40°→250° 经过 330°）；
+        ③ 最终两端各用本色，中间那道过渡交给 linear-gradient 自己的 sRGB 插值（参考图同理）。
+        已知代价：破晓 dawn 的 --accent 本身就是橙 ⇒ 两端同色，扫光最弱。
+     ⚠ --composer-halo-a 在深色两套里取的是「文字色橙」--orange（#fb923c 那档），
+        不是 --orange-solid。这里要的是描边不是白字底，稿 §4 的对比度按它逐主题量过。 */
+  --composer-halo-a: var(--orange);
+  --composer-halo-b: var(--accent);
+  /* 强度两档（稿 §6 P2 拍定静息 10，焦点 55 = 稿 §2 展示值）。
+     ❗ 必须是**无单位数字**：下面靠 calc(× 1%) 变成百分比。 */
+  --composer-halo-rest: 10;
+  --composer-halo-focus: 55;
+  --composer-halo-a-rest: color-mix(in srgb, var(--composer-halo-a) calc(var(--composer-halo-rest) * 1%), transparent);
+  --composer-halo-b-rest: color-mix(in srgb, var(--composer-halo-b) calc(var(--composer-halo-rest) * 1%), transparent);
+  --composer-halo-a-focus: color-mix(in srgb, var(--composer-halo-a) calc(var(--composer-halo-focus) * 1%), transparent);
+  --composer-halo-b-focus: color-mix(in srgb, var(--composer-halo-b) calc(var(--composer-halo-focus) * 1%), transparent);
+
   /* ===== 工具浮层卡（方案 B · 双轨材质，2026-09）=====
      双轨判定（写给以后加浮层的人）：
        · 工具浮层 —— 短命、要盖在正文上读字、可能叠多层
@@ -310,15 +335,14 @@
 
 /* ===== 主题变量 ===== */
 
-/* ── 1. ocean 海洋（默认浅色·通用）── */
+/* ── 1. ocean 月白（默认浅色·通用；界面名见 src/lib/theme.ts，key 保持 ocean 不动）── */
 :root,
 [data-theme="ocean"] {
-  /* 皮肤场景：清冽晨海 — 晨光海面天空渐变（SkinScene 太阳/海鸥/帆影/波浪/碎金衬于其上） */
-  /* 经典白皮肤：纯色底（与 v5.2.0一致）。ocean 不再渲染 SkinScene，
-     背景静止 → 卡片的 backdrop-filter 结果可被合成器缓存，模糊几乎不花 GPU。 */
-  /* 经典白升级（2026-09 视觉稿）：纯色死白 → 静态氛围渐变。
-     两层 radial 用 accent 色相（青 + 微紫），底仍是极浅冷灰，保证白卡可浮起。
-     纯静态、可被合成器缓存；不引入 SkinScene 动画。 */
+  /* 底：极浅冷灰蓝静态渐变 + 两层 accent 色相柔光（青 + 微紫）。
+     这两层给的是**色相**——月白看着带蓝调而不是纯白，来源在此；
+     卡片本身的分层仍靠 --card-border + --control-elev，不靠背景辉光。
+     本主题不渲染 SkinScene（分支表见 src/components/SkinScene.tsx）→ 背景静止，
+     backdrop-filter 的结果可被合成器缓存，模糊几乎不花 GPU。 */
   --app-bg:
     radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
     radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
@@ -441,7 +465,7 @@
   --update-badge-gradient: linear-gradient(135deg, #059669, #047857);
   --update-badge-shadow: rgba(5, 150, 105, 0.4);
   /* 玻璃拟态 — 海洋浅色（皮肤场景：22% 弱玻璃 + 5px 弱模糊，让晨海场景透出） */
-  --glass-card-bg: #ffffff; /* 经典白：不透明纯白卡片。ocean 无场景层，半透明混不出纯白（0.55 白压 #F4F6F9 实际只有 #FAFBFC，发灰） */
+  --glass-card-bg: #ffffff; /* 月白：不透明纯白卡片。ocean 无场景层，半透明混不出纯白（0.55 白压 #F4F6F9 实际只有 #FAFBFC，发灰） */
   /* 卡片玻璃模糊：整个属性走变量，因为只有背景静止的主题适合开模糊。
      不能写成 blur(var(--…)) 形式——那种写法无法表达 none。 */
   --glass-card-filter: none;
@@ -473,11 +497,11 @@
   --glass-icon-border: rgba(0, 0, 0, 0.07);
   --glass-icon-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.5), 0 2px 6px rgba(0, 0, 0, 0.05);
   --glass-popover-bg: rgba(255, 255, 255, 0.97);
-  /* 经典白：回到 v5.2.0 的 0.97。其余 6 套主题的 0.85 是为了让场景透出，ocean 无场景不需要 */
+  /* 月白：回到 v5.2.0 的 0.97。其余 6 套主题的 0.85 是为了让场景透出，ocean 无场景不需要 */
   --glass-popover-border: rgba(0, 0, 0, 0.06);
   --glass-popover-shadow: 0 12px 36px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
   --glass-dialog-bg: #ffffff;
-  /* 经典白：对话框回到 v5.2.0 的实心白（原这里是 0.66 透明 + 22px 模糊，为让皮肤场景透出，ocean 已无场景） */
+  /* 月白：对话框回到 v5.2.0 的实心白（原这里是 0.66 透明 + 22px 模糊，为让皮肤场景透出，ocean 已无场景） */
   --glass-dialog-blur: 22px; /* 已无处使用（被下行 --glass-dialog-filter 取代），保留仅为避免变量缺失报错 */
   /* 对话框模糊：整个属性走变量（与卡片同一套思路）。
      dialog.css 等 6 处消费方写的是 var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4))，

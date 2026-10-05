@@ -43,7 +43,211 @@ mod want_codec_tests {
 // 推流节拍判据收口在 `rc::pace`（inbound.rs 的主题是会话结构与生命周期）。
 use crate::rc::pace::{auto_key_due, want_fps_for, AUTO_KEY_MIN_GAP_MS};
 
+/// 🔴 可靠流积压熔断（2026-10-03，判据收口为纯函数便于无环境单测）。
+///
+/// 背景：数据报放行闸（`stream_cfg::video_dgram_allowed`）在公网/中继/未采样
+/// 路径上恒关，视频全程走可靠 QUIC 流。可靠流**没有任何弃帧机制**——写入在
+/// quinn 发送缓冲上阻塞，编码端产多少就积多少，延迟单调上涨且永不恢复
+/// （08:22 真机会话：往返 450ms → 46s，pong 被同一连接的视频积压堵死，
+/// 「断链 0」——链路没坏，纯粹是队列）。
+///
+/// 水位信号：`write_all` 在缓冲未满时立即返回，**只有队列深了才会阻塞**——
+/// 所以「写完一帧用了多久」就是积压的直观读数。单帧写 ≥`MELT_SLOW_MS` → 熔断：
+/// 只弃大 P 帧（小帧是窄管上唯一能穿过的），关键帧照发（写耗时顺便当水位
+/// 探针）；某次写入变快 = 队列已排干 → 退出。
+#[cfg(target_os = "windows")]
+pub(crate) const MELT_SLOW_MS: u64 = 1500;
+/// 一帧在这个时间内写完 = 队列已排干，退出熔断恢复产帧。
+#[cfg(target_os = "windows")]
+pub(crate) const MELT_EXIT_MS: u64 = 80;
+/// 熔断期只弃**大** P 帧，小帧照发（2026-10-03 09:52 中继会话教训）：
+/// 窄管路径上写一帧的时间下限就是帧的传输时间，阈值太低会把唯一能穿过
+/// 窄管的小 P 帧（2~10KB）也弃掉 = 对端永远「等待对方画面」。阈值取
+/// 32KB：静态/慢动帧放行，运动大帧在熔断期停住不加塞。
+#[cfg(target_os = "windows")]
+pub(crate) const MELT_DROP_MIN_BYTES: u64 = 32 * 1024;
+/// 「传输分 plane」：熔断**持续**这么久 → 整流重建（2026-10-03）。可靠流上
+/// 已入队字节无法丢弃，光弃新帧只能停止加量、不能清账；重建把旧流连同
+/// 积压整段丢弃，延迟上界 = 重开周期内新积的量。5s：一次 GOP + 数帧的
+/// 观察窗，短于它会把「写一帧的正常传输时间」误判成持续拥塞。
+#[cfg(target_os = "windows")]
+pub(crate) const MELT_REBUILD_AFTER_MS: u128 = 5_000;
+
+/// 熔断判定对本帧的动作。
+#[cfg(target_os = "windows")]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum MeltAction {
+    /// 照常写入。
+    Send,
+    /// 弃掉本 P 帧（调用方负责计数）。
+    DropP,
+}
+
+/// 起播宽限：等发起端倍率/链路信息到位再开硬编的上界（毫秒）。
+///
+/// 判据不是「等满」而是「谁先到」——`peer_net_seen` 一置位就立刻开
+/// （LAN 上几乎零成本），只有对端始终不发言才等满。取 1500ms 的理由：
+/// 2026-10-03 真机实测发起端 `SetBitratePct` 在起播约 0.9s 后到达
+/// （绕中继路径），1.5s 给了一倍的余量；等满的场景（旧对端/控制帧丢）
+/// 也只是 JPEG 多兜底 1.5s，见 `try_new` 的宽限闸注释。
+#[cfg(target_os = "windows")]
+pub(crate) const ENC_OPEN_GRACE_MS: u64 = 1_500;
+
+/// 起播宽限判据（纯函数，便于无环境单测）：对端信息已到，或宽限期满——
+/// 两者满足其一就该开硬编。
+#[cfg(target_os = "windows")]
+pub(crate) fn enc_first_open_due(
+    due: std::time::Instant,
+    now: std::time::Instant,
+    peer_seen: bool,
+) -> bool {
+    peer_seen || now >= due
+}
+
+/// 输入上一帧的写入耗时与当前熔断状态，输出（新熔断态，本帧动作）。
+///
+/// 时序：`last_write_ms` 是**上一帧**的写入耗时，用它决定**本帧**发不发——
+/// 写入是阻塞的，「上一帧写得慢」正是「此刻队列还深」的证据。
+///
+/// 🔴 **单帧大阻塞即进熔断，不数连击**（11:10 会话教训）：真实流量是
+/// 「1 个大 IDR 阻塞 10~15s + 一串快的小帧写」交替，快帧会把「连续 N 慢」
+/// 的连击清零——初版数 3 连击，整场会话 `流积压弃帧 0`，熔断实际是死代码，
+/// 帧龄照样涨到 90s。写一帧阻塞 ≥1.5s 本身就是「产量远超吞吐」的实锤，
+/// 一次就够判。
+///
+/// 🔴 熔断期**不强制 IDR**（与数据报路径的 C2 弃帧不同）：流上弃帧没有「洞」，
+/// 接收端解码断链走 corrupt→RequestKey 自愈、自然 GOP ≤1s 兜底；强灌 IDR
+/// 是把**最大的帧**往已堵死的管子里倒（09:52 中继会话由此全程无帧）。
+#[cfg(target_os = "windows")]
+pub(crate) fn melt_step(
+    melt: bool,
+    last_write_ms: u64,
+    is_key: bool,
+    frame_bytes: u64,
+) -> (bool, MeltAction) {
+    let melt = melt || last_write_ms >= MELT_SLOW_MS;
+    if !melt {
+        return (melt, MeltAction::Send);
+    }
+    // 上一帧写得快 = 队列已排干，退出熔断、本帧放行
+    if last_write_ms < MELT_EXIT_MS {
+        return (false, MeltAction::Send);
+    }
+    // 关键帧不能弃：弃了接收端要等下一个 GOP 才能重新起链，这期间全是花屏。
+    // 照发——它的写耗时就是下一次判定的水位输入。
+    if is_key {
+        return (melt, MeltAction::Send);
+    }
+    // 小 P 帧放行：它们是窄管上唯一能穿过的帧，弃了 = 对端永远无帧
+    if frame_bytes < MELT_DROP_MIN_BYTES {
+        return (melt, MeltAction::Send);
+    }
+    (melt, MeltAction::DropP)
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod melt_tests {
+    use super::{melt_step, MeltAction, MELT_DROP_MIN_BYTES, MELT_EXIT_MS, MELT_SLOW_MS};
+
+    #[test]
+    fn 健康路径永不熔断() {        assert_eq!(
+            melt_step(false, 0, false, MELT_DROP_MIN_BYTES),
+            (false, MeltAction::Send)
+        );
+        assert_eq!(
+            melt_step(false, MELT_SLOW_MS - 1, false, MELT_DROP_MIN_BYTES),
+            (false, MeltAction::Send),
+            "写 1.5s 内不算拥塞"
+        );
+    }
+
+    /// 🔴 单帧大阻塞即进熔断（11:10 会话：IDR 写阻塞 14.9s，连击判据全场
+    /// 没凑齐 3 次，熔断是死代码）。
+    #[test]
+    fn 单帧大阻塞进熔断_大P弃_小P放_关键帧照发() {
+        // 大阻塞的下一帧就是大 P：进熔断且立刻弃（水位来自上一帧的阻塞）
+        let (melt, a) = melt_step(false, MELT_SLOW_MS, false, MELT_DROP_MIN_BYTES);
+        assert!(melt, "一次大阻塞就该进熔断");
+        assert_eq!(a, MeltAction::DropP);
+        // 熔断中：上一帧仍慢 → 关键帧照发、小 P 帧放行
+        assert_eq!(
+            melt_step(melt, MELT_SLOW_MS, true, MELT_DROP_MIN_BYTES),
+            (true, MeltAction::Send),
+            "关键帧不能弃"
+        );
+        assert_eq!(
+            melt_step(melt, MELT_SLOW_MS, false, 8 * 1024),
+            (true, MeltAction::Send),
+            "小 P 帧不许弃——窄管上对端全靠它"
+        );
+        // 边界：恰好达到阈值才弃
+        assert_eq!(
+            melt_step(melt, MELT_SLOW_MS, false, MELT_DROP_MIN_BYTES - 1).1,
+            MeltAction::Send
+        );
+    }
+
+    #[test]
+    fn 快速写入退出熔断() {
+        let (m, a) = melt_step(true, MELT_EXIT_MS - 1, false, MELT_DROP_MIN_BYTES);
+        assert!(!m, "快速写入 = 队列排干，退出熔断");
+        assert_eq!(a, MeltAction::Send);
+    }
+}
+
+/// 🔴 起播宽限判据（2026-10-03）：「谁先到」而不是「等满」——对端信息
+/// 一置位就收闸（LAN 零等待），对端始终不发言才等满（上界 1.5s）。
+/// 写成 if 各处的分支逻辑最难守，收口成纯函数钉住。
+#[cfg(all(test, target_os = "windows"))]
+mod enc_open_tests {
+    use super::{enc_first_open_due, ENC_OPEN_GRACE_MS};
+    use std::time::{Duration, Instant};
+
+    fn due() -> Instant {
+        Instant::now() + Duration::from_millis(ENC_OPEN_GRACE_MS)
+    }
+
+    #[test]
+    fn 宽限内且对端没发言_继续等() {
+        assert!(
+            !enc_first_open_due(due(), Instant::now(), false),
+            "倍率还没到、宽限未满：先走 JPEG 兜底，不开硬编"
+        );
+    }
+
+    #[test]
+    fn 对端信息一到就收闸_不等宽限满() {
+        assert!(
+            enc_first_open_due(due(), Instant::now(), true),
+            "LAN 上 SetBitratePct 几十毫秒就到：立即开，别空等 1.5s"
+        );
+    }
+
+    #[test]
+    fn 对端始终沉默_等满也要开() {
+        let past = Instant::now() - Duration::from_secs(1);
+        assert!(
+            enc_first_open_due(past, Instant::now(), false),
+            "旧对端不发倍率：到点也必须开，否则整场 JPEG"
+        );
+    }
+}
+
 impl InboundVideo {
+    /// 🔴 调研实验开关（2026-10-03）：`PP_RC_DGRAM_FORCE=1` 无视数据报放行闸
+    /// 强制视频走数据报。闸门的「公网数据报近乎全丢」结论（18:15 会话）可能
+    /// 是在**中继路径**上测的——中继转发 UDP 质量差不代表直连也差；行业
+    /// （Moonlight/Parsec）的默认态恰是不可靠数据报。直连真实丢包率需要
+    /// 重测定方向，本开关只在桌面 dev 实验时手动设置，正式判据仍是
+    /// `stream_cfg::video_dgram_allowed`。OnceLock 缓存：环境变量只在首次读取。
+    #[cfg(target_os = "windows")]
+    fn dgram_force() -> bool {
+        static FORCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *FORCE.get_or_init(|| {
+            std::env::var("PP_RC_DGRAM_FORCE").is_ok_and(|v| v == "1")
+        })
+    }
+
     /// 会话存在、是入站活跃、且属于本 peer 才建；否则 `None`（启动前会话已结束）。
     pub(in crate::rc) fn try_new(
         svc: Arc<RcService>,
@@ -52,6 +256,9 @@ impl InboundVideo {
         conn: iroh::endpoint::Connection,
         peer_dgram: bool,
         peer_fec_rs: bool,
+        peer_video_plane: bool,
+        peer_media_plane: bool,
+        peer_media_feedback: bool,
     ) -> Option<Self> {
         let my_id = {
             let inner = svc.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -61,6 +268,8 @@ impl InboundVideo {
                 .filter(|s| s.phase == SessionPhase::InboundActive && s.peer == peer)
                 .map(|s| s.id.clone())
         }?;
+        svc.configure_media_feedback(&my_id, peer_media_feedback && peer_video_plane);
+        let _ = send.set_priority(crate::rc::media::CONTROL_PRIORITY);
         let send = Arc::new(tokio::sync::Mutex::new(send));
         let profile = svc.encode_profile();
         let virt = svc.capture_virtual_screen();
@@ -68,25 +277,28 @@ impl InboundVideo {
         let enc = Arc::new(std::sync::Mutex::new(
             crate::rc::video::EncoderState::with_profile(profile, virt),
         ));
-        // R6：主屏 / 指定单屏 / 虚拟屏都优先 DXGI + H.264；打不开回退 JPEG
+        // R6：主屏 / 指定单屏 / 虚拟屏都优先 DXGI + H.264；打不开回退 JPEG。
+        //
+        // 🔴 起播宽限（2026-10-03）：**先不在这里开**。发起端的
+        // `SetBitratePct`（默认 200）约 0.9s 后才到，此刻开只能按 100% 开、
+        // 等倍率到了再全链重开一次（~2s 白烧 + 重开周期内帧全丢）。改成
+        // 宽限内先走 JPEG 兜底——画面出现得反而更快（MFT 初始化要几百 ms，
+        // JPEG 立即可出），硬编按**当前倍率**晚一步再开。判据与收闸条件见
+        // [`ENC_OPEN_GRACE_MS`] / [`enc_first_open_due`]。
         #[cfg(target_os = "windows")]
-        let h264 = Self::open_h264(&svc, virt);
-        // 🔴 再审计 B2（2026-09-25）：初始打开失败也必须安排冷却重试。过去
-        // `enc_retry_after` 保持 None，`try_hardware_path` 的重试闸只认它，
-        // 于是「会话建立那一刻硬编没打开」（驱动未就绪 / 分辨率还在切换）
-        // 就整场 JPEG，没有任何自愈机会。口径与熔断退避一致：起步 5s、
-        // 每次重试翻倍（上限 60s），翻倍由重试点统一执行。
+        let h264: Option<crate::rc::encode_h264::H264SessionEncoder> = None;
+        // 宽限**不是失败**，不安排 `enc_retry_after` 退避：那个闸只服务
+        // 「硬编熔断后的重试」。宽限内若到期仍开不起，才在推流循环里按
+        // 既有口径（起步 5s、翻倍至 60s）补上，见 `try_hardware_path`。
+        #[cfg(target_os = "windows")]
+        let enc_retry_after: Option<std::time::Instant> = None;
+        #[cfg(target_os = "windows")]
+        let enc_first_open_at =
+            Some(std::time::Instant::now() + std::time::Duration::from_millis(ENC_OPEN_GRACE_MS));
+        // 重试退避起步值（首次 5s，每次重试翻倍，上限 60s；翻倍由重试点统一
+        // 执行）。宽限到期时首次打开失败也用它安排下一次。
         #[cfg(target_os = "windows")]
         let enc_retry_backoff: u64 = 5;
-        #[cfg(target_os = "windows")]
-        let enc_retry_after = if h264.is_none() {
-            Some(
-                std::time::Instant::now()
-                    + std::time::Duration::from_secs(enc_retry_backoff),
-            )
-        } else {
-            None
-        };
         // 防休眠：只在**真的要开始推流**这一刻起持（放在 `my_id` 那道闸之后）。
         // 更早拿等于让「被拒/来不及建会话」的连接白白按住用户机器；不做成字段则要有
         // 一处记得 release，而退出路径不止一条。
@@ -112,10 +324,21 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             enc_retry_backoff,
             #[cfg(target_os = "windows")]
+            enc_first_open_at,
+            #[cfg(target_os = "windows")]
             gpu_disabled: false,
             #[cfg(target_os = "windows")]
             dgram: crate::rc::vid_dgram::VidDgramSender::new(),
             peer_dgram,
+            dgram_allowed: false,
+            peer_video_plane,
+            peer_media_plane,
+            #[cfg(target_os = "windows")]
+            media_pipe: None,
+            #[cfg(target_os = "windows")]
+            stream_melt: false,
+            #[cfg(target_os = "windows")]
+            stream_last_write_ms: 0,
             peer_fec_rs,
             conn,
             input_boost: Arc::new(tokio::sync::Notify::new()),
@@ -124,6 +347,8 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             auto_key_at: None,
             last_cursor: None,
+            last_cursor_ms: 0,
+            cursor_region_cache: None,
             pace_scale: 1,
             work_ema_ms: 0,
             motion_ema_bytes: 0,
@@ -165,12 +390,18 @@ impl InboundVideo {
         // 帧率就是它，编码器的 PTS 步进与码控分配才对得上。
         // 新建会话时还没跑过零拷贝判据 ⇒ `gpu_disabled = false`，但抓取范围
         // 已知，虚拟屏场景的降频仍要算进去。
-        let fps = want_fps_for(svc.encode_profile().interval_ms, virt, false);
-        let enc = crate::rc::encode_h264::H264SessionEncoder::try_open(codec, pw, ph, fps);
+        let id = svc.status().session.as_ref()?.id.clone();
+        let fps = want_fps_for(svc.encode_profile().interval_ms, virt, false).min(svc.media_fps_limit(&id));
+        // 起播也使用发送器的绝对预算，不能按另一套百分比开出过量码流。
+        let budget = svc.media_budget_kbps(&id) * 1000;
+        let enc = crate::rc::encode_h264::H264SessionEncoder::try_open_with_budget(
+            codec, pw, ph, fps, budget,
+        );
         if enc.available() {
             log::info!(
-                "[RC] {} 硬编已启用 @ {pw}x{ph} {fps}fps（范围：{}）",
+                "[RC] {} 硬编已启用 @ {pw}x{ph} {fps}fps（媒体预算 {}kbps，范围：{}）",
                 codec.as_str().to_uppercase(),
+                enc.scaled_bitrate() / 1000,
                 if virt { "虚拟屏" } else { "主屏" }
             );
             Some(enc)
@@ -268,6 +499,43 @@ impl InboundVideo {
     pub(in crate::rc) async fn try_hardware_path(&mut self, opts: &crate::rc::stream_cfg::StreamOpts) -> Step {
         #[cfg(target_os = "windows")]
         {
+            // 🔴 起播宽限闸（2026-10-03）：宽限内先不开硬编，等对端倍率/链路
+            // 信息到位（`peer_net_seen`）或到期。宽限内本圈返回 FallThrough →
+            // JPEG 兜底先出图（首帧反而更快，MFT 初始化要几百 ms），倍率到位后
+            // 一次性按当前倍率开对，省掉一次全链重开。
+            if let Some(due) = self.enc_first_open_at {
+                let now = std::time::Instant::now();
+                if !opts.force_jpeg()
+                    && enc_first_open_due(due, now, self.svc.peer_net_seen())
+                {
+                    self.enc_first_open_at = None;
+                    // 等了多久 = 宽限 − 剩余（已过期则记满宽限）
+                    let waited_ms = ENC_OPEN_GRACE_MS.saturating_sub(
+                        due.checked_duration_since(now)
+                            .map_or(0, |d| d.as_millis() as u64),
+                    );
+                    log::info!(
+                        "[RC] 起播宽限收闸（等 {waited_ms}ms{}），按当前倍率开硬编",
+                        if self.svc.peer_net_seen() {
+                            "，对端信息已到"
+                        } else {
+                            "，等满"
+                        }
+                    );
+                    self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
+                    if self.h264.is_none() {
+                        // 首次打开失败：按既有退避口径安排重试（起步 5s、
+                        // 翻倍至 60s），别让一次瞬态失败变成整场 JPEG。
+                        self.enc_fail_streak = 0;
+                        self.enc_retry_after =
+                            Some(now + std::time::Duration::from_secs(self.enc_retry_backoff));
+                    }
+                } else {
+                    // 宽限未到、对端还没发言：本圈不出 H.264 帧。
+                    // 走 FallThrough 让 JPEG 兜底——手机先看到软图，别干等。
+                    return Step::FallThrough;
+                }
+            }
             // 硬编熔断冷却期满 → 自动重开一次（2026-09-21）。
             // 放在入口、而不是埋在「本帧编码失败」分支里：那个分支每帧都会进，
             // 且开编码器要几百 ms，在那里重开会把推流拖垮。
@@ -311,9 +579,9 @@ impl InboundVideo {
             // 判据收口在 [`want_stream_codec`]（两处调用点：open_h264 / 每圈同步）。
             let codec = want_stream_codec(opts.profile.hevc, &opts.codec);
             henc.set_codec(codec);
-            // R5.B2：按对端 RTT 缩码率（重开延迟到下一次编码时执行）
-            let scale = self.svc.bitrate_scale();
-            henc.apply_bitrate_scale(scale);
+            // 编码目标与发送节拍共用交付预算；动态重配优先，重开仅作后备。
+            henc.apply_bitrate_budget(self.svc.media_budget_kbps(&self.my_id) * 1000);
+            henc.resolution_limit = self.svc.media_resolution_limit(&self.my_id);
             // P0-2：对端解码断链 → 下一帧强制 IDR（设不中就等自然 GOP）
             if self.force_key.swap(false, Ordering::SeqCst) {
                 let ok = henc.force_key();
@@ -327,13 +595,13 @@ impl InboundVideo {
                 opts.profile.interval_ms,
                 opts.virtual_screen,
                 self.gpu_disabled,
-            ));
+            ).min(self.svc.media_fps_limit(&self.my_id)));
             // P1/G5 零拷贝门控（2026-09-28 重判）：硬件 MFT + 单输出 + GPU 路径没判死。
             // 旧判据绑档位（fps120/uhd60），60Hz 机器永远进不了高帧率档 ⇒ 永远 GDI
             // CPU 捕获（拖动实测 53–74ms/帧）——零拷贝是本地收益，与网络档位无关。
             // 判据集中在 `EncodeProfile::wants_zero_copy`（有单测）——写错不崩、
             // 只会静默跑 CPU 管线。
-            let want_gpu = opts.profile.wants_zero_copy(
+            let want_gpu = henc.resolution_limit == 0 && opts.profile.wants_zero_copy(
                 opts.virtual_screen,
                 self.gpu_disabled,
                 crate::rc::gpu::encode_caps().h264_gpu,
@@ -368,6 +636,7 @@ impl InboundVideo {
                             (self.dxgi.d3d_device(), self.dxgi.d3d_ctx())
                         {
                             let enc_t0 = std::time::Instant::now();
+                            henc.set_capture_at(ts);
                             let encoded =
                                 henc.encode_gpu(&dev, &ctx, &g.tex, g.width, g.height);
                             let enc_ms =
@@ -403,6 +672,7 @@ impl InboundVideo {
                     // 采集时刻就在 grab 之后取：编码/发送耗时不算进「画面链路延迟」
                     let ts = crate::rc::service::now_ms();
                     let enc_t0 = std::time::Instant::now();
+                    henc.set_capture_at(ts);
                     // 🔴 再审计 P3-10：grab 现在返回池内缓冲的借用（不再转移所有权），
                     // 编码完即归还，缓冲跨圈复用
                     let encoded = henc.encode_bgra(bgra, w, h);
@@ -561,14 +831,76 @@ impl InboundVideo {
                 }
             }
         }
+        // 🔴 数据报放行闸（2026-10-02 两次公网实测收口）：**默认可靠流**，只有
+        // RTT 采样到达且路径快（`video_dgram_allowed`）才进一次数据报模式。
+        // 未采样/中继路径永远可靠流：数据报在公网近乎全丢（18:15 会话千帧
+        // 全丢）、在中继会灌爆桌面↔中继连接的拥塞窗口，把 pong/控制帧/JPEG
+        // 流全部堵死（19:05 会话写流卡死断会）。进数据报时强制 IDR——对端
+        // 重组器靠数据报 FLAG_KEY 重新起链。
+        if self.peer_dgram
+            && (!self.peer_media_plane || Self::dgram_force())
+            && !self.dgram_allowed
+            && (Self::dgram_force()
+                || crate::rc::stream_cfg::video_dgram_allowed(
+                    self.svc.video_rtt_ms(),
+                    self.svc.loss_permille(),
+                ))
+        {
+            self.dgram_allowed = true;
+            self.force_key.store(true, std::sync::atomic::Ordering::SeqCst);
+            // 视频若此前走在专属流上：弃流。半途切数据报后，旧流里残留的
+            // 积压帧会晚到并打断 dgram 帧序（corrupt 自愈代价可免则免）。
+            self.discard_media_stream();
+            log::info!(
+                "[RC] 视频切换数据报（force={}，rtt {}ms / loss {}‰）——并强制 IDR",
+                Self::dgram_force(),
+                self.svc.video_rtt_ms(),
+                self.svc.loss_permille()
+            );
+        }
         for p in pkts {
+            let ts = if p.at_ms > 0 { p.at_ms } else { ts };
             let sq = self.dgram.take_seq();
-            // 对端是旧版发起端时**一律**走可靠流（能力位缺省 = 它读不了视频
-            // 数据报，见 `peer_dgram` 字段注释）。
-            if !self.peer_dgram {
+            // 走可靠流的两种情况：对端不支持数据报（能力位缺省），或数据报
+            // 放行闸未开（未采样 / 公网 / 中继——默认态）。
+            if !self.peer_dgram || !self.dgram_allowed {
+                // 🔴「传输分 plane」（2026-10-03）：对端支持独立视频流 → H.264
+                // 走**专属 uni 流**：不与 pong/输入共锁（心跳饿死根治），
+                // 且熔断持续超阈时整流重建——旧流积压随流丢弃，延迟有上界。
+                if self.peer_video_plane {
+                    if !self
+                        .send_via_video_plane(&p, sq, ts, cap_ms, enc_ms, codec.as_str())
+                        .await
+                    {
+                        return Step::End;
+                    }
+                    continue;
+                }
+                // 旧对端（无 video_plane 位）：视频留在会话半流（历史形态）。
+                // 🔴 积压熔断（2026-10-03）：可靠流没有「缓冲满→弃帧」信号，
+                // 不熔断的话积压只进不出（08:22 真机会话往返涨到 46s）。判据
+                // 与动作见 `melt_step`：单帧大阻塞进熔断 → 只弃大 P 帧，
+                // 写入变快 = 队列排干 → 恢复。
+                let (melt, action) = melt_step(
+                    self.stream_melt,
+                    self.stream_last_write_ms,
+                    p.key,
+                    p.data.len() as u64,
+                );
+                self.stream_melt = melt;
+                if action == MeltAction::DropP {
+                    // 🔴 只弃大 P 帧、不强制 IDR（教训见 `melt_step` 文档）：
+                    // 强灌 IDR 会把最大的帧倒进已堵死的管子（09:52 中继会话
+                    // 由此全程无帧）。接收端断链走 corrupt→RequestKey 自愈。
+                    crate::rc::perf::bump(&crate::rc::perf::counters::STREAM_MELT);
+                    log::debug!("[RC] 可靠流积压，弃大 P 帧 #{sq}");
+                    continue;
+                }
+                let t0 = std::time::Instant::now();
                 if !self.send_pkt_via_stream(&p, sq, ts, cap_ms, enc_ms, codec.as_str()).await {
                     return Step::End;
                 }
+                self.stream_last_write_ms = t0.elapsed().as_millis() as u64;
                 continue;
             }
             // 关键帧也走数据报（2026-09-22 C1）。
@@ -591,7 +923,7 @@ impl InboundVideo {
                 )
                 .await
             {
-                Ok(()) => {}
+                Ok(()) => { self.svc.media_sent(&self.my_id, self.media_started_ms(), ts, p.data.len()); }
                 Err(crate::rc::vid_dgram::SendErr::Busy) if p.key => {
                     // 关键帧**不能弃**：丢了要等下一个 GOP（1s）才有锚，这期间
                     // 对端看到的全是花屏。数据报装不下（大 IDR 超过 iroh 的
@@ -672,6 +1004,9 @@ impl InboundVideo {
         enc_ms: u16,
         codec_label: &str,
     ) -> bool {
+        if self.peer_video_plane {
+            return self.send_via_video_plane(p, sq, ts, cap_ms, enc_ms, codec_label).await;
+        }
         let mut guard = self.send.lock().await;
         if crate::rc::video::write_h264(
             &mut guard,

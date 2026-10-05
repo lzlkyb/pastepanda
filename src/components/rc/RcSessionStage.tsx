@@ -221,7 +221,10 @@ export function RcSessionStage({
             <div className={styles.placeholder}>
               <Loader2 size={22} className={styles.spin} />
               <div>{statusText || "等待对方画面…"}</div>
-              <div className={styles.placeholderSub}>{placeholderSub}</div>
+              <div className={styles.placeholderSub}>
+                {/* §17.3：等太久的人话盖在编码档说明之上——超阈就得有人说话 */}
+                {!hasFrame && frames.waitHint ? frames.waitHint : placeholderSub}
+              </div>
             </div>
           )
         )}

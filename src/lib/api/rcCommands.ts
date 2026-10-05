@@ -344,6 +344,16 @@ export function rcSendInput(event: RcInputEvent): Promise<void> {
   return invoke("rc_send_input", { event });
 }
 
+/**
+ * RC 会话前台服务保活开关（B 方案方案叠加，2026-10-02）：Android 上会话
+ * 期间持前台服务 + WifiLock，进程不被冻结/杀掉，后台想挂多久挂多久；
+ * 桌面 no-op。调用方是 `useRcSessionKeepalive`（唯一收口），失败静默——
+ * 保活失败只损失后台时长，不值得打断会话。
+ */
+export function rcKeepaliveSet(on: boolean, title: string): Promise<void> {
+  return invoke("rc_keepalive_set", { on, title });
+}
+
 export function rcPushClipboard(text: string): Promise<void> {
   return invoke("rc_push_clipboard", { text });
 }

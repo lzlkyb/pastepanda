@@ -1,0 +1,24 @@
+{
+  "identifier": "com.pastepanda.promo20261003",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1438",
+    "devUrl": "http://localhost:1438"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PastePanda",
+        "width": 550,
+        "height": 700,
+        "minWidth": 320,
+        "minHeight": 400,
+        "decorations": false,
+        "alwaysOnTop": false,
+        "visible": true,
+        "center": true,
+        "resizable": true
+      }
+    ]
+  }
+}

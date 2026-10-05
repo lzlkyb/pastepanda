@@ -7,6 +7,49 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export type PermissionContext = "general" | "file-receive" | "file-send" | "camera";
+
+/** 先区分应用授权与系统文件访问，不能把 IPC 拒绝引导成「去系统开权限」。 */
+export function permissionErrorInfo(error: unknown, context: PermissionContext = "general") {
+  const raw = error instanceof Error ? `${error.name}: ${error.message}` : String(error || "");
+  const denied = /permission|denied|notallowederror|eacces|eperm|access.*denied|权限不足|无权|拒绝访问/i.test(raw);
+  const internal = /(?:tauri|invoke|command|plugin|capabilit|permissions?:\s*|\w+:allow-)/i.test(raw);
+  if (internal && (denied || /not allowed|not permitted|forbidden|unauthorized/i.test(raw))) {
+    return {
+      kind: "internal" as const,
+      title: "应用内部授权失败",
+      detail: "请重新打开 PastePanda 后重试；若仍失败，请记录此提示和操作步骤以便排查，无需调整手机权限。",
+    };
+  }
+  if (!denied) return null;
+  if (context === "camera" || /camera|摄像头|相机/i.test(raw)) {
+    return {
+      kind: "camera" as const,
+      title: "未允许使用相机，无法扫码",
+      detail: "打开手机「设置 → 应用 → PastePanda → 权限 → 相机」，允许使用相机后返回重试；也可返回手动输入配对码。",
+    };
+  }
+  if (context === "file-receive" || /接收目录|创建目录|create.*director/i.test(raw)) {
+    return {
+      kind: "file-receive" as const,
+      title: "无法在当前接收位置保存文件",
+      detail: "请重置接收位置，改用应用默认目录后再取文件。",
+    };
+  }
+  if (context === "file-send" || /读不到|读取文件|read.*file/i.test(raw)) {
+    return {
+      kind: "file-send" as const,
+      title: "无法读取所选文件",
+      detail: "请重新选择文件；若文件来自网盘，请先下载到本机再发送。",
+    };
+  }
+  return {
+    kind: "unknown" as const,
+    title: "此次操作未获允许",
+    detail: "请重试一次；若仍失败，请记录刚才的操作和提示内容以便排查，暂时无需修改系统权限。",
+  };
+}
+
 /** 设备行与详情共用的可连接状态。探测只证明当时拨得通，不改写历史在线状态。 */
 export function rcDeviceStatus(
   presence: string | undefined,
@@ -794,6 +837,49 @@ export function isHttpUrl(text: string): boolean {
   return /^https?:\/\//i.test((text || "").trim());
 }
 
+/**
+ * 远端光标形状 → CSS `cursor` 值（被控端 `rc-cursor-changed` 事件携带）。
+ *
+ * 桌面与手机端**共用**这一个映射（规则 11 单一数据源）：桌面把它设到
+ * 画布上，手机端按它挑本地光标图形。桌面在 `hooks/useRcCursor.ts`，
+ * 手机端在 `src-mobile/session/`。
+ *
+ * @returns CSS cursor 串；`null` = 没有等价的本地形状（arrow / unknown），
+ *   调用方用自己的默认图形（桌面 B1 overlay 箭头、手机端 SVG 箭头）。
+ */
+export function cursorCssFor(shape: string | null): string | null {
+  switch (shape) {
+    case "ibeam":
+      return "text";
+    case "wait":
+      return "wait";
+    case "cross":
+      return "crosshair";
+    case "size_nwse":
+      return "nwse-resize";
+    case "size_nesw":
+      return "nesw-resize";
+    case "size_ns":
+      return "ns-resize";
+    case "size_we":
+      return "ew-resize";
+    case "size_all":
+      return "move";
+    case "no":
+      return "not-allowed";
+    case "hand":
+      return "pointer";
+    case "app_starting":
+      return "progress";
+    case "up_arrow":
+      return "default";
+    case "hidden":
+      return "none";
+    default:
+      return null;
+  }
+}
+
 
 
 /**
@@ -816,4 +902,31 @@ export function toastActionFailed(action: string, err?: unknown): void {
   const detail = err instanceof Error ? err.message : err != null ? String(err) : "";
   const message = detail ? `${action}失败：${detail}` : `${action}失败`;
   window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "error" } }));
+}
+/** Classify only reported platform data; a missing OS must not imply a computer. */
+export function rcDeviceKind(os?: string | null): "phone" | "tablet" | "computer" | "unknown" {
+  const platform = (os ?? "").trim().toLowerCase();
+  if (/ipad|ipados|tablet/.test(platform)) return "tablet";
+  if (/android|ios|iphone|harmonyos/.test(platform)) return "phone";
+  if (/windows|macos|mac os|darwin|linux/.test(platform)) return "computer";
+  return "unknown";
+}
+
+export function rcDeviceTypeLabel(os?: string | null): string {
+  return { phone: "手机", tablet: "平板", computer: "电脑", unknown: "设备" }[rcDeviceKind(os)];
+}
+
+/** Keep the local remote-screen viewport reachable, including after rotation/keyboard resize. */
+export function clampRcViewportOffset(offset: number, size: number, scale: number): number {
+  if (scale <= 1) return size * (1 - scale) / 2;
+  return Math.max(size * (1 - scale), Math.min(0, offset));
+}
+/** 控制柄及邻近按钮留在可见区域；远端指针独立移动，仍可到达电脑画面边缘。 */
+export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number) {
+  const marginX = Math.min(108, width / 2);
+  const minY = Math.min(96, height / 2);
+  return {
+    x: Math.max(marginX, Math.min(width - marginX, x)),
+    y: Math.max(minY, Math.min(Math.max(minY, height - 88), y)),
+  };
 }

@@ -1,0 +1,34 @@
+.repair-preview { max-width: 1320px; margin: auto; padding: 32px; }
+body:has(.repair-preview) { overflow: auto; height: auto; background: var(--app-bg); }
+.repair-preview > header p, .repair-flows > section > p, .repair-preview footer { color: var(--text-secondary); }
+.repair-preview h1 { font-size: 30px; margin: 0; }
+.repair-preview h2 { font-size: 20px; }
+.repair-flows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+.repair-phone { position: relative; height: 740px; border-radius: var(--mobile-radius-panel); padding: 20px; background: var(--mobile-surface); overflow: hidden; box-shadow: var(--mobile-shadow); }
+.repair-phone button { min-height: 48px; border: 0; border-radius: 12px; padding: 12px; color: var(--text-primary); display: flex; gap: 8px; align-items: center; justify-content: center; }
+.repair-phone small { color: var(--text-secondary); font-size: 13px; }
+.repair-head { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-weight: 600; }
+.repair-title { font-size: var(--mobile-title-size); }
+.repair-remote { height: 470px; display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; background: var(--section-bg); border-radius: 12px; }
+.repair-phone .repair-request { position: absolute; bottom: 100px; left: 16px; right: 16px; background: var(--card-bg); text-align: left; justify-content: space-between; box-shadow: var(--mobile-shadow); }
+.repair-request strong, .repair-request small, .repair-peer strong, .repair-peer small { display: block; }
+.repair-request strong { font-size: 14px; }
+.repair-session nav { position: absolute; bottom: 20px; left: 16px; right: 16px; display: flex; border-radius: var(--mobile-radius-panel); padding: 5px; background: var(--mobile-glass); backdrop-filter: blur(var(--mobile-glass-blur)); }
+.repair-session nav button { flex: 1; min-width: 0; flex-direction: column; background: transparent; font-size: 12px; }
+.repair-scrim { position: absolute; inset: 0; background: var(--mobile-scrim); display: flex; align-items: end; }
+.repair-sheet { width: 100%; padding: 20px; background: var(--mobile-sheet-glass); backdrop-filter: blur(var(--mobile-glass-blur)); border-radius: var(--mobile-radius-panel) var(--mobile-radius-panel) 0 0; }
+.repair-sheet header { display: flex; align-items: center; justify-content: space-between; }
+.repair-sheet header button { background: transparent; }
+.repair-grip { display: block; height: 4px; width: 38px; margin: 0 auto 12px; background: var(--border-color); border-radius: 12px; }
+.repair-phone .repair-primary { background: var(--accent-solid); color: var(--text-on-accent); width: 100%; margin: 8px 0; }
+.repair-phone .repair-secondary { background: var(--card-bg); width: 100%; margin: 8px 0; }
+.repair-phone .repair-peer { justify-content: start; background: var(--card-bg); width: 100%; margin: 8px 0; text-align: left; }
+.repair-peer span { flex: 1; }
+.repair-actions { display: flex; gap: 12px; }
+.repair-progress { margin-top: 20px; padding: 16px; background: var(--card-bg); border-radius: var(--mobile-radius-group); }
+.repair-progress p { font-size: 13px; color: var(--text-secondary); }
+.repair-progress progress { width: 100%; accent-color: var(--accent-solid); }
+.repair-phone .repair-text { background: transparent; color: var(--accent-strong); }
+.repair-phone hr { border: 0; height: 1px; background: var(--border-color); margin: 24px 0; }
+.repair-preview footer { padding: 24px 0; }
+@media (max-width: 900px) { .repair-flows { grid-template-columns: 1fr; } .repair-phone { max-width: 390px; margin: auto; } .repair-preview { padding: 20px; } }

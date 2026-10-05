@@ -17,6 +17,19 @@ fn nv12_len() {
 }
 
 #[test]
+fn nv12_mixed_block_ignores_alpha_and_reuses_output() {
+    let bgra = [0, 0, 255, 0, 0, 255, 0, 255, 255, 0, 0, 0, 255, 255, 255, 255];
+    let mut out = Vec::with_capacity(64);
+    let allocated = out.as_ptr();
+    bgra_to_nv12_into(&bgra, 2, 2, &mut out).unwrap();
+    assert_eq!(out, [63, 172, 32, 235, 128, 128]);
+    bgra_to_nv12_into(&bgra, 2, 2, &mut out).unwrap();
+    assert_eq!(out.as_ptr(), allocated);
+    assert!(bgra_to_nv12_into(&bgra[..12], 2, 2, &mut out).is_err());
+    assert!(bgra_to_nv12_into(&[], 0, 2, &mut out).is_err());
+}
+
+#[test]
 fn nv12_奇数尺寸显式报错() {
     let bgra = vec![0u8; 5 * 5 * 4];
     // P0-1 B7：奇数输入曾静默取偶——行步进与调用方不一致时会把错位画面

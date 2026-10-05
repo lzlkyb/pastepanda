@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>手机端 · 分层错误提示</title><link rel="stylesheet" href="../src/styles/theme.css"><link rel="stylesheet" href="../src-mobile/styles/mobile-base.css"><link rel="stylesheet" href="./mobile-error-feedback-2026-10-03.css"></head>
+<body class="board"><main class="board-main">
+<h1>一套提示控件，覆盖手机端的成功、提醒与报错。</h1>
+<p class="board-intro">统一图标、标题、说明、操作和详情。沿用现有设备、文件、会话布局；同一个控件支持就地提示、短暂提示和常驻状态条。失败与警告默认保留，成功提示短暂显示。所有设备、文件和结果均为演示，不发送真实请求。</p>
+<div class="board-controls"><label>重试结果<select id="outcome"><option value="success">演示恢复成功</option><option value="fail">演示仍然失败</option></select></label><button id="theme">切换深色</button><button id="reset">重置演示</button></div>
+<section class="wide-preview"><h2>统一控件 · 五种状态</h2><p>信息、成功、警告、错误、处理中共用同一结构；下面的配对码错误也复用这一套。图标与文字同时说明状态，不只靠颜色。</p><div class="wide-frame catalog-frame"><iframe data-scene="components" title="统一提示控件与五种状态"></iframe></div></section>
+<section class="preview-grid wide-preview">
+<article><h2>连接失败</h2><p>只在当前设备操作面板显示一次，重试时保留面板和操作进度。</p><div class="phone-frame"><iframe data-scene="connection" title="连接失败交互预览"></iframe></div></article>
+<article><h2>剪贴板失败</h2><p>错误留在剪贴板面板，保留到成功或主动关闭，不再四秒消失。</p><div class="phone-frame"><iframe data-scene="clipboard" title="剪贴板失败交互预览"></iframe></div></article>
+<article><h2>文件部分成功</h2><p>说明成功与失败的数量，保留失败文件名；重新选择时只补发失败文件。</p><div class="phone-frame"><iframe data-scene="files" title="文件部分成功交互预览"></iframe></div></article>
+</section>
+<section class="wide-preview"><h2>横屏连接中断</h2><p>持续状态在顶部预留位置，最后一帧仍可看，输入暂停；返回设备后可重新连接。此预览只演示返回后的反馈。</p><div class="wide-frame"><iframe data-scene="landscape" title="横屏状态独立占位预览"></iframe></div></section>
+<p class="board-footer">试用：点“查看详情”展开技术说明，点“重试”观察加载与恢复，切换“演示仍然失败”验证失败提示保留。文件示例以重新选择作为安全恢复入口，不假定手机仍持有文件访问权限。普通成功提示可在文件预览底部演示。<br />输入格式错误仍放在输入框下方，重大阻断才使用弹窗；此轮重点展示高频的三类失败。<br />参考：<a href="https://developer.apple.com/design/human-interface-guidelines/alerts">Apple Alerts</a> · <a href="https://developer.android.com/develop/ui/compose/components/snackbar">Android Snackbar</a> · <a href="https://playbook.ebay.com/design-system/components/snackbar">eBay Snackbar</a> · <a href="https://atlassian.design/foundations/content/designing-messages/error-messages">Atlassian 错误文案</a></p>
+</main><script>
+let dark=false;
+function refresh(){ document.documentElement.dataset.theme=dark?'midnight':'ocean';document.querySelector('#theme').textContent=dark?'切换浅色':'切换深色';for(const frame of document.querySelectorAll('[data-scene]')){frame.src=`./mobile-error-feedback-preview-2026-10-03/design/mobile-error-feedback-view-2026-10-03.html?scene=${frame.dataset.scene}&theme=${dark?'dark':'light'}&outcome=${document.querySelector('#outcome').value}`;}}
+document.querySelector('#theme').addEventListener('click',()=>{dark=!dark;refresh();});document.querySelector('#outcome').addEventListener('change',refresh);document.querySelector('#reset').addEventListener('click',refresh);refresh();
+</script></body></html>

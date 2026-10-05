@@ -267,77 +267,13 @@
   border-top: 1px solid var(--border-color);
 }
 
-.scope {
-  font-size: var(--kb-fs-badge);
-  color: var(--text-muted);
-}
-
-.askRow {
-  /* ❗ `flex-end` 而不是 `center`（A-61 ②）：追问框能长到四行，
-     居中的话发送按钮会飘到文字中间；贴底才跟“写完了点这里”对得上。 */
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-}
-
-.askInput {
-  flex: 1;
-  min-width: 0;
-  /* 高度由 `useAutoGrow` 写成 inline style；这里只给一行时的基准。 */
-  min-height: 26px;
-  padding: 5px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 7px;
-  background: var(--card-bg);
-  color: var(--text-primary);
-  font-family: inherit;
-  /* ❗ 从 11.5 抬到 --kb-fs-body（批 4）。这是知识库里**唯一一个“你在这里
-     敲字，但字比别处小”的框**——搜索框与笔记标题框都是 13px。
+/* 追问框已上提到共用的 `src/components/Composer.tsx`（渐变光晕提案 1）。
+   这里只留本面板要注入的那一个令牌（字号）。 */
+.askComposer {
+  /* ❗ 从 11.5 抬到 --kb-fs-body（批 4）。这是知识库里**唯一一个「你在这里
+     敲字，但字比别处小」的框**——搜索框与笔记标题框都是 13px。
      取 --kb-fs-body（12.5）而不是 13：`.answer` 就是这个 token，
      你敲进去的追问与它产生的回答用同一个字号，一段对话一个声音。
-
-     ❗ 同文件其余 6 处 11/11.5 是按钮与单行标签（.hd/.back/.refs/.ref/
-     .btnPrimary）与引用样式的 .qline（muted + 左边框，比正文小是标准做法），
-     C 稿 §5 要求全抬到 12.5 是把整个面板当正文看，抬了只会把面板撑大。 */
-  font-size: var(--kb-fs-body);
-  line-height: 1.45;
-  outline: none;
-  /* 拖手柄与自动高度互相打架 */
-  resize: none;
-  /* 到上限（4 行）之后内部滚 */
-  overflow-y: auto;
-}
-
-.askInput:focus {
-  border-color: var(--accent);
-}
-
-.askInput:disabled {
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-.askBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 7px;
-  background: var(--card-bg);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.askBtn:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text-primary);
-}
-
-.askBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+     字号走 `--composer-fs` 交给 Composer，而不是另起一条 font-size。 */
+  --composer-fs: var(--kb-fs-body);
 }

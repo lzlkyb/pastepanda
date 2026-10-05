@@ -39,8 +39,25 @@ export default defineConfig(async () => ({
         });
       },
     },
+    // 🔴 build 产物必须有一份在包根（2026-10-02 真机踩坑）：tauri.android.conf.json
+    //    的 frontendDist 指向 dist-mobile，但入口在 src-mobile/ 下，vite 会把
+    //    HTML 打到 dist-mobile/src-mobile/index.html——APK 包根没有 index.html，
+    //    WebView 直接报 "not found: index.html"（dev 靠上面中间件改写，不暴露）。
+    //    在内存里把同一份 HTML 再 emit 到根上，与桌面 dist/index.html 同构。
+    {
+      name: "mobile-index-at-root",
+      // 🔴 必须 post：HTML 产物由 vite 内部 build 插件发出，普通用户插件的
+      //    generateBundle 跑在它前面，bundle 里还拿不到 HTML（实测）。
+      enforce: "post",
+      apply: "build",
+      generateBundle(_opts, bundle) {
+        const html = bundle["src-mobile/index.html"];
+        if (html && html.type === "asset") {
+          this.emitFile({ type: "asset", fileName: "index.html", source: html.source });
+        }
+      },
+    },
   ],
-
   resolve: {
     alias: {
       "@": path.resolve(projectRoot, "./src"),
@@ -77,6 +94,10 @@ export default defineConfig(async () => ({
     rollupOptions: {
       input: {
         mobile: resolve(projectRoot, "src-mobile/index.html"),
+        // 🔴 不带 rcask.html（2026-10-03 回归撤除）：wry 在 Android 上每个
+        //    Activity 只有一块 webview，rc-ask 浮层窗在 Android 已整体禁用
+        //    （建第二块窗会把主界面顶掉，见 src-tauri/src/rc/ask_pop.rs create）。
+        //    手机端敲门确认走主界面设备页的内联申请卡。rcask.html 只是桌面入口。
       },
     },
   },

@@ -1,0 +1,65 @@
+.notice {
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.heading { display: flex; align-items: flex-start; gap: 10px; }
+.heading > svg { flex: none; margin-top: 2px; color: var(--accent-strong); }
+.heading strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; font-weight: 600; }
+.notice[data-tone="error"] .heading > svg { color: var(--danger); }
+.notice[data-tone="warning"] .heading > svg { color: var(--warning); }
+.notice[data-tone="success"] .heading > svg { color: var(--success); }
+.detail, .technical { margin: 8px 0 0 30px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0 0 30px; }
+.actions > button { min-height: 48px; }
+.actions details { min-width: 0; flex-basis: 100%; }
+.actions summary { width: fit-content; min-height: 48px; display: flex; align-items: center; cursor: pointer; color: var(--accent-strong); font-size: 13px; }
+.technical { margin-left: 0; white-space: pre-wrap; }
+.dismiss { display: grid; place-items: center; flex: none; width: 48px; height: 48px; margin: -12px -12px -12px 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.dismiss:focus-visible, .actions summary:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+.inline { width: 100%; }
+.compact { padding: 10px 12px; margin-bottom: 8px; }
+.compact .heading strong { font-size: 13px; }
+.compact .dismiss, .banner .dismiss { margin-top: -8px; margin-bottom: -8px; }
+.banner { margin: 0; border-radius: 0; padding: 8px 12px; }
+.banner .heading strong { font-size: 13px; }
+.banner .actions { margin-top: 0; }
+.toast { margin: 0; }
+.toastHost { position: fixed; z-index: var(--mobile-layer-notice); left: max(16px, env(safe-area-inset-left, 0px)); right: var(--mobile-toast-right); top: calc(var(--mobile-viewport-top, 0px) + var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance, 96px)); transform: translateY(-100%); max-height: calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance, 96px) - max(16px, env(safe-area-inset-top, 0px))); overflow-y: auto; }
+.flowHost { min-width: 0; }
+@media (min-width: 600px) {
+  :global(html[data-mobile-layout="landscape"]) .banner { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: center; }
+  :global(html[data-mobile-layout="landscape"]) .banner .heading { grid-column: 1; }
+  :global(html[data-mobile-layout="landscape"]) .banner .detail { grid-column: 1; grid-row: 2; margin-top: 0; }
+  :global(html[data-mobile-layout="landscape"]) .banner .actions { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+}
+
+/* §17.3（2026-10-03 真机教训）：等待态图标呼吸。「连接中」的横幅常驻屏幕
+   上方，此前只有一张静态 Clock3 脸 + 一句不动的话，用户点完「远程控制」
+   面对 30 秒静默只能判断「卡死了」。桌面占位本来就有 Loader 转圈，手机这边
+   补齐同级别的「活着」信号。只动透明度/缩放（合成层属性，不触发重排），
+   单个元素；横幅消失动画即停，无常驻开销（规则 8）。 */
+.notice[data-tone="pending"] .heading > svg {
+  animation: pendingPulse 1.6s ease-in-out infinite;
+}
+@keyframes pendingPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice[data-tone="pending"] .heading > svg {
+    animation: none;
+  }
+}

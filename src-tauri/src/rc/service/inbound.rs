@@ -28,11 +28,22 @@ impl RcService {
             log::warn!("[RC] {short} 读申请帧失败，连接已断");
             return;
         };
-        if matches!(RcFrame::decode(&bytes), Ok(RcFrame::PairCheck)) {
+        if let Ok(RcFrame::PairCheck { name, os }) = RcFrame::decode(&bytes) {
             // 查询帧没有屏幕/键鼠权限。只把“双方是否都粘贴过”回给这条 iroh
             // 连接所认证的设备身份，不接受帧体里自报的 node_id。
-            let response = match self.confirm_exchange(&peer) {
-                Ok(paired) => RcFrame::PairStatus { paired },
+            let response = match self.confirm_exchange(&peer).and_then(|paired| {
+                if paired && self.store.rc_device_note_identity(
+                    &peer, name.as_deref().unwrap_or(""), os.as_deref().unwrap_or(""),
+                )? {
+                    self.emit_pair_changed();
+                }
+                Ok(paired)
+            }) {
+                Ok(paired) => RcFrame::PairStatus {
+                    paired,
+                    name: Some(crate::rc::local_device_name()),
+                    os: Some(crate::rc::local_os_label()),
+                },
                 Err(reason) => RcFrame::Deny { reason, code: Some("pair_check_failed".into()) },
             };
             if let Ok(raw) = response.encode() {
@@ -42,7 +53,7 @@ impl RcService {
         }
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let (requested, uno_code, uno_pass, peer_dgram, peer_fec_rs, peer_audio) =
+        let (requested, uno_code, uno_pass, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback) =
             match RcFrame::decode(&bytes) {
                 Ok(RcFrame::Request {
                     capability,
@@ -51,6 +62,9 @@ impl RcService {
                     vid_dgram,
                     fec_rs,
                     audio,
+                    video_plane,
+                    media_plane,
+                    media_feedback,
                 }) => (
                     capability,
                     uno_code,
@@ -58,6 +72,9 @@ impl RcService {
                     vid_dgram == Some(true),
                     fec_rs == Some(true),
                     audio == Some(true),
+                    video_plane == Some(true) || media_plane == Some(true),
+                    media_plane == Some(true),
+                    media_feedback == Some(true),
                 ),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
@@ -70,6 +87,11 @@ impl RcService {
             }
         };
 
+        // PairCheck 已在上面处理：能力限制不影响配对和独立文件传输。
+        if let Err(reason) = crate::rc::host_capability::require_inbound_host() {
+            deny_and_close(&link_conn, &mut send, &reason, "host_unsupported").await;
+            return;
+        }
         let mut uno_admitted = false;
         // 未配对（远程/同步都没有）：
         // 带了无人值守接入码（Q2 方案 B）→ 验码，通过 = 自动配对 + 自动同意；
@@ -280,9 +302,16 @@ impl RcService {
                     // 局域网还是绕中继进来的」。此处不持有 inner 锁（上面那个
                     // decision 块已结束），与 `status()` 的加锁顺序一致。
                     self.link.attach(&link_conn);
+                    if let Some(svc) = global() {
+                        let session_id = svc.inner.lock().unwrap_or_else(|p| p.into_inner())
+                            .session.as_ref().map(|s| s.id.clone());
+                        if let Some(id) = session_id {
+                            crate::rc::underlay::start(svc, id, link_conn.clone(), true);
+                        }
+                    }
                     // R1：推 JPEG 画面直到会话结束（conn 一并交给推流任务：
                     // 鼠标数据报读取 + stats 采样都挂在它身上）
-                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_fec_rs, peer_audio).await;
+                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback).await;
                     return;
                 }
                 Some(Err("already_streaming")) => {

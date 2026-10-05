@@ -201,6 +201,7 @@ impl RcService {
     /// 「允许被远程」——那开关只应挡住**别人控你**，不该挡住你去控别人。
     /// 入站仍由 `gate_inbound` 看 `rc_enabled` 拒掉。
     pub async fn start(&self, app_dir: &Path, relay: bool) -> Result<(), String> {
+        crate::rc::underlay::init(app_dir);
         {
             let guard = self.running.lock().unwrap_or_else(|p| p.into_inner());
             if guard.is_some() {
@@ -208,7 +209,13 @@ impl RcService {
             }
         }
         let me = Arc::new(NodeIdentity::load_or_create(app_dir)?);
-        let endpoint = bind_rc_endpoint(&me, relay).await?;
+        // 🔴 端点改用全局共享（`crate::shared_ep`）：sync 与 RC 各 bind 一个同
+        //    身份端点时，公网按 node id 路由会互相抢答（实测 error 120 /
+        //    aborted by peer，2026-10-02）。本端点永不关闭，stop 只摘 ALPN 注册。
+        //    `relay` 参数保留但不再分流——需要「纯局域网端点」的只有测试
+        //    （`sync::transport::bind`，cfg(test)）。
+        let _ = relay;
+        let endpoint = crate::shared_ep::get_or_bind(app_dir).await?;
         let port = endpoint
             .bound_sockets()
             .first()
@@ -217,8 +224,40 @@ impl RcService {
         // 表与 `spawn` 用同一个 `PresenceApp::Rc`：表按它判串台、广播按它打标识，
         // 两处不一致会变成「自己拒自己」（收不到任何 RC 地址公告）。
         let presence = Arc::new(PresenceTable::new(PresenceApp::Rc));
-        let stop = Arc::new(AtomicBool::new(false));
         let presence_running = Arc::new(AtomicBool::new(false));
+
+        // accept 归共享端点：注册本业务两个 ALPN 的处理器，stop 时摘除。
+        // （旧自建 accept_loop 已删——同身份双端点是公网按-id 路由串台的根因。）
+        //
+        // 🔴 注册必须在写 Running **之前**（2026-10-02 真机修复）：`rc_boot` 是
+        //    spawn 出去的异步 start，端点 bind 完成到 Running 落槽之间有个窗口，
+        //    此刻发到的连接会被 `shared_ep::dispatch_loop` 当「无处理器」直接以
+        //    channel-off 关掉——发起端第一次点击就悄无声息地失败，再点一次才成。
+        //    提前注册后，窗口期到达的连接也能进 `handle_inbound_conn` 挂起等批准。
+        {
+            let svc = global().ok_or("RcService 未安装到 global")?;
+            crate::shared_ep::register(
+                crate::rc::protocol::ALPN,
+                Arc::new(move |conn| {
+                    let svc = svc.clone();
+                    tauri::async_runtime::spawn(async move {
+                        svc.handle_inbound_conn(conn).await;
+                    });
+                }),
+            );
+        }
+        {
+            let svc = global().ok_or("RcService 未安装到 global")?;
+            crate::shared_ep::register(
+                crate::rc::protocol::FILE_ALPN,
+                Arc::new(move |conn| {
+                    let svc = svc.clone();
+                    tauri::async_runtime::spawn(async move {
+                        RcService::handle_file_conn(&svc, conn).await;
+                    });
+                }),
+            );
+        }
 
         {
             let mut g = self.running.lock().unwrap_or_else(|p| p.into_inner());
@@ -231,7 +270,6 @@ impl RcService {
             *g = Some(Running {
                 endpoint: endpoint.clone(),
                 presence: presence.clone(),
-                stop: stop.clone(),
                 presence_running: presence_running.clone(),
                 identity: me.clone(),
             });
@@ -244,16 +282,6 @@ impl RcService {
             known.len(),
             self.enabled()
         );
-
-        // accept 循环
-        {
-            let svc = global().ok_or("RcService 未安装到 global")?;
-            let ep = endpoint.clone();
-            let stop2 = stop.clone();
-            tauri::async_runtime::spawn(async move {
-                accept_loop(svc, ep, stop2).await;
-            });
-        }
 
         // 本机设备名**只取一次**：`spawn`（招呼包随包自报）与 `arm`（配对握手包
         // 自报）用的是同一份。两处各调一次 `hostname::get()` 就是两个数据源。
@@ -385,9 +413,12 @@ impl RcService {
             g.take()
         };
         if let Some(r) = running {
-            r.stop.store(true, Ordering::SeqCst);
             r.presence_running.store(false, Ordering::SeqCst);
-            r.endpoint.close().await;
+            // 🔴 端点是全进程共享的（`crate::shared_ep`）——**不关**，只摘本业务
+            //   两个 ALPN 的处理器：之后的入连接会被礼貌拒绝（`channel-off`）。
+            //   关端点会把 sync 同身份业务的在途连接一起杀掉。
+            crate::shared_ep::unregister(crate::rc::protocol::ALPN);
+            crate::shared_ep::unregister(crate::rc::protocol::FILE_ALPN);
             // 局域网配对：摘掉「怎么发」并清掉会话与附近表。
             // ❗ **不清 `rc_devices`** —— 那是落库的配对结果，与通道起停无关。
             //   清掉的话用户会发现「重启一次配对全没了」。
@@ -487,7 +518,9 @@ impl RcService {
     /// 要自己拨号——它独立于 RC 会话，不复用会话的连接。
     pub(in crate::rc) fn transport_ready(&self) -> Option<(Endpoint, Arc<PresenceTable>)> {
         let g = self.running.lock().unwrap_or_else(|p| p.into_inner());
-        g.as_ref().map(|r| (r.endpoint.clone(), r.presence.clone()))
+        // 端点句柄（iroh `Endpoint` 是廉价 Clone）：从共享端点的 Arc 里拷出值。
+        g.as_ref()
+            .map(|r| (r.endpoint.as_ref().clone(), r.presence.clone()))
     }
 
     pub fn short_pair_endpoint(&self) -> Option<Endpoint> {

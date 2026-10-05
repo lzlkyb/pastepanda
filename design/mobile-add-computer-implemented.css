@@ -1,0 +1,4 @@
+.implementation-preview { padding: 24px; }
+.implementation-preview h1 { font-size: 20px; }
+.implementation-preview p { color: var(--text-secondary); font-size: 13px; }
+.implementation-preview button { min-height: 48px; padding: 12px 24px; border: 0; border-radius: 12px; background: var(--accent-solid); color: var(--text-on-accent); }

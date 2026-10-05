@@ -94,9 +94,9 @@ describe("分块上载", () => {
   });
 
   it("批量串行：第二个文件失败不拦第三个，结果逐个可查", async () => {
-    // Once 队列按调用顺序消费：第一个文件成功、第二个失败、第三个走默认成功
-    invokeMock.mockResolvedValueOnce(undefined);
-    invokeMock.mockRejectedValueOnce(new Error("IPC 炸了"));
+    invokeMock.mockImplementation(async (cmd, _body, options) => {
+      if (cmd === "rc_file_send_blob" && (options?.headers as Record<string, string>)["x-pp-name"] === "b.txt") throw new Error("IPC 炸了");
+    });
     const files = [
       fakeFile("a.txt", new Uint8Array([1])),
       fakeFile("b.txt", new Uint8Array([2])),
@@ -104,7 +104,8 @@ describe("分块上载", () => {
     ];
     const results = await sendFilesToPeer("pc-1", files);
 
-    expect(invokeMock).toHaveBeenCalledTimes(3);
+    expect(invokeMock.mock.calls.filter(([cmd]) => cmd === "rc_file_send_blob")).toHaveLength(3);
+    expect(invokeMock).toHaveBeenCalledWith("rc_file_send_blob_abort", expect.objectContaining({ name: "b.txt" }));
     expect(results.map((r) => r.ok)).toEqual([true, false, true]);
     expect(results[1].err).toContain("IPC 炸了");
   });
@@ -113,7 +114,49 @@ describe("分块上载", () => {
     const progress = vi.fn();
     const total = SEND_CHUNK_BYTES + 1;
     await sendFilesToPeer("pc-1", [fakeFile("big.bin", new Uint8Array(total))], progress);
-    expect(progress).toHaveBeenNthCalledWith(1, "big.bin", SEND_CHUNK_BYTES, total);
-    expect(progress).toHaveBeenNthCalledWith(2, "big.bin", total, total);
+    expect(progress).toHaveBeenNthCalledWith(1, "big.bin", SEND_CHUNK_BYTES, total, 0);
+    expect(progress).toHaveBeenNthCalledWith(2, "big.bin", total, total, 0);
+  });
+});
+
+describe("取消准备的提交边界", () => {
+  it("读取过程中取消，不写入后台也不开始下一文件", async () => {
+    const controller = new AbortController();
+    let finish!: (bytes: ArrayBuffer) => void;
+    const read = new Promise<ArrayBuffer>((resolve) => { finish = resolve; });
+    const file = { name: "a.bin", size: 2, slice: vi.fn(() => ({ arrayBuffer: () => read } as Blob)) };
+    const next = fakeFile("b.bin", new Uint8Array([2]));
+    const result = sendFilesToPeer("pc", [file, next], undefined, controller.signal);
+    controller.abort();
+    finish(new ArrayBuffer(2));
+    expect((await result).every((item) => item.canceled)).toBe(true);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+  it("写入过程中取消，等待当前块完成后清理，后续块和文件均不提交", async () => {
+    const controller = new AbortController();
+    let finish!: () => void;
+    const current = new Promise<void>((resolve) => { finish = resolve; });
+    invokeMock.mockImplementationOnce(() => current);
+    const pending = sendFilesToPeer("pc", [fakeFile("a.bin", new Uint8Array(SEND_CHUNK_BYTES + 1)), fakeFile("b.bin", new Uint8Array([2]))], undefined, controller.signal);
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    finish();
+    const results = await pending;
+    expect(results.every((item) => item.canceled)).toBe(true);
+    expect(invokeMock).toHaveBeenCalledTimes(2);
+    expect(invokeMock.mock.calls[1][0]).toBe("rc_file_send_blob_abort");
+  });
+  it("最后一块已经受理时保留传输源，只停止下一文件", async () => {
+    const controller = new AbortController();
+    let finish!: () => void;
+    invokeMock.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const pending = sendFilesToPeer("pc", [fakeFile("a.bin", new Uint8Array([1])), fakeFile("b.bin", new Uint8Array([2]))], undefined, controller.signal);
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+    controller.abort(); finish();
+    const results = await pending;
+    expect(results[0].ok).toBe(true);
+    expect(results[1].canceled).toBe(true);
+    expect(invokeMock).toHaveBeenCalledTimes(1);
   });
 });

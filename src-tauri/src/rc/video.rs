@@ -338,6 +338,9 @@ impl EncoderState {
     }
 
     /// 会话中远程改档：换 profile / 截取范围，质量回到新档默认。
+    /// 新媒体流不能依赖旧流的 JPEG 差分基准。
+    pub fn reset_reference(&mut self) { self.last_rgb = None; }
+
     pub fn apply_profile(&mut self, profile: EncodeProfile, virtual_screen: bool) {
         self.profile = profile;
         self.virtual_screen = virtual_screen;

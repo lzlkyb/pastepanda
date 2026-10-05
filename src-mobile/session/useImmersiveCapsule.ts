@@ -1,102 +1,88 @@
 /**
- * useImmersiveCapsule — 横屏沉浸：工具条自动隐藏 + 顶缘热区唤出（design §5.5）。
+ * useImmersiveCapsule — R2：横屏显式收起，始终有可见把手；不再吞掉画面顶缘输入。
  *
- * 参数与隐藏态纪律照搬桌面 useRcCapsuleReveal（顶缘热区 / 2.5s 淡出 / 首显
- * 15s / pointer-events:none + visibility:hidden + 不进 Tab 环），只换触发手型：
- * 触摸没有 hover，dwell 不适用 → 点按热区即唤出；顶缘滑动手势被系统通知栏
- * 收走，不可用。
- *
- * 🔴 热区点按必须本地吃掉、绝不转发：interceptDown 由会话壳在手势状态机
- * 之前调用（输入分发顺序 = 热区判定 → 手势状态机 → 远端，规则 11.1 收口）。
+ * 首次引导（design/手机端-横屏工具栏首次引导-设计稿-2026-10-05.html）：
+ * 会话内第一次进横屏 → 工具栏自动展开并倒计时教学（teaching）；
+ * 教学到点或用户提前收起 → hint（把手脉冲 + 气泡一次性提示）；
+ * 用户第一次主动打开工具栏 / 点画面（dismissHint）/ 切回竖屏 → done，本会话不再打扰。
+ * 「本会话」= 本 hook 挂载周期（RcMobileSession 以 key=会话 id 挂载，换会话重新教学）；
+ * 不做跨会话记忆——每次会话教一次，代价只有 15 秒。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CAPSULE_FADE_MS, CAPSULE_FIRST_SHOW_MS, HOT_ZONE_PX } from "./touchConstants";
+import { useMobileLayout } from "../ui/useMobileLayout";
+
+export const CAPSULE_TEACH_SECONDS = 15;
+
+export type CapsulePhase = "idle" | "teaching" | "hint" | "done";
 
 export function useImmersiveCapsule({ keyboardOpen }: { keyboardOpen: boolean }) {
-  const [landscape, setLandscape] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(orientation: landscape)").matches,
-  );
+  const landscape = useMobileLayout();
   const [capsuleVisible, setCapsuleVisible] = useState(false);
-  const hideTimer = useRef<number | null>(null);
-  const firstShowDone = useRef(false);
-  const keyboardOpenRef = useRef(keyboardOpen);
-  keyboardOpenRef.current = keyboardOpen;
+  const [phase, setPhase] = useState<CapsulePhase>("idle");
+  const [secondsLeft, setSecondsLeft] = useState(CAPSULE_TEACH_SECONDS);
+  const everLandscape = useRef(false);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+  const visibleRef = useRef(capsuleVisible);
+  visibleRef.current = capsuleVisible;
+  const timers = useRef<number[]>([]);
 
-  const clearHide = useCallback(() => {
-    if (hideTimer.current != null) {
-      window.clearTimeout(hideTimer.current);
-      hideTimer.current = null;
+  const clearTimers = useCallback(() => {
+    for (const id of timers.current) {
+      window.clearTimeout(id);
+      window.clearInterval(id);
     }
+    timers.current = [];
   }, []);
 
-  const scheduleHide = useCallback(() => {
-    clearHide();
-    if (keyboardOpenRef.current) return; // 软键盘打开期间不隐藏（与修饰键条成对存在）
-    hideTimer.current = window.setTimeout(() => setCapsuleVisible(false), CAPSULE_FADE_MS);
-  }, [clearHide]);
+  // 教学到点 / 用户关掉提示：收回把手态，进入一次性 hint。
+  const endTeaching = useCallback(() => {
+    clearTimers();
+    setCapsuleVisible(false);
+    setPhase((p) => (p === "teaching" ? "hint" : p));
+  }, [clearTimers]);
 
-  /** 顶缘热区判定：横屏且触点在顶缘 HOT_ZONE_PX 内 → 唤出并本地消费。 */
-  const interceptDown = useCallback(
-    (clientY: number, surfaceTop: number) => {
-      if (!landscape) return false;
-      if (clientY - surfaceTop > HOT_ZONE_PX) return false;
-      setCapsuleVisible(true);
-      scheduleHide();
-      return true;
-    },
-    [landscape, scheduleHide],
-  );
-
-  /** 胶囊上任意触摸：续期 2.5s（keepAlive）。 */
-  const keepAlive = useCallback(() => {
-    if (!capsuleVisible) return;
-    scheduleHide();
-  }, [capsuleVisible, scheduleHide]);
-
-  // 朝向监听：进横屏给一次性 15s 教学（「工具条在顶缘」）；转回竖屏显隐状态
-  // 不跨朝向存活（竖屏底栏常驻自然回归，design §5.5 参数表末行）。
   useEffect(() => {
-    const mq = window.matchMedia("(orientation: landscape)");
-    const onChange = () => {
-      const nowLandscape = mq.matches;
-      setLandscape(nowLandscape);
-      clearHide();
-      if (!nowLandscape) {
-        setCapsuleVisible(false);
-        return;
-      }
-      if (!firstShowDone.current) {
-        firstShowDone.current = true;
-        setCapsuleVisible(true);
-        hideTimer.current = window.setTimeout(
-          () => setCapsuleVisible(false),
-          CAPSULE_FIRST_SHOW_MS,
-        );
-      }
-    };
-    mq.addEventListener("change", onChange);
-    return () => {
-      mq.removeEventListener("change", onChange);
-      clearHide();
-    };
-  }, [clearHide]);
-
-  // 键盘开合：打开时暂停隐藏计时，关闭时重新计时。
-  // 🔴 只响应键盘状态**变化**：显隐变化（首显/热区唤出）会重跑本 effect，
-  // 若不拦截，进横屏的 15s 首显教学会被这里的 2.5s 重排覆盖（实测踩过）。
-  const capsuleVisibleRef = useRef(capsuleVisible);
-  capsuleVisibleRef.current = capsuleVisible;
-  const prevKbRef = useRef(keyboardOpen);
-  useEffect(() => {
-    if (prevKbRef.current === keyboardOpen) return;
-    prevKbRef.current = keyboardOpen;
-    if (!capsuleVisibleRef.current) return;
-    if (keyboardOpen) {
-      clearHide();
-    } else {
-      scheduleHide();
+    if (!landscape) {
+      // 切回竖屏：教学与提示都到此为止（设计稿的两级取消之一）。
+      clearTimers();
+      setCapsuleVisible(false);
+      setPhase((p) => (p === "idle" ? "idle" : "done"));
+      return;
     }
-  }, [keyboardOpen, clearHide, scheduleHide]);
+    if (everLandscape.current) return; // 本会话只教一次；StrictMode 双跑也挡在这
+    everLandscape.current = true;
+    setPhase("teaching");
+    setCapsuleVisible(true);
+    setSecondsLeft(CAPSULE_TEACH_SECONDS);
+    timers.current.push(window.setTimeout(endTeaching, CAPSULE_TEACH_SECONDS * 1000));
+    timers.current.push(
+      window.setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000),
+    );
+    return clearTimers; // 卸载兜底（教学进行中断开/换会话）
+  }, [landscape, clearTimers, endTeaching]);
 
-  return { landscape, capsuleVisible, interceptDown, keepAlive };
+  const toggle = useCallback(() => {
+    // 把手是唯一开关：主动打开 = 引导完成；教学期间主动收起 = 让位给 hint。
+    clearTimers();
+    const opening = !visibleRef.current;
+    if (opening) setPhase("done");
+    else if (phaseRef.current === "teaching") setPhase("hint");
+    setCapsuleVisible(opening);
+  }, [clearTimers]);
+
+  // 点画面 / 其他任意交互的收口：只消费 hint，其余相位原样退回（不触发重渲染）。
+  const dismissHint = useCallback(() => {
+    setPhase((p) => (p === "hint" ? "done" : p));
+  }, []);
+
+  return {
+    landscape,
+    capsuleVisible: keyboardOpen || capsuleVisible,
+    phase,
+    secondsLeft,
+    toggle,
+    endTeaching,
+    dismissHint,
+  };
 }

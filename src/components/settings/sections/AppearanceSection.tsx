@@ -38,7 +38,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
               detailTitle="主题配色"
               detail={<>
                 <p>6 种精心调配的主题，点击即可预览，实时生效。</p>
-                <p>💡 <b>经典白</b>：纯白卡片 + 素面背景，无动效，最省资源</p>
+                <p>💡 <b>月白</b>：纯白卡片 + 冷调淡渐变底，无动效，最省资源</p>
                 <p>💡 <b>晨曦</b>：暖阳晨光，温柔唤醒每一天</p>
                 <p>💡 <b>午夜</b>：暗色模式，夜间使用不刺眼</p>
                 <p>💡 <b>美乐蒂</b>：甜系卡通粉，爱心雨+官方立绘，少女心爆棚</p>

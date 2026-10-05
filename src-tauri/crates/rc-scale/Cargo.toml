@@ -1,0 +1,8 @@
+[package]
+name = "pastepanda-rc-scale"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+fast_image_resize = { version = "5.5", default-features = false }

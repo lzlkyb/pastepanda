@@ -56,11 +56,9 @@ pub struct SyncIdentity {
     pub device_name: String,
 }
 
-/// 本机计算机名。失败返回空串，理由见 [`SyncIdentity::device_name`]。
+/// 与远程配对和局域网发现共用原生设备名称。
 fn local_device_name() -> String {
-    hostname::get()
-        .map(|h| h.to_string_lossy().trim().to_string())
-        .unwrap_or_default()
+    crate::device_identity::local_device_name()
 }
 
 #[tauri::command]

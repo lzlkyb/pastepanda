@@ -1,3 +1,5 @@
+import { RcDeviceMeta } from "./RcDeviceMeta";
+import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 /**
  * RcA2DeviceHero — 详情面头（拼装稿 2026-09-26 全量对齐版）。
  *
@@ -6,9 +8,9 @@
  * 改名草稿态仍在工作台层（`useRcDeviceUi`，规则 15.2），本组件只渲染与转发。
  */
 import { useState } from "react";
-import { Activity, Check, Eye, FileUp, Monitor, MousePointer2, Pencil, Shield, X } from "lucide-react";
+import { Activity, Check, Eye, FileUp, MousePointer2, Pencil, Shield, X } from "lucide-react";
 import type { RcCapability, RcTargetDevice } from "@/lib/api/rc";
-import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
+import { rcCheckTime, rcDeviceKind, rcDeviceStatus } from "@/lib/utils";
 import { RcA2ConnectAction } from "./RcA2ConnectAction";
 import styles from "./RemoteComputerA2.module.css";
 
@@ -57,6 +59,7 @@ export function RcA2DeviceHero({
   // 交互却不兑现（键盘 Tab 到它按 Enter 毫无反馈）。现在点击就地展开同一段解释，
   // 悬停（title）与点击（aria-expanded 提示）两条路都能拿到答案。
   const [showStatusHint, setShowStatusHint] = useState(false);
+  const deviceKind = rcDeviceKind(deviceOs);
   const statusHint =
     "状态来自本机最近一次连接检查，点侧栏「重新检查」可立即刷新。";
   return (
@@ -65,11 +68,15 @@ export function RcA2DeviceHero({
         让距离，不再是距离
       </span>
       <div className={styles.heroDevice} aria-hidden="true">
-        <span className={styles.heroMonitor}>
-          <span className={styles.heroScreen} />
-          <span className={styles.heroNeck} />
-          <span className={styles.heroBase} />
-        </span>
+        {deviceKind === "computer" ? (
+          <span className={styles.heroMonitor}>
+            <span className={styles.heroScreen} />
+            <span className={styles.heroNeck} />
+            <span className={styles.heroBase} />
+          </span>
+        ) : (
+          <RcDeviceIcon os={deviceOs} size={132} className={styles.heroNativeDevice} />
+        )}
         <span className={styles.heroPedestal} />
       </div>
       <div className={styles.detailName}>
@@ -102,6 +109,7 @@ export function RcA2DeviceHero({
         ) : (
           <h2>{name}</h2>
         )}
+        <RcDeviceMeta os={target.os} />
         <p>
           <span className={styles.heroStatusDot} data-tone={status.tone} aria-hidden="true" />
           <span className={styles.onlineText} data-tone={status.tone}>
@@ -128,7 +136,7 @@ export function RcA2DeviceHero({
         <div className={styles.heroChips}>
           {deviceOs && (
             <span className={styles.heroChip}>
-              <Monitor size={12} aria-hidden="true" />
+              <RcDeviceIcon os={deviceOs} size={12} />
               {deviceOs}
             </span>
           )}

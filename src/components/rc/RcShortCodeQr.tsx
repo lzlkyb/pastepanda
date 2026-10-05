@@ -11,9 +11,11 @@ import { useEffect, useRef, useState } from "react";
 import { pairQrPayload } from "@/lib/rcShortCode";
 import styles from "./RemoteComputerA2.module.css";
 
-export function RcShortCodeQr({ code, size = 140 }: { code: string; size?: number }) {
+export function RcShortCodeQr({ code, size = 140, onError }: { code: string; size?: number; onError?: () => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
+  const errorRef = useRef(onError);
+  errorRef.current = onError;
   useEffect(() => {
     const canvas = ref.current;
     if (!code || !canvas) return;
@@ -31,7 +33,7 @@ export function RcShortCodeQr({ code, size = 140 }: { code: string; size?: numbe
         });
         if (!cancelled) setReady(true);
       } catch {
-        /* 画不出来不弹不闹 */
+        if (!cancelled) errorRef.current?.();
       }
     })();
     return () => {

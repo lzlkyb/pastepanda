@@ -47,7 +47,9 @@ export function useSoftKeyboardBridge({
         if (vk == null) return;
         sendKeyUp(vk);
       },
-      onFocusChange: setKeyboardOpen,
+      onFocusChange: (focused) => {
+        if (focused) setKeyboardOpen(true);
+      },
     });
     bridge.mount();
     bridgeRef.current = bridge;
@@ -58,11 +60,16 @@ export function useSoftKeyboardBridge({
     // keyModeRef 恒稳定，不进依赖；发送回调按桥的契约必须稳定
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sendText, sendKeyDown, sendKeyUp, sendKeyPair]);
+  const openRef = useRef(keyboardOpen);
+  openRef.current = keyboardOpen;
+  const keyMode = keyModeRef.current;
+  useEffect(() => {
+    if (keyboardOpen && keyMode === "direct") bridgeRef.current?.focus();
+  }, [keyboardOpen, keyMode]);
   const toggleKeyboard = useCallback(() => {
-    const b = bridgeRef.current;
-    if (!b) return;
-    if (b.focused) b.blur();
-    else b.focus();
-  }, []);
+    if (openRef.current) bridgeRef.current?.blur();
+    else if (keyModeRef.current === "direct") bridgeRef.current?.focus();
+    setKeyboardOpen(!openRef.current);
+  }, [keyModeRef]);
   return { keyboardOpen, toggleKeyboard };
 }

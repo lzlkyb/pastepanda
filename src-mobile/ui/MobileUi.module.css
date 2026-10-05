@@ -1,0 +1,283 @@
+.page {
+  width: 100%;
+}
+.pageHead {
+  padding: 8px 0 0;
+  margin: 0 0 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pageHeadCopy { flex: 1; min-width: 0; }
+.pageHead > button { flex: none; }
+.pageHead h1 {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  font-size: var(--mobile-title-size);
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 10px;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+.sectionHeading {
+  margin: 24px 0 10px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.group {
+  background: var(--card-bg);
+  border-radius: var(--mobile-radius-group);
+  overflow: hidden;
+}
+.primary,
+.secondary,
+.danger {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.primary {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+}
+.secondary {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+.danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.textButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 15px;
+}
+.textButton:hover {
+  background: var(--accent-light);
+}
+.description,
+.hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.hint {
+  margin: 10px 0 0;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+}
+.actions > button {
+  flex: 1;
+}
+.empty {
+  text-align: center;
+  padding: 48px 12px 24px;
+}
+.empty > svg {
+  width: 56px;
+  height: 56px;
+  stroke-width: 1.3;
+  color: var(--accent-strong);
+  margin: 0 0 20px;
+}
+.empty h2 {
+  font-size: 20px;
+  line-height: 1.4;
+  margin: 0 0 10px;
+}
+.empty p {
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+  margin: 0 0 24px;
+}
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--mobile-layer-overlay);
+  background: var(--mobile-scrim);
+  animation: fadeIn 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+.overlay[data-state="closed"] {
+  animation: none;
+  opacity: 0;
+  pointer-events: none;
+}
+.sheet {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  z-index: var(--mobile-layer-sheet);
+  left: env(safe-area-inset-left, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: calc(100dvh - var(--mobile-viewport-height, 100dvh) - var(--mobile-viewport-top, 0px));
+  max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top, 0px) - 24px);
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+  overscroll-behavior: contain;
+  border-radius: var(--mobile-radius-panel) var(--mobile-radius-panel) 0 0;
+  background: var(--mobile-sheet-glass);
+  backdrop-filter: blur(var(--mobile-glass-blur));
+  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
+  color: var(--text-primary);
+}
+.sheet[data-state="closed"] {
+  pointer-events: none;
+}
+.sheet {
+  transform: translateY(var(--mobile-sheet-offset, 0px));
+}
+.sheet[data-dragging="true"] {
+  user-select: none;
+}
+.dragHandle {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  touch-action: none;
+}
+.dragHandle span {
+  width: 36px;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border-color);
+}
+.dragHandle:active:not(:disabled) {
+  transform: none;
+}
+.sheetHead {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+.sheetTitle {
+  font-size: 20px;
+  font-weight: 650;
+  margin: 0;
+  line-height: 1.4;
+}
+.closeButton {
+  min-height: 48px;
+  border: 0;
+  padding: 8px 0 8px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.sheetBody {
+  margin-top: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+:global(html[data-mobile-layout="landscape"]) .subtitle { display: none; }
+:global(html[data-mobile-layout="landscape"]) .pageHead { min-height: 48px; padding-top: 0; align-items: center; }
+/* 横屏面板独立滚动，标题和关闭入口始终留在可视窗口内。 */
+:global(html[data-mobile-layout="landscape"]) .sheet {
+  left: auto;
+  right: max(8px, env(safe-area-inset-right, 0px));
+  top: calc(var(--mobile-viewport-top, 0px) + max(8px, env(safe-area-inset-top, 0px)));
+  bottom: auto;
+  width: min(380px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+  height: calc(var(--mobile-viewport-height, 100dvh) - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px)));
+  max-height: none;
+  padding: 0 16px 16px;
+  border-radius: 12px;
+  margin: 0;
+}
+:global(html[data-mobile-layout="landscape"]) .sheetHead { margin-bottom: 8px; }
+:global(html[data-mobile-layout="landscape"]) .sheetBody { margin-top: 8px; }
+:global(html[data-mobile-layout="landscape"]) .empty { padding-top: 16px; }
+.sheet > .description { flex-shrink: 0; }
+.primary,
+.secondary,
+.danger,
+.textButton {
+  transition:
+    background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+.secondary:active:not(:disabled),
+.textButton:active:not(:disabled) {
+  background: var(--accent-light);
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+:global(body[data-mobile-sheets]) .pageHead {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .pageHead,
+  .sheet {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

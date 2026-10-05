@@ -189,7 +189,7 @@ export const useRcStore = create<RcState>((set, get) => {
     if (!st.status?.running) return;
     const wanted = new Set(only ?? []);
     const ids = st.targets
-      .filter((t) => wanted.has(t.node_id) && t.source === "rc")
+      .filter((t) => (only === undefined || wanted.has(t.node_id)) && t.source === "rc")
       .map((t) => t.node_id);
     if (ids.length === 0) return;
     const generations = new Map(ids.map((id) => {
@@ -215,6 +215,11 @@ export const useRcStore = create<RcState>((set, get) => {
         state: result[id] === true ? "reachable" : result[id] === false ? "unreachable" : "error",
         checkedAt,
       }));
+      // A successful probe can repair peer identity in the backend; show it now.
+      // Older probe generations must not trigger a stale device-list refresh.
+      if (ids.some((id) => result[id] === true && probeSeq.get(id) === generations.get(id))) {
+        await get().refreshTargets();
+      }
     } catch {
       commit(() => ({ state: "error", checkedAt: Date.now() }));
     }

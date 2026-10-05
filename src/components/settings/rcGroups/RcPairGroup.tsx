@@ -88,11 +88,11 @@ export function RcPairGroup({
             hue="sync"
             icon="🔗"
             label="远程配对设备"
-            desc="生成邀请码给对方，连完默认保留配对"
+            desc="手机扫码、输入配对码或查找附近设备"
             detailTitle="远程配对设备"
             detail={
               <>
-                <p>长期配对：对方粘你的邀请码，连完默认保留在设备列表。</p>
+                <p>选择扫码、配对码或附近设备，配对完成后保留在设备列表。</p>
                 <p>远程配对与知识库同步配对是<b>两套授权</b>，互不影响。</p>
                 <p>发起远程<b>不需要</b>打开「允许被远程协助」。</p>
               </>
@@ -105,7 +105,7 @@ export function RcPairGroup({
               disabled={!rc.identity}
               onClick={() => onOverlay("pair")}
             >
-              配对
+              添加设备
             </button>
           </RcGroupRow>
 

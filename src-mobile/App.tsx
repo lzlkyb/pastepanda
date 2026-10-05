@@ -1,91 +1,206 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { FolderOpen, Monitor, Settings2 } from "lucide-react";
 import { useRc } from "@/hooks/useRc";
+import { useRcFile } from "@/hooks/useRcFile";
 import { useRcStore } from "@/stores/rcStore";
-import styles from "./App.module.css";
 import { TouchSandbox } from "./dev/TouchSandbox";
 import { RcDevicesView } from "./devices/RcDevicesView";
 import { RcFilesView } from "./devices/RcFilesView";
+import { rcErrorText } from "./devices/rcErrorText";
 import { RcMobileSession } from "./session/RcMobileSession";
 import { RcSettingsView } from "./settings/RcSettingsView";
+import { MobileNotice } from "./ui/MobileNotice";
+import { MobileUpdateBanner } from "./ui/MobileUpdateBanner";
+import { MobileUpdateProvider } from "./ui/MobileUpdate";
+import { useMobileAppearance } from "./ui/useMobileAppearance";
+import { useMobileViewport } from "./ui/useMobileViewport";
+import { MOBILE_TABS, useMobilePager } from "./ui/useMobilePager";
+import ui from "./ui/MobileUi.module.css";
+import styles from "./App.module.css";
 
-/**
- * 手机 RC 客户端（手机端规划 P1，P1.5 三页签补齐）。
- *
- * 结构：App 持有 useRc（store 轮询的应用级入口，切页签不断）——
- * - 会话 active（outbound_active）：全屏切 RcMobileSession（触摸/帧泵/音频已验收），
- *   不受页签影响；断开回原页签。
- * - 设备页签：RcDevicesView 三态（空/列表/配对/uno 接入 + pending 卡）。
- * - 文件页签：RcFilesView（rc-file ALPN 取文件 + 传输记录）。
- * - 设置页签：RcSettingsView（通道开关 / 会话历史 / 联调入口）。
- *
- * pending（outbound_pending）不换屏：显示在设备页内（可取消的等待卡），
- * 若用户切走页签，请求继续，confirmed 后 App 这里直接接管换屏。
- */
-
-type Tab = "devices" | "files" | "settings";
-
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "devices", label: "设备" },
-  { id: "files", label: "文件" },
-  { id: "settings", label: "设置" },
-];
+const TAB_META = {
+  devices: { label: "设备", Icon: Monitor },
+  files: { label: "文件", Icon: FolderOpen },
+  settings: { label: "设置", Icon: Settings2 },
+};
+const TABS = MOBILE_TABS.map(id => ({ id, ...TAB_META[id] }));
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("devices");
   const [sandbox, setSandbox] = useState(false);
-  /** 设备面板「传文件」→ 切到文件页并预选这台设备（页签切换即重挂，initial 够用）。 */
   const [filePeer, setFilePeer] = useState<string | null>(null);
+  const [fileNotice, setFileNotice] = useState<{ text: string; error: boolean } | null>(null);
+  const [errorOwners, setErrorOwners] = useState({ devices: false, settings: false });
+  const deviceErrorScope = useCallback((owned: boolean) => setErrorOwners(v => ({ ...v, devices: owned })), []);
+  const settingsErrorScope = useCallback((owned: boolean) => setErrorOwners(v => ({ ...v, settings: owned })), []);
   const rc = useRc(true);
+  // 应用级订阅让未打开文件页时也能知道有待接收请求；不新增轮询。
+  const file = useRcFile();
   const session = useRcStore((s) => s.status?.session ?? null);
+  const appearance = useMobileAppearance();
+  useMobileViewport();
   const sessionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const onFileStatus = useCallback((text: string | null, error = false) => {
+    setFileNotice(text ? { text, error } : null);
+  }, []);
 
-  if (sandbox) return <TouchSandbox onExit={() => setSandbox(false)} />;
-
-  // 会话态：全屏会话壳。key = 会话 id，换会话必然重挂（解码器/手势状态清零）。
-  if (session?.phase === "outbound_active") {
-    return (
-      <RcMobileSession
-        key={session.id}
-        title={session.display_name || session.peer_name}
-        subtitle={session.capability === "control" ? "控制中" : "观看中"}
-        canvasRef={sessionCanvasRef}
-        sessionId={session.id}
-        qualityHint={rc.status?.quality}
-        canControl={session.capability === "control"}
-        onEnd={() => void rc.end()}
-      />
-    );
-  }
-
+  const activeSession = session?.phase === "outbound_active";
+  const pager = useMobilePager(!sandbox && !activeSession);
+  const { tab, selectTab } = pager;
+  const pending = session?.phase === "outbound_pending";
+  const rcMessage = rc.error ? rcErrorText(rc.error) : null;
+  const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
+  const fileMessage = file.error ? rcErrorText(file.error) : null;
+  // Background subscriptions can fail for the same unavailable backend. Keep one
+  // visible cause, while preserving each page's recovery controls and file requests.
+  const repeatedFileError = !!fileMessage && (fileMessage === rcMessage || fileMessage === targetMessage);
+  // 后台申请只显示角标和提示，不抢用户正在使用的页面。
+  const inboundCount = activeSession ? 0 : (rc.status?.pending?.length ?? 0);
+  // 通知保留在标题之后，后台失败也不能把页面身份挤出首屏。
+  const pageNotice = rc.error && rcMessage !== (tab === "files" ? fileMessage : targetMessage) && !(tab !== "files" && errorOwners[tab])
+    ? <MobileNotice error onDismiss={rc.clearError} title="操作未能完成" detail={rcErrorText(rc.error)} /> : null;
+  // 文件状态通知的关闭入口只给「纯状态」内容：错误与待确认请求的关闭入口在文件页，
+  // 跨页 X 掉会让用户以为已处理。dismissing 只清跨页镜像，文件页内的状态不受影响。
+  const fileNoticeDismissable = !!fileNotice && !fileNotice.error && file.asks.length === 0 && !file.error;
   return (
-    <div className={styles.root}>
-      <main className={styles.pane}>
-        {tab === "devices" && (
-          <RcDevicesView
-            rc={rc}
-            session={session}
-            onSendFiles={(nodeId) => {
-              setFilePeer(nodeId);
-              setTab("files");
-            }}
-          />
-        )}
-        {tab === "files" && <RcFilesView rc={rc} initialPeer={filePeer} />}
-        {tab === "settings" && <RcSettingsView rc={rc} onOpenSandbox={() => setSandbox(true)} />}
-      </main>
-
-      <nav className={styles.tabbar}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`${styles.tab} ${tab === t.id ? styles.tabActive : ""}`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-    </div>
+    <MobileUpdateProvider>
+      <>
+      {sandbox && <TouchSandbox onExit={() => setSandbox(false)} />}
+      {!sandbox && activeSession && (
+        <RcMobileSession
+          key={session.id}
+          title={session.display_name || session.peer_name}
+          subtitle={session.capability === "control" ? "控制中" : "观看中"}
+          canvasRef={sessionCanvasRef}
+          sessionId={session.id}
+          qualityHint={rc.status?.quality}
+          status={rc.status}
+          canControl={session.capability === "control"}
+          endError={rc.error}
+          ending={rc.busy}
+          onEnd={() => void rc.end()}
+          file={file}
+        />
+      )}
+      <div className={styles.root} hidden={sandbox || activeSession}>
+        <main className={styles.pane}>
+          <div ref={pager.contentRef} className={styles.tabContent} {...pager.events}>
+            {/* Three unique page instances retain scroll and in-flight operations; hidden pages are inert. */}
+            {TABS.map(({ id, label }) => (
+              <section
+                key={id}
+                className={styles.pagePane}
+                aria-label={label}
+                aria-hidden={tab !== id || sandbox || activeSession}
+                inert={tab !== id || sandbox || activeSession}
+              >
+                {id === "devices" && (
+                  <RcDevicesView
+                    pageNotice={tab === id ? pageNotice : undefined}
+                    rc={rc}
+                    session={session}
+                    active={tab === id && !sandbox && !activeSession}
+                    onErrorScopeChange={deviceErrorScope}
+                    onSendFiles={(nodeId) => {
+                      setFilePeer(nodeId);
+                      selectTab("files");
+                    }}
+                  />
+                )}
+                {id === "files" && (
+                  <RcFilesView
+                    pageNotice={tab === id ? pageNotice : undefined}
+                    rc={rc}
+                    initialPeer={filePeer}
+                    active={tab === "files" && !sandbox && !activeSession}
+                    onShowDevices={() => selectTab("devices")}
+                    onPeerChange={setFilePeer}
+                    onStatus={onFileStatus}
+                  />
+                )}
+                {id === "settings" && (
+                  <RcSettingsView
+                    pageNotice={tab === id ? pageNotice : undefined}
+                    rc={rc}
+                    active={tab === id && !sandbox && !activeSession}
+                    onOpenSandbox={() => setSandbox(true)}
+                    appearance={appearance.appearance}
+                    onAppearance={appearance.setAppearance}
+                    onErrorScopeChange={settingsErrorScope}
+                  />
+                )}
+              </section>
+            ))}
+          </div>
+        </main>
+        <div className={styles.globalNotice}>
+          {tab !== "devices" && inboundCount > 0 && (
+            <MobileNotice tone="info" title={`有 ${inboundCount} 个连接请求待处理`}
+              detail="继续当前操作，准备好后再查看。"
+              action={<button className={ui.textButton} onClick={() => selectTab("devices")}>查看连接请求</button>} />
+          )}
+          {tab !== "devices" && pending && (
+            <MobileNotice
+              tone="pending"
+              action={
+                <>
+                  <button className={ui.textButton} disabled={rc.busy} onClick={() => void rc.cancel()}>
+                    取消连接
+                  </button>
+                  <button className={ui.textButton} onClick={() => selectTab("devices")}>
+                    查看
+                  </button>
+                </>
+              }
+            >
+              正在连接 {session.display_name || session.peer_name}，等待电脑确认
+            </MobileNotice>
+          )}
+          {tab !== "files" && (file.asks.length > 0 || file.error && !repeatedFileError || fileNotice) && !pending && (
+            <MobileNotice
+              error={!!file.error && !repeatedFileError || !!fileNotice?.error}
+              onDismiss={fileNoticeDismissable ? () => setFileNotice(null) : undefined}
+              action={
+                <button className={ui.textButton} onClick={() => selectTab("files")}>
+                  查看
+                </button>
+              }
+            >
+              {file.error && !repeatedFileError
+                ? fileMessage
+                : file.asks.length > 0
+                  ? `有 ${file.asks.length} 个文件请求待处理`
+                  : fileNotice?.text}
+            </MobileNotice>
+          )}
+          {tab !== "settings" && <MobileUpdateBanner />}
+        </div>
+        <nav className={styles.tabbar} aria-label="主要导航">
+          <span ref={pager.selectionRef} className={styles.tabSelection} aria-hidden="true" />
+          {TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={`${styles.tab} ${tab === id ? styles.tabActive : ""}`}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => selectTab(id)}
+            >
+              <span className={styles.tabIcon}>
+                <Icon size={23} aria-hidden="true" />
+                {((id === "files" && file.asks.length > 0) || (id === "devices" && inboundCount > 0)) && (
+                  <span
+                    className={styles.badge}
+                    aria-label={`${id === "files" ? file.asks.length : inboundCount} 个待处理请求`}
+                  >
+                    {id === "files" ? file.asks.length : inboundCount}
+                  </span>
+                )}
+              </span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+      </>
+    </MobileUpdateProvider>
   );
 }

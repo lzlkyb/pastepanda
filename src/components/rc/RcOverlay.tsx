@@ -1,22 +1,22 @@
 /**
- * RcOverlay — 被控横幅 + 发起端会话横幅 + 入站确认条 + 配对敲门。挂在 App 层，**任何模式下都可见**（规则 15）。
- * 没人申请且未被控/未发起时返回 null，不占位。
+ * RcOverlay — 被控横幅 + 发起端会话横幅 + 配对敲门。挂在 App 层，**任何模式下都可见**（规则 15）。
+ * 入站申请不在这里（2026-10-01 方案甲：决策现场只有置顶浮层 `RcAskPop`）。
+ * 没事发生时返回 null，不占位。
  *
  * ❗ 只看 `rc_enabled`，**不**依赖知识库同步：远程通道是独立的（方案 A）。
  *
  * B2（2026-09-23）：原先 338 行超红线，四条横幅拆为
- * `RcOutboundBanner` / `RcReconnectBanner` / `RcUnoPassBanner` / `RcPairJoins`，
- * 所有动作经 `runRcAction` 收口——失败也有 toast（规则 15.3，主窗没有错误面板）。
+ * `RcOutboundBanner` / `RcReconnectBanner` / `RcUnoPassBanner` / `RcPairJoins`。
+ * 入站申请的决策现场已收口到置顶浮层 `RcAskPop`（2026-10-01 方案甲）：主窗不再
+ * 渲染申请卡，pending 的 toast / 拉窗也一并撤掉——弹框不抢焦点、主窗关着也弹，
+ * 两条都做的话是同一个敲门三处告知（AGENTS.md §15 反面教材）。
  */
-import { rcCapShort } from "@/lib/rcCapability";
 import { useEffect, useRef } from "react";
 import { useToast } from "@/components/Toast";
 import { useRc } from "@/hooks/useRc";
 import { useRcInboundControls } from "@/hooks/useRcInboundControls";
 import { useRcLocalInjectNotice } from "@/hooks/useRcSessionNotices";
-import { runRcAction } from "@/lib/rcFeedback";
 import { RcControlBanner } from "./RcControlBanner";
-import { RcJoinRequests } from "./RcJoinRequests";
 import { RcOutboundBanner } from "./RcOutboundBanner";
 import { RcReconnectBanner } from "./RcReconnectBanner";
 import { RcUnoPassBanner } from "./RcUnoPassBanner";
@@ -49,14 +49,14 @@ export function RcOverlay() {
     enableTrust,
     endSession,
   } = useRcInboundControls(rc);
-  const seenPending = useRef(new Set<string>());
 
   /**
-   * 被控中 / 有会话申请 / 有配对敲门 / 我方发起中 / 自动重连中 /
-   * 无人值守固定密码开启（Q2 方案 C 的「常驻横幅」，设计稿第三条对策）才渲染
+   * 被控中 / 有配对敲门 / 我方发起中 / 自动重连中 /
+   * 无人值守固定密码开启（Q2 方案 C 的「常驻横幅」，设计稿第三条对策）才渲染。
+   * ❗ 不含「有入站申请」——那条的决策现场是置顶浮层 `RcAskPop`（2026-10-01
+   * 方案甲收口），这里再摆一张卡就是同一敲门两处可点（§15 反面）。
    */
   const session = rc.status?.session ?? null;
-  const pending = rc.status?.pending ?? [];
   const joins = rc.status?.joins ?? [];
   // Q6：免确认设备异常断流后的自动重连进度（此时 session 已被收口）
   const reconnecting = rc.status?.reconnecting ?? null;
@@ -71,29 +71,6 @@ export function RcOverlay() {
   // 只在 inbound_active 时监听：同一事件在发起端机器上装的是「对端转发」语义，
   // 常驻监听会给控制端用户弹出一条主语错误（「本机」）的提示。
   useRcLocalInjectNotice(toast, inboundActive);
-
-  // 窗口可能 hide：有新申请时 toast + 拉起窗口，避免 120s 超时前用户毫无感知
-  useEffect(() => {
-    const pending = rc.status?.pending ?? [];
-    for (const p of pending) {
-      if (!seenPending.current.has(p.peer)) {
-        seenPending.current.add(p.peer);
-        toast(
-          `「${rcDisplayName(p, fingerprintOf(p.peer))}」申请远程本机（${
-            rcCapShort(p.capability)
-          }）`,
-          "info",
-        );
-        // 窗口 hide/失焦时用户看不见 toast：主动拉起（等同系统级提醒）
-        void summonMainWindow();
-      }
-    }
-    // 清掉已消失的
-    const alive = new Set(pending.map((p) => p.peer));
-    for (const id of Array.from(seenPending.current)) {
-      if (!alive.has(id)) seenPending.current.delete(id);
-    }
-  }, [rc.status?.pending, toast]);
 
   // A2：被控横幅上的「以后不再询问」需要这台设备的免确认当前态，而 `rc_status` 不带
   // trusted（它在 rc_devices 行上）。主窗的 targets 只在少数动作里刷——被控一开始就
@@ -116,9 +93,8 @@ export function RcOverlay() {
         `「${rcDisplayName(session, fingerprintOf(session.peer))}」正在远程本机（${capabilityLabel(session.capability)}）`,
         "info",
       );
-      // 🔴 再审计 B13（2026-09-25）：免确认设备直连不经过 pending 确认条（上面
-      // 那条路径有 summonMainWindow，这里原本没有）——主窗正 hide 时被控开始
-      // 零告知，这条 toast 谁也看不见。照 pending 同款拉起主窗，toast 才可见。
+      // 🔴 再审计 B13（2026-09-25）：免确认设备直连不经过 pending 确认——主窗正
+      // hide 时被控开始零告知，这条 toast 谁也看不见。拉主窗它才可见。
       void summonMainWindow();
     }
     if (!inboundActive) lastInboundId.current = null;
@@ -138,7 +114,6 @@ export function RcOverlay() {
   if (
     !inboundActive &&
     !outboundLive &&
-    pending.length === 0 &&
     joins.length === 0 &&
     !reconnecting &&
     !unoPass
@@ -208,24 +183,9 @@ export function RcOverlay() {
           onRetry={rc.request}
         />
       )}
-      <RcJoinRequests
-        pending={pending}
-        busy={rc.busy}
-        onApprove={(id) => {
-          void runRcAction(
-            () => rc.approve(id),
-            { ok: "已同意远程协助", fail: "同意失败" },
-            toast,
-          );
-        }}
-        onDeny={(id) => {
-          void runRcAction(
-            () => rc.deny(id),
-            { ok: "已拒绝远程申请", fail: "拒绝失败" },
-            toast,
-          );
-        }}
-      />
+      {/* 🔴 入站申请的决策现场不在这里（2026-10-01 方案甲）：置顶浮层 `RcAskPop`
+          是唯一可点入口，主窗只留 toast / 拉窗之外的一切安静。pending 到来时
+          这里整棵树都不渲染（见上面的提前 return）。 */}
       <RcPairJoins
         joins={joins}
         busy={rc.busy}

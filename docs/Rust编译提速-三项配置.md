@@ -101,7 +101,7 @@ ls ~/.rustup/toolchains/*/lib/rustlib/*/bin/rust-lld*   # rust-lld 在不在
 - 换 nightly 工具链，加 `-Z unstable-options`；
 - 等它进稳定版后，用上面那条空 `main.rs` 实测通过再打开。
 
-本项目当前已在 `src-tauri/.cargo/config.toml` 里**注释掉该配置**，并把上述结论写在旁边。
+本项目当前已在 `.cargo/config.toml` 里**注释掉该配置**，并把上述结论写在旁边。配置放在仓库根目录，供桌面、Android 生成工程和从根目录执行的 Cargo 共用。
 另两项（① 与 ③）**不受影响，仍然有效**。
 
 实测环境：rustc 1.96.0 / LLD 22.1.2。

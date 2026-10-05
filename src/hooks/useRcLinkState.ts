@@ -32,7 +32,7 @@
  * （RTT 恰好每轮相同会误判为无变化），所以后端字段一旦可用就该走它。
  */
 import { useEffect, useRef, useState } from "react";
-import { useRcHeartbeat } from "@/hooks/useRcHeartbeat";
+import { useRcBackgroundPause } from "@/hooks/useRcBackgroundPause";
 import {
   actionUnansweredMs,
   frameIdleMs as computeFrameIdleMs,
@@ -101,7 +101,7 @@ export function useRcLinkState({
     }
   }, [backendPongAgeMs]);
 
-  // 心跳：抽到 `useRcHeartbeat`（手机会话壳共用同一份实现，规则 11.1）。
+  // 心跳观测的复位（心跳本身在 Rust 侧，见下方 useRcBackgroundPause 处的注释）。
   // 注意这里**不**用 resolve/reject 判活性——那只是本地 IPC 的结果。
   useEffect(() => {
     localPongAt.current = 0;
@@ -112,7 +112,10 @@ export function useRcLinkState({
     sessionStartRef.current = performance.now();
     setSnap(INITIAL);
   }, [sessionId]);
-  useRcHeartbeat(sessionId);
+  // 后台保活通知（2026-10-02）：进/出后台发 bg_pause / bg_resume。
+  // 🔴 心跳不在这里发了——已下沉到发起端 Rust（outbound.rs `HEARTBEAT_PING_MS`），
+  // WebView 暂停/冻结不再误断前台会话；后台场景由 BgPause 的 TTL 兜底。
+  useRcBackgroundPause(sessionId);
 
   // 后端 RTT 变化 ⇒ 收到过 pong（退化判据）
   useEffect(() => {

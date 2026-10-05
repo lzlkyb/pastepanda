@@ -16,10 +16,47 @@ use log::{Log, Metadata, Record};
 /// 单文件上限：5MB 滚动一代，两代封顶 10MB 磁盘占用。
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
+// SDK 的 QNT 事件包含实际交换的两端候选；只放行稀疏事件，避免每包 socket/span 日志。
+pub const DEFAULT_FILTER: &str = "info,iroh::socket=off,iroh::socket::remote_map::remote_state=warn,iroh::socket::transports::relay::actor=warn,tracing::span=off,iroh::net_report=warn,iroh_relay=warn,iroh::_events::qnt::init=debug,iroh::_events::path::abandoned=debug,iroh::_events::path::selected=debug";
+
 pub struct FileTeeLogger {
     filter: env_filter::Filter,
     path: PathBuf,
     file: Mutex<Option<File>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn candidate_exchange_visible_without_packet_log_flood() {
+        let mut builder = env_filter::Builder::new();
+        builder.parse(DEFAULT_FILTER);
+        let filter = builder.build();
+        for target in ["iroh::_events::qnt::init", "iroh::_events::path::abandoned", "iroh::_events::path::selected"] {
+            assert!(filter.enabled(&Metadata::builder().target(target).level(log::Level::Debug).build()));
+        }
+        for target in ["iroh::socket::transports", "iroh::socket::remote_map", "tracing::span"] {
+            assert!(!filter.enabled(&Metadata::builder().target(target).level(log::Level::Info).build()));
+        }
+        let state = "iroh::socket::remote_map::remote_state";
+        assert!(filter.enabled(&Metadata::builder().target(state).level(log::Level::Warn).build()));
+        assert!(!filter.enabled(&Metadata::builder().target(state).level(log::Level::Debug).build()));
+    }
+
+    #[test]
+    fn relay_status_warnings_visible_without_relay_packet_logs() {
+        let mut builder = env_filter::Builder::new();
+        builder.parse(DEFAULT_FILTER);
+        let filter = builder.build();
+        // RateLimited 在此 target 上报告；上层 socket=off 不能吞掉唯一一次通知。
+        let actor = "iroh::socket::transports::relay::actor";
+        assert!(filter.enabled(&Metadata::builder().target(actor).level(log::Level::Warn).build()));
+        for level in [log::Level::Info, log::Level::Debug, log::Level::Trace] {
+            assert!(!filter.enabled(&Metadata::builder().target(actor).level(level).build()));
+        }
+    }
 }
 
 impl FileTeeLogger {

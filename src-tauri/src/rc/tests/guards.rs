@@ -266,6 +266,7 @@ fn 会话快照_三字段同源() {
         started_ms: 1,
         started_mono: 0,
         granted: true,
+        bg_since_mono: 0,
     };
     let snap = s.snapshot();
     assert_eq!(snap.peer, "peer-A");
@@ -668,6 +669,83 @@ fn 守卫_画面暂停五处接线成对() {
         "RcStatus 没投影 video_paused / peer_video_paused —— 两端 UI 都没有状态源"
     );
 }
+
+#[test]
+fn 守卫_暂停先废弃媒体再停止出帧() {
+    let run = include_str!("../inbound/video_run.rs");
+    let reset = run.find("pipe.set_paused(self.svc.media_paused())")
+        .expect("暂停只停止出帧，没有通知媒体 worker RESET 已排队的旧画面");
+    assert!(reset < run.find("if bg_since > 0 {").unwrap());
+    assert!(reset < run.find("if self.svc.should_pause_stream() {").unwrap());
+    let pipe = include_str!("../inbound/media_pipe.rs");
+    let writer = include_str!("../inbound/media.rs");
+    assert!(pipe.contains("self.svc.media_paused()"));
+    assert!(writer.contains("self.svc.media_paused()"));
+}
+
+/// 守卫：「传输分 plane」视频独立通道的**七处接线**（2026-10-03）。
+///
+/// 协议位 → 手机上报 → 电脑解析 → spawn 透传 → InboundVideo 分流 → 专属流
+/// 写路径 → 手机 accept 路由。任何一处被删，行为退化分两种：位断了 = 永远
+/// 走旧共流形态（积压 90s 的病根回来）；accept 断了 = 位在但流没人收（对端
+/// 「等待对方画面」）。按源码文本钉，搬家时同步改本测试的 include_str。
+#[test]
+fn 守卫_视频plane七处接线() {
+    let protocol = include_str!("../protocol.rs");
+    assert!(
+        protocol.contains("video_plane: Option<bool>"),
+        "Request 帧没有 video_plane 能力位 —— 传输分 plane 无从协商"
+    );
+    let outbound = include_str!("../outbound.rs");
+    let service_outbound = include_str!("../service/outbound.rs");
+    assert!(
+        service_outbound.contains("video_plane: Some(true)"),
+        "发起端 Request 没上报 video_plane —— 被控端永远不会拆视频流"
+    );
+    assert!(
+        outbound.contains("self.spawn_media_acceptor()")
+            && include_str!("../media.rs").contains("try_parse_vhdr")
+            && include_str!("../outbound/media.rs").contains("handle_h264"),
+        "发起端视频独立流接收循环缺失/不完整 —— 位在但流没人收（等待对方画面）"
+    );
+    let service_inbound = include_str!("../service/inbound.rs");
+    assert!(
+        service_inbound.contains("peer_video_plane"),
+        "被控端没有解析 video_plane 位"
+    );
+    let inbound_accept = include_str!("../service/inbound_accept.rs");
+    assert!(
+        inbound_accept.contains("peer_video_plane"),
+        "video_plane 位没有透传到 InboundVideo::try_new"
+    );
+    let video = include_str!("../inbound/video.rs");
+    assert!(
+        video.contains("send_via_video_plane")
+            && video.contains("MELT_REBUILD_AFTER_MS")
+            && include_str!("../inbound/media.rs").contains("write_vhdr"),
+        "被控端专属流写路径/熔断重建缺失 —— 积压 90s 无法清账的病根还在"
+    );
+    let wire = include_str!("../video/wire.rs");
+    assert!(
+        wire.contains("PPVID1") && wire.contains("try_parse_vhdr"),
+        "PPVID1 流头缺失 —— 手机端 accept 循环无法路由视频流"
+    );
+}
+
+#[test]
+fn 守卫_媒体单入口与JPEG能力不混用() {
+    let router = include_str!("../media.rs");
+    assert_eq!(router.matches("conn.accept_uni()").count(), 1);
+    assert!(!include_str!("../outbound.rs").contains("accept_uni()"));
+    assert!(include_str!("../protocol.rs").contains("media_plane: Option<bool>"));
+    assert!(include_str!("../service/outbound.rs").contains("media_plane: Some(true)"));
+    assert!(include_str!("../inbound/video_run.rs").contains("if self.peer_media_plane"));
+    let sender = include_str!("../inbound/video.rs");
+    assert!(!sender.contains("video_stream.take()"));
+    assert!(!sender.contains("self.video_stream = None"));
+    assert!(include_str!("../inbound/media.rs").contains("discard_stream(&mut self.video_stream)"));
+}
+
 /// 守卫：会话防休眠（`rc_keep_awake`，默认关）的**六处接线成对**（2026-10-04）。
 ///
 /// 这条功能的失败方式全部静默，而且一半在本机界面**看不见**（防休眠生效/失效都不弹东西）：

@@ -53,11 +53,19 @@ mod paste_target;
 mod pinned_window;
 mod quick_paste;
 mod screenshot;
+// 屏幕录制（本地写 MP4）。依赖 DXGI/MF，Windows 桌面专属——与贴图（pinned_window）
+// 同样的门控思路，但不共用 cfg(desktop)：macOS/Linux 没有整条 Media Foundation 链。
+#[cfg(windows)]
+mod rec;
 mod stack_hud;
 mod stack_hud_pos;
 // 本机自有凭证的哈希登记处（让剪贴板监听不把我们自己的令牌/密钥记进历史）
-/// 远程电脑（远程协助）。默认关；复用 sync 的 iroh 端点（双 ALPN）。
+/// 远程电脑（远程协助）。默认关；与 sync 共用全进程唯一 iroh 端点（按 ALPN 分派）。
 pub mod rc;
+mod device_identity;
+/// 全进程唯一的 iroh 端点（多业务按 ALPN 分派）。同身份双端点会在公网
+/// 按 node id 路由时互相抢答——任何新业务**禁止**再自 bind 端点。
+mod shared_ep;
 pub mod secret_registry;
 /// AM-8 近重复判定（纯函数）。
 pub mod similar;
@@ -213,9 +221,7 @@ pub fn run() {
     //   🔴 2026-09-27 改为双写（logging.rs）：安装版没有控制台，stderr 全蒸发，
     //   被控端的 [RC-PERF] 分段汇总与编码后端选定行拿不到，性能问题只能靠猜。
     //   同样的过滤口径下追加写 %APPDATA%\com.pastepanda.app\rc.log（5MB 滚动）。
-    logging::FileTeeLogger::init(
-        "info,iroh::socket=off,tracing::span=off,iroh::net_report=warn,iroh_relay=warn",
-    );
+    logging::FileTeeLogger::init(logging::DEFAULT_FILTER);
 
     // 🔴 崩溃取证（2026-09-27）：安装版没有控制台，Rust panic 的输出发到虚无——
     // 被控端在「控端异常退出」的收口路径上崩过却查无对证（收口链路本身已审计
@@ -312,6 +318,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        // RC 会话前台服务保活（B 方案，2026-10-02）：仅 Android 装载 Kotlin
+        // 插件，桌面 no-op。见 rc::keepalive 模块注释。
+        .plugin(rc::keepalive::init())
+        .plugin(shared_ep::network::init())
+        // Android 应用内自更新（方案甲，2026-10-03）：装载 Kotlin 安装器插件
+        // （FileProvider 拉起系统安装器），桌面 no-op。见 commands::update_android 注释。
+        .plugin(commands::update_android::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
             // 🔴 硬编诊断 P1：Tauri 插件链已装、业务子系统尚未初始化。
@@ -389,6 +402,11 @@ pub fn run() {
             // 初始化 SQLite 数据库
             log::info!("[BOOT] 2 准备取 app_data_dir");
             let app_dir = handle.path().app_data_dir().expect("无法获取应用数据目录");
+            #[cfg(target_os = "android")]
+            match handle.path().download_dir() {
+                Ok(dir) => rc::file_transfer::init_android_receive_dir(dir),
+                Err(error) => log::error!("无法获取手机应用接收目录：{error}"),
+            }
             log::info!("[BOOT] 3 app_data_dir = {}", app_dir.display());
             if let Err(e) = std::fs::create_dir_all(&app_dir) {
                 log::error!("无法创建应用数据目录: {}", e);
@@ -656,6 +674,13 @@ pub fn run() {
                     .get("todo_island_hotkey")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Alt+T")
+                    .to_string(),
+                // 屏幕录制热键（R 键：Record）。上面已占 Ctrl+Alt+V/Q/K/P/D、Alt+V/T、Ctrl+Q，
+                // Ctrl+Alt+R 无冲突（设计稿 §1）。
+                screen_record: saved_config
+                    .get("rec_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Alt+R")
                     .to_string(),
             };
 
@@ -928,15 +953,25 @@ pub fn run() {
                         );
                     }));
                 }
-                // P1-6：远端光标形状变化 → 抛事件，前端切 overlay / 系统光标样式
+                // P1-6 + B 方案（2026-10-02）：被控端光标遥测（形状 + 归一化
+                // 位置 + 可见性）→ 抛事件，发起端画**真的**远端光标。帧里没有
+                // 光标（DXGI 桌面复制不含指针），旧实现只有形状，客户端只能
+                // 把本地环摆在最后一次触摸的位置——本机鼠标一动它就撒谎。
+                // x/y 缺省 = 对端此刻不可见，前端应收起光标而不是留个假的。
                 {
                     let handle_cursor = handle.clone();
-                    rc_svc.set_cursor_notify(std::sync::Arc::new(move |shape: &str| {
-                        let _ = handle_cursor.emit(
-                            "rc-cursor-changed",
-                            serde_json::json!({ "shape": shape }),
-                        );
-                    }));
+                    rc_svc.set_cursor_notify(std::sync::Arc::new(
+                        move |cur: &rc::input::RemoteCursor| {
+                            let _ = handle_cursor.emit(
+                                "rc-cursor-changed",
+                                serde_json::json!({
+                                    "shape": cur.shape,
+                                    "x": cur.x,
+                                    "y": cur.y,
+                                }),
+                            );
+                        },
+                    ));
                 }
                 // G6：文件传输状态（待响应请求 + 进度）→ 抛完整快照。
                 // 传 JSON 载荷而不是「有事变了」：确认条与进度条需要**立即**知道
@@ -1187,6 +1222,7 @@ pub fn run() {
             commands::rc_drain_frames,
             commands::rc_file_send,
             commands::rc_file_send_blob,
+            commands::rc_file_send_blob_abort,
             commands::rc_file_pull,
             commands::rc_file_respond,
             commands::rc_file_cancel,
@@ -1202,6 +1238,7 @@ pub fn run() {
             commands::rc_input_lock_grant,
             commands::rc_video_pause_set,
             commands::rc_send_input,
+            commands::rc_keepalive_set,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,
             commands::rc_window_minimize,
@@ -1271,6 +1308,20 @@ pub fn run() {
             screenshot::arm_longshot_guard,
             screenshot::disarm_longshot_guard,
             screenshot::longshot_heartbeat,
+            #[cfg(windows)]
+            rec::commands::rec_toggle,
+            #[cfg(windows)]
+            rec::commands::rec_start,
+            #[cfg(windows)]
+            rec::commands::rec_stop,
+            #[cfg(windows)]
+            rec::commands::rec_status,
+            #[cfg(windows)]
+            rec::commands::rec_virtual_screen,
+            #[cfg(windows)]
+            rec::commands::rec_ready,
+            #[cfg(windows)]
+            rec::commands::rec_close_windows,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
             screenshot::enum_controls,
@@ -1310,6 +1361,8 @@ pub fn run() {
             commands::save_image_file,
             commands::start_update,
             commands::check_update,
+            commands::apk_install_status,
+            commands::apk_open_install_settings,
             commands::read_file_as_base64,
             commands::read_pdf_as_base64,
             commands::allow_media_asset,

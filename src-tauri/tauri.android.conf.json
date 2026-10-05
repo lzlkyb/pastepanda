@@ -4,5 +4,10 @@
     "beforeBuildCommand": "npm run build:mobile",
     "devUrl": "http://localhost:1422",
     "frontendDist": "../dist-mobile"
+  },
+  "bundle": {
+    "resources": {
+      "resources/easytier/windows-x86_64/*": null
+    }
   }
 }

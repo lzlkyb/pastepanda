@@ -11,6 +11,7 @@ import styles from "./RemoteComputerA2.module.css";
 
 const confirmDialog = vi.hoisted(() => vi.fn(async () => true));
 vi.mock("@/lib/confirm", () => ({ confirmDialog }));
+vi.mock("@/lib/dialogMotion", () => ({ useDialogAnim: () => ({ backdrop: {}, panel: {} }) }));
 vi.mock("./RcFilePanel", () => ({
   RcFilePanel: ({ peer }: { peer: string }) => <div>文件目标：{peer}</div>,
 }));
@@ -53,6 +54,15 @@ function renderSidebar(props: Partial<ComponentProps<typeof RcA2Sidebar>> = {}) 
 }
 
 describe("RcA2Sidebar", () => {
+  it("手机与电脑在桌面设备列表使用各自图标和名称", () => {
+    renderSidebar({ targets: [
+      { ...TARGET, node_id: "phone", name: "Google Pixel 9", os: "Android" },
+      { ...TARGET, os: "Windows 11" },
+    ] });
+    expect(screen.getByRole("img", { name: "手机" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "电脑" })).toBeTruthy();
+    expect(screen.getByText("Google Pixel 9")).toBeTruthy();
+  });
   it("点设备行只切换详情（方案 A：行内零按钮，连接只走详情面 hero）", () => {
     const onSelect = vi.fn();
     renderSidebar({ targets: [TARGET], onSelect });
@@ -66,13 +76,10 @@ describe("RcA2Sidebar", () => {
     const onNavigate = vi.fn();
     renderSidebar({ targets: [], rc: selfRc(), selfEnabled: true, onToggleSelf: vi.fn(), onNavigate });
 
-    // 单码会合（2026-09-29）：首页只留输入框 + 两个固定角色的动作入口，
-    // 不再有「我的码 / 复制那一行」——出示方与输入方输的是同一枚码。
-    expect(screen.getByRole("button", { name: "我出示这枚码" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "对方给我这枚码" })).toBeTruthy();
-    // 没填码时两个入口都禁用（不是点了才告诉你缺什么）
-    expect((screen.getByRole("button", { name: "我出示这枚码" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "添加设备" })).toBeNull();
+    expect(screen.getByRole("button", { name: "手机扫码" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "输入配对码" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "附近设备" })).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
     for (const label of ["文件", "记录", "设置"]) {
       expect(screen.getByRole("button", { name: label })).toBeTruthy();
     }
@@ -118,9 +125,10 @@ describe("RcA2Sidebar", () => {
     });
 
     fireEvent.click(screen.getByRole("switch", { name: "已暂停" }));
-    fireEvent.click(screen.getByText("更多方式与设备号"));
+    fireEvent.click(screen.getByRole("button", { name: "更多连接方式" }));
     fireEvent.click(screen.getByRole("button", { name: /无人值守/ }));
-    fireEvent.click(screen.getByRole("button", { name: /帮助/ }));
+    fireEvent.click(screen.getByRole("button", { name: "更多连接方式" }));
+    fireEvent.click(screen.getByRole("button", { name: "帮助" }));
     expect(onToggleSelf).toHaveBeenCalledWith(true);
     expect(onUnoGenerate).toHaveBeenCalledTimes(1);
     expect(onHelp).toHaveBeenCalledTimes(1);
@@ -132,8 +140,9 @@ describe("RcA2Sidebar", () => {
     const toast = vi.fn();
     renderSidebar({ targets: [], rc: selfRc(), toast, selfEnabled: false, onToggleSelf: vi.fn() });
 
+    expect(screen.queryByText("abcd-efgh-ij01-2345")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "更多连接方式" }));
     expect(screen.getByText("abcd-efgh-ij01-2345")).toBeTruthy();
-    fireEvent.click(screen.getByText("更多方式与设备号"));
     fireEvent.click(screen.getByRole("button", { name: "复制设备号" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(NODE_ID));
     expect(toast).toHaveBeenCalledWith("已复制本机设备号", "success");
@@ -148,7 +157,7 @@ describe("RcA2Sidebar", () => {
       targets: [], rc: selfRc(unoGenerate), toast, selfEnabled: false, onToggleSelf: vi.fn(),
     });
 
-    fireEvent.click(screen.getByText("更多方式与设备号"));
+    fireEvent.click(screen.getByRole("button", { name: "更多连接方式" }));
     fireEvent.click(screen.getByRole("button", { name: "完整接入串" }));
     await waitFor(() => expect(unoGenerate).toHaveBeenCalledWith({
       ttlSecs: 15 * 60, unlimited: false, capability: "control", alsoTrust: false,
@@ -167,7 +176,7 @@ describe("RcA2Sidebar", () => {
       selfEnabled: false,
       onToggleSelf: vi.fn(),
     });
-    fireEvent.click(screen.getByText("更多方式与设备号"));
+    fireEvent.click(screen.getByRole("button", { name: "更多连接方式" }));
     expect(screen.getByText("读取中…")).toBeTruthy();
     // 设备号没读到时，复制设备号与完整接入串都不能可点
     expect((screen.getByRole("button", { name: "复制设备号" }) as HTMLButtonElement).disabled).toBe(true);

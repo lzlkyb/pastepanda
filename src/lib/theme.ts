@@ -10,7 +10,8 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { key: "ocean",      displayName: "经典白", dark: false },
+  // key 是后端存储值 + theme.css 的 [data-theme] 锚点，改名只改 displayName。
+  { key: "ocean",      displayName: "月白", dark: false },
   { key: "ocean-dark", displayName: "深海", dark: true },
   { key: "midnight",   displayName: "午夜", dark: true },
   { key: "forest",     displayName: "森林", dark: false },
@@ -24,7 +25,7 @@ export const DEFAULT_THEME: ThemeKey = "ocean";
  * 把任意配置值归一成合法 ThemeKey。
  *
  * 历史遗留：DEFAULT_CONFIG 里曾经写着 `theme: "light"`，这个值匹配不到任何
- * `[data-theme]` 块，只能落到 `:root` 兜底才碰巧渲染成经典白，设置页色板也因此
+ * `[data-theme]` 块，只能落到 `:root` 兜底才碰巧渲染成月白，设置页色板也因此
  * 一个都不高亮。改掉 DEFAULT_CONFIG 只救得了新装用户 —— 老用户后端存的仍是 "light"，
  * 非空所以照样一路透传下去。所以配置进 store 时先在这里过一道。
  */

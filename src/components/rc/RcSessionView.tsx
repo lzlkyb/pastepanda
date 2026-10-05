@@ -108,6 +108,9 @@ export function RcSessionView({
     lastInputAt: inputEpochRef,
     // D4：fps120 档解码配置要抬 H.264 level（1080p120 超出 L4.2 规格）
     qualityHint: prefs.qPick,
+    // §17.3：首帧前的等待按阶段说实话（拨号/等批准/编码器起帧），占位文案取
+    // rcWaitStage——桌面占位本来就有 Loader 动画，缺的一直是阶段文案
+    phase: session.phase,
   });
   // P1-6：远端光标形状（非箭头形状换用本地系统光标渲染）
   const cursorShape = useRcCursor(session.id);

@@ -5,19 +5,21 @@
 //!
 //! | | 几条 | 干什么 |
 //! |---|---|---|
-//! | [`accept_loop`] | 1（端点级） | 收入连接，判是否收下，然后**交给独立任务**去跑 |
+//! | `shared_ep::dispatch_loop` | 1（**全进程**，见 `crate::shared_ep`） | 收入连接，按 ALPN 分派给下面各业务 |
 //! | [`peer_loop`] | 每个已配对设备 1 条 | 周期性主动拨那一台 |
 //! | [`super::presence::spawn`] | 1 | 喊自己的地址、听别人的 |
 //!
-//! 这三条都由 [`SyncService`] 起与停 —— 它是前端唯一的入口。
+//! 同步的入连接是其中一条 ALPN 路由：[`SyncService`] 起停时 `register` /
+//! `unregister`，端点本体归全进程共享、永不关闭。
 //!
 //! 多设备就是每对端一条独立状态机 —— 天然全网状，不需要额外的拓扑概念。
 //!
 //! # 🔴 accept 之后必须立刻交出去
 //!
-//! `accept_loop` 只做「接下来、开一个任务、马上回去接下一个」。
-//! 要是在 accept 循环里把会话跑完，那么让位时的那点等待
-//! （[`super::coordinate::YIELD_WAIT`]）会**卡住所有其它对端**的入连接。
+//! 共享分派只做「接下来、按 ALPN 交给注册的处理器、马上回去接下一个」；
+//! 处理器（[`serve`]）里开流也要丢进独立任务。要是在处理里把会话跑完，
+//! 那么让位时的那点等待（[`super::coordinate::YIELD_WAIT`]）会
+//! **卡住所有其它对端**的入连接。
 //!
 //! # 失败分两类，别混
 //!
@@ -720,30 +722,6 @@ pub fn is_busy_reject(err: &str) -> bool {
         || err.contains(super::join::REJECT_PENDING)
 }
 
-/// 收入连接的循环。只接、然后立刻交给独立任务。
-pub async fn accept_loop(ctx: Arc<SyncCtx>) {
-    while ctx.running.load(Ordering::SeqCst) {
-        // 🔴 必须与停止信号一起 select：`accept` 是一直等着的，
-        // 光看 `running` 的话开关关掉之后这个循环会永远卡在这儿。
-        let conn = tokio::select! {
-            r = super::transport::accept_conn(&ctx.endpoint) => match r {
-                Ok(c) => c,
-                Err(e) => {
-                    log::warn!("[Sync] 接入连接失败：{}", e);
-                    continue;
-                }
-            },
-            _ = ctx.stop.notified() => break,
-        };
-        // 🔴 只接到握手为止，**开流也要交给独立任务**：ALPN 是公开的，
-        // 没配对的人也连得上，只要它连上之后不开双向流，`accept_bi` 就一直挂着，
-        // 堵死的是**所有其它设备**的入连接。
-        let ctx2 = ctx.clone();
-        tokio::spawn(async move { serve(ctx2, conn).await });
-    }
-    log::info!("[Sync] 入连接循环已停止");
-}
-
 async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
     let peer = conn.remote_id().to_string();
     let short = &peer[..8.min(peer.len())];
@@ -1049,7 +1027,12 @@ impl SyncService {
         }
 
         let me = Arc::new(super::identity::NodeIdentity::load_or_create(app_dir)?);
-        let endpoint = super::transport::bind(&me, relay).await?;
+        // 🔴 端点改用全局共享（`crate::shared_ep`）：sync 与 RC 各 bind 一个同
+        //    身份端点时，公网按 node id 路由会互相抢答（实测 error 120 /
+        //    aborted by peer，2026-10-02）。`relay` 参数保留但不再分流——
+        //    「纯局域网端点」只有测试还用（`transport::bind`，cfg(test)）。
+        let _ = relay;
+        let endpoint = (*crate::shared_ep::get_or_bind(app_dir).await?).clone();
         // 表与 `spawn` 用同一个 `PresenceApp::Kb`，见 `rc` 侧同款注释。
         let presence = Arc::new(PresenceTable::new(PresenceApp::Kb));
 
@@ -1118,7 +1101,19 @@ impl SyncService {
         //   而那之后必然有一次启动。只读一遍 `%TEMP%` 的顶层，不递归。
         session::sweep_stale_scratch();
 
-        tokio::spawn(accept_loop(ctx.clone()));
+        // 入连接归共享端点：注册本业务 ALPN 的处理器，stop 时摘除。
+        // 🔴 只接到握手、开流交给独立任务的纪律不变（见 `serve` 文档）——
+        //    它从 `accept_loop` 平移到了 `crate::shared_ep::dispatch_loop` + 这里。
+        {
+            let ctx2 = ctx.clone();
+            crate::shared_ep::register(
+                super::transport::ALPN,
+                Arc::new(move |conn| {
+                    let ctx2 = ctx2.clone();
+                    tauri::async_runtime::spawn(async move { serve(ctx2, conn).await });
+                }),
+            );
+        }
         for d in &known {
             // 暂停中的设备不拨；恢复时由 kb_sync_set_paused → add_peer 补循环。
             if d.paused {
@@ -1139,7 +1134,9 @@ impl SyncService {
         Ok(())
     }
 
-    /// 停。循环会**立刻**醒（不等满退避），端点随之关闭。
+    /// 停。循环会**立刻**醒（不等满退避）。端点是全进程共享的（`crate::shared_ep`）
+    /// ——**不关**，只摘本业务 ALPN 的处理器；关端点会把 RC 等同身份业务的
+    /// 在途连接一起杀掉。
     pub async fn stop(&self) {
         let mut guard = self.inner.lock().await;
         if let Some(ctx) = guard.take() {
@@ -1147,7 +1144,7 @@ impl SyncService {
             // ❗ 宣告线程是独立标志，漏了它就会留一个占着端口 5008 的僵尸
             ctx.presence_running.store(false, Ordering::SeqCst);
             ctx.stop.notify_waiters();
-            ctx.endpoint.close().await;
+            crate::shared_ep::unregister(super::transport::ALPN);
             // 待确认队列也清：关掉开关后那几条敲门已经无从确认（没人在监听了），
             // 留着只会让界面显一条点下去也连不上的请求。拒绝名单不清（见 `JoinRequests::clear`）。
             ctx.joins.clear();

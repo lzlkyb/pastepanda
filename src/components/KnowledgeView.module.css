@@ -306,6 +306,47 @@
   color: var(--accent, var(--text-primary));
 }
 
+/* 面包屑右侧的动作组（A-61）。
+
+   `margin-left: auto` 在本容器上而不在 `.newBtn` 上（原先在那里）：
+   按钮个数会变——「宽屏」只在 <800px 出、「⋯」不传 items 就不出——
+   放单个按钮上就得跟着改哪个是第一个。 */
+.crumbActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* 「宽屏」按钮（A-61 ④）。
+
+   带文字而不是纯图标：它会改用户的窗口尺寸，一个看不出后果的图标
+   不该干这种事。只在窄屏渲染，所以不会与三栏时的空间竞争。 */
+.wideBtn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  /* ui-rule-ok: 11px 只给 meta——窄屏小按钮，内容是「宽屏」二字的状态标签 */
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.wideBtn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--hover));
+  color: var(--accent, var(--text-primary));
+}
+
 /* ===== 搜索框 ===== */
 
 .searchRow {
@@ -728,7 +769,7 @@
 }
 
 /* 顶部静态微光——玻璃感的主要来源，成本是零（纯渐变）。
-   走 `--card-shimmer-display`：有些主题（经典白）卡片不透明，微光看不见却多一层，
+   走 `--card-shimmer-display`：有些主题（月白）卡片不透明，微光看不见却多一层，
    它们把这个变量设成了 none。不走的后果是「笔记行有微光、卡片没有」。 */
 .row::before {
   content: "";
@@ -1547,13 +1588,6 @@
   white-space: nowrap;
 }
 
-.trashKind {
-  border: 1px solid var(--border-color);
-  background: var(--card-bg);
-  color: var(--text-secondary);
-}
-
-
 /* 星标自动沉淀的草稿身份徽标（阶段 3）。它不是错误（不用 warning），
    是「等用户一个决定」——用强调色的浅底把它从普通笔记里挑出来，
    关掉顶部确认条后，列表里仍然认得出哪些是待确认草稿。 */
@@ -1570,6 +1604,12 @@
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
+}
+
+.trashKind {
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
 }
 
 /* 内容类型的色点。颜色来自 `CONTENT_TYPE_META[x].color`，不在这里再定一套

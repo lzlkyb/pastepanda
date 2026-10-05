@@ -26,11 +26,12 @@
 //! 之后靠 `kb_presence` 签名组播（见 [`super::presence`]）。
 //! 本模块只管「给了地址就能连」，不负责找地址。
 
+// `bind` 只在测试构建存在（生产端点归 `crate::shared_ep`），它的专属 import 随行。
+#[cfg(test)]
 use crate::sync::identity::NodeIdentity;
-use iroh::{
-    endpoint::{presets, RelayMode},
-    Endpoint, EndpointAddr,
-};
+#[cfg(test)]
+use iroh::endpoint::{presets, RelayMode};
+use iroh::{Endpoint, EndpointAddr};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -93,10 +94,12 @@ const MAX_NAME_LEN: usize = 1024;
 /// 字面反斜杠会被吞掉（本文件为此栽过五次）。
 const BACKSLASH: char = '\u{5C}';
 
-/// 建一个端点。
+/// 建一个端点。**仅测试用**（cfg(test)）：生产所有端点都走 `crate::shared_ep`
+/// （同身份双端点会在公网按 node id 路由时互相抢答，见 shared_ep 模块文档）。
 ///
 /// `relay` 为 `false` 时**同时关掉 relay 与地址发现**——那才是真的「只走局域网」。
 /// 只关 relay 的话地址发现仍会打 n0 的 DNS（见模块文档）。
+#[cfg(test)]
 pub async fn bind(me: &NodeIdentity, relay: bool) -> Result<Endpoint, String> {
     // 🔴 密钥只能从身份里取（[`NodeIdentity::iroh_secret`]）。
     // 上一版还另收一个 `seed` 参数、而 `me` 完全没用，

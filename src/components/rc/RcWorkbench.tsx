@@ -1,8 +1,7 @@
 /**
- * RcWorkbench — A2 设备优先工作台。
- *
+ * RcWorkbench — 设备优先工作台，配对统一收进添加设备弹窗。
  * 空闲时设备侧栏是唯一导航真源；文件页复用同一选择，避免再画一套设备列表。
- * 会话态由 `resolveRcA2Surface` 强制置顶，不能被设置或历史页遮住。
+ * 出站画面强制置顶；等待/被控期间可切工具页，会话状态与停止入口常驻。
  *
  * 批5：会话历史提到这一层（`useRcHistory`），因为三个消费点跨了侧栏与主区
  * ——① 记录页侧栏「按设备筛选」、② 详情面「最近会话」、③ 记录页列表。
@@ -31,7 +30,7 @@ import { resolveRcA2Selection, resolveRcA2Surface, hidesWorkbenchTitleBar, type 
 import { RcA2Sidebar } from "./RcA2Sidebar";
 import { RcA2TitleBar } from "./RcA2TitleBar";
 import { RcDevicesPane } from "./RcDevicesPane";
-import { RcJoinRequests } from "./RcJoinRequests";
+import { RcWorkbenchSessionStrip } from "./RcWorkbenchSessionStrip";
 import { RcPageFiles } from "./RcPageFiles";
 import { RcPageHistory } from "./RcPageHistory";
 import { RcPageSettings } from "./RcPageSettings";
@@ -176,7 +175,8 @@ export function RcWorkbench() {
       />
     ) : (
       <RcDevicesPane
-        rc={rc}
+        pairingOpen={overlay === "pair" || overlay === "pairCode" || overlay === "pairNearby"}
+        rc={rc} onPairAccepted={setSelectedPeer}
         target={selectedTarget}
         check={selectedId ? rc.reachability[selectedId] : undefined}
         channelUp={rc.status ? channelUp : null}
@@ -232,7 +232,7 @@ export function RcWorkbench() {
             targetsError={rc.targetsError}
             onSelect={setSelectedPeer}
             onRefresh={refreshDeviceChecks}
-            onPair={() => setOverlay("pair")}
+            onPair={(entry = "pair") => setOverlay(entry)}
             onNavigate={setPage}
             rc={rc}
             toast={toast}
@@ -254,6 +254,12 @@ export function RcWorkbench() {
           />
         )}
         <div className={styles.mainColumn}>
+          {session && (pending || inbound) && !onStage && (
+            <RcWorkbenchSessionStrip key={session.id}
+              peerName={rcDisplayName(rc.targets.find((t) => t.node_id === session.peer) ?? {}) || rcDisplayName(session, fingerprintOf(session.peer))}
+              pending={pending} capability={session.capability} busy={rc.busy}
+              onEnd={rc.end} onReturn={() => setPage("devices")} toast={toast} />
+          )}
           {/* 错误条只服务页面态：stage 顶部自带 RcErrorPanel，双挂会出两条 */}
           {rc.error && !onStage && (
             <RcWorkbenchErrorSlot
@@ -267,26 +273,14 @@ export function RcWorkbench() {
               onDismiss={rc.clearError}
             />
           )}
-          <div className={styles.mainSurface}>{onStage ? stage : content}</div>
+          <div className={styles.mainSurface}>
+            {/* 保持会话子树：切工具页只隐藏，收到同意后原位转成出站画面。 */}
+            {hasLiveSession && <div className={styles.stageHost} hidden={!onStage}>{stage}</div>}
+            {!onStage && content}
+          </div>
         </div>
       </div>
 
-      {/* 2026-09-23：入站申请条原先只挂主窗——停在工作台时别人申请控本机毫无提示 */}
-      <RcJoinRequests
-        pending={rc.status?.pending ?? []}
-        busy={rc.busy}
-        onApprove={(id) => {
-          void rc.approve(id).then((ok) => {
-            if (ok) toast("已同意远程协助", "success");
-            else toast("同意失败，请重试（申请可能已过期）", "error");
-          });
-        }}
-        onDeny={(id) => {
-          void rc.deny(id).then((ok) => {
-            if (ok) toast("已拒绝远程申请", "info");
-          });
-        }}
-      />
       <RcPairLayer
         rc={rc}
         toast={toast}

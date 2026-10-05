@@ -2,11 +2,62 @@
 
 use super::*;
 
+/// 元数据与 JPEG 必须在同一条流保持顺序。
+pub async fn write_jpeg_frame(s: &mut iroh::endpoint::SendStream, frame: &Encoded) -> Result<(), String> {
+    if let Some(rect) = frame.rect { write_dirty_meta(s, rect).await?; }
+    write_vts_meta(s, frame.frame.at_ms, frame.frame.cap_ms, frame.frame.enc_ms).await?;
+    write_jpeg(s, &frame.frame.jpeg).await
+}
+
 pub async fn write_jpeg(s: &mut iroh::endpoint::SendStream, jpeg: &[u8]) -> Result<(), String> {
     if jpeg.is_empty() || jpeg.len() > MAX_JPEG_BYTES || !is_jpeg_magic(jpeg) {
         return Err("非法 JPEG 帧".into());
     }
     write_raw(s, jpeg).await
+}
+
+/// 「传输分 plane」：视频**专属 uni 流**的流头 magic（与音频 `audio::MAGIC`
+/// （PPAUD1）对称）。发起端 accept 循环按它把流路由到视频管线——音频流头
+/// 是 PPAUD1、视频是 PPVID1，互不误认，老的「非音频流忽略」分支不会吃掉
+/// 视频流。
+pub const VIDEO_MAGIC: &[u8; 6] = b"PPVID1";
+
+/// 写独立视频流头：`PPVID1` + u32 LE json 长度 + json（`t:"vhdr"`、`c`:编码
+/// 标准）。裸字节直写（不走 `write_raw_stall` 的长度前缀——流头自描述，
+/// 与音频流头同构）。宽高/时序随每帧 meta 走，流头只承担「这条流是什么」。
+pub async fn write_vhdr(s: &mut iroh::endpoint::SendStream, codec_label: &str) -> Result<(), String> {
+    let json = serde_json::json!({ "t": "vhdr", "c": codec_label });
+    let b = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(VIDEO_MAGIC.len() + 4 + b.len());
+    out.extend_from_slice(VIDEO_MAGIC);
+    out.extend_from_slice(&(b.len() as u32).to_le_bytes());
+    out.extend_from_slice(&b);
+    stalled_write(s, &out, "写视频流头", std::time::Duration::from_secs(30)).await
+}
+
+/// 发起端 accept 循环用：识别 `PPVID1` 流头，返回编码标准标注（如 "h264"）。
+/// 输入是 accept 后按「magic + LE 长度 + json」读出的整体；非本协议返回 None。
+pub fn try_parse_vhdr(buf: &[u8]) -> Option<String> {
+    if buf.len() < VIDEO_MAGIC.len() + 4 || buf[..VIDEO_MAGIC.len()] != *VIDEO_MAGIC {
+        return None;
+    }
+    let n = u32::from_le_bytes(
+        buf[VIDEO_MAGIC.len()..VIDEO_MAGIC.len() + 4].try_into().ok()?,
+    ) as usize;
+    if n == 0 || n > 4096 || buf.len() < VIDEO_MAGIC.len() + 4 + n {
+        return None;
+    }
+    let json: serde_json::Value =
+        serde_json::from_slice(&buf[VIDEO_MAGIC.len() + 4..VIDEO_MAGIC.len() + 4 + n]).ok()?;
+    if json.get("t")?.as_str()? != "vhdr" {
+        return None;
+    }
+    Some(
+        json.get("c")
+            .and_then(|x| x.as_str())
+            .unwrap_or("h264")
+            .to_string(),
+    )
 }
 
 /// 发送 JPEG 帧的采集时间戳（JSON 控制帧），随后应跟 JPEG 数据。
@@ -333,5 +384,45 @@ impl FrameOutbox {
 impl Default for FrameOutbox {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod vhdr_tests {
+    use super::{try_parse_vhdr, VIDEO_MAGIC};
+
+    /// 流头 roundtrip：构造端（write_vhdr 的字节布局）与识别端（accept 循环
+    /// 嗅探）之间只有一个契约函数，钉住它。
+    #[test]
+    fn vhdr识别_非视频流与坏长度不误认() {
+        // 构造与 write_vhdr 相同的字节布局
+        let json = serde_json::json!({ "t": "vhdr", "c": "hevc" });
+        let b = serde_json::to_vec(&json).unwrap();
+        let mut whole = Vec::new();
+        whole.extend_from_slice(VIDEO_MAGIC);
+        whole.extend_from_slice(&(b.len() as u32).to_le_bytes());
+        whole.extend_from_slice(&b);
+        assert_eq!(try_parse_vhdr(&whole).as_deref(), Some("hevc"));
+        // c 缺省 = h264
+        let mut minimal = Vec::new();
+        minimal.extend_from_slice(VIDEO_MAGIC);
+        let jb = serde_json::to_vec(&serde_json::json!({ "t": "vhdr" })).unwrap();
+        minimal.extend_from_slice(&(jb.len() as u32).to_le_bytes());
+        minimal.extend_from_slice(&jb);
+        assert_eq!(try_parse_vhdr(&minimal).as_deref(), Some("h264"));
+        // 非视频流：音频流头（PPAUD1）与垃圾字节都不误认
+        assert_eq!(try_parse_vhdr(b"PPAUD1\x01\x00\x00\x00{}"), None);
+        assert_eq!(try_parse_vhdr(b"garbage!"), None);
+        // 坏长度：声明超过实际
+        let mut bad = whole.clone();
+        bad[6..10].copy_from_slice(&9999u32.to_le_bytes());
+        assert_eq!(try_parse_vhdr(&bad), None);
+        // t 不是 vhdr
+        let mut notv = Vec::new();
+        notv.extend_from_slice(VIDEO_MAGIC);
+        let nb = serde_json::to_vec(&serde_json::json!({ "t": "other" })).unwrap();
+        notv.extend_from_slice(&(nb.len() as u32).to_le_bytes());
+        notv.extend_from_slice(&nb);
+        assert_eq!(try_parse_vhdr(&notv), None);
     }
 }

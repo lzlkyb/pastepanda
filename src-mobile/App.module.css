@@ -1,75 +1,180 @@
-/* 手机骨架样式：令牌来自 src/styles/theme.css（main.tsx 引入），fallback 保底。
-   视觉稿定稿后此处按稿重写——骨架期的目标只是「结构真实、可跑、不摆假 UI」。 */
-
 .root {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--mobile-surface);
 }
-
 .pane {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: auto;
+}
+.pagePane {
+  flex: 0 0 100%;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: auto;
+  padding: env(safe-area-inset-top, 0px) max(var(--mobile-page-inset), env(safe-area-inset-right, 0px)) var(--mobile-nav-clearance) max(var(--mobile-page-inset), env(safe-area-inset-left, 0px));
+  touch-action: auto;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+.tabContent {
+  height: 100%;
   display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  touch-action: auto;
+  scrollbar-width: none;
+}
+.tabContent::-webkit-scrollbar {
+  display: none;
+}
+.tabContent input,
+.tabContent textarea,
+.tabContent select,
+.tabContent [contenteditable="true"] {
+  touch-action: pan-y pinch-zoom;
+}
+.tabContent input[type="range"],
+.tabContent [role="slider"] {
+  touch-action: none;
+}
+:global(body[data-mobile-sheets]) .tabContent {
+  overflow-x: hidden;
+}
+.tabbar {
+  position: absolute;
+  z-index: var(--mobile-layer-nav);
+  left: 16px;
+  right: 16px;
+  bottom: var(--mobile-nav-bottom);
+  max-width: 560px;
+  margin: 0 auto;
+  height: 56px;
+  display: flex;
+  padding: 4px;
+  border-radius: var(--mobile-radius-panel);
+  background: var(--mobile-glass);
+  backdrop-filter: blur(var(--mobile-glass-blur));
+  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
+  box-shadow: var(--mobile-shadow);
+}
+.tab {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 16px;
-  /* 底部导航 + 手势条安全区 */
-  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-}
-
-.emptyCard {
-  max-width: 320px;
-  text-align: center;
-  padding: 20px;
-  border: 1px solid var(--border-color, #232b3d);
-  border-radius: 14px;
-  background: var(--card-bg, #131824);
-}
-
-.emptyTitle {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary, #e6ebf5);
-  margin-bottom: 8px;
-}
-
-.emptyHint {
-  font-size: 13px;
-  color: var(--text-muted, #8a94a8);
-}
-
-.sandboxBtn {
-  margin-top: 16px;
-  padding: 10px 18px;
-  border: 1px solid var(--accent, #6366f1);
-  border-radius: 10px;
-  background: rgba(99, 102, 241, 0.14);
-  color: var(--text-primary, #e6ebf5);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  border-top: 1px solid var(--border-color, #232b3d);
-  background: var(--card-bg, #131824);
-}
-
-.tab {
-  flex: 1;
-  padding: 14px 0;
+  gap: 4px;
   border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-muted, #8a94a8);
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
-
 .tabActive {
-  color: var(--accent, #22d3ee);
+  color: var(--accent-strong);
+}
+.tabSelection {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  bottom: 4px;
+  width: calc((100% - 8px) / 3);
+  border-radius: calc(var(--mobile-radius-panel) - 4px);
+  background: var(--accent-light);
+  transform: translateX(var(--mobile-tab-offset, 0%));
+  pointer-events: none;
+}
+:global(body[data-mobile-sheets]) .tabbar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.tabIcon {
+  display: flex;
+  position: relative;
+}
+.badge {
+  position: absolute;
+  top: -5px;
+  left: 18px;
+  min-width: 18px;
+  padding: 0 4px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 12px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.globalNotice {
+  position: absolute;
+  z-index: var(--mobile-layer-notice);
+  left: 16px;
+  right: 16px;
+  bottom: var(--mobile-nav-clearance);
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(40dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance) - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.globalNotice:empty { display: none; }
+.globalNotice > section {
+  flex: none;
+  margin: 0;
+}
+@media (min-width: 640px) {
+  .pagePane > div {
+    width: 600px;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+}
+:global(html[data-mobile-layout="landscape"]) .pane { padding-right: var(--mobile-side-clearance); }
+:global(html[data-mobile-layout="landscape"]) .pagePane > div { width: 100%; max-width: 1040px; }
+:global(html[data-mobile-layout="landscape"]) .tabbar {
+  left: auto;
+  right: max(8px, env(safe-area-inset-right, 0px));
+  top: max(8px, env(safe-area-inset-top, 0px));
+  bottom: auto;
+  width: 64px;
+  height: 176px;
+  max-height: calc(100% - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  margin: 0;
+  flex-direction: column;
+  border-radius: 12px;
+}
+:global(html[data-mobile-layout="landscape"]) .tab { border-radius: 8px; }
+:global(html[data-mobile-layout="landscape"]) .tabSelection {
+  right: 4px;
+  bottom: auto;
+  width: auto;
+  height: calc((100% - 8px) / 3);
+  border-radius: 8px;
+  transform: translateY(var(--mobile-tab-offset, 0%));
+}
+:global(html[data-mobile-layout="landscape"]) .globalNotice { right: var(--mobile-side-clearance); bottom: var(--mobile-nav-clearance); }
+:global(html[data-mobile-keyboard="true"]) .tabbar { display: none; }
+:global(html[data-mobile-keyboard="true"]) .pane { padding-right: 0; }
+:global(html[data-mobile-keyboard="true"]) .globalNotice { right: 16px; }
+@media (prefers-reduced-transparency: reduce) {
+  .tabbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }

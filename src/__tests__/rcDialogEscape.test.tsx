@@ -45,6 +45,8 @@ import { RcAdhocDialog } from "@/components/settings/RcAdhocDialog";
 vi.mock("@/lib/dialogMotion", () => ({ useDialogAnim: () => ({ backdrop: {}, panel: {} }) }));
 
 vi.mock("@/hooks/useRcNearbyPair", () => ({
+  NEARBY_IDLE_POLL_MS: 5000,
+  NEARBY_POLL_MS: 2000,
   useRcNearbyPair: () => ({
     neighbors: [],
     pair: null,
@@ -58,6 +60,7 @@ vi.mock("@/hooks/useRcNearbyPair", () => ({
 }));
 
 // 各屏内容与 Esc 无关，换成空壳 —— 免得把 CodeMirror / 剪贴板 / 倒计时拖进来。
+vi.mock("@/components/settings/RcShortPairPane", () => ({ RcShortPairPane: () => null }));
 vi.mock("@/components/settings/RcPairModeSelect", () => ({ RcPairModeSelect: () => null }));
 vi.mock("@/components/settings/RcPairCreatePane", () => ({ RcPairCreatePane: () => null }));
 vi.mock("@/components/settings/RcPairPastePane", () => ({ RcPairPastePane: () => null }));
@@ -137,7 +140,7 @@ describe("settings/Rc*.tsx：渲染 dialog-backdrop ⇒ 必须接 useDialogEscap
    * 这条对账的价值就在于「忘了接」和「忘了登记」都会红，
    * 而不是等到用户按 Esc 把设置页关掉才发现（AGENTS 规则 11.1 的验收标准）。
    */
-  const KNOWN_MODALS = ["RcAdhocDialog.tsx", "RcPairDialog.tsx", "RcUnoDialog.tsx"];
+  const KNOWN_MODALS = ["RcConnectionShell.tsx"];
 
   function modalFiles(): string[] {
     return readdirSync(DIR)

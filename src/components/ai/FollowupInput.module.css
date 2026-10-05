@@ -1,52 +1,8 @@
-/* 追问输入框。从 AiQuickBar.module.css 搬过来：这三条被 AiQuickBar 与
-   TransformCard 两处共用，组件既然独立成文件，样式就不应该还寄在
-   其中一个调用方的 module 里。 */
+/* 追问输入框的外壳已上提到共用的 src/components/Composer.tsx（渐变光晕提案 2）。
+   这里只剩本处要注入的令牌。 */
 
-.followRow {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.followInput {
-  flex: 1;
-  font-size: 11px;
-  padding: 5px 9px;
-  border: 1px dashed var(--accent-border);
-  border-radius: 7px;
-  background: var(--section-bg);
-  outline: none;
-  color: var(--text-primary);
-  font-family: inherit;
-  transition: 0.15s;
-}
-
-.followInput:focus {
-  border-color: var(--accent);
-  border-style: solid;
-  background: var(--dialog-bg);
-}
-
-.followInput:disabled {
-  opacity: 0.6;
-}
-
-.followGo {
-  font-size: 10.5px;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #fff;
-  border: none;
-  border-radius: 7px;
-  padding: 5px 13px;
-  font-family: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.followGo:disabled {
-  opacity: 0.55;
-  cursor: default;
+.followComposer {
+  /* 原本 .followInput 就是 11px：它挂在结果卡里，跟卡内那些 11px 的次要控件
+     是一个族；抬到 Composer 默认的 13 会把卡片撑开。 */
+  --composer-fs: 11px;
 }

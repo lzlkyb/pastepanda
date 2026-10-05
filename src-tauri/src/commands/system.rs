@@ -690,6 +690,11 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Alt+T")
         .to_string();
+    let screen_record = config
+        .get("rec_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Alt+R")
+        .to_string();
     // 全局热键是桌面专属（hotkey_manager 模块在 mobile 不编译）；手机端诚实报不支持
     #[cfg(desktop)]
     {
@@ -703,6 +708,7 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
             screenshot,
             daily_note,
             todo_island,
+            screen_record,
         };
         crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
     }

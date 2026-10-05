@@ -1,36 +1,31 @@
-/**
- * RcMobileSession — 手机端会话壳（design/远程电脑-手机端-触摸语义与坐标系 §6）。
- *
- * 编排：PinchViewport（本地视野缩放）+ 触摸手势判定（touchClassifier）+
- * 事件发送（useRcMobileInput，桌面同口径）+ 修饰键条 + 软键盘桥 + 横屏沉浸
- * + **帧泵（useRcFrames，与桌面零差异的共享逻辑）** + 会话心跳（useRcHeartbeat）
- * + 音频（useRcAudio）。
- *
- * 两种画面源，同一壳：传 `sessionId` = 会话模式（泵/心跳/音频全开）；
- * 不传 = 沙盒模式（静态测试图，全部零 IPC），hasFrame 恒真。
- *
- * 🔴 输入分发顺序（design §5.5 红线，规则 11.1 收口）：顶缘热区判定（interceptDown）
- * → 手势状态机 → 远端。热区 tap 在 useTouchGestures 里被本地吃掉，绝不变成发给远端的左键。
- */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRcFrames } from "@/hooks/useRcFrames";
 import { useRcAudio } from "@/hooks/useRcAudio";
-import { useRcHeartbeat } from "@/hooks/useRcHeartbeat";
-import { PinchViewport, type PinchViewportHandle } from "../video/PinchViewport";
-import { VideoSurface } from "../video/VideoSurface";
-import { useTouchGestures } from "./useTouchGestures";
-import { useRcMobileInput, sendEvent } from "./useRcMobileInput";
+import { useRcBackgroundPause } from "@/hooks/useRcBackgroundPause";
+import { useRcSessionKeepalive } from "./useRcSessionKeepalive";
+import { normalizeMobileQuality, type MobileQuality } from "./qualityCycle";
+import type { PinchViewportHandle } from "../video/PinchViewport";
+import { useSessionPointer } from "./useSessionPointer";
+import { MouseAssist } from "./MouseAssist";
+import { RcSessionHeader } from "./RcSessionHeader";
+import { RcConnectionBadge, RcConnectionDetails } from "./RcConnectionDetails";
+import { useMobileConnectionInfo } from "./useMobileConnectionInfo";
+import type { RcStatus } from "@/lib/api/rcTypes";
+import { useRcMobileInput } from "./useRcMobileInput";
 import { useModifierKeys } from "./useModifierKeys";
 import { useImmersiveCapsule } from "./useImmersiveCapsule";
 import { useOrientationLock } from "./useOrientationLock";
 import { useSoftKeyboardBridge } from "./useSoftKeyboardBridge";
 import { createTouchFeedback } from "./touchFeedback";
 import { useSessionClipboard } from "./useSessionClipboard";
+import { useRemoteCursor } from "./useRemoteCursor";
 import { SessionToolbar, type MobileKeyMode } from "./SessionToolbar";
 import { ModifierKeyBar } from "./ModifierKeyBar";
+import { SessionFileRequests } from "./SessionFileRequests";
+import { SessionScreen } from "./SessionScreen";
+import { SessionFeedback } from "./SessionFeedback";
+import type { RcFileView } from "@/hooks/useRcFile";
 import styles from "./RcMobileSession.module.css";
-
-const QUALITY_CYCLE = ["sharp", "balanced", "smooth"] as const;
 
 export function RcMobileSession({
   title,
@@ -40,59 +35,84 @@ export function RcMobileSession({
   contentSize,
   qualityHint,
   canControl = true,
+  endError,
+  ending = false,
   onEnd,
+  file,
+  status,
+  clipboard,
 }: {
   title: string;
   subtitle?: string;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
-  /** 会话模式：帧泵以此为键开跑。缺省 = 沙盒模式（静态画布，泵关）。 */
   sessionId?: string;
-  /** 沙盒模式：静态测试图尺寸（会话模式忽略，帧分辨率由解码 sink 写）。 */
   contentSize?: { w: number; h: number };
-  /** D4：画质档名进解码配置（fps>60 抬 H.264 level）。 */
   qualityHint?: string;
   canControl?: boolean;
+  endError?: string | null;
+  ending?: boolean;
   onEnd: () => void;
+  file?: RcFileView;
+  status?: RcStatus | null;
+  /** 注入口（触摸沙盒用）；缺省走内部真实剪贴板 hook。 */
+  clipboard?: ReturnType<typeof useSessionClipboard>;
 }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<PinchViewportHandle>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const chargeRef = useRef<HTMLDivElement>(null);
+  const remoteCursorRef = useRef<HTMLDivElement>(null);
 
   const [keyMode, setKeyMode] = useState<MobileKeyMode>("type");
   const keyModeRef = useRef(keyMode);
   keyModeRef.current = keyMode;
-  const [quality, setQuality] = useState<(typeof QUALITY_CYCLE)[number]>("balanced");
-  /**
-   * 会话音频，手机端**默认关**——公共场合突然外放电脑声音是事故，与桌面
-   * 「默认开」是刻意的分歧。用户点「声音」才听。沙盒模式恒关。
-   */
+  // 画质：手机就是编码端，档位决定它发什么。hint 可能迟到（状态轮询）或中途被
+  // 电脑端改档，变了就跟着对齐；用户本地已选的档在 hint 不变时不被覆盖。
+  const [quality, setQuality] = useState<MobileQuality>(() => normalizeMobileQuality(qualityHint));
+  useEffect(() => {
+    setQuality(normalizeMobileQuality(qualityHint));
+  }, [qualityHint]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [requestEnd, setRequestEnd] = useState(0);
+  const [requestScreen, setRequestScreen] = useState(0);
   const [audioOn, setAudioOn] = useState(false);
-  const clip = useSessionClipboard();
-
-  // ── 画面源：共享帧泵（会话）或静态画布（沙盒）──
+  const internalClip = useSessionClipboard();
+  const clip = clipboard ?? internalClip;
   const pumpActive = !!sessionId;
-  const frames = useRcFrames(sessionId ?? "", canvasRef, { qualityHint, enabled: pumpActive });
+  const lastInputAt = useRef(0);
+  const frames = useRcFrames(sessionId ?? "", canvasRef, {
+    qualityHint,
+    enabled: pumpActive,
+    clockSkewMs: status?.clock_skew_ms,
+    lastInputAt,
+    // §17.3：等画面按阶段说实话（拨号/等对方批准/编码器起帧），
+    // 文案在 lib/rcWaitStage——手机端此前只有一句静态「等待对方画面…」
+    phase: status?.session?.phase,
+  });
+  const connection = useMobileConnectionInfo(sessionId, status, frames);
   const sandboxContent = useRef(contentSize ?? { w: 0, h: 0 });
   if (contentSize) sandboxContent.current = contentSize;
-  // 归一化几何的内容尺寸：会话模式跟泵走（帧分辨率），沙盒模式静态
   const contentRef = pumpActive ? frames.contentRef : sandboxContent;
   const hasFrame = pumpActive ? frames.hasFrame : true;
-
-  // 组合完成回调的晚绑定：input 先建、mods 后建，ref 每渲染接一次
   const modsComboRef = useRef<(() => void) | null>(null);
   const input = useRcMobileInput({
-    canControl,
-    hasFrame,
+    canControl: canControl && !fileOpen && !connectionOpen && !panelOpen,
+    hasFrame: hasFrame && (!pumpActive || !frames.statusText),
     canvasRef,
     contentRef,
     onComboCompleted: () => modsComboRef.current?.(),
+    lastInputAt,
   });
   const mods = useModifierKeys({ sendKeyDown: input.sendKeyDown, sendKeyUp: input.sendKeyUp });
   modsComboRef.current = mods.releasePending;
+  // 发送失败横幅（规则 15.3）：失败点亮；用户关掉后，恢复成功→再次失败才重新出现。
+  const [sendFailAck, setSendFailAck] = useState(false);
+  useEffect(() => {
+    if (!input.sendFailed) setSendFailAck(false);
+  }, [input.sendFailed]);
   const { sendKeyDown, sendKeyUp, sendKeyPair, sendText, releaseAll } = input;
-
-  // ── 软键盘桥：挂载/销毁/键盘开合收口在 hook；打字/直控档经 keyModeRef 晚绑定 ──
   const { keyboardOpen, toggleKeyboard } = useSoftKeyboardBridge({
     sendText,
     sendKeyDown,
@@ -100,10 +120,11 @@ export function RcMobileSession({
     sendKeyPair,
     keyModeRef,
   });
+  useEffect(() => {
+    if (keyboardOpen && (!canControl || !hasFrame || (pumpActive && !!frames.statusText))) toggleKeyboard();
+  }, [keyboardOpen, canControl, hasFrame, pumpActive, frames.statusText, toggleKeyboard]);
 
-  const capsule = useImmersiveCapsule({ keyboardOpen });
-
-  // ── 本地触摸反馈：纯 DOM 直写（60fps 热路径，不进 React 渲染）──
+  const capsule = useImmersiveCapsule({ keyboardOpen: keyboardOpen || panelOpen || fileOpen || connectionOpen });
   const feedback = useMemo(
     () =>
       createTouchFeedback({
@@ -124,152 +145,149 @@ export function RcMobileSession({
     [],
   );
 
-  // ── 手势 → 远端事件 + 反馈（判定结果的唯一消费点）──
-  const gestures = useTouchGestures({
+  const pointer = useSessionPointer({
+    input,
+    canvasRef,
+    contentRef,
     surfaceRef,
-    enabled: true,
-    interceptDown: (cx, cy) =>
-      capsule.interceptDown(cy, surfaceRef.current?.getBoundingClientRect().top ?? 0),
-    callbacks: {
-      onTap: (x, y, isDouble) => {
-        input.sendClick(1, x, y);
-        feedback.ripple(x, y, isDouble ? "big" : "left");
-        feedback.cursorOn(x, y);
-      },
-      onMoveTo: (x, y) => {
-        input.queueMove(x, y);
-        feedback.cursorOn(x, y);
-      },
-      onCharge: (x, y) => {
-        navigator.vibrate?.(20);
-        feedback.charge("on", x, y);
-      },
-      onChargeCancel: () => feedback.charge("off"),
-      onRightClick: (x, y) => {
-        input.sendClick(2, x, y);
-        feedback.ripple(x, y, "right");
-        feedback.charge("off");
-      },
-      onDragStart: (x, y) => {
-        input.dragDown(x, y);
-        feedback.cursorOn(x, y);
-        feedback.charge("drag", x, y);
-      },
-      onDragMove: (x, y) => {
-        input.queueMove(x, y);
-        feedback.cursorOn(x, y);
-      },
-      onDragEnd: (x, y) => {
-        input.dragUp(x, y);
-        feedback.charge("off");
-      },
-      onScrollDelta: (dx, dy, mx, my) => input.scrollByFrame(dx, dy, mx, my),
-      onPinchStart: () => {},
-      onPinchUpdate: (ratio, dx, dy, mx, my) =>
-        viewportRef.current?.applyPinch(ratio, dx, dy, mx, my),
-    },
+    viewportRef,
+    enabled: hasFrame && (!pumpActive || !frames.statusText) && !panelOpen && !fileOpen && !connectionOpen,
+    canControl,
+    releaseKeys: mods.releaseAll,
+    feedback,
   });
+  const toggleTyping = () => {
+    pointer.reset();
+    toggleKeyboard();
+  };
+  const resetPointer = pointer.reset;
+  const releaseModifiers = mods.releaseAll;
+  const openConnection = useCallback(() => {
+    resetPointer();
+    if (keyboardOpen) toggleKeyboard();
+    setConnectionOpen(true);
+  }, [resetPointer, keyboardOpen, toggleKeyboard]);
+  const closeConnection = useCallback(() => setConnectionOpen(false), []);
+  const connectionQuality = useCallback(() => {
+    setConnectionOpen(false);
+    setRequestScreen((n) => n + 1);
+  }, []);
 
-  // ── 兜底：失焦 / 旋转 / 隐藏 → 全量补发 up + 状态机复位（design §4.3）──
-  // 依赖全为稳定引用（useCallback 成员），整条 effect 生命周期只订阅一次
-  const { cancelAll } = gestures;
-  useEffect(() => {
-    const release = () => {
+  const pickKeyMode = useCallback(
+    (mode: MobileKeyMode) => {
       releaseAll();
-      mods.releaseAll();
-      cancelAll();
-      feedback.charge("off");
-    };
-    window.addEventListener("blur", release);
-    window.addEventListener("orientationchange", release);
-    return () => {
-      window.removeEventListener("blur", release);
-      window.removeEventListener("orientationchange", release);
-    };
-  }, [releaseAll, mods, cancelAll, feedback]);
-
-  const pickKeyMode = useCallback((mode: MobileKeyMode) => {
-    setKeyMode(mode);
-    sendEvent({ kind: "set_key_mode", mode });
-  }, []);
-  const cycleQuality = useCallback(() => {
-    setQuality((q) => {
-      const next = QUALITY_CYCLE[(QUALITY_CYCLE.indexOf(q) + 1) % QUALITY_CYCLE.length];
-      sendEvent({ kind: "set_quality", quality: next });
-      return next;
-    });
-  }, []);
-
-  // ── 会话心跳：被控端 3.5s 无心跳停推帧、15s 判失联收口（漏发 ping = 真机「15 秒必断」根因）
-  useRcHeartbeat(sessionId ?? "");
-
-  // ── 横屏按钮：竖屏点「横屏」进沉浸，横屏点「竖屏」还原（2026-10-01 用户拍板）。
-  const orient = useOrientationLock();
-  const toggleOrientation = useCallback(
-    () => (capsule.landscape ? orient.exitLandscape() : void orient.enterLandscape()),
-    [capsule.landscape, orient],
+      releaseModifiers();
+      setKeyMode(mode);
+      input.sendRaw({ kind: "set_key_mode", mode });
+    },
+    [releaseAll, releaseModifiers, input.sendRaw],
   );
-
-  // ── 会话音频：audio_on 事件 + 本地泵；挂载同步一次开关（桌面纪律①），副作用收进 effect。
+  const pickQuality = useCallback((next: MobileQuality) => {
+    setQuality(next);
+    input.sendRaw({ kind: "set_quality", quality: next });
+  }, [input.sendRaw]);
+  // 后台保活（2026-10-02）：进/出后台通知被控端挂起/恢复推流。
+  // 🔴 心跳不在这里发——已下沉到发起端 Rust（outbound.rs `HEARTBEAT_PING_MS`），
+  // WebView 随 Activity 暂停不再误断前台会话；后台场景由 BgPause 的 TTL 兜底。
+  useRcBackgroundPause(sessionId ?? "");
+  // 前台服务保活（B 方案，与上面叠加）：会话期间持前台服务，进程不被冻结
+  // （桌面 no-op）。进会话开、卸载停——开关纪律见 useRcSessionKeepalive 注释。
+  useRcSessionKeepalive(sessionId, title);
+  const remoteCursor = useRemoteCursor({
+    enabled: pumpActive,
+    canvasRef,
+    contentRef,
+    cursorRef: remoteCursorRef,
+    surfaceRef,
+    onPosition: pointer.syncPosition,
+  });
+  const orient = useOrientationLock();
+  const toggleOrientation = useCallback(() => {
+    resetPointer();
+    if (capsule.landscape) orient.exitLandscape();
+    else void orient.enterLandscape();
+  }, [capsule.landscape, orient, resetPointer]);
   useRcAudio(sessionId ?? "", pumpActive && audioOn);
   useEffect(() => {
     if (!pumpActive) return;
-    sendEvent({ kind: "audio_on", on: audioOn });
-  }, [pumpActive, audioOn]);
+    input.sendRaw({ kind: "audio_on", on: audioOn });
+  }, [pumpActive, audioOn, input.sendRaw]);
 
+  const mouseAssist = <MouseAssist visible={pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
+    padOpen={pointer.padOpen} padRef={pointer.padRef} dragging={pointer.dragging} scrolling={pointer.scrolling}
+    onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />;
   return (
-    <div className={styles.root}>
-      {!capsule.landscape && (
-        <header className={styles.statusRow}>
-          <span className={styles.statusDot} aria-hidden="true" />
-          <span className={styles.statusTitle}>{title}</span>
-          {subtitle && <span className={styles.statusSub}>{subtitle}</span>}
-        </header>
-      )}
+    <div className={styles.root} data-landscape={capsule.landscape} data-keyboard={keyboardOpen}>
+      {!capsule.landscape && <RcSessionHeader title={title} subtitle={subtitle} info={connection} onDetails={openConnection}
+        onBack={() => setRequestEnd((n) => n + 1)} onScreen={() => setRequestScreen((n) => n + 1)} />}
 
-      <div className={styles.screenArea}>
-        <PinchViewport ref={viewportRef} surfaceRef={surfaceRef}>
-          <VideoSurface
-            canvasRef={canvasRef}
-            className={styles.canvas}
-            statusText={frames.statusText}
-            showStatus={pumpActive}
-            sandboxSize={pumpActive ? undefined : contentSize}
-          />
-        </PinchViewport>
-        <div ref={cursorRef} className={styles.cursorRing} aria-hidden="true" />
-        <div ref={chargeRef} className={styles.chargeRing} aria-hidden="true" />
+      <div className={styles.feedbackSlot}>
+        <SessionFeedback pointer={pointer} orient={orient} clipboard={clip}
+          sendFailed={pumpActive && input.sendFailed && !sendFailAck}
+          onSendFailDismiss={() => setSendFailAck(true)}
+          teach={capsule.phase === "teaching"
+            ? { secondsLeft: capsule.secondsLeft, onEnd: capsule.endTeaching }
+            : undefined} />
+        {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} onOpen={() => {
+          pointer.reset();
+          if (keyboardOpen) toggleKeyboard();
+          setFileOpen(true);
+        }} />}
+      </div>
+      <div className={styles.controlArea} onPointerDownCapture={capsule.dismissHint}>
+        <SessionScreen pointer={pointer} canControl={canControl} hasFrame={hasFrame}
+          statusText={pumpActive ? frames.statusText : undefined} waitHint={frames.waitHint} onReturn={() => setRequestEnd(n => n + 1)}
+          blocked={keyboardOpen || panelOpen || fileOpen || connectionOpen} canvasRef={canvasRef} surfaceRef={surfaceRef}
+          viewportRef={viewportRef} cursorRef={cursorRef} chargeRef={chargeRef} remoteCursorRef={remoteCursorRef}
+          remoteShape={remoteCursor.shape} sandboxSize={pumpActive ? undefined : contentSize} />
+        {(!capsule.landscape || pointer.padOpen) && mouseAssist}
       </div>
 
-      {keyboardOpen && (
+      {
         <ModifierKeyBar
+          open={keyboardOpen}
+          onHide={toggleTyping}
+          onSendText={input.submitText}
           pending={mods.pending}
           onToggleMod={mods.toggle}
           onFunctionKey={(vk) => input.sendKeyPair(vk)}
           keyMode={keyMode}
           onPickKeyMode={pickKeyMode}
         />
-      )}
+      }
 
       <SessionToolbar
         landscape={capsule.landscape}
         visible={capsule.landscape ? capsule.capsuleVisible : true}
         keyboardOn={keyboardOpen}
-        onToggleKeyboard={toggleKeyboard}
+        onToggleKeyboard={toggleTyping}
         onResetZoom={() => viewportRef.current?.reset()}
         quality={quality}
-        onCycleQuality={cycleQuality}
+        onPickQuality={pickQuality}
         audioOn={audioOn}
         onToggleAudio={() => setAudioOn((on) => !on)}
         onToggleOrientation={toggleOrientation}
-        hint={orient.hint || clip.hint}
-        clipOpen={clip.clipOpen}
-        onToggleClip={clip.toggleClip}
-        onClipPush={() => void clip.push()}
-        onClipPull={() => void clip.pull()}
+        clipboard={clip}
         onEnd={onEnd}
-        onInteract={capsule.keepAlive}
+        canControl={canControl}
+        inputReady={hasFrame && (!pumpActive || !frames.statusText)}
+        ending={ending}
+        endError={endError}
+        onPanelChange={setPanelOpen}
+        pointerMode={pointer.mode}
+        onPointerMode={pointer.pickMode}
+        mouseOpen={pointer.mouseOpen}
+        onToggleMouse={pointer.toggleMouse}
+        onRevealTools={capsule.toggle}
+        toolHint={capsule.phase === "hint"}
+        onRevealPointer={pointer.reveal}
+        requestEnd={requestEnd}
+        requestScreen={requestScreen}
+        onConnectionDetails={openConnection}
+        connectionEntry={<RcConnectionBadge info={connection} onOpen={openConnection} />}
+        mouseAssist={capsule.landscape && !pointer.padOpen ? mouseAssist : undefined}
       />
+      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality} onClose={closeConnection} onQuality={connectionQuality} />
     </div>
   );
 }

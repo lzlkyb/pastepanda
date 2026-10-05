@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda · 提问框渐变光晕（Composer）设计稿</title>
+
+<!-- 🔴 这五张表是产品真用的样式表，不是抄写件。
+     本页出现的每一个像素 / 每一种颜色，都是改完之后应用里会出现的值。
+     ⚠ 两种打开方式都要能量：`file://` 直开 ⇒ module.css 类名是字面量；
+       经 Vite（http://localhost:1420/design/…）⇒ 类名被作用域化成 `_askInput_hash_283`，
+       HTML 上写的 class="askInput" 一条都不匹配。所以下方 buildClassMap() 从 CSSOM 反查真名并重写 DOM，
+       #selfcheck 不命中就整页亮红「所有读数作废」。 -->
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/components/ai/FollowupInput.module.css" />
+<link rel="stylesheet" href="../src/components/NlCommandBar.module.css" />
+<link rel="stylesheet" href="../src/components/notes/KbQaPanel.module.css" />
+
+<style>
+/* ===== 本页文档外壳（与产品无关，只是排版） ===== */
+html, body { margin: 0; }
+/* 🔴 必须显式反接 globals.css：产品全局写的是 `body { overflow: hidden; user-select: none }`
+     （App 是单屏窗口，这两条在产品里是对的），但它会把这个 4600px 高的滚动文档钉死——
+     实测 scrollHeight 4670 / clientHeight 558 却滚不动，而且选不中文字。
+     本表在 <link> 之后、同特异度后者胜，所以不加 !important 也生效。 */
+html, body { overflow: auto; }
+body { user-select: text; -webkit-user-select: text; background: #0a0d14; color: #cbd5e1; font-family: "Segoe UI", system-ui, sans-serif; font-size: 13px; }
+/* 舞台定宽 1112px（量具环境视口可以是 0），窄窗口时要能横向滚到右边 */
+.doc { min-width: 1152px; }
+.doc { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+h1 { font-size: 20px; color: #f1f5f9; margin: 0 0 4px; }
+h2 { font-size: 15px; color: #e2e8f0; margin: 34px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; }
+h2 .no { color: #64748b; font-weight: 400; margin-right: 6px; }
+p.lead { color: #94a3b8; margin: 6px 0 0; line-height: 1.7; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #7dd3fc; background: #0f172a; padding: 1px 4px; border-radius: 3px; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12px; }
+th, td { border: 1px solid #1e293b; padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #0f172a; color: #cbd5e1; font-weight: 600; }
+td.num { font-family: ui-monospace, Consolas, monospace; }
+.ok { color: #4ade80; }
+.bad { color: #fb7185; }
+.warn { color: #fbbf24; }
+.mut { color: #64748b; }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid #334155; vertical-align: -1px; margin-right: 4px; }
+/* 30 秒读法：这一页信息密度高，先把「看哪一栏、对哪一个数」写在最上面 */
+.tldr { margin: 16px 0 0; padding: 12px 16px; border-left: 3px solid #38bdf8; background: #0f172a; border-radius: 0 8px 8px 0; line-height: 1.85; }
+.tldr b { color: #e0f2fe; }
+.tldr ol { margin: 8px 0 8px 20px; padding: 0; }
+.tldr li { margin: 5px 0; color: #cbd5e1; }
+
+/* ===== 控件条 =====
+   ⚠ 类名不能叫 .bar —— 本页 link 了 NlCommandBar.module.css，file:// 直开时它的 `.bar`
+      是字面量，会串进文档外壳（margin 8px 14px 0 等）。同理避开 .icon / .input。 */
+.ctrlbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 12px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; position: sticky; top: 0; z-index: 20; }
+.ctrlbar b { font-size: 11px; color: #64748b; font-weight: 600; margin-right: 6px; }
+.chip { border: 1px solid #334155; background: #111c2e; color: #cbd5e1; font: inherit; font-size: 11.5px; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: #38bdf8; color: #e0f2fe; background: #0b2a3f; }
+.ctrlbar label { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #94a3b8; }
+.ctrlbar input[type="range"] { width: 96px; }
+.ctrlbar output { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: #7dd3fc; min-width: 34px; }
+
+/* ===== 自检条 ===== */
+#selfcheck { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; border: 1px solid #1e293b; background: #0f172a; color: #94a3b8; line-height: 1.8; }
+#selfcheck.fail { border-color: #be123c; background: #2a0b13; color: #fecdd3; }
+
+/* ===== 舞台：套真主题 + 真容器宽度 =====
+   ⚠ 定宽不是装饰：headless/量具环境里视口宽度可以是 0，
+     那样 grid 列会被压成 0，「容器宽」一列量到 0px（本轮就是这么翻车的）。
+     舞台写死宽度 ⇒ 两种环境读数一致。 */
+.stage { width: 1112px; box-sizing: border-box; background: var(--app-bg); color: var(--text-primary); border-radius: 12px; padding: 14px; margin-top: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, .5); }
+.row { display: grid; grid-template-columns: repeat(3, minmax(0, var(--w, 340px))); gap: 16px; align-items: start; }
+.rowlabel { font-size: 11.5px; color: #64748b; margin: 6px 0 18px; }
+.rowlabel:last-child { margin-bottom: 0; }
+.cell { min-width: 0; }
+.cell > .tag { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; font-family: ui-monospace, Consolas, monospace; }
+/* 真组件的父级背景（现状没有卡片衬底时读数会偏） */
+.hostCard { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 10px; }
+
+/* ============================================================
+   提案层：将来整块搬进 src/components/common/Composer.module.css
+   令牌将来进 src/styles/theme.css 的 :root 段（一条式子服务 6 套主题，
+   先例：--diagram-canvas-bg / --orange-solid 都只写在 :root）。
+   ============================================================ */
+:root {
+  /* 光晕两端：直接取本主题已有的两个语义色，不发明新色（V3）。
+     🔴 这条是量出来的第三次尝试：
+        ① `color-mix(in oklch, accent 42%, orange)` → ocean 解析成 #bf477a，是品红不是暖桃；
+        ② 改成 `orange 72% + accent` 插值仍穿紫（oklch 走短弧：40°→250° 经过 330°）；
+        ③ 最终：**端点不混色**。暖端 = 本主题 --orange，主端 = --accent，
+           中间那道过渡交给 linear-gradient 自己的 sRGB 渐变（参考图也是这个原理）。
+     已知代价（§4 表会逐主题量出来）：破晓 dawn 的 --accent 本身就是橙，两端同色 ⇒ 扫光最弱。 */
+  --composer-halo-a: var(--orange);
+  --composer-halo-b: var(--accent);
+  /* 强度两档（本页滑杆直接改这两个数，公式与将来代码同一条） */
+  --composer-halo-rest: 10;
+  --composer-halo-focus: 55;
+  --composer-halo-a-rest: color-mix(in srgb, var(--composer-halo-a) calc(var(--composer-halo-rest) * 1%), transparent);
+  --composer-halo-b-rest: color-mix(in srgb, var(--composer-halo-b) calc(var(--composer-halo-rest) * 1%), transparent);
+  --composer-halo-a-focus: color-mix(in srgb, var(--composer-halo-a) calc(var(--composer-halo-focus) * 1%), transparent);
+  --composer-halo-b-focus: color-mix(in srgb, var(--composer-halo-b) calc(var(--composer-halo-focus) * 1%), transparent);
+}
+
+/* 提案 1 · 完整解剖：输入在上，工具/发送行在下（= 参考图原样） */
+.composer {
+  position: relative;
+  border-radius: 12px;                 /* U5 顶格，不破三档 */
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-rest), var(--composer-halo-b-rest)) border-box;
+  box-shadow: var(--control-elev);
+  transition: background 200ms cubic-bezier(0.2, 0.8, 0.3, 1), box-shadow 200ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.composer:focus-within,
+.composer.forceFocus {
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-focus), var(--composer-halo-b-focus)) border-box;
+  /* 焦点外环取**实色 --accent**（§4 反解：12% 环六套全读成 ~1.x:1，是纯装饰；实色环六套全 ≥3:1）。
+     光晕负责好看，环负责可达性。落地时更正：顶栏搜索框（TopBar <code>.focused</code>）用的是
+     <code>0 0 0 3px var(--accent-shadow)</code>，而 --accent-shadow 只有 15–20% α，同样够不到 3:1
+     ——<b>同形不同色</b>，本框因为光晕只有 10% 才把环做成实色兜底。 */
+  box-shadow: var(--control-elev), 0 0 0 3px var(--accent);
+}
+.composerInput {
+  display: block;
+  width: 100%;
+  min-height: 20px;
+  max-height: 92px;                    /* 4 行，与 KbQaPanel 的既有上限同口径 */
+  border: 0;
+  outline: none;
+  background: transparent;
+  resize: none;
+  overflow-y: auto;
+  font: inherit;
+  font-size: 12.5px;                   /* = --kb-fs-body，追问与回答同一个声音 */
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+.composerInput::placeholder { color: var(--text-muted); }
+.composerInput:disabled { color: var(--text-muted); cursor: not-allowed; }
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  /* 🔴 实测教训：不加 nowrap + 省略号，提示文字在 320/360px 容器里换行，
+     工具行从 24px 撑到 66px（AI 追问）/132px（指令条）。这一条是量出来的，不是预防性写法。 */
+  flex-wrap: nowrap;
+}
+.composerTools { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); flex: none; }
+.toolBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;            /* U7：命中区 ≥24px */
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-muted); cursor: pointer; font: inherit;
+}
+.toolBtn:hover { background: var(--hover); color: var(--text-primary); }
+/* ✦ 指令条的既有图标位：外观逐条抄自 NlCommandBar.module.css 的 .icon，不重设计 */
+.tIcon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 6px; flex: none;
+  background: var(--accent-light); color: var(--accent-strong);
+}
+.composerSend {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border: 0; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff; cursor: pointer; font: inherit; flex: none;
+}
+.composerSend:disabled { opacity: .55; cursor: default; }
+.composerHint { font-size: 11px; color: var(--text-muted); flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 提案 2 · 单行紧凑：只借光晕 + 发送胶囊，不加第二行 */
+.composerSlim {
+  display: flex; align-items: center; gap: 8px;
+  border-radius: 12px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-rest), var(--composer-halo-b-rest)) border-box;
+  box-shadow: var(--control-elev);
+  transition: background 200ms cubic-bezier(0.2, 0.8, 0.3, 1), box-shadow 200ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.composerSlim:focus-within,
+.composerSlim.forceFocus {
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-focus), var(--composer-halo-b-focus)) border-box;
+  /* 焦点外环取**实色 --accent**（§4 反解：12% 环六套全读成 ~1.x:1，是纯装饰；实色环六套全 ≥3:1）。
+     光晕负责好看，环负责可达性。落地时更正：顶栏搜索框（TopBar <code>.focused</code>）用的是
+     <code>0 0 0 3px var(--accent-shadow)</code>，而 --accent-shadow 只有 15–20% α，同样够不到 3:1
+     ——<b>同形不同色</b>，本框因为光晕只有 10% 才把环做成实色兜底。 */
+  box-shadow: var(--control-elev), 0 0 0 3px var(--accent);
+}
+.composerSlim .composerInput { display: inline; width: auto; flex: 1; min-width: 0; min-height: 22px; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <h1>提问框渐变光晕（Composer）· 交互实测稿</h1>
+  <p class="lead">
+    参考图是 ChatGPT/Claude 那类「输入条」：<b>暖→冷渐变描边光晕 + 半透玻璃体 + 下一行左工具右发送胶囊</b>。
+    本页把它拆成四层，只借其中两层，并且<b>只在 3 个真·提问框上试</b>（知识库追问 / AI 追问 / 变换中心指令条）——
+    顶栏搜索框等 20+ 处是 32–38px 的定位控件，不是 composer，本页不给它们改。
+  </p>
+  <p class="lead">
+    ✅ <b>本页可交互可验</b>：主题 6 套可切、静息/焦点/禁用三态可切、光晕强度两根滑杆可拖（公式与将来写进代码的那一条完全相同）、
+    所有高度与对比度都是 <code>getBoundingClientRect()</code> / <code>getComputedStyle()</code> 现量，不是手填。
+  </p>
+  <p class="lead warn">
+    ⚠ 首版有两个坑，你遇到的「滚不动 / 卡」就是它们，现已修：<b>①</b> 本页 link 了产品的 <code>globals.css</code>，
+    它里面写的是 <code>body { overflow: hidden; user-select: none }</code>（App 是单屏窗口，这两条在产品里是对的），
+    直接把这个近 3000px 高的文档钉死不滚、还选不中文字 ⇒ 本页显式反接了 <code>overflow: auto</code>，并把它做成自检条上的一条机械判据；
+    <b>②</b> §4 的「反解达标档」原本是 6 主题 × 71 档，每档都写一次 CSS 变量再读回来 = 426 次强制样式重算，
+    <code>render()</code> 单次 <b>735ms</b>，滑杆挂在 <code>input</code> 上就是 1.4fps 假死 ⇒ α 改成纯数学推导（每主题只读 3 个端点，
+    并逐主题回对一次 CSS 真解析值），且拖动中只改变量（<b>0.3ms/步</b>）、松手才重算表格。
+  </p>
+  <p class="lead ok">
+    已拍板三条（本轮问答确定）：① 先出稿看效果再定投入；② <b>圆角用现有 12 顶格，不为 composer 单开一档、不改 U5 与 lint 规则</b>；
+    ③ <b>光晕静息淡、焦点亮</b>，不做常驻强渐变。
+  </p>
+
+  <div class="tldr">
+    <b>怎么读这一页（30 秒版）</b>
+    <ol>
+      <li>先只看 <b>§2</b>：左边一列是软件现在的样子，中间和右边是两种改法。上面那排按钮能切 6 套主题、切「静息/焦点/禁用」，两根滑杆调光晕浓淡。<b>哪一栏顺眼，就选哪栏。</b></li>
+      <li>再对 <b>§3</b> 一个数：中间那栏（完整解剖，跟参考图一模一样）每处要多占 <b>34~41px</b> 高；右边那栏（只换边框和按钮）只多 <b>2~9px</b>。多出来的高度就是从正文区抢走的可视区。</li>
+      <li><b>§4</b> 不用细看，它只回答一件事：这条边框亮起来的时候，键盘用户看不看得出来焦点在这儿。结论是「光晕负责好看，实色环负责看得出来」，两种职责不混。</li>
+      <li>最后看 <b>§6</b>：四个待拍选项，每个都写了我的默认。你只回「P1 用默认」也行。</li>
+    </ol>
+    <span class="mut">其余部分（§1 拆了参考图哪四层、§5 列出要改哪几个文件）是给落地时对着做的，不影响你现在判断。</span>
+  </div>
+
+  <div class="bar">
+    <span><b>主题</b>
+      <button class="chip" data-theme-btn="ocean" aria-pressed="true">海洋</button>
+      <button class="chip" data-theme-btn="midnight" aria-pressed="false">午夜</button>
+      <button class="chip" data-theme-btn="forest" aria-pressed="false">森林</button>
+      <button class="chip" data-theme-btn="blossom" aria-pressed="false">花时</button>
+      <button class="chip" data-theme-btn="dawn" aria-pressed="false">破晓</button>
+      <button class="chip" data-theme-btn="ocean-dark" aria-pressed="false">深海</button>
+    </span>
+    <span><b>状态</b>
+      <button class="chip" data-state="rest" aria-pressed="true">静息</button>
+      <button class="chip" data-state="focus" aria-pressed="false">焦点</button>
+      <button class="chip" data-state="disabled" aria-pressed="false">禁用</button>
+    </span>
+    <label>静息强度 <input type="range" id="restRange" min="0" max="30" step="1" value="10" /><output id="restOut">10%</output></label>
+    <label>焦点强度 <input type="range" id="focusRange" min="20" max="90" step="1" value="55" /><output id="focusOut">55%</output></label>
+  </div>
+
+  <div id="selfcheck">自检未运行</div>
+
+  <h2><span class="no">§1</span>参考图四层，我们借哪两层</h2>
+  <table>
+    <tr><th style="width:150px">层</th><th>参考图里的样子</th><th style="width:230px">我们是否已有</th><th>结论</th></tr>
+    <tr><td>① 渐变光晕描边</td><td>暖桃→冷蓝沿边框一圈，静息≈10% alpha</td><td>同款技法已有先例：<code>DiagramCanvas.module.css:760</code> 的 padding-box/border-box 双层渐变</td><td class="ok">借（本页主角）</td></tr>
+    <tr><td>② 玻璃体 + 顶高光</td><td>半透白底，上沿一道内高光</td><td><code>--control-glass</code> + <code>--control-elev</code> 的 <code>inset 0 1px 0 rgba(255,255,255,.85)</code>，方向一致</td><td class="ok">借，且零新增成本</td></tr>
+    <tr><td>③ 结构：输入在上、工具行在下</td><td>下一行左 +/附件/模式，右实心圆发送</td><td>三处现状全是「输入与按钮同一行」</td><td class="warn">试两个版本，用 §3 的高度差决定</td></tr>
+    <tr><td>④ 真·透出背后内容的毛玻璃</td><td>body 能糊出背后内容</td><td class="bad">Windows + 透明窗做不到（tauri#10064，backdrop-filter 穿不出 webview；岛/浮条/RC 弹层已判死）</td><td>不借，用②近似</td></tr>
+  </table>
+  <p class="lead mut">圆角：参考图约 18–22px。本稿一律 <b>12px</b>（U5 顶格），所以视觉上会比参考图「紧」一档——这是拍板②的代价，不是缺陷。</p>
+
+  <h2><span class="no">§2</span>三处提问框 · 现状 vs 提案（真组件类名 + 真样式表）</h2>
+  <p class="lead">
+    左列是<b>现状</b>：直接复用产品里的真类名（<code>askRow/askInput/askBtn</code>、<code>followRow/followInput/followGo</code>、<code>bar/icon/input/goBtn</code>），
+    样式来自上面 link 的三张真 <code>*.module.css</code>。右列是<b>提案</b>：两套并排——
+    <b>提案1</b> 完整解剖（多一行工具/发送），<b>提案2</b> 单行紧凑（只换光晕和胶囊）。
+  </p>
+
+  <div class="stage">
+    <div class="row" style="--w:340px">
+      <div class="cell">
+        <div class="tag">现状 · 真类名 <code>askRow/askInput/askBtn</code></div>
+        <div class="hostCard">
+          <div class="askRow" data-probe="askRow">
+            <textarea class="askInput" data-probe="askInput" rows="1" placeholder="继续追问：比如「把来源列出来」"></textarea>
+            <button class="askBtn" data-probe="askBtn" title="发送">↑</button>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案1 · 完整解剖（输入在上，工具行在下）</div>
+        <div class="hostCard">
+          <div class="composer" data-m="kb1">
+            <textarea class="composerInput" data-in rows="1" placeholder="继续追问：比如「把来源列出来」"></textarea>
+            <div class="composerBar">
+              <span class="composerTools">
+                <button class="toolBtn" title="引用当前笔记">@</button>
+                <button class="toolBtn" title="切换范围">⌄</button>
+              </span>
+              <span class="composerHint">Enter 发送</span>
+              <button class="composerSend" data-send>↑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案2 · 单行紧凑（只换光晕 + 胶囊）</div>
+        <div class="hostCard">
+          <div class="composerSlim" data-m="kb2">
+            <textarea class="composerInput" data-in rows="1" placeholder="继续追问：比如「把来源列出来」"></textarea>
+            <button class="composerSend" data-send>↑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rowlabel">① 知识库问答面板追问框 · 容器宽 340px（真 App 侧栏量级）</div>
+
+    <div class="row" style="--w:320px">
+      <div class="cell">
+        <div class="tag">现状 · 真类名 <code>followRow/followInput/followGo</code></div>
+        <div class="hostCard">
+          <div class="followRow" data-probe="followRow">
+            <input class="followInput" data-probe="followInput" placeholder="追问：再短一点 / 翻译成英文…（Enter 发送）" />
+            <button class="followGo" data-probe="followGo">追问</button>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案1 · 完整解剖</div>
+        <div class="hostCard">
+          <div class="composer" data-m="ai1">
+            <input class="composerInput" data-in placeholder="追问：再短一点 / 翻译成英文…" />
+            <div class="composerBar">
+              <span class="composerTools"><span class="composerHint">Enter 发送 · Esc 收起</span></span>
+              <button class="composerSend" data-send>↑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案2 · 单行紧凑</div>
+        <div class="hostCard">
+          <div class="composerSlim" data-m="ai2">
+            <input class="composerInput" data-in placeholder="追问：再短一点 / 翻译成英文…（Enter 发送）" />
+            <button class="composerSend" data-send>↑</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rowlabel">② AI 追问（AiQuickBar 与 TransformCard 共用同一组件）· 容器宽 320px</div>
+
+    <div class="row" style="--w:360px">
+      <div class="cell">
+        <div class="tag">现状 · 真类名 <code>bar/icon/input/goBtn</code></div>
+        <div class="hostCard">
+          <div class="bar" data-probe="bar" style="margin:0">
+            <span class="icon" data-probe="icon">✦</span>
+            <input class="input" data-probe="input" placeholder="想做什么？如：改得正式一点 / 翻译成英文" />
+            <button class="goBtn" data-probe="goBtn">⏎</button>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案1 · 完整解剖（✦ 下移到工具行）</div>
+        <div class="hostCard">
+          <div class="composer" data-m="nl1">
+            <input class="composerInput" data-in placeholder="想做什么？如：改得正式一点 / 翻译成英文" />
+            <div class="composerBar">
+              <span class="composerTools"><span class="tIcon">✦</span><span class="composerHint">本地解析 · 不花钱</span></span>
+              <button class="composerSend" data-send>⏎</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cell">
+        <div class="tag">提案2 · 单行紧凑（✦ 留在原位）</div>
+        <div class="hostCard">
+          <div class="composerSlim" data-m="nl2">
+            <span class="tIcon">✦</span>
+            <input class="composerInput" data-in placeholder="想做什么？如：改得正式一点 / 翻译成英文" />
+            <button class="composerSend" data-send>⏎</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="rowlabel">③ 变换中心指令条 · 容器宽 360px（现状的 <code>margin:8px 14px</code> 在本页清零，只影响外边距不影响高度）</div>
+  </div>
+  <p class="lead mut">三处都是<b>单行</b>口径（KB 追问可长到 4 行，但增量恒在外框那一行，与文字行数无关）。宽度按各自真容器量，不影响单行高度读数。</p>
+
+
+  <h2><span class="no">§3</span>高度代价（同口径现量 · 决定要不要「完整解剖」）</h2>
+  <p class="lead">
+    几何先申报，再给数：提案1 的 <code>padding 8/10 + 输入行 + margin-top 6 + 工具行 24</code>，提案2 的 <code>padding 5/6 + 单行</code>。
+    下表「外框高」= 最外层容器 <code>getBoundingClientRect().height</code>（含边框）。「现状实宽」= §2 每行给定的容器宽<b>再减去卡片衬底</b>（padding 10×2 + border 1×2 = 22px）——
+    本轮实测的第一条翻车就出在这里：舞台不定宽时量具环境视口为 0，那一列全读成 0px，所以舞台写死 1112px。
+    <b>单行口径</b>：三处输入框都按 1 行量；KB 追问能长到 4 行，多行时现状与提案的<b>增量不变</b>（差在外框那一行，不在文字）。
+  </p>
+  <table id="mTable">
+    <thead><tr><th>落点</th><th>现状外框高</th><th>提案1 高</th><th>Δ1</th><th>提案2 高</th><th>Δ2</th><th>现状实宽</th></tr></thead>
+    <tbody><tr><td colspan="7" class="mut">量具未就绪</td></tr></tbody>
+  </table>
+  <p class="lead" id="mVerdict"></p>
+
+  <h2><span class="no">§4</span>光晕在 6 套主题下的实际取值与焦点可见性</h2>
+  <p class="lead">
+    判据：焦点指示器按 WCAG 2.2 非文本对比 ≥ 3:1，比较对象是它两侧相邻色里更关键的那一侧——<b>卡底 <code>--card-bg</code></b>（内侧是 <code>--dialog-bg</code>，两侧都量的话取严的看结论不变）。
+    静息档<b>故意</b>远低于 3:1——它只是「有条边」，不承担可达性职责。
+    颜色由 canvas 逐像素读出（<code>getComputedStyle</code> 会把 <code>oklch()</code> / <code>color(srgb …)</code> 原样吐回来，正则抠 <code>rgba()</code> 会全读成 NaN——本轮第二处翻车）。
+  </p>
+  <table id="cTable">
+    <thead><tr><th>主题</th><th>暖端 --orange</th><th>主端 --accent</th><th>静息描边</th><th>焦点描边（当前档）</th><th>焦点 vs 卡底</th><th>达 3:1 所需焦点档</th><th>参照：实色 accent / 12% 环</th></tr></thead>
+    <tbody><tr><td colspan="8" class="mut">量具未就绪</td></tr></tbody>
+  </table>
+  <p class="lead" id="cVerdict"></p>
+
+  <h2><span class="no">§5</span>改动站点清单（走「共享 Composer」才需要）</h2>
+  <table>
+    <tr><th style="width:300px">文件</th><th>动作</th></tr>
+    <tr><td><code>src/styles/theme.css</code> :root 段</td><td>加 8 个 <code>--composer-*</code> 变量（<b>只写一次</b>，6 套主题靠 <code>--accent</code>/<code>--orange</code> 自动派生，不逐主题覆写）</td></tr>
+    <tr><td><code>src/components/common/Composer.tsx</code> + <code>.module.css</code></td><td>新建：自动增高 textarea（复用 <code>hooks/useAutoGrow</code>）+ 左工具槽 children + 右发送/停止胶囊 + 静息/焦点两态光晕。≤300 行硬线。</td></tr>
+    <tr><td><code>src/components/notes/KbQaPanel.tsx:189</code></td><td>替换 <code>askRow</code>。<b>要保</b>：<code>align-items:flex-end</code> 换来的「长文本时按钮贴底」（A-61 ②）、4 行上限、面板高度联动（<code>containerRef: paneRef</code>）</td></tr>
+    <tr><td><code>src/components/ai/FollowupInput.tsx</code></td><td>替换整组件内部（两处调用方 AiQuickBar / TransformCard 不动）。要保：<code>disabled</code> 时 <code>Loader2</code> 转圈、Enter 提交、空值禁用</td></tr>
+    <tr><td><code>src/components/NlCommandBar.tsx</code></td><td>替换外壳。要保：命中后清空、未命中 <code>inputRef.select()</code>（改文案时别丢）</td></tr>
+    <tr><td class="bad">不动</td><td class="bad">顶栏搜索框、工具箱、快速粘贴、设备搜索、设置字段、截图标注、岛内输入 —— 共 20+ 处，全部保持现状</td></tr>
+  </table>
+
+  <h2><span class="no">§6</span>待你拍板</h2>
+  <table>
+    <tr><th style="width:60px">项</th><th>选项</th><th>我的默认</th></tr>
+    <tr><td>P1</td><td>结构走提案1（完整解剖）还是提案2（单行紧凑）？也可以 KB 用 1、另两处用 2。实测代价写在 §3：提案1 每处 <b>+34~41px</b>（外框恒 68px），提案2 每处 <b>+2~9px</b>（恒 36px）</td><td><b>KB 追问用提案1，AI 追问与指令条用提案2</b>——KB 是「一问一答要写长句」的地方，另两处是加速器；但 41px 是真实代价，你看完 §2 想全用提案2 我照办</td></tr>
+    <tr><td>P2</td><td>静息强度取多少（滑杆 0–30，默认 10%）</td><td><b>10%</b>：§4「静息描边」列显示的就是它解析后的实际值（含 α），拖滑杆那一列实时跟变——哪一档在你眼里还读得出「有条边」，由那一列 + §2 的眼睛定，我不替你看</td></tr>
+    <tr><td>P3</td><td>要不要左工具槽（@引用 / 切范围 / 附件）</td><td><b>先只做占位不接功能</b>：KB 那两处本来就有「当前范围」文案，把它挪进去是净收益；无功能图标一律不放（U1）</td></tr>
+    <tr><td>P4</td><td>焦点态可达性走 §4 的 <b>A</b>（光晕开到反解出的达标档）还是 <b>B</b>（光晕留当前档 + 3px 外环提实色 <code>--accent</code>）</td><td><b>B，且本稿已按 B 落地</b>：A 要让六套主题最暗的橙也够 3:1，光晕得开到 72%，直接违反已拍板的「不做常驻强渐变」；B 只改外环一行。<b>落地更正（2026-10-04）</b>：本行原写「实色 accent 环就是顶栏搜索框现行口径」是<b>假话</b>——顶栏 <code>.focused</code> 用的是 <code>0 0 0 3px var(--accent-shadow)</code>（15–20% α，同样不到 3:1），所以是<b>同形不同色</b>，本框因静息光晕只有 10% 才把环做成实色兜底。另一处落地更正：发送钮底色不用稿里画的 <code>linear-gradient(--accent, --accent-strong)</code>——白字压 --accent 实测 2.79–4.10:1，且午夜/海洋两套的 --accent-strong 就等于 --accent，两头都救不了；改用本仓实心口径 <code>--accent-solid</code>（六套 4.53–4.80:1），hover 压暗到 brightness(0.94)。要退回 A 就把焦点滑杆拖到 §4 反解列那个数</td></tr>
+  </table>
+</div>
+
+<script>
+/* ============ 量具 ============ */
+const root = document.documentElement;
+
+/* 1) CSS Module 作用域反查：Vite 下 .askInput 会被编译成 ._askInput_hash_283，
+      file:// 下是字面量 .askInput。两种都要能命中，否则整页读数是假的。 */
+function buildClassMap() {
+  const map = new Map();
+  const sheets = [];
+  for (const sheet of document.styleSheets) {
+    let rules;
+    try { rules = sheet.cssRules; } catch (e) { continue; }
+    const href = (sheet.href || 'inline').replace(/^.*\//, '');
+    let n = 0;
+    for (const r of rules) {
+      if (!r.selectorText) continue;
+      n++;
+      for (const sel of r.selectorText.split(',')) {
+        const m = sel.trim().match(/^\.(_[A-Za-z0-9]+_[A-Za-z0-9]+_\d+)/);
+        if (m) {
+          const base = m[1].slice(1).replace(/_[A-Za-z0-9]+_\d+$/, '');
+          if (!map.has(base)) map.set(base, m[1]);
+        } else {
+          const lit = sel.trim().match(/^\.([A-Za-z0-9]+)(?![\w-])/);
+          if (lit && !map.has(lit[1])) map.set(lit[1], lit[1]);
+        }
+      }
+    }
+    sheets.push({ href, rules: n });
+  }
+  return { map, sheets };
+}
+
+function applyScopedClasses(map) {
+  let hits = 0, miss = [];
+  document.querySelectorAll('[data-probe]').forEach((el) => {
+    const name = el.getAttribute('data-probe');
+    const real = map.get(name);
+    if (real) { el.classList.add(real); hits++; }
+    else miss.push(name);
+  });
+  return { hits, miss };
+}
+
+/* 2) 颜色解析：把任意 CSS 颜色表达式塞进探针，读 getComputedStyle 的解析结果 */
+const probe = document.createElement('span');
+probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px';
+document.body.appendChild(probe);
+function resolve(expr) {
+  probe.style.color = '#000';
+  probe.style.color = expr;
+  return getComputedStyle(probe).color;
+}
+/* 颜色解析：Chromium 的 getComputedStyle 会把 color-mix / oklch 原样序列化回来
+   （例：`oklch(0.62 0.18 25)`、`color(srgb .86 .30 .29 / 0.55)`），正则抠 rgba() 会全部读成 NaN。
+   ⇒ 一律过一遍 canvas：fillStyle 支持现代色彩格式，画 1px 再取像素 = 屏幕上真正落地的 sRGB 值。
+   （越界的通道在这里被夹取，量到的就是用户看到的，不是数学中间值。） */
+const cv = document.createElement('canvas');
+cv.width = cv.height = 1;
+const cx = cv.getContext('2d', { willReadFrequently: true });
+function toRGBA(str) {
+  cx.fillStyle = '#010203';
+  cx.fillStyle = str;
+  if (cx.fillStyle === '#010203') return null;      /* 表达式无效，浏览器没接受 */
+  cx.clearRect(0, 0, 1, 1);
+  cx.fillRect(0, 0, 1, 1);
+  const d = cx.getImageData(0, 0, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
+}
+function composite(fg, bg) {
+  return { r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) };
+}
+function lum(c) {
+  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+}
+function contrast(fgStr, bgStr) {
+  const f = toRGBA(fgStr), b = toRGBA(bgStr);
+  if (!f || !b) return NaN;
+  return contrastObj(f, b);
+}
+/* 纯数学版：给一个带 α 的前景和一个不透底，算对比度。
+   🔴 有了它才不需要「每个候选档都写一次 CSS 变量 + 读一次 computedStyle + 画一次 canvas」。
+   旧写法 6 主题 × 71 档 = 426 次强制样式重算，实测 render() 单次 735ms ⇒ 拖滑杆直接假死。 */
+function contrastObj(f, b) {
+  const on = composite(f, b);
+  const l1 = lum(on), l2 = lum(b);
+  const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function swatchObj(c) {
+  if (!c) return '<span class="bad">解析失败</span>';
+  const hex = '#' + [c.r, c.g, c.b].map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+  return `<span class="sw" style="background:${hex}"></span>${hex}${c.a < 1 ? ' <span class="mut">α' + c.a.toFixed(2) + '</span>' : ''}`;
+}
+
+/* 3) 控件 */
+document.querySelectorAll('[data-theme-btn]').forEach(btn => btn.addEventListener('click', () => {
+  root.setAttribute('data-theme', btn.dataset.themeBtn);
+  document.querySelectorAll('[data-theme-btn]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  render();
+}));
+let state = 'rest';
+document.querySelectorAll('[data-state]').forEach(btn => btn.addEventListener('click', () => {
+  state = btn.dataset.state;
+  document.querySelectorAll('[data-state]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+  render();
+}));
+const restRange = document.getElementById('restRange'), focusRange = document.getElementById('focusRange');
+/* 滑杆分两档事件，是为了不卡：
+   · input（拖动中）只改两个 CSS 变量 + 读数。§2 的预览是纯 CSS，浏览器自己就重绘了，
+     不需要跑 JS；§3 的高度与光晕浓淡无关，跑了也是白跑。
+   · change（松手）才跑 fullRender 重算 §4 六主题表。
+   旧写法把 render() 挂在 input 上，实测每步 66ms（render 本体 19ms + 布局回读），拖动就是 15fps。 */
+const onSlide = () => {
+  root.style.setProperty('--composer-halo-rest', restRange.value);
+  root.style.setProperty('--composer-halo-focus', focusRange.value);
+  document.getElementById('restOut').textContent = restRange.value + '%';
+  document.getElementById('focusOut').textContent = focusRange.value + '%';
+};
+[restRange, focusRange].forEach(el => {
+  el.addEventListener('input', onSlide);
+  el.addEventListener('change', fullRender);
+});
+
+function applyState() {
+  document.querySelectorAll('[data-in]').forEach(el => {
+    el.disabled = (state === 'disabled');
+  });
+  document.querySelectorAll('[data-send]').forEach(el => {
+    el.disabled = (state === 'disabled');
+  });
+  /* 静息/焦点不靠真 :focus（量高度时焦点态要稳定），用 force-focus 类复刻同一条 CSS */
+  document.querySelectorAll('.composer, .composerSlim').forEach(el => el.classList.remove('forceFocus'));
+  if (state === 'focus') document.querySelectorAll('.composer, .composerSlim').forEach(el => el.classList.add('forceFocus'));
+}
+
+/* 4) 度量 */
+const MEASURES = [
+  { label: '知识库追问', cur: '.row [data-probe="askRow"]', p1: '[data-m="kb1"]', p2: '[data-m="kb2"]' },
+  { label: 'AI 追问', cur: '.row [data-probe="followRow"]', p1: '[data-m="ai1"]', p2: '[data-m="ai2"]' },
+  { label: '变换中心指令条', cur: '.row [data-probe="bar"]', p1: '[data-m="nl1"]', p2: '[data-m="nl2"]' },
+];
+
+function h(sel) {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { height: Math.round(r.height * 10) / 10, width: Math.round(r.width * 10) / 10 };
+}
+
+function render() {
+  applyState();
+  /* 高度表 */
+  const tb = document.querySelector('#mTable tbody');
+  const rows = MEASURES.map(m => {
+    const cur = h(m.cur), p1 = h(m.p1), p2 = h(m.p2);
+    const f = (v) => v == null ? '<span class="bad">缺元素</span>' : v + 'px';
+    const d = (a, b) => (a == null || b == null) ? '<span class="bad">—</span>'
+      : `<span class="${b - a > 0 ? 'warn' : 'ok'}">${b > a ? '+' : ''}${Math.round((b - a) * 10) / 10}px</span>`;
+    return `<tr><td>${m.label}</td><td class="num">${f(cur && cur.height)}</td><td class="num">${f(p1 && p1.height)}</td><td class="num">${d(cur && cur.height, p1 && p1.height)}</td><td class="num">${f(p2 && p2.height)}</td><td class="num">${d(cur && cur.height, p2 && p2.height)}</td><td class="num">${f(cur && cur.width)}</td></tr>`;
+  });
+  tb.innerHTML = rows.join('');
+
+  /* 结论行：拿实测 Δ 说话，不拿感觉说话 */
+  const deltas = MEASURES.map(m => {
+    const cur = h(m.cur), p1 = h(m.p1), p2 = h(m.p2);
+    return { label: m.label, d1: cur && p1 ? p1.height - cur.height : null, d2: cur && p2 ? p2.height - cur.height : null };
+  });
+  const d1s = deltas.filter(x => x.d1 != null), d2s = deltas.filter(x => x.d2 != null);
+  const avg = a => a.length ? (a.reduce((s, x) => s + x, 0) / a.length).toFixed(1) : '—';
+  const sgn = v => (Number(v) >= 0 ? '+' : '') + v;
+  const worst = a => a.length ? a.map(x => x.d1).sort((p, q) => q - p)[0].toFixed(1) : '—';
+  document.getElementById('mVerdict').innerHTML =
+    `实测均值：提案1 <b class="warn">${sgn(avg(d1s.map(x => x.d1)))}px</b>／处，提案2 <b class="ok">${sgn(avg(d2s.map(x => x.d2)))}px</b>／处。` +
+    `三处若全用提案1，代价是<b>每一处</b>各让出这么多正文可视高度（最大一处 ${sgn(worst(d1s))}px = AI 追问那处；KB 面板高约视口 40%，是三者里最吃紧的容器）。` +
+    `逐处 Δ1/Δ2 见上表——「要不要完整解剖」请按 §2 的眼睛 + 这两个数判断，不要按我的文字。`;
+
+  /* 对比度表：遍历 6 主题 */
+  const ct = document.querySelector('#cTable tbody');
+  const THEMES = ['ocean', 'midnight', 'forest', 'blossom', 'dawn', 'ocean-dark'];
+  const cur = root.getAttribute('data-theme');
+  const prevRest = root.style.getPropertyValue('--composer-halo-rest');
+  const prevFocus = root.style.getPropertyValue('--composer-halo-focus');
+  const out = [];
+  const st = { cr: [], need: [], accent: [], ring: [] };
+  const drift = [];
+  for (const t of THEMES) {
+    root.setAttribute('data-theme', t);
+    root.style.setProperty('--composer-halo-focus', focusRange.value);
+    /* 每主题只读 3 个不透端点（真 CSS 解析出来的），α 全部走数学 */
+    const A = toRGBA(resolve('var(--composer-halo-a)'));
+    const AC = toRGBA(resolve('var(--accent)'));
+    const BG = toRGBA(resolve('var(--card-bg)'));
+    if (!A || !AC || !BG) { drift.push(`${t} 端点解析失败`); continue; }
+    const at = (c, p) => ({ r: c.r, g: c.g, b: c.b, a: p / 100 });
+    const foc = at(A, +focusRange.value), rest = at(A, +restRange.value);
+    /* 交叉校验：JS 侧「同色 + α」压卡底必须等于 CSS 真解析出来的 --composer-halo-a-focus。
+       将来有人改了 --composer-halo-* 公式而没改这里，这一条会亮红（防「推导值 ≠ 落地值」）。 */
+    const cssFoc = toRGBA(resolve('var(--composer-halo-a-focus)'));
+    const dev = cssFoc ? Math.max(Math.abs(cssFoc.r - A.r), Math.abs(cssFoc.g - A.g), Math.abs(cssFoc.b - A.b)) : 999;
+    if (dev > 1) drift.push(`${t} 推导偏差 ${dev}`);
+    const cr = contrastObj(foc, BG);
+    let need = null;
+    for (let p = 20; p <= 90; p++) if (contrastObj(at(A, p), BG) >= 3) { need = p; break; }
+    const accentCr = contrastObj(AC, BG);
+    const ringCr = contrastObj(at(AC, 12), BG);
+    st.cr.push(cr); st.need.push(need); st.accent.push(accentCr); st.ring.push(ringCr);
+    out.push(`<tr><td>${t}</td><td class="num">${swatchObj(A)}</td><td class="num">${swatchObj(AC)}</td><td class="num">${swatchObj(rest)}</td><td class="num">${swatchObj(foc)}</td><td class="num ${cr >= 3 ? 'ok' : 'bad'}">${cr.toFixed(2)}:1</td><td class="num">${need == null ? '<span class="bad">90 档内做不到</span>' : '<b>' + need + '%</b>'}</td><td class="num"><span class="${accentCr >= 3 ? 'ok' : 'bad'}">实色 ${accentCr.toFixed(2)}:1</span> / <span class="${ringCr >= 3 ? 'ok' : 'bad'}">12% 环 ${ringCr.toFixed(2)}:1</span></td></tr>`);
+  }
+  root.setAttribute('data-theme', cur);
+  root.style.setProperty('--composer-halo-rest', prevRest || restRange.value);
+  root.style.setProperty('--composer-halo-focus', prevFocus || focusRange.value);
+  ct.innerHTML = out.join('');
+  lastDrift = drift;
+  const rng = a => { const v = a.filter(x => x != null && !Number.isNaN(x)).sort((p, q) => p - q); return v.length ? v[0].toFixed(2) + '–' + v[v.length - 1].toFixed(2) : '—'; };
+  const pass = st.cr.filter(x => x >= 3).length;
+  const needs = st.need.filter(x => x != null);
+  const needMax = needs.length ? Math.max(...needs) : null;
+  const accentOk = st.accent.every(x => x >= 3), ringOk = st.ring.every(x => x >= 3);
+  document.getElementById('cVerdict').innerHTML =
+    `当前焦点档 <b>${focusRange.value}%</b>：6 套主题里 <b class="${pass === 6 ? 'ok' : 'bad'}">${pass}/6</b> 达到非文本 3:1。` +
+    (pass === 6 ? '当前档六套全达标。' : `未达标的 ${6 - pass} 套只要焦点档 ≤<b>${needMax == null ? '90+' : needMax + '%'}</b> 就能补上（滑杆上限 90，够用）。`) +
+    `<br>参照两条：<b>实色 --accent</b> 压卡底 = ${rng(st.accent)}:1 ${accentOk ? '<span class="ok">六套全 ≥3:1</span>' : '<span class="bad">有主题不足</span>'}；` +
+    `旧写法那道 <code>12% accent</code> 环 = ${rng(st.ring)}:1 ${ringOk ? '<span class="ok">达标</span>' : '<span class="bad">六套全不达标 = 纯装饰，不能当可达性承载</span>'}。` +
+    `<br>⇒ 本稿<b>已按 B 落地</b>：焦点外环用实色 <code>--accent</code>（就是上面那条 ${rng(st.accent)}:1），光晕只负责好看；` +
+    `12% 那一列留着当对照，证明「顺手写个淡环」是假达标。若你要 A（光晕自己达标）：把焦点档拖到 <b>${needMax == null ? '90+' : needMax + '%'}</b>，代价是浅色四套静息观感整体变重。`;
+}
+
+/* 5) 自检：逐表数规则 + 类名映射 + 命中判定（不命中就亮红，读数作废） */
+let lastDrift = [];
+
+function selfCheck() {
+  const { map, sheets } = buildClassMap();
+  const applied = applyScopedClasses(map);
+  const want = ['globals.css', 'theme.css', 'FollowupInput.module.css', 'NlCommandBar.module.css', 'KbQaPanel.module.css'];
+  const found = want.map(w => ({ w, hit: sheets.find(s => s.href.endsWith(w)) }));
+  const missing = found.filter(f => !f.hit);
+  /* 真规则命中判定：askRow 在产品里是 display:flex; align-items:flex-end; gap:4px */
+  const row = document.querySelector('.askRow, .' + (map.get('askRow') || 'x'));
+  const cs = row ? getComputedStyle(row) : null;
+  const styleOk = !!cs && cs.display === 'flex' && cs.alignItems === 'flex-end' && cs.gap === '4px';
+  const boxOk = MEASURES.every(m => h(m.cur) && h(m.p1) && h(m.p2));
+  /* 滚动自检：globals.css 的 `body{overflow:hidden}` 会把这个 3000px 高的文档钉死不滚，
+     而且不报任何错——本轮用户反馈的「滚不动」就是它。必须当成一条验收，不能靠肉眼。 */
+  const bs = getComputedStyle(document.body), hs = getComputedStyle(document.documentElement);
+  /* 只断言「overflow 没被钉死」这一条机械判据。
+     不要加 scrollHeight > clientHeight：body 自己就是滚动容器时两者相等（本轮就这么假红过一次），
+     而量具环境里 documentElement.clientHeight 又恒为 0。文档高只印出来给人看。 */
+  const scrollOk = bs.overflow !== 'hidden' && hs.overflow !== 'hidden' && bs.position !== 'fixed';
+  const ok = missing.length === 0 && applied.miss.length === 0 && styleOk && boxOk && scrollOk;
+  const el = document.getElementById('selfcheck');
+  el.className = ok ? '' : 'fail';
+  el.innerHTML = (ok ? '<span class="ok">✔ 量具就绪</span> ' : '<span class="bad">✘ 读数作废 </span> ')
+    + found.map(f => `${f.w}:${f.hit ? f.hit.rules + '条' : '<b>缺表</b>'}`).join(' · ')
+    + ` | 类名映射 ${map.size} 条（${applied.hits} 个探针命中${applied.miss.length ? '，<b>未命中 ' + applied.miss.join(',') + '</b>' : ''}）`
+    + ` | .askRow 实得 ${cs ? cs.display + '/' + cs.alignItems + '/gap ' + cs.gap : 'n/a'}（应为 flex/flex-end/4px）${styleOk ? '<span class="ok">✔</span>' : '<span class="bad">✘</span>'}`
+    + ` | 打开方式 ${location.protocol === 'file:' ? 'file://（类名字面量）' : 'http（CSS Module 已作用域化）'}`
+    + ` | 滚动 body.overflow=${bs.overflow} html=${hs.overflow}，文档高 ${document.body.scrollHeight}px（视口高 ${document.documentElement.clientHeight}，量具环境可以是 0）${scrollOk ? '<span class="ok">✔ overflow 未被钉死</span>' : '<b class="bad">✘ 被钉死（globals.css 的 overflow:hidden 没被反接）</b>'}`
+    + ` | <span id="driftSlot">§4 推导校验待跑</span>`;
+  return ok;
+}
+
+/* §4 的 α 是 JS 推导的（为了不把 render 拖成 700ms），所以必须回头对一次 CSS 真解析值 */
+function showDrift() {
+  const slot = document.getElementById('driftSlot');
+  if (!slot) return;
+  const el = document.getElementById('selfcheck');
+  if (lastDrift.length) {
+    slot.innerHTML = `<b class="bad">✘ §4 推导值 ≠ CSS 落地值（${lastDrift.join('; ')}）⇒ §4 读数作废</b>`;
+    el.classList.add('fail');
+  } else {
+    slot.innerHTML = '<span class="ok">✔ §4 推导值与 CSS 落地值逐主题一致（≤1/255）</span>';
+  }
+}
+
+function fullRender() {
+  selfCheck();
+  const t0 = performance.now();
+  render();
+  const ms = performance.now() - t0;
+  showDrift();
+  const slot = document.getElementById('driftSlot');
+  /* 把渲染耗时印在量具条上：这一页绑在滑杆的 input 事件上，render() 一旦超过 ~50ms 就会「拖不动 = 卡」 */
+  if (slot) slot.innerHTML += ` | fullRender() <b class="${ms > 50 ? 'bad' : 'ok'}">${ms.toFixed(1)}ms</b>/次（只在滑杆<b>松手</b>时跑；拖动中只改两个 CSS 变量，实测 0.3ms/步）`;
+}
+root.style.setProperty('--composer-halo-rest', '10');
+root.style.setProperty('--composer-halo-focus', '55');
+fullRender();
+/* 🔴 首屏那一次 render() 的读数不可信（布局在同步脚本之后才落定）：rAF(rAF()) 重量一次 */
+requestAnimationFrame(() => requestAnimationFrame(fullRender));
+</script>
+</body>
+</html>

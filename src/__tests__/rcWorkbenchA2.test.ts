@@ -19,11 +19,11 @@ describe("远程电脑 A2 工作台状态模型", () => {
     expect(resolveRcA2Selection([], "missing")).toBeNull();
   });
 
-  it("等待、被控和出站会话优先于之前打开的工具页", () => {
+  it("等待和被控允许工具页，出站画面仍优先", () => {
     const pages: RcA2Page[] = ["devices", "files", "history", "settings"];
     for (const page of pages) {
-      expect(resolveRcA2Surface("pending", page)).toBe("pending");
-      expect(resolveRcA2Surface("inbound", page)).toBe("inbound");
+      expect(resolveRcA2Surface("pending", page)).toBe(page === "devices" ? "pending" : page);
+      expect(resolveRcA2Surface("inbound", page)).toBe(page === "devices" ? "inbound" : page);
       expect(resolveRcA2Surface("outbound", page)).toBe("session");
     }
   });

@@ -1,12 +1,16 @@
 /**
- * useRcCursor — 远端光标形状同步（P1-6）。
+ * useRcCursor — 远端光标形状同步（P1-6 + B 方案位置字段，2026-10-02）。
  *
- * 被控端每圈比对一次光标形状，变化才发 `rc-cursor-changed`。
- * 前端映射规则（见 `cursorCssFor`）：
+ * 被控端每圈比对一次光标遥测，变化才发 `rc-cursor-changed`（形状 + 归一化
+ * 位置）。形状 → 本地光标样式的映射规则见 `lib/utils.ts` 的 `cursorCssFor`
+ * （桌面/手机共用的单一数据源，规则 11）：
  * - arrow / unknown → 维持 B1 本地 overlay（箭头图标跟手）；
  * - 其它形状 → 用**本地系统光标**按对应 CSS 形状显示（I-beam / 缩放柄 /
  *   禁止……本地渲染即可，无需等画面回传）；
  * - hidden → 光标整体隐藏（远端在游戏/演示里藏了光标）。
+ *
+ * 桌面**只消费形状**：桌面用户的物理鼠标就是远端鼠标， overlay 箭头跟着
+ * 本地指针走已经是对的；遥测里的位置字段留给手机端（那只手不是远端光标）。
  */
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -29,38 +33,12 @@ export type RcCursorShape =
   | "hidden"
   | "unknown";
 
-/** 形状 → CSS cursor；None = 用 B1 overlay 箭头。 */
-export function cursorCssFor(shape: RcCursorShape | null): string | null {
-  switch (shape) {
-    case "ibeam":
-      return "text";
-    case "wait":
-      return "wait";
-    case "cross":
-      return "crosshair";
-    case "size_nwse":
-      return "nwse-resize";
-    case "size_nesw":
-      return "nesw-resize";
-    case "size_ns":
-      return "ns-resize";
-    case "size_we":
-      return "ew-resize";
-    case "size_all":
-      return "move";
-    case "no":
-      return "not-allowed";
-    case "hand":
-      return "pointer";
-    case "app_starting":
-      return "progress";
-    case "up_arrow":
-      return "default";
-    case "hidden":
-      return "none";
-    default:
-      return null;
-  }
+/** rc-cursor-changed 的事件载荷（B 方案在形状之外带了归一化位置）。 */
+export interface RcCursorPayload {
+  shape: string;
+  /** 抓帧范围内的 0..=65535 归一化；缺省 = 对端此刻不可见。 */
+  x?: number;
+  y?: number;
 }
 
 export function useRcCursor(sessionId: string): RcCursorShape | null {
@@ -69,7 +47,7 @@ export function useRcCursor(sessionId: string): RcCursorShape | null {
     setShape(null);
     let alive = true;
     let unlisten: (() => void) | undefined;
-    void listen<{ shape: string }>("rc-cursor-changed", (e) => {
+    void listen<RcCursorPayload>("rc-cursor-changed", (e) => {
       const s = e.payload?.shape;
       if (typeof s === "string") setShape(s as RcCursorShape);
     })

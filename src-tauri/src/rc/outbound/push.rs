@@ -7,7 +7,8 @@ use super::*;
 /// FLAG_HEVC 位——不做跨通道状态推断。
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_h264_frame(
-    svc: &RcService,
+    svc: &Arc<RcService>,
+    id: &str,
     key: bool,
     width: u32,
     height: u32,
@@ -17,6 +18,7 @@ pub(super) fn push_h264_frame(
     enc_ms: u16,
     codec: crate::rc::video::FrameCodec,
 ) {
+    svc.note_inbound();
     let frame = crate::rc::video::VideoFrame {
         width,
         height,
@@ -40,5 +42,6 @@ pub(super) fn push_h264_frame(
         svc.clock_skew_ms(),
     );
     svc.set_frame(frame.clone());
+    svc.note_media_received(id, &frame);
     svc.push_outbox(frame);
 }

@@ -54,7 +54,7 @@ describe("接入码（方案 B）", () => {
       { target: { value: "接入码：PPU-7K2M-9PQX-node-cccc3333" } },
     );
     // 完整串不需要再选设备（选设备的那一块不该出现）
-    expect(screen.queryByText(/裸码不带机器定位/)).toBeNull();
+    expect(screen.queryByText(/这枚接入码未包含设备信息/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "连接" }));
     await waitFor(() =>
@@ -68,7 +68,7 @@ describe("接入码（方案 B）", () => {
 
     const connect = screen.getByRole("button", { name: "连接" }) as HTMLButtonElement;
     expect(connect.disabled).toBe(true);
-    expect(screen.getByText(/裸码不带机器定位/)).toBeTruthy();
+    expect(screen.getByText(/这枚接入码未包含设备信息/)).toBeTruthy();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("radio", { name: /台式机/ }));

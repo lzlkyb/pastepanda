@@ -117,8 +117,15 @@ fn 码率基准的帧率因子只乘一次() {
         hevc_fail_streak: 0,
         hevc_broken: false,
         nv12_buf: Vec::new(),
+        scaler: Default::default(),
+        cpu_perf: Default::default(),
         last_scale_change: None,
         pending_scale: None,
+        budget_bps: None,
+        pending_budget: None,
+        resolution_limit: 0,
+        capture_times: std::collections::VecDeque::new(),
+        next_capture_at: 0,
     };
     // 1080p120：8M × 2.6 = 20.8M——不是 ×2.6² 的 54M
     assert_eq!(enc.scaled_bitrate(), 20_800_000);
@@ -130,3 +137,27 @@ fn 码率基准的帧率因子只乘一次() {
 
 // 🔴 再审计 B5（2026-09-25）守卫单测：见 session.rs 底部的
 // `码率缩放变更的时间冷却`（判据函数是 session 模块私有，测试就近放）。
+
+/// 🔴 起播按**当前倍率**开（2026-10-03 真机教训）：过去恒按 100% 开，
+/// 发起端 `SetBitratePct`（默认 200）约 0.9s 后才到 → `apply_bitrate_scale`
+/// 必然再触发一次全链重开（MFT/NVENC 两次初始化、重开周期内帧全丢）。
+/// 打开时吃进倍率后，起播后第一圈 apply 同值**不得**标记重开。
+#[test]
+fn 起播按倍率开_同值不再重开() {
+    // 倍率 200：真机（MF 可用）会真开；无 MF 的机器回落 unavailable，
+    // 两条路 scale_pct 都必须记录为 200（收口见 `shell`）。
+    let mut enc = H264SessionEncoder::try_open_with_scale(VideoCodec::H264, 1920, 1080, 60, 200);
+    assert_eq!(enc.scale_pct(), 200);
+    // 1080p60 @200% = 8M × 1.6（60fps 因子）× 2.0 = 25.6M，与 scaled_bitrate 同口径
+    assert_eq!(enc.scaled_bitrate(), 25_600_000);
+    // 起播后第一圈 try_hardware_path 就会 apply 一次当前倍率——同值不得重开
+    enc.apply_bitrate_scale(200);
+    assert!(!enc.reopen_needed, "同值不得触发全链重开");
+    // 越域缩放被 clamp 进 10–300：300 是**真变更**，仍要重开（这条别丢）
+    enc.apply_bitrate_scale(999);
+    assert_eq!(enc.scale_pct(), 300);
+    assert!(enc.reopen_needed, "真变更仍要重开");
+    // clamp 下限同样吃进来（弱网 5% 之类的越界值不能绕过 10 的底线）
+    let low = H264SessionEncoder::try_open_with_scale(VideoCodec::H264, 1920, 1080, 30, 3);
+    assert_eq!(low.scale_pct(), 10, "越下界被 clamp 到 10");
+}

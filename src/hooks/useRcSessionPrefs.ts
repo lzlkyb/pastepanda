@@ -6,6 +6,7 @@
  * 否则下拉框会显示一个已不可选的档（RcDropdown 会回退裸 key）。
  */
 import { useEffect, useState } from "react";
+import { RC_BITRATE_PCT_DEFAULT } from "@/lib/rcQuality";
 
 export function useRcSessionPrefs({
   sessionId,
@@ -19,21 +20,21 @@ export function useRcSessionPrefs({
   quality: string;
   /** 本机配置的画面范围（display / 某块屏） */
   captureScope: string;
-  /** Q5：本机配置的码率倍率（后端在会话建立时已推给被控端）；未加载按 100 兜底 */
+  /** Q5：本机配置的码率倍率（后端在会话建立时已推给被控端）；未加载按默认档（200）兜底 */
   bitratePct?: number;
   /** D6：对端 caps 是否仍声明 fps120 可用；undefined = 未上报，不回落 */
   peerFps120?: boolean;
 }) {
   const [qPick, setQPick] = useState(quality);
   const [scopePick, setScopePick] = useState(captureScope);
-  const [bitratePick, setBitratePick] = useState(bitratePct ?? 100);
+  const [bitratePick, setBitratePick] = useState(bitratePct ?? RC_BITRATE_PCT_DEFAULT);
 
   useEffect(() => {
     setQPick(quality);
     setScopePick(captureScope);
-    // 依赖里带上配置值：首帧 status 尚未加载时初值按 100 兜底，status 到达后这里
+    // 依赖里带上配置值：首帧 status 尚未加载时初值按默认档兜底，status 到达后这里
     // 会把下拉纠正成真正的配置值。会话内改下拉也会回写配置，值一致，不造成跳变。
-    setBitratePick(bitratePct ?? 100);
+    setBitratePick(bitratePct ?? RC_BITRATE_PCT_DEFAULT);
   }, [sessionId, quality, captureScope, bitratePct]);
 
   // D6：对端 caps 重报不可用（如范围切到多屏）时自动回落——被控端也已由

@@ -91,6 +91,14 @@
 2. **改之后**跑 `npm run lint:ui`（只查本次改动的行，存量不拦）。
 3. 机器查不到的判据按该文档 §9 人工复核。底线：只用语义色、满足 WCAG 2.2 AA、新组件不用内联 `style={{}}`、颜色来自变量。
 
+## 20. 桌面 dev 与 Android 构建并行，禁止互杀（target 目录隔离）
+打 APK / Android 真机联调**一律走 `android:*` npm 脚本**，不要再手工 export 环境配方、更不要再停桌面 dev：
+1. `npm run android:apk` = 打包 + 检测到真机自动安装并启动；`npm run android:apk:build` = 只打包；`npm run android:dev` = 真机联调。三者都封装在 `scripts/android-build.mjs`。
+2. 脚本做三件事：内嵌环境配方（NDK/JAVA/LIBCLANG，**无条件覆盖**——系统全局 `JAVA_HOME` 可能指老 JDK，别改回「未设才生效」）；设 `CARGO_TARGET_DIR=src-tauri/target-android`（与桌面 `target/` 隔离，tauri CLI 认这个变量）；先 `gradlew --stop`（daemon 只认启动时的 env，不停就看不到上面的变量）。
+3. 裸 `npm run tauri android build/dev` 与桌面共用 `target/` 会抢 cargo 构建锁，**仅当没有桌面 dev 在跑时**才允许直接用；禁止用「杀桌面进程」来腾 Android 构建。
+4. `target-android` 首次全树重编约 10–20 分钟属正常，之后增量秒级；换机器只改脚本里的 `ENV_DEFAULTS`。
+5. 踩坑细节（ABI 只编 aarch64、Kotlin `Plugin.activity` 私有、APK 包根 index.html 等）见 `docs/dev-运行手册.md` Android 各节。
+
 ---
 
 ## 发版流程

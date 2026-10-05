@@ -66,14 +66,8 @@ pub struct RcDevice {
     /// 🔴 只对「推送」方向有效。取回方向是「我挑文件发给对方」，没有可自动的东西。
     #[serde(default)]
     pub auto_accept: bool,
-    /// 对端**自报的操作系统**短标签（`Windows 11` / `macOS` / `Linux`）。
-    ///
-    /// 来源：会话里对端发的 `Accept` 帧（`rc/protocol.rs` 的 `Accept::os`），
-    /// 控制端收到即写（`service.rs` 的读帧分支）。空串 = 还没建立过会话，
-    /// 或对端是旧版 / 采不到——显示层据空串**不渲染这一格**，不编默认值。
-    ///
-    /// 与 `last_path` 同款：这是**对端说的**，不是本机推断的；
-    /// 同理它也不随任何配对信令同步（那些路径有多个承载点，见数据迁移处的说明）。
+    /// 对端自报的操作系统。配对确认即保存，会话 Accept 帧可继续更新。
+    /// 旧版本没有携带时保留已有值，空串不推断成电脑。
     #[serde(default)]
     pub os: String,
     /// 彩色标签（设备组织）。本机私产，不随任何信令同步；
@@ -136,6 +130,20 @@ fn row_to(r: &rusqlite::Row) -> rusqlite::Result<RcDevice> {
 }
 
 impl DataStore {
+    /// Authenticated peer metadata updates existing trust only, never creates it.
+    /// User notes and permission switches remain local and are not overwritten.
+    pub fn rc_device_note_identity(&self, node_id: &str, name: &str, os: &str) -> Result<bool, String> {
+        let name: String = name.trim().chars().take(60).collect();
+        let os: String = os.trim().chars().take(60).collect();
+        self.lock_conn().execute(
+            "UPDATE rc_devices SET
+                name = CASE WHEN ?2 <> '' THEN ?2 ELSE name END,
+                os = CASE WHEN ?3 <> '' THEN ?3 ELSE os END
+             WHERE node_id = ?1 AND ((?2 <> '' AND name <> ?2) OR (?3 <> '' AND os <> ?3))",
+            rusqlite::params![node_id, name, os],
+        ).map(|count| count > 0).map_err(|e| e.to_string())
+    }
+
     /// 配对（或更新名字）。与同步的 `device_pair` 互不影响。
     pub fn rc_device_pair(&self, node_id: &str, name: &str) -> Result<(), String> {
         let conn = self.lock_conn();
@@ -364,6 +372,23 @@ mod tests {
 
     fn store() -> DataStore {
         DataStore::new(":memory:").expect("open store")
+    }
+
+    #[test]
+    fn identity_refresh_repairs_generic_name_without_replacing_alias_or_creating_trust() {
+        let s = store();
+        assert!(!s.rc_device_note_identity("unknown", "Pixel 9", "Android").unwrap());
+        assert!(s.rc_device_get("unknown").unwrap().is_none());
+        s.rc_device_pair("phone", "新设备").unwrap();
+        s.rc_device_note_set("phone", "我的手机").unwrap();
+        assert!(s.rc_device_note_identity("phone", " Google Pixel 9 ", " Android ").unwrap());
+        let d = s.rc_device_get("phone").unwrap().unwrap();
+        assert_eq!(d.name, "Google Pixel 9");
+        assert_eq!(d.os, "Android");
+        assert_eq!(d.note, "我的手机");
+        assert!(!s.rc_device_note_identity("phone", "", "").unwrap());
+        assert!(!s.rc_device_note_identity("phone", "Google Pixel 9", "Android").unwrap());
+        assert_eq!(s.rc_device_get("phone").unwrap().unwrap(), d);
     }
 
     #[test]

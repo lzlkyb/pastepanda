@@ -35,6 +35,7 @@ vi.mock("@/lib/api/rcPair", () => ({
 
 /** 窗口可见性：hook 靠它决定要不要轮询。测试里恒为可见。 */
 vi.mock("@/hooks/useWindowVisible", () => ({ useWindowVisible: () => true }));
+vi.mock("@/lib/dialogMotion", () => ({ useDialogAnim: () => ({ backdrop: {}, panel: {} }) }));
 
 /** 轮询间隔 2s > waitFor 默认 1s，翻转状态的断言统一放宽。 */
 const POLL = { timeout: 6000, interval: 50 } as const;
@@ -106,6 +107,24 @@ beforeEach(() => {
   api.confirm.mockReset();
   api.cancel.mockReset();
   api.status.mockResolvedValue({ neighbors: [], pair: null, done: null });
+});
+
+describe("首页只显示来访确认", () => {
+  it("附近列表有设备也不常驻展示", async () => {
+    api.status.mockResolvedValue({ neighbors: [neighbor()], pair: null, done: null });
+    const rc = { status: { enabled: true, running: true }, targets: [], refreshTargets: vi.fn() } as unknown as UseRc;
+    const view = render(<RcNearbyPairPane rc={rc} toast={vi.fn()} onPairMore={vi.fn()} requestsOnly />);
+    await waitFor(() => expect(api.status).toHaveBeenCalled());
+    expect(view.container.textContent).toBe("");
+  });
+  it("对方主动发起时弹窗核对，取消仍可用", async () => {
+    api.status.mockResolvedValue({ neighbors: [], pair: prompt({ initiator: false }), done: null });
+    const rc = { status: { enabled: true, running: true }, targets: [], refreshTargets: vi.fn() } as unknown as UseRc;
+    render(<RcNearbyPairPane rc={rc} toast={vi.fn()} onPairMore={vi.fn()} requestsOnly />);
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "收到配对请求" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "不一样，取消" }));
+    await waitFor(() => expect(api.cancel).toHaveBeenCalled());
+  });
 });
 
 describe("RcNearbyPairPane · 单一入口", () => {

@@ -32,8 +32,6 @@ export function RcA2PairExchange({ rc, toast }: {
 }) {
   const visible = useWindowVisible();
   const [phase, setPhase] = useState<"idle" | "joining" | "waiting" | "paired" | "error">("idle");
-  /** 会合进行中（join/waiting）。两端都在等对方；按钮态与取消逻辑在用。 */
-  const busy = phase === "joining" || phase === "waiting";
   const [notice, setNotice] = useState<Notice>(null);
   const { vis, show: showCode, hide: hideCode } = usePairCodeVisibility({ autoHideMs: null });
   /** 出示方那一枚码：后端取、到期静默换新（桌面与手机同一套）。 */
@@ -119,19 +117,24 @@ export function RcA2PairExchange({ rc, toast }: {
   /**
    * 发起会合。`listen` 由**入口**固定：出示方 true、输入方 false。
    * 输入方填的是对方出示的那枚码；出示方填的是自己刚生成/看到的这枚。
+   * attempt 序号：亮码即监听（见下方 effect）与手动拨号可以互相取代，
+   * 落后的回调不得覆盖新操作已经写入的状态。
    */
   const begin = async (listen: boolean) => {
     const code = listen ? ownCode : shortCodeFromInput(peerCode);
     if (!code) return;
+    const attempt = ++attemptRef.current;
     setPhase("joining");
-    setNotice({ tone: "info", text: listen ? "已出示，正在等对方输入这枚码…" : "正在等待对方也确认配对…" });
+    setNotice({ tone: "info", text: listen ? "已出示，正在等对方扫码或输入这枚码…" : "正在等待对方接通…请保持电脑端配对码页面打开" });
     try {
       const peer = await rcPinPairBegin(code, listen);
+      if (attempt !== attemptRef.current) return;
       setPeerId(peer.node_id);
       setPeerName(peer.name);
       setPhase("waiting");
       setNotice({ tone: "info", text: `已找到「${peer.name}」，正在完成双方确认…` });
     } catch (error) {
+      if (attempt !== attemptRef.current) return;
       if (String(error).includes("已取消配对")) {
         setPhase("idle");
         setNotice({ tone: "info", text: "已取消配对。" });
@@ -142,9 +145,53 @@ export function RcA2PairExchange({ rc, toast }: {
     }
   };
 
+  // 稳定的操作句柄（begin 每次渲染重建，放进 effect 依赖会导致定时器反复重挂）。
+  const beginRef = useRef(begin);
+  beginRef.current = begin;
+  /** 异步操作序号：旧的 begin 落后回来时不许覆盖新操作的状态（真机教训：
+      自动监听被拨号取代后，旧任务的「已取消配对」会把拨号中的界面打回 idle）。 */
+  const attemptRef = useRef(0);
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   const parsed = shortCodeFromInput(peerCode);
   const ttlHot = remain > 0 && remain <= 60_000;
   const shown = vis === "shown" && !expired;
+
+  // 🔴 亮码即监听（2026-10-03 真机教训）：进页面亮码原本只是「把码摆出来」，
+  //    手机扫码后什么都不会发生——还得再点一次「我出示这枚码」才开始监听，
+  //    扫码方永远停在「等待电脑端确认」（当天公网配对首次联调即卡在这里）。
+  //    现在与设置弹框的扫码页（RcShortPairPane）同一语义：码亮着 = 正在出示
+  //    = 正在监听。拨号侧开始时取消监听、结束后 phase 回 idle 自动重新挂上。
+  /** 当前挂着监听的那枚码（null = 没挂）。收起时靠它取消。 */
+  const armedCodeRef = useRef<string | null>(null);
+  /** phase 每离开 idle 一次记一代。同代同码只挂一次（防 StrictMode 重复注册）；
+      换过代再回 idle 必须重新挂——拨号失败/取消后码还亮着，只按码值去重会让
+      「亮着」变成「只是摆着」，手机再扫码又是干等（同一教训的收尾）。 */
+  const genRef = useRef(0);
+  useEffect(() => {
+    // 收起/遮蔽 = 停止出示：取消监听（隐私兜底——码看不见了也不再接新客）。
+    // 不作废 attempt：让被取消任务的 catch 把 phase 归位 idle，出示时自动重挂。
+    if (!shown) {
+      if (armedCodeRef.current) {
+        armedCodeRef.current = null;
+        void rcShortPairCancel();
+      }
+      return;
+    }
+    if (phase !== "idle") {
+      genRef.current += 1;
+      return;
+    }
+    if (!ownCode || expired) return;
+    const key = `${genRef.current}:${ownCode}`;
+    if (armedCodeRef.current === key) return;
+    armedCodeRef.current = key;
+    // 延后一帧：StrictMode 的探测挂载会先跑一遍 effect，避免重复注册同一枚码。
+    const timer = window.setTimeout(() => {
+      if (phaseRef.current === "idle") void beginRef.current(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [phase, shown, ownCode, expired]);
 
   return (
     <div className={styles.pairExchange}>
@@ -177,7 +224,6 @@ export function RcA2PairExchange({ rc, toast }: {
           <button
             type="button"
             className={styles.pairGhostSm}
-            disabled={busy}
             onClick={() => void reveal()}
           >
             出示
@@ -218,22 +264,24 @@ export function RcA2PairExchange({ rc, toast }: {
         />
       </div>
       <div className={styles.pairRoleBtns}>
-        {/* 两个入口各自固定 listen 角色，不给用户选（见 begin 的注释）。 */}
-        <button
-          type="button"
-          className={styles.pairPrimary}
-          disabled={!shown || !ownCode || busy}
-          onClick={() => void begin(true)}
-        >
-          {busy ? "等待中" : "我出示这枚码"}
-        </button>
+        {/* 出示侧已自动化（亮码即监听，见上方 effect），这里只剩拨号侧入口。
+            点击先取消自动监听再拨号，两条任务不打架；拨号结束后 phase 回
+            idle，自动监听会自己重新挂上。 */}
         <button
           type="button"
           className={styles.pairSecondary}
-          disabled={!parsed || busy}
-          onClick={() => void begin(false)}
+          disabled={!parsed}
+          onClick={() => {
+            const peer = shortCodeFromInput(peerCode);
+            if (!peer) return;
+            void (async () => {
+              attemptRef.current += 1; // 作废仍在飞的自动监听回调
+              await rcShortPairCancel();
+              await beginRef.current(false);
+            })();
+          }}
         >
-          {busy ? "等待中" : "对方给我这枚码"}
+          {phase === "joining" || phase === "waiting" ? "等待中" : "对方给我这枚码"}
         </button>
       </div>
       <div className={styles.pairFeedback}>
@@ -243,7 +291,7 @@ export function RcA2PairExchange({ rc, toast }: {
         </div>}
         {!notice && <span className={styles.pairHint}>
           {shown
-            ? "对方扫码或输同一枚码后，点「我出示这枚码」接通"
+            ? "码亮着即在等待对方：手机扫码或输同一枚码即可接通"
             : "点「出示」重新亮码；要连你的那一端输同一枚码或扫码"}
         </span>}
       </div>

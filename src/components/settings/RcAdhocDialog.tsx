@@ -27,17 +27,13 @@
  * 「提权为可控」（结束 + 重新申请）就是现成的出口（`RcSessionView.onRequestControl`）。
  */
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { X } from "lucide-react";
-import { FocusTrap } from "@/components/FocusTrap";
-import { useDialogAnim } from "@/lib/dialogMotion";
-import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { DEFAULT_REQUEST_CAP, rememberRequestCap } from "@/lib/rcRequest";
 import { fingerprintOf } from "@/lib/fingerprint";
 import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 import { RcAdhocCodePane } from "./RcAdhocCodePane";
 import { RcPairPastePane } from "./RcPairPastePane";
+import { RcConnectionShell } from "./RcConnectionShell";
 import styles from "../rc/RemoteComputer.module.css";
 
 export type AdhocMode = "helpMe" | "helpOther" | "help";
@@ -62,12 +58,7 @@ export function RcAdhocDialog({
    */
   onStartRemote?: (peerId: string) => void;
 }) {
-  const anim = useDialogAnim();
-  // 🔴 Esc 必须由弹层自己接（2026-09-27 P1-2）：本层挂在 RcPairLayer 下，宿主
-  // 可能是设置页（RcSection.tsx:304）——不接的话 Esc 落到全局链的
-  // `close_dialog: "settings"`，整页设置跟着关，刚记下的「这次只看」也没了。
-  // 详见 hooks/useDialogEscape.ts 头注释。
-  useDialogEscape(onClose);
+  // 统一外壳负责 Esc 与焦点，协助授权流程保持独立。
   const [tab, setTab] = useState<HelpTab>("helpMe");
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);
@@ -129,22 +120,7 @@ export function RcAdhocDialog({
   };
 
   return (
-    <motion.div key="rc-adhoc" {...anim.backdrop} className="dialog-backdrop" onClick={onClose}>
-      <FocusTrap>
-        <motion.div
-          {...anim.panel}
-          className="dialog-box"
-          style={{ width: "min(480px, 94vw)" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="dialog-header">
-            <h2 className="dialog-title">
-              {mode === "help" ? "帮助" : mode === "helpMe" ? "让别人帮我" : "帮别人连一次"}
-            </h2>
-            <button className="dialog-close" onClick={onClose} aria-label="关闭">
-              <X size={15} />
-            </button>
-          </div>
+    <RcConnectionShell title={mode === "help" ? "帮助" : mode === "helpMe" ? "让别人帮我" : "帮别人连一次"} onClose={onClose}>
           {mode === "help" && (
             <div className={styles.adhocTabs} role="tablist" aria-label="协助方式">
               {(["helpMe", "helpOther"] as const).map((t) => (
@@ -191,8 +167,6 @@ export function RcAdhocDialog({
               要连回已配对的设备？关掉本窗，在左侧「我的设备」里直接选它。
             </div>
           </div>
-        </motion.div>
-      </FocusTrap>
-    </motion.div>
+    </RcConnectionShell>
   );
 }

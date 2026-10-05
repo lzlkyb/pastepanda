@@ -56,14 +56,15 @@ impl RcService {
         );
     }
 
-    /// 发起端配置的码率倍率（Q5）。缺省 100 = 跟随链路；配置损坏按缺省算。
+    /// 发起端配置的码率倍率（Q5）。缺省 = [`DEFAULT_USER_BITRATE_PCT`]（200，
+    /// 最高档起步、弱网由 auto 缩放压回，见该常量注释）；配置损坏按缺省算。
     pub(crate) fn user_bitrate_pct_from_cfg(&self) -> u32 {
         self.cfg()
             .get(CFG_BITRATE_PCT)
             .and_then(|v| v.as_u64())
             .map(|v| v as u32)
-            .unwrap_or(100)
-        .clamp(50, 200)
+            .unwrap_or(super::super::stream_cfg::DEFAULT_USER_BITRATE_PCT)
+            .clamp(50, 200)
     }
 
     /// 被控端：应用发起端推来的码率倍率（Q5，`SetBitratePct`）。
@@ -233,8 +234,18 @@ impl RcService {
         self.stream.loss_permille()
     }
 
+    /// 视频传输路选择用的当前 RTT（对端上报优先，退本端采样；0 = 未采样）。
+    pub(in crate::rc) fn video_rtt_ms(&self) -> i64 {
+        self.stream.video_rtt_ms()
+    }
+
     pub fn bitrate_scale(&self) -> u32 {
         self.stream.bitrate_scale()
+    }
+
+    /// 本场会话是否已收到过对端码率/链路信息（被控端起播宽限提前收闸用）。
+    pub fn peer_net_seen(&self) -> bool {
+        self.stream.peer_net_seen()
     }
 
     /// 发起端在会话中改截取范围。
@@ -257,7 +268,7 @@ impl RcService {
     }
 
     /// 🔴 C3：喂给 `StreamCfg` 的「现在」换成单调钟——3.5s 暂停判据与 15s 看门狗
-    /// 共用同一份 `last_activity_ms`，域必须一致（`inbound_heartbeat_stale` 已 mono 化）。
+    /// 共用同一份 `last_activity_ms`，域必须一致（`inbound_disconnect_reason` 使用 mono）。
     /// `StreamCfg` 本身保持假时钟纪律（时间由调用方传入，便于单测）。
     pub fn touch_activity(&self) {
         self.stream.touch_activity(crate::rc::mono::mono_ms());

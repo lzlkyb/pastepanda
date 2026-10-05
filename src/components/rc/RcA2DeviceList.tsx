@@ -1,3 +1,5 @@
+import { RcDeviceMeta } from "@/components/rc/RcDeviceMeta";
+import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 /** 工作台侧栏：分组展示在线/不在线；行内零按钮（方案 3），点行 = 选中，连接只走详情面 hero 大钮。
  *
  * 行密度对齐 RustDesk peer_card.dart（2026-09-26 调研，设计稿
@@ -10,7 +12,7 @@
  *  - 新设备的高频配对入口在「这台电脑」卡，不重复放在列表标题。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Monitor, RotateCw, Search, ShieldAlert, ShieldCheck, X } from "lucide-react";
+import { ChevronRight, Monitor, RotateCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import type { RcA2Page } from "@/lib/rcWorkbenchA2";
 import type { RcReachability } from "@/stores/rcStoreTypes";
@@ -20,6 +22,7 @@ import { capabilityLabel } from "@/lib/rcRequest";
 import { tagColorOf, tagSummaryOf } from "@/lib/rcDeviceTags";
 import { rcCheckTime, rcDeviceStatus } from "@/lib/utils";
 import { RcA2TagFilterRow } from "./RcA2TagFilterRow";
+import { RcDeviceListTitle } from "./RcDeviceListTitle";
 import styles from "./RemoteComputerA2.module.css";
 
 function targetName(target: RcTargetDevice): string {
@@ -42,7 +45,7 @@ type RowView = {
 export function RcA2DeviceList({
   page, targets, selectedId, reachability = {}, channelUp = true,
   targetsLoaded = true, targetsError = null, onSelect, onRefresh, onNavigate,
-  capFor, trustedOnly = false, onExitTrustedFilter,
+  onNearby, capFor, trustedOnly = false, onExitTrustedFilter,
 }: {
   page: RcA2Page;
   targets: RcTargetDevice[];
@@ -53,6 +56,7 @@ export function RcA2DeviceList({
   targetsError?: string | null;
   onSelect: (id: string) => void;
   onRefresh?: () => void;
+  onNearby?: () => void;
   onNavigate: (page: RcA2Page) => void;
   /** 发起档取值口（useRcLaunch.capOf）：行 meta 预告「以哪档连接」——行钮删除后这是档位唯一的常驻预告位。 */
   capFor?: (id: string) => import("@/lib/api/rc").RcCapability;
@@ -107,7 +111,7 @@ export function RcA2DeviceList({
         status.checkedAt && `${rcCheckTime(status.checkedAt)} 检查`,
         target.denied && "已禁止连接本机",
         target.trusted && "免确认已开启",
-        // 行上「每行最多两段文字」不变式：标签与描述备注只走悬停（对齐稿①）
+        // 名称、类型、连接状态各自一行；标签与描述备注只走悬停（对齐稿①）
         target.remark && `备注：${target.remark}`,
         tagTip,
       ].filter(Boolean).join(" · ");
@@ -162,7 +166,7 @@ export function RcA2DeviceList({
                   </span>
                 )}
                 <span className={styles.deviceIcon} data-tone={status.tone}>
-                  <Monitor size={16} aria-hidden="true" />
+                  <RcDeviceIcon os={target.os} size={29} />
                 </span>
                 <span className={styles.deviceCopy}>
                   <span className={styles.deviceNameLine}>
@@ -179,6 +183,7 @@ export function RcA2DeviceList({
                       </span>
                     )}
                   </span>
+                  <RcDeviceMeta os={target.os} />
                   {/* 组名已表达「在线/不在线」，行上只留差异词；档位与检查时间进悬停 */}
                   <small data-tone={status.tone} title={tip || undefined}>
                     {row.shortLabel}
@@ -206,22 +211,10 @@ export function RcA2DeviceList({
             </button>
           </div>
         )}
-        <div className={styles.sidebarTitleRow}>
-          <h2>我的设备</h2>
-          <button
-            type="button"
-            className={searchOpen ? styles.searchToggleOn : styles.searchToggle}
-            aria-label="搜索设备"
-            aria-expanded={searchOpen}
-            title="搜索设备（快捷键 /）"
-            onClick={() => {
-              if (searchOpen) setQuery("");
-              setSearchOpen(!searchOpen);
-            }}
-          >
-            {searchOpen ? <X size={14} aria-hidden="true" /> : <Search size={14} aria-hidden="true" />}
-          </button>
-        </div>
+        <RcDeviceListTitle searchOpen={searchOpen} onNearby={onNearby} onSearch={() => {
+          if (searchOpen) setQuery("");
+          setSearchOpen(!searchOpen);
+        }} />
         <RcA2TagFilterRow targets={targets} selected={tagFilter} onChange={setTagFilter} />
         {searchOpen && (
           <div className={styles.searchRow}>

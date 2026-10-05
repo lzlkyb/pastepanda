@@ -1,3 +1,5 @@
+import { rcDeviceTypeLabel } from "@/lib/utils";
+import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 /**
  * RcA2HistoryFilter — 记录页的侧栏上半部：「按设备筛选」。
  *
@@ -11,7 +13,7 @@
  * （取不到就不显示，不编状态）。
  */
 import type { ReactNode } from "react";
-import { History, Monitor } from "lucide-react";
+import { History } from "lucide-react";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import { normalizeRcPresence } from "@/lib/rcDevice";
 import type { RcHistoryDevice } from "@/lib/rcHistory";
@@ -75,9 +77,10 @@ export function RcA2HistoryFilter({
                 key={d.key}
                 name={d.label}
                 sub={`${d.count} 条记录`}
+                deviceType={rcDeviceTypeLabel(targets.find((t) => t.node_id === d.key)?.os)}
                 selected={peer === d.key}
                 presence={presenceOf(d.key)}
-                icon={<Monitor size={17} aria-hidden="true" />}
+                icon={<RcDeviceIcon os={targets.find((t) => t.node_id === d.key)?.os} size={29} />}
                 onSelect={() => onSelect(d.key)}
               />
             ))}
@@ -93,6 +96,7 @@ function FilterRow({
   sub,
   selected,
   presence,
+  deviceType,
   icon,
   onSelect,
 }: {
@@ -101,6 +105,7 @@ function FilterRow({
   selected: boolean;
   /** null = 这台不在配对列表里（已移除），不显示状态点。 */
   presence?: string | null;
+  deviceType?: string;
   icon: ReactNode;
   onSelect: () => void;
 }) {
@@ -109,7 +114,7 @@ function FilterRow({
       <button
         type="button"
         className={styles.deviceSelect}
-        aria-label={`按设备筛选：${name}，${sub}`}
+        aria-label={`按设备筛选：${name}，${sub}${deviceType ? `，${deviceType}` : ""}`}
         aria-pressed={selected}
         onClick={onSelect}
       >
@@ -118,7 +123,7 @@ function FilterRow({
         </span>
         <span className={styles.deviceCopy}>
           <strong>{name}</strong>
-          <small>{sub}</small>
+          <small>{deviceType && `${deviceType} · `}{sub}</small>
         </span>
       </button>
     </div>

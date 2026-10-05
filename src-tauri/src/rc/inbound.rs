@@ -32,7 +32,7 @@ use super::input::{
     assert_control_allowed, converge_key_vk, get_clipboard_text_async, inject,
     set_clipboard_text_async,
 };
-use super::input::{InputEvent, KeyMode, ScreenRegion};
+use super::input::{InputEvent, KeyMode, capture_region};
 // VideoCodec 仅 Windows 宿主编码路径使用（mobile 无推流管线）
 #[cfg(target_os = "windows")]
 use super::encode_h264::VideoCodec;
@@ -79,6 +79,17 @@ pub(super) struct InboundVideo {
     /// 重试退避秒数（首次 5s，每次熔断翻倍，上限 60s）。
     #[cfg(target_os = "windows")]
     pub(super) enc_retry_backoff: u64,
+    /// 起播宽限截止时刻（Some = 首帧还没开过硬编，正在等）。
+    ///
+    /// 🔴 2026-10-03：编码器过去在 `try_new` 那一刻就按 100% 开，发起端的
+    /// `SetBitratePct`（默认 200）约 0.9s 后才到 → 首帧刚出就全链重开一次
+    /// （MFT/NVENC 两次初始化，重开周期内帧全丢）。现在改成：宽限内先不
+    /// 开硬编，JPEG 兜底先出图；对端倍率/链路信息一到（`peer_net_seen`）
+    /// 或宽限期满，才按**当前倍率**开（`open_h264` 读 `bitrate_scale`）。
+    /// 这样常见路径（对端默认 200 = 本机默认 200）一次都不重开。
+    /// None = 已开过（或本会话不需要，如强制 JPEG / mobile）。
+    #[cfg(target_os = "windows")]
+    pub(super) enc_first_open_at: Option<std::time::Instant>,
     /// P1：GPU 零拷贝路径已判定不可用（连续失败），本会话不再尝试。
     #[cfg(target_os = "windows")]
     pub(super) gpu_disabled: bool,
@@ -89,6 +100,37 @@ pub(super) struct InboundVideo {
     /// 它没有视频数据报读取任务，P 帧必须继续走可靠流，否则画面退化成
     /// 每秒一张关键帧的幻灯片。
     pub(super) peer_dgram: bool,
+    /// 🔴 视频数据报放行闸（2026-10-02 两次公网实测收口）：默认 **false**（可靠流），
+    /// 只有 RTT 采样到达且路径快（`video_dgram_allowed`）才进一次数据报模式。
+    /// 未采样/中继路径永远可靠流——数据报在公网近乎全丢、在中继会灌爆
+    /// 拥塞窗口把 pong/控制帧一起堵死，见 `stream_cfg::video_dgram_allowed` 文档。
+    pub(super) dgram_allowed: bool,
+    /// 「传输分 plane」（2026-10-03）：对端（Request.video_plane）支持在独立
+    /// 单向流上收视频。true = H.264 帧走专属 uni 流（`PPVID1` 流头），积压
+    /// 熔断可持续超阈时**整流重建**（丢弃积压），且视频写不再与 pong/输入
+    /// 抢同一把发送锁；false = 旧版对端，视频留在会话半流（历史形态）。
+    pub(super) peer_video_plane: bool,
+    pub(super) peer_media_plane: bool,
+    #[cfg(target_os = "windows")]
+    pub(super) media_pipe: Option<media_pipe::MediaPipe>,
+    /// 🔴 视频专属 uni 流（仅 `peer_video_plane` 时使用）：只由推流任务写，
+    /// **不与任何任务共锁**——这是「视频写不再阻塞 pong」的物理基础。
+    /// None = 尚未建（首帧时懒建）或刚被熔断重建丢弃（下一帧重开 + IDR）。
+    /// 熔断持续起点（None = 当前不在熔断态）。持续 ≥`MELT_REBUILD_AFTER_MS`
+    /// → 重建视频专属流，把旧流里的积压**整段丢弃**。
+    /// 视频专属流建立/重建后置位：首帧必须等 IDR（新流上的 P 帧没有参考
+    /// 基准）。关键帧写入成功后清除。❗不能用「写耗时==0」判新流——快路径
+    /// 一帧本就可能 0ms。
+    /// 视频专属流连续建流失败计数（≥3 → 判连接已死收口会话）。
+    /// 🔴 可靠流积压熔断（2026-10-03）：可靠流没有「缓冲满」信号，写入在
+    /// quinn 发送缓冲上阻塞、积压多少延迟涨多少（08:22 真机会话往返 450ms →
+    /// 46s 且永不恢复，pong 被同连接的视频积压堵死）。判据与动作收口在
+    /// `inbound/video.rs` 的 `melt_step`（纯函数）：写一帧的耗时就是排队水位。
+    #[cfg(target_os = "windows")]
+    pub(super) stream_melt: bool,
+    /// 上一帧可靠流写入耗时（ms）——熔断的水位信号；0 = 尚无样本。
+    #[cfg(target_os = "windows")]
+    pub(super) stream_last_write_ms: u64,
     /// P3.1：对端能解 RS FEC（Request 帧能力位）。false = 走 XOR 老格式。
     pub(super) peer_fec_rs: bool,
     /// 输入提帧信号：键鼠事件到达时 `boost_frame`（notify_one，存许可），
@@ -105,8 +147,14 @@ pub(super) struct InboundVideo {
     /// 门限由 `crate::rc::pace::AUTO_KEY_MIN_GAP_MS` 定。
     #[cfg(target_os = "windows")]
     pub(super) auto_key_at: Option<std::time::Instant>,
-    /// 最近一次发出的光标形状（变化才发）。
-    pub(super) last_cursor: Option<&'static str>,
+    /// 最近一次发出的光标遥测（形状 + 位置 + 可见性；变化才发）。
+    /// B 方案 2026-10-02：原先是 `Option<&'static str>`（只有形状）。
+    pub(super) last_cursor: Option<super::input::RemoteCursor>,
+    /// 上次发出光标遥测的单调毫秒；0 = 还没发过（首帧必发）。
+    pub(super) last_cursor_ms: u64,
+    /// 光标遥测的抓帧范围缓存（`(monitor, virtual_screen) → region`）。
+    /// None = 还没算过。见 `inbound_tasks::cursor_region`。
+    pub(super) cursor_region_cache: Option<((i32, bool), super::input::ScreenRegion)>,
     /// P1-7 自适应降频：档位间隔放大倍数（1~4）。编码持续跑不满档位间隔时翻倍。
     pub(super) pace_scale: u32,
     /// 单圈工作量（抓帧+编码+发送）的指数平滑，ms。
@@ -391,15 +439,25 @@ pub(super) async fn handle_inbound_input(
             rtt_ms,
             queue_ms,
             frame_loss_pm,
+            media,
         } => {
-            let scale = svc.set_peer_rtt(*rtt_ms);
-            // 2026-09-28：排队压力（帧龄 EMA——AP 队列只挡大帧不挡小 ping）与
-            // 帧粒度丢包反馈。都是弱网快速码控的信源，见 stream_cfg 各自注释。
+            // 🔴 顺序有因（2026-10-05）：帧龄/丢包**先**入库，RTT 后到——
+            // RTT 进 set_peer_rtt 时要拿同拍的排队/丢包判「安静样本」
+            // （RTT 下限跟踪，见 `stream_cfg::next_rtt_floor`）。反过来排，
+            // 风暴起步那一拍会拿上一拍的旧队列把拥塞 RTT 定成下限。
             if let Some(q) = queue_ms {
                 svc.set_peer_queue_ms(*q);
             }
             if let Some(pm) = frame_loss_pm {
                 svc.note_peer_frame_loss(*pm);
+            }
+            let scale = svc.set_peer_rtt(*rtt_ms);
+            // 2026-09-28：排队压力（帧龄 EMA——AP 队列只挡大帧不挡小 ping）与
+            // 帧粒度丢包反馈。都是弱网快速码控的信源，见 stream_cfg 各自注释。
+            if let Some(feedback) = media {
+                svc.apply_media_feedback(feedback);
+            } else {
+                svc.keep_media_queue_hint();
             }
             log::debug!("[RC] 对端 RTT {rtt_ms}ms → 码率 {scale}%");
             return;
@@ -556,40 +614,12 @@ pub(super) async fn handle_inbound_input(
         return;
     }
 
-    let region = {
-        let opts = svc.stream_opts_snapshot();
-        if opts.monitor >= 0 {
-            // 指定屏几何是 Windows 宿主能力（mobile 无多屏采集）
-            #[cfg(target_os = "windows")]
-            { match crate::screenshot::monitor_region(opts.monitor) {
-                Ok((x, y, w, h)) => ScreenRegion { x, y, w, h },
-                Err(_) => ScreenRegion::virtual_screen(),
-            } }
-            #[cfg(not(target_os = "windows"))]
-            { ScreenRegion::virtual_screen() }
-        } else if opts.virtual_screen {
-            ScreenRegion::virtual_screen()
-        } else {
-            #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
-                };
-                let (w, h) =
-                    unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
-                ScreenRegion {
-                    x: 0,
-                    y: 0,
-                    w: w.max(1),
-                    h: h.max(1),
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                ScreenRegion::virtual_screen()
-            }
-        }
-    };
+    // 🔴 收口（规则 11.1）：region 判定只有 `input::capture_region` 一份——
+    // 光标遥测（被控端 → 发起端的「光标在哪」）算的是同一个 region。
+    // 两处各写一份「monitor >= 0 → 主屏/virtual」的判定，迟早有一处漏了
+    // monitor 分支，症状是「点击落点对、光标位置不对」，真机上要逐像素
+    // 比对才看得出来。
+    let region = capture_region(&svc.stream_opts_snapshot());
     // P1-2：region 计算后再钉一次——窗口拉长了检查与注入的间距。
     if !svc.session_peer_unchanged(&snap) {
         log::debug!("[RC] 会话在注入前已切换，丢弃迟到输入（{peer}）");
@@ -726,6 +756,10 @@ pub(super) async fn handle_inbound_input(
 }
 
 // impl InboundVideo 的推流方法平移到子模块（硬编路径 / 运行循环）。
+#[cfg(target_os = "windows")]
+mod media;
+#[cfg(target_os = "windows")]
+mod media_pipe;
 mod video;
 mod video_run;
 

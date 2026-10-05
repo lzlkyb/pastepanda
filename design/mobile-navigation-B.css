@@ -1,0 +1,158 @@
+/* 设计稿复用现有 App 与页面样式，仅替换分页承载方式。 */
+.reviewLayout {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 390px minmax(0, 440px);
+  grid-template-rows: auto minmax(0, 1fr);
+  justify-content: center;
+  gap: 24px 64px;
+  padding: 24px 32px;
+  overflow: auto;
+  background: var(--app-bg);
+}
+.reviewHeader {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.reviewHeader h1 {
+  font-size: 20px;
+  margin: 0;
+  color: var(--text-primary);
+}
+.reviewHeader p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.reviewControls {
+  display: flex;
+  gap: 8px;
+}
+.reviewControls button {
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.deviceFrame {
+  height: 100%;
+  min-height: 0;
+  max-height: 844px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--mobile-radius-panel);
+  overflow: hidden;
+}
+.nativePager {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: auto;
+}
+.nativePager::-webkit-scrollbar {
+  display: none;
+}
+.prototypePage {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  touch-action: auto;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: auto;
+}
+.exampleCaption {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 24px 0;
+}
+.reviewNotes {
+  align-self: center;
+  color: var(--text-secondary);
+}
+.reviewNotes h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 16px;
+}
+.reviewNotes p {
+  font-size: 15px;
+  line-height: 1.8;
+  margin: 0 0 24px;
+}
+.reviewNotes ol {
+  padding-left: 24px;
+  margin: 0 0 24px;
+}
+.reviewNotes li {
+  padding-left: 8px;
+  margin-bottom: 24px;
+}
+.reviewNotes li strong {
+  display: block;
+  font-size: 15px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.reviewNotes li span,
+.reviewNotes .reviewFootnote {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.reviewNotes output {
+  display: block;
+  font-size: 13px;
+  color: var(--accent-strong);
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+.reviewControls button:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+@media (max-width: 820px) {
+  .reviewLayout {
+    padding: 0;
+    gap: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 64px minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .reviewHeader {
+    padding: 8px 12px;
+    gap: 8px;
+    background: var(--section-bg);
+  }
+  .reviewHeader h1 {
+    font-size: 13px;
+  }
+  .reviewHeader p {
+    font-size: 11px;
+  }
+  .reviewControls {
+    gap: 4px;
+  }
+  .reviewControls button {
+    padding: 8px;
+    font-size: 11px;
+    background: var(--card-bg);
+  }
+  .deviceFrame {
+    border: 0;
+    border-radius: 0;
+    max-height: none;
+  }
+  .reviewNotes {
+    display: none;
+  }
+}

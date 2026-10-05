@@ -61,6 +61,15 @@ pub struct Session {
     pub started_mono: i64,
     /// 被控侧：是否本机用户已点头。
     pub granted: bool,
+    /// 🔴 后台保活（2026-10-02）：发起端进后台的时刻（`mono_ms` 口径），
+    /// `0` = 对端在前台。由 `InputEvent::BgPause` / `BgResume` 维护。
+    ///
+    /// 被控端看门狗据此放宽失联判定（`link::peer_bg_watchdog`）：手机进后台后
+    /// WebView/进程会被冻结，心跳断是**预期内**的，不能按 15s 失联收口；超时
+    /// 上限放宽到 `link::PEER_BG_TTL_MS`。随会话生灭（新会话从 0 起步），
+    /// 不落盘不发前端。
+    #[serde(skip)]
+    pub bg_since_mono: i64,
 }
 
 /// 一次读出的会话三元组（P1-2）。

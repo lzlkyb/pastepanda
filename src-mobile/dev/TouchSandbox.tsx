@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef } from "react";
 import { RcMobileSession } from "../session/RcMobileSession";
+import { useSessionClipboard } from "../session/useSessionClipboard";
 
 const W = 1920;
 const H = 1080;
@@ -51,6 +52,8 @@ function drawTestPattern(canvas: HTMLCanvasElement): void {
 
 export function TouchSandbox({ onExit }: { onExit: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // 沙盒也给真实剪贴板 hook：按钮不再是「点了没反应」，命令失败会在面板里如实报错。
+  const clipboard = useSessionClipboard();
   useEffect(() => {
     if (canvasRef.current) drawTestPattern(canvasRef.current);
   }, []);
@@ -61,6 +64,7 @@ export function TouchSandbox({ onExit }: { onExit: () => void }) {
       subtitle="无远端 · 注入事件被静默丢弃"
       canvasRef={canvasRef}
       contentSize={{ w: W, h: H }}
+      clipboard={clipboard}
       onEnd={onExit}
     />
   );

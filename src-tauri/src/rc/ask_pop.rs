@@ -162,6 +162,11 @@ pub fn mode_now() -> FloatMode {
 /// 再让 lib.rs 自己存一个 AtomicU8 就是两份真相（迟早不同步）。画质/光标那些 tick
 /// 也会进这条回调，同档必须空转，否则浮层会被鼠标拖着走。
 pub fn on_change(app: &AppHandle) {
+    // Android 没有浮层窗（原因见 `create` 内注释）：确认面是主界面设备页的
+    // 内联申请卡。这条判据放这里收口——所有状态 tick 只进这一个入口。
+    if cfg!(target_os = "android") {
+        return;
+    }
     let target = mode_now();
     if FloatMode::from_u8(SHOWN_MODE.load(Ordering::SeqCst)) == target {
         return;
@@ -169,8 +174,22 @@ pub fn on_change(app: &AppHandle) {
     sync(app, target);
 }
 
+/// 换档判据（纯函数，单测钉「同档空转、跨档必动」）。
+///
+/// `on_change` 的「同档空转」是刻意的：画质/光标 tick 每秒都会进来，同档重复
+/// 弹窗会把浮层拖着走。反过来它也意味着**任何把 `SHOWN_MODE` 记错账的路径**
+/// 都会让下一条敲门被判成同档、弹框永远不出现——比不弹更糟的回归。
+pub fn need_switch(shown: FloatMode, target: FloatMode) -> bool {
+    shown != target
+}
+
 /// 按形态开关窗口。只在**过渡**时调（`on_change`），同档重复调用是空转。
 pub fn sync(app: &AppHandle, mode: FloatMode) {
+    // 与 `on_change` 同一道闸：`rc_ask_hide` 命令也会进这里，Android 上
+    // 不许有任何触碰第二块窗的机会（会顶掉主界面）。
+    if cfg!(target_os = "android") {
+        return;
+    }
     match mode {
         FloatMode::Hidden => hide(app),
         FloatMode::Ask | FloatMode::Capsule => show(app, mode),
@@ -231,7 +250,18 @@ fn apply_geometry(w: &tauri::WebviewWindow, mode: FloatMode) {
     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
+/// 建窗（桌面专属）。
+///
+/// 🔴 **Android 必须在此止步**：wry 在 Android 上**每个 Activity 只有一块
+/// webview**，`builder.build()` 会走 `activity.setContentView(webview)` 把
+/// 主界面的 webview **整块顶掉**。2026-10-03 真机白屏根因正是启动时预热建
+/// 这块确认浮层 → 用户打开 App 看到的是 rcask 的空白页而不是主界面。
+/// 手机端确认一律走主界面设备页的内联申请卡（`RcInboundAskCard` +
+/// `App.tsx` 自动切页）；浮层窗（Ask/Capsule）是桌面专属交互。
 fn create(app: &AppHandle, mode: FloatMode) {
+    if cfg!(target_os = "android") {
+        return;
+    }
     if CREATING.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -391,5 +421,16 @@ mod tests {
         assert_eq!(FloatMode::Ask.as_str(), "ask");
         assert_eq!(FloatMode::Capsule.as_str(), "capsule");
         assert_eq!(FloatMode::Hidden.as_str(), "hidden");
+    }
+
+    /// 换档判据：同档空转（画质 tick 不许拖着浮层走），跨档必动。任何让
+    /// `SHOWN_MODE` 记错账的改动都会在这里先红——后果是「下一条敲门永远不弹」。
+    #[test]
+    fn 换档判据_同档空转_跨档必动() {
+        assert!(need_switch(FloatMode::Hidden, FloatMode::Ask));
+        assert!(need_switch(FloatMode::Capsule, FloatMode::Ask));
+        // 同档仍然空转（画质 tick 不许把浮层拖着走）
+        assert!(!need_switch(FloatMode::Ask, FloatMode::Ask));
+        assert!(!need_switch(FloatMode::Hidden, FloatMode::Hidden));
     }
 }

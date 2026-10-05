@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>手机端 · 延时与连接详情方案</title><link rel="stylesheet" href="./mobile-connection-details-2026-10-02.css"></head>
+<body class="board">
+<main class="board-main">
+  <header class="board-head"><p class="eyebrow">PASTEPANDA / 手机控制端</p><h1>连接状态，看一眼就知道。</h1><p>沿用 C 布局与 B 分层毛玻璃。画面、触控板、键盘、更多保持同一套入口；以下数值均为示例。</p></header>
+  <nav class="schemes" aria-label="方案对比">
+    <button data-scheme="A" aria-pressed="false">A · 只在更多里查看</button>
+    <button data-scheme="B" aria-pressed="true">B · 轻量延时 + 详情（推荐）</button>
+    <button data-scheme="C" aria-pressed="false">C · 常驻参数条</button>
+  </nav>
+  <div class="board-controls"><label>演示场景 <select id="scenario"><option value="normal">连接正常</option><option value="slow">延时偏高</option><option value="waiting">尚无测量样本</option><option value="recovering">连接正在恢复</option></select></label><button id="orientation" aria-pressed="false">切换横屏预览</button></div>
+  <p id="explanation" class="explanation">B：平时只显示延时，点一下打开连接详情。主操作仍保留四个；横屏保留延时入口。</p>
+  <section class="preview-pair" aria-label="当前方案预览">
+    <div><h2>控制中</h2><div class="phone"><iframe id="session" title="手机会话与延时入口" src="./mobile-connection-details-view-2026-10-02.html?scheme=B&state=normal"></iframe></div></div>
+    <div><h2>点开连接详情</h2><div class="phone"><iframe id="details" title="手机连接详情面板" src="./mobile-connection-details-view-2026-10-02.html?scheme=B&state=normal&open=1"></iframe></div></div>
+  </section>
+  <section class="board-notes"><div><h2>默认显示：够用就好</h2><p>往返延时、实际帧率、连接方式、分辨率、编码、估计码率。延时附“流畅 / 一般 / 偏慢”，不只靠颜色。</p></div><div><h2>展开后：与电脑端对齐</h2><p>近 60 秒延时趋势；高级参数收起，包含画面延时、延时分段、操作响应近似值和丢包。未知数据标“暂无样本”。</p></div><div><h2>退出面板，继续控制</h2><p>下拉、关闭或系统返回先收起详情；面板打开时暂停远程触控，视频继续。延时数字不滚动、不闪烁，复用现有弹层动效。</p></div></section>
+  <footer>方案预览 · B 已实施。这里仍使用静态示例，不代表当前连接实测。<a href="./手机端-延时与连接详情落地预览-2026-10-02.html">查看实际组件预览（示例数据）</a></footer>
+</main>
+<script>
+let scheme='B', landscape=false;
+const descriptions={A:'A：更多 → 连接详情。画面最简洁，但查看延时需要两步，平时看不到质量变化。',B:'B：平时只显示延时，点一下打开连接详情。主操作仍保留四个；横屏保留延时入口。',C:'C：延时、帧率、编码和码率常驻。排查问题更直接，但会占画面，不适合作为日常默认。'};
+function update(){const state=document.querySelector('#scenario').value;document.querySelector('#explanation').textContent=descriptions[scheme];document.querySelectorAll('[data-scheme]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scheme===scheme)));document.querySelector('.preview-pair').classList.toggle('landscape',landscape);document.querySelector('#orientation').setAttribute('aria-pressed',String(landscape));document.querySelector('#orientation').textContent=landscape?'切换竖屏预览':'切换横屏预览';document.querySelector('#session').src=`./mobile-connection-details-view-2026-10-02.html?scheme=${scheme}&state=${state}`;document.querySelector('#details').src=`./mobile-connection-details-view-2026-10-02.html?scheme=${scheme}&state=${state}&open=1`;}
+document.querySelectorAll('[data-scheme]').forEach(b=>b.addEventListener('click',()=>{scheme=b.dataset.scheme;update();}));document.querySelector('#scenario').addEventListener('change',update);document.querySelector('#orientation').addEventListener('click',()=>{landscape=!landscape;update();});
+</script></body></html>

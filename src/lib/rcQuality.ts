@@ -167,8 +167,13 @@ const DEFAULT_LABEL = LABELS.get(DEFAULT_QUALITY) ?? "均衡";
 /**
  * Q5：码率倍率选项（会话底栏「码率」下拉）。语义是**天花板**：与后端按
  * RTT/丢包算出的自动缩放相乘——调高不会越过弱网保护，调低则任何网络下都省。
- * 100 = 跟随链路（既有行为，完全不变）。
+ *
+ * 🔴 默认 = 200（2026-10-02 用户拍板「按最高的来，弱网自动降」）：后端
+ * `DEFAULT_USER_BITRATE_PCT` 与这里必须同值——下拉兜底、未配置回落的判定
+ * 两端各写一份迟早分叉（规则 11.1）。100（跟随链路）降级为显式可选项。
  */
+export const RC_BITRATE_PCT_DEFAULT = 200;
+
 export interface RcBitrateOption {
   pct: number;
   label: string;
@@ -180,13 +185,13 @@ export interface RcBitrateOption {
 export const RC_BITRATE_OPTIONS: readonly RcBitrateOption[] = [
   { pct: 50, label: "50% · 省带宽", tip: "画质明显下降，流量最省", meta: "最省流量" },
   { pct: 75, label: "75%", tip: "略省带宽，画质略降", meta: "略省带宽" },
-  { pct: 100, label: "跟随链路", tip: "默认。按延迟/丢包自动调节，弱网自动降低", meta: "默认" },
+  { pct: 100, label: "跟随链路", tip: "按延迟/丢包自动调节，弱网自动降低", meta: "旧默认" },
   { pct: 150, label: "150%", tip: "档位上限内再提一半码率，弱网时仍会自动让路", meta: "再提一半" },
   {
     pct: 200,
     label: "200% · 尽量清晰",
-    tip: "档位内最高画质；弱网保护仍生效，不会硬塞",
-    meta: "档位内最高",
+    tip: "默认。档位内最高画质；弱网自动降，保护仍生效",
+    meta: "默认",
   },
 ];
 

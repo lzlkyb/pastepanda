@@ -1,3 +1,5 @@
+import { rcDeviceTypeLabel } from "@/lib/utils";
+import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 /**
  * RcPageFiles — 工作台「文件传输」页（G6，B4 · 决策 8）。
  *
@@ -12,7 +14,6 @@
  * `selectedPeer/onSelectPeer` 受控。A2 同时隐藏页内目标条，避免两套选择器互相打架。
  */
 import { useEffect, useState } from "react";
-import { Monitor } from "lucide-react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { RcFilePanel } from "./RcFilePanel";
@@ -83,8 +84,8 @@ export function RcPageFiles({
                   onSelectPeer?.(t.node_id);
                 }}
               >
-                <Monitor size={13} aria-hidden="true" />
-                <span className={styles.fileTargetName}>{name}</span>
+                <RcDeviceIcon os={t.os} size={20} />
+                <span className={styles.fileTargetName}>{name} · {rcDeviceTypeLabel(t.os)}</span>
                 {/* 圆点只是「在线」的视觉编码（颜色），给读屏一份文字
                     （2026-09-27 P1-3，与 RcA2Sidebar 传输角标同一处伤）：
                     span 的隐式 role=generic 不允许命名，原来的 aria-label 被丢弃 ⇒

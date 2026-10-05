@@ -5,6 +5,7 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
 import { logger } from "./lib/logger";
+import { permissionErrorInfo } from "./lib/utils";
 import "./styles/globals.css";
 import "./styles/theme.css";
 // 两个模式共用的表面动画。必须在全局层（CSS Modules 会把 keyframes 名字哈希掉）
@@ -45,14 +46,13 @@ window.addEventListener("error", (event) => {
 function friendlyRejectionMessage(reason: unknown): string {
   const raw = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason || "");
   const low = raw.toLowerCase();
+  const permission = permissionErrorInfo(reason);
+  if (permission) return `${permission.title}。${permission.detail}`;
   if (low.includes("invoke") || low.includes("command") || low.includes("tauri")) {
     return "应用内部操作失败，请重试";
   }
   if (low.includes("network") || low.includes("fetch") || low.includes("timeout") || low.includes("socket")) {
     return "网络连接失败，请检查网络后重试";
-  }
-  if (low.includes("denied") || low.includes("permission")) {
-    return "操作权限不足，请检查系统设置";
   }
   return "有个后台操作未能完成，可重试一次";
 }

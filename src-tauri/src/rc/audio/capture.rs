@@ -160,6 +160,120 @@ impl Drop for LoopbackCapture {
     }
 }
 
+/// 默认**捕获**端点（`eCapture` + `eMultimedia`）——录屏麦克风轨用。
+/// 与环回的差异只有数据流方向和初始化标志，格式识别/下混完全复用。
+fn default_capture_device() -> Result<IMMDevice, String> {
+    unsafe {
+        let enumr: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(mf_err)?;
+        enumr
+            .GetDefaultAudioEndpoint(EDataFlow(1), eMultimedia) // 1 = eCapture
+            .map_err(|e| format!("无默认麦克风设备：{e}"))
+    }
+}
+
+/// 麦克风采集（录屏 rec/ 用；远控不出麦克风）。接口与 [`LoopbackCapture`] 一致：
+/// `pump()` 取走攒下的采样 → 立体声 s16 interleaved。
+pub struct MicCapture {
+    client: IAudioClient,
+    capture: IAudioCaptureClient,
+    sr: u32,
+    ch: usize,
+    fmt: SampleFmt,
+}
+
+impl MicCapture {
+    /// 打开默认捕获设备。**必须在已 CoInitializeEx 的线程上调用**。
+    /// 无麦克风（禁用/无头机）→ Err，调用方直接去掉麦克风轨，不影响其它轨。
+    pub fn new() -> Result<Self, String> {
+        unsafe {
+            let dev = default_capture_device()?;
+            let client: IAudioClient = dev.Activate(CLSCTX_ALL, None).map_err(mf_err)?;
+            let wf = client.GetMixFormat().map_err(mf_err)?;
+            if wf.is_null() {
+                return Err("麦克风混音格式为空".into());
+            }
+            let (sr, ch, fmt) = inspect_format(&*wf)?;
+            // 共享模式 + 无 LOOPBACK 标志 = 正常采集；缓冲 0 = 系统默认
+            client
+                .Initialize(AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, wf, None)
+                .map_err(mf_err)?;
+            let capture: IAudioCaptureClient = client.GetService().map_err(mf_err)?;
+            client.Start().map_err(mf_err)?;
+            Ok(Self { client, capture, sr, ch, fmt })
+        }
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sr
+    }
+
+    /// 同 [`LoopbackCapture::pump`]：返回 `(立体声 s16, 设备是否失效)`。
+    pub fn pump(&mut self) -> (Vec<i16>, bool) {
+        let mut out = Vec::new();
+        let mut broken = false;
+        unsafe {
+            loop {
+                let Ok(n) = self.capture.GetNextPacketSize() else {
+                    broken = true;
+                    break;
+                };
+                if n == 0 {
+                    break;
+                }
+                let mut p: *mut u8 = std::ptr::null_mut();
+                let mut frames = 0u32;
+                let mut flags = 0u32;
+                if self
+                    .capture
+                    .GetBuffer(&mut p, &mut frames, &mut flags, None, None)
+                    .is_err()
+                {
+                    broken = true;
+                    break;
+                }
+                let bytes = (frames as usize) * self.ch * self.bytes_per_sample();
+                if !p.is_null() && bytes > 0 {
+                    let silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0;
+                    let stereo: Vec<f32> = match (self.fmt, silent) {
+                        (SampleFmt::F32, false) => {
+                            let f: &[f32] =
+                                std::slice::from_raw_parts(p as *const f32, frames as usize * self.ch);
+                            downmix_to_stereo_f32(f, self.ch)
+                        }
+                        (SampleFmt::F32, true) => vec![0.0; frames as usize * 2],
+                        (SampleFmt::S16, false) => {
+                            let s: &[i16] =
+                                std::slice::from_raw_parts(p as *const i16, frames as usize * self.ch);
+                            let f: Vec<f32> = s.iter().map(|v| *v as f32 / 32768.0).collect();
+                            downmix_to_stereo_f32(&f, self.ch)
+                        }
+                        (SampleFmt::S16, true) => vec![0.0; frames as usize * 2],
+                    };
+                    out.extend(stereo_f32_to_s16(&stereo));
+                }
+                let _ = self.capture.ReleaseBuffer(frames);
+            }
+        }
+        (out, broken)
+    }
+
+    fn bytes_per_sample(&self) -> usize {
+        match self.fmt {
+            SampleFmt::F32 => 4,
+            SampleFmt::S16 => 2,
+        }
+    }
+}
+
+impl Drop for MicCapture {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.client.Stop();
+        }
+    }
+}
+
 /// 识别设备混音格式：采样率 / 声道 / 样本格式（f32 或 s16）。
 ///
 /// `unsafe` 的原因只有一个：`WAVE_FORMAT_EXTENSIBLE` 分支要按同址转换读

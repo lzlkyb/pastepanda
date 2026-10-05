@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>添加电脑 · 三种升级方案</title>
+  <link rel="stylesheet" href="../src/styles/theme.css" />
+  <link rel="stylesheet" href="mobile-add-computer-2026-10-03.css" />
+</head>
+<body>
+  <main class="review">
+    <header class="review-head">
+      <div><h1>添加电脑，清楚一点，轻松一点。</h1><p>沿用现有手机端的颜色与底部面板，只升级添加电脑这一步。</p></div>
+      <label class="theme-control">外观<select id="theme"><option value="ocean">浅色</option><option value="midnight">深色</option></select></label>
+    </header>
+    <div class="review-controls">
+      <div class="variant-pick" role="group" aria-label="选择预览方案">
+        <button data-pick="A" aria-pressed="false">A 精简原布局</button>
+        <button data-pick="B" aria-pressed="true">B 扫码与输码</button>
+        <button data-pick="C" aria-pressed="false">C 双入口页签</button>
+      </div>
+      <label>查看状态<select id="state"><option value="idle">默认</option><option value="ready">已输入配对码</option><option value="waiting">配对中</option><option value="error">配对失败</option><option value="scan">扫码取景</option><option value="denied">摄像头不可用</option><option value="own">出示本机码</option></select></label>
+    </div>
+    <div class="comparison" id="comparison"></div>
+    <footer class="review-foot">交互设计预览：可以输码、切换方式、查看失败与出示状态。所有配对码为示例，不连接设备、不使用摄像头。</footer>
+  </main>
+  <script src="mobile-add-computer-2026-10-03.js"></script>
+</body>
+</html>

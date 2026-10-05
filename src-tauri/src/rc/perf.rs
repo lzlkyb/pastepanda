@@ -407,16 +407,27 @@ pub mod counters {
     /// 编码器全链重开次数（码率缩放 / fps / 标准变化触发）。重开一次几百 ms
     /// 且计入该帧 enc_ms——「编码慢」与「重开频繁」是两种病，汇总行必须能拆开。
     pub static ENC_REOPEN: AtomicU64 = AtomicU64::new(0);
+    /// 🔴 可靠流积压熔断丢弃的 P 帧数（2026-10-03）：可靠流没有「缓冲满」
+    /// 信号，写入在 quinn 发送缓冲上阻塞、积压多少延迟涨多少（08:22 真机会话
+    /// 往返 450ms → 46s，pong 被同连接的视频积压堵死）。熔断期间弃 P 帧的
+    /// 次数在这里可见——持续增长说明链路吞吐低于码控下限，该降分辨率/查路径。
+    pub static STREAM_MELT: AtomicU64 = AtomicU64::new(0);
+    /// 🔴 视频专属流重建次数（2026-10-03「传输分 plane」）：熔断持续超阈时
+    /// 整流重建——旧流里的积压随流被丢弃，这是延迟封顶的机制本体。持续
+    /// 增长 = 链路吞吐长期低于产量，每次重建伴随一次 IDR 重同步。
+    pub static STREAM_REBUILD: AtomicU64 = AtomicU64::new(0);
 
     /// 一次性读出全部计数（供日志行）。
     pub fn snapshot() -> String {
         format!(
-            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {} 编码重开 {}",
+            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {} 流积压弃帧 {} 流重建 {} 编码重开 {}",
             ENC_FUSE.load(Ordering::Relaxed),
             STREAM_CHANGE.load(Ordering::Relaxed),
             JPEG_FALLBACK.load(Ordering::Relaxed),
             CAPTURE_FAIL.load(Ordering::Relaxed),
             DGRAM_DROP.load(Ordering::Relaxed),
+            STREAM_MELT.load(Ordering::Relaxed),
+            STREAM_REBUILD.load(Ordering::Relaxed),
             ENC_REOPEN.load(Ordering::Relaxed),
         )
     }

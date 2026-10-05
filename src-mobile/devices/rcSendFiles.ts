@@ -23,10 +23,11 @@ export interface SendOutcome {
   ok: boolean;
   /** 失败原因（人话）；成功时为空串。 */
   err: string;
+  canceled?: boolean;
 }
 
 /** 上载进度回调：`done` = 已运到后端的字节（不是已传到对端——那要走任务列表）。 */
-export type SendProgress = (file: string, done: number, total: number) => void;
+export type SendProgress = (file: string, done: number, total: number, index?: number) => void;
 
 /** 可注入的最小文件面（测试不碰真 File）。 */
 export interface SendFileLike {
@@ -47,14 +48,19 @@ export async function sendFilesToPeer(
   peer: string,
   files: SendFileLike[],
   onProgress?: SendProgress,
+  signal?: AbortSignal,
 ): Promise<SendOutcome[]> {
   const out: SendOutcome[] = [];
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
+    if (signal?.aborted) {
+      out.push({ name: file.name, ok: false, canceled: true, err: "已取消准备" });
+      continue;
+    }
     try {
-      await sendOne(peer, file, onProgress);
+      await sendOne(peer, file, (name, done, total) => onProgress?.(name, done, total, index), signal);
       out.push({ name: file.name, ok: true, err: "" });
     } catch (e) {
-      out.push({ name: file.name, ok: false, err: String(e) });
+      out.push({ name: file.name, ok: false, err: String(e), ...(signal?.aborted ? { canceled: true } : {}) });
     }
   }
   return out;
@@ -64,6 +70,7 @@ async function sendOne(
   peer: string,
   file: SendFileLike,
   onProgress?: SendProgress,
+  signal?: AbortSignal,
 ): Promise<void> {
   // upload id 贯穿本文件所有块（后端按它落同一个暂存文件）；UUID 去掉横线
   // 也行，但保留横线在 allowed 字符集里，直接用。
@@ -79,15 +86,32 @@ async function sendOne(
   };
   // do-while 形状：0 字节的空文件也要发一块（last=true，后端补齐校验放行空文件）
   let offset = 0;
-  for (;;) {
-    const end = Math.min(offset + SEND_CHUNK_BYTES, file.size);
-    const bytes = await chunkToBytes(file.slice(offset, end));
-    const last = end >= file.size;
-    await invoke("rc_file_send_blob", bytes, {
-      headers: { ...headers, "x-pp-offset": String(offset), "x-pp-last": last ? "1" : "0" },
-    });
-    onProgress?.(file.name, end, file.size);
-    if (last) return;
-    offset = end;
+  let started = false;
+  try {
+    for (;;) {
+      signal?.throwIfAborted();
+      const end = Math.min(offset + SEND_CHUNK_BYTES, file.size);
+      const bytes = await chunkToBytes(file.slice(offset, end));
+      signal?.throwIfAborted();
+      const last = end >= file.size;
+      started = true;
+      await invoke("rc_file_send_blob", bytes, {
+        headers: { ...headers, "x-pp-offset": String(offset), "x-pp-last": last ? "1" : "0" },
+      });
+      onProgress?.(file.name, end, file.size);
+      // A successful final IPC has already queued a transfer; cancellation must not delete its source.
+      if (last) return;
+      offset = end;
+    }
+  } catch (error) {
+    // Wait for the outstanding write before cleaning exactly this unsubmitted spool file.
+    if (started) {
+      try {
+        await invoke("rc_file_send_blob_abort", { uploadId: id, name: file.name });
+      } catch (cleanupError) {
+        throw new Error(`${signal?.aborted ? "已停止准备" : String(error)}；暂存清理失败：${String(cleanupError)}`);
+      }
+    }
+    throw error;
   }
 }

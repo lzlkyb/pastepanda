@@ -160,6 +160,8 @@ describe("捕获期 Esc 监听必须走 useDialogEscape，不许新写副本", (
    * - `screenshot-main.tsx` —— 截图**独立窗口**的错误边界兜底：Esc 关的是整个窗口，
    *   且写它的前提就是「崩溃态下不能再有任何人抢走这个键」。那里没有 `.dialog-backdrop`
    *   这一层，套 hook 是把两个概念糊在一起。
+   * - `rec-main.tsx` —— 录屏选区窗的崩溃兜底，与 screenshot-main 完全同性质
+   *   （全屏透明层，React 树崩了之后 Esc 是唯一逃生口，关的是整个窗口）。
    *
    * 需要让路给**非模态子面板**的（`NoteDialog` 的 CodeMirror 查找面板），传 hook 的
    * 第三参数 `yieldTo`，那是它的口子，不是手挂的理由。
@@ -170,6 +172,7 @@ describe("捕获期 Esc 监听必须走 useDialogEscape，不许新写副本", (
     "components/SettingsView.tsx",
     "components/ToolboxView.tsx",
     "screenshot-main.tsx",
+    "rec-main.tsx",
   ];
 
   function walk(dir: string, out: string[] = []): string[] {

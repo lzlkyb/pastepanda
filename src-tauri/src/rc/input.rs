@@ -11,6 +11,7 @@
 //! 上限 [`TEXT_MAX_UTF16_UNITS`]）；更长的文本不走逐键注入，走「推剪贴板 →
 //! 对端 Ctrl+V」（[`InputEvent::ClipboardPush`]）。
 
+use super::stream_cfg::StreamOpts;
 use serde::{Deserialize, Serialize};
 
 /// 发起端 → 被控端的输入指令（JSON 控制帧的一种，经同一条 bi-stream 的反向半流）。
@@ -63,6 +64,16 @@ pub enum InputEvent {
     Ping {
         ts: Option<i64>,
     },
+    /// 发起端页面进后台（手机 WebView 随 Activity 暂停，进程稍后被系统冻结）。
+    /// 被控端收到后**挂起推流**（对端没人消费，采集编码全白烧）并把失联看门狗
+    /// 放宽到 [`super::link::PEER_BG_TTL_MS`]——进程冻结后连这条都发不出来，
+    /// TTL 是「冻在后台」场景的最后期限。回前台发 [`InputEvent::BgResume`]。
+    ///
+    /// 生命周期事件：不注入本机、不要求 Control（只看会话同样要保活）。
+    BgPause,
+    /// 发起端回到前台：被控端恢复正常看门狗，并**立即补发关键帧**——
+    /// 对端的解码器饿了一整段，P 帧接不上，没有 IDR 画面要花到下一个自然关键帧。
+    BgResume,
     /// 发起端要求被控端改画质档（sharp/balanced/smooth）。
     SetQuality {
         quality: String,
@@ -87,7 +98,11 @@ pub enum InputEvent {
         queue_ms: Option<i64>,
         #[serde(default)]
         frame_loss_pm: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        media: Option<super::media_flow::MediaFeedback>,
     },
+    /// 本地上屏打点，由 send_input 消费，不发给旧版本对端。
+    FramePresented { session_id: String, at_ms: i64 },
     /// 发起端设置「码率倍率」（Q5，50–200，100 = 跟随链路）。与 RTT/丢包的
     /// 自动缩放**相乘**合成——用户调高也不会越过弱网保护，只是抬天花板。
     /// 不注入本机、不要求 Control（只看会话也该能调自己看到的画质）。
@@ -263,67 +278,26 @@ impl CursorShape {
     }
 }
 
-/// 当前系统光标形状。拿不到（无光标/系统 API 失败）返回 Unknown。
-#[cfg(target_os = "windows")]
-pub fn current_cursor_shape() -> CursorShape {
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        GetCursorInfo, CURSORINFO, CURSOR_SHOWING, HCURSOR, IDC_APPSTARTING, IDC_ARROW, IDC_CROSS,
-        IDC_HAND, IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENWSE, IDC_SIZENS,
-        IDC_SIZEWE, IDC_UPARROW, IDC_WAIT, LoadCursorW,
-    };
-
-    /// 标准光标句柄 → 形状映射。进程内句柄恒定，只建一次。
-    static MAP: OnceLock<HashMap<isize, CursorShape>> = OnceLock::new();
-    let map = MAP.get_or_init(|| {
-        let mut m = HashMap::new();
-        let mut add = |idc: windows::core::PCWSTR, shape: CursorShape| {
-            let h = unsafe { LoadCursorW(None, idc) }.unwrap_or(HCURSOR::default());
-            if !h.0.is_null() {
-                m.insert(h.0 as isize, shape);
-            }
-        };
-        add(IDC_ARROW, CursorShape::Arrow);
-        add(IDC_IBEAM, CursorShape::IBeam);
-        add(IDC_WAIT, CursorShape::Wait);
-        add(IDC_CROSS, CursorShape::Cross);
-        add(IDC_SIZENWSE, CursorShape::SizeNwse);
-        add(IDC_SIZENESW, CursorShape::SizeNesw);
-        add(IDC_SIZENS, CursorShape::SizeNs);
-        add(IDC_SIZEWE, CursorShape::SizeWe);
-        add(IDC_SIZEALL, CursorShape::SizeAll);
-        add(IDC_NO, CursorShape::No);
-        add(IDC_HAND, CursorShape::Hand);
-        add(IDC_APPSTARTING, CursorShape::AppStarting);
-        add(IDC_UPARROW, CursorShape::UpArrow);
-        m
-    });
-
-    unsafe {
-        let mut ci = CURSORINFO {
-            cbSize: std::mem::size_of::<CURSORINFO>() as u32,
-            ..Default::default()
-        };
-        if GetCursorInfo(&mut ci).is_err() {
-            return CursorShape::Unknown;
-        }
-        // CURSOR_SHOWING = 光标可见；置 0 说明远端把光标藏了
-        if (ci.flags.0 & CURSOR_SHOWING.0) == 0 {
-            return CursorShape::Hidden;
-        }
-        let key = ci.hCursor.0 as isize;
-        map
-            .get(&key)
-            .copied()
-            .unwrap_or(CursorShape::Unknown)
-    }
+/// 被控端 → 发起端的光标遥测（B 方案：形状 + 位置 + 可见性一起推）。
+///
+/// 走控制帧 JSON：`{"t":"cursor","s":shape,"x":u16,"y":u16}`，
+/// `x`/`y` 缺省 = 远端不可见（见 [`cursor_telemetry`]）。
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RemoteCursor {
+    pub shape: String,
+    pub x: Option<u16>,
+    pub y: Option<u16>,
 }
 
-/// 非 Windows 平台恒 Unknown（不参与推流协议时不会被调用）。
-#[cfg(not(target_os = "windows"))]
-pub fn current_cursor_shape() -> CursorShape {
-    CursorShape::Unknown
+impl RemoteCursor {
+    /// 「不可见/取不到」的构造：位置必须为 None。
+    pub fn hidden_or_unknown(shape: CursorShape) -> Self {
+        Self {
+            shape: shape.as_str().to_string(),
+            x: None,
+            y: None,
+        }
+    }
 }
 
 /// 注入结果。
@@ -359,6 +333,10 @@ fn send_inputs(
 }
 
 /// 键鼠映射用的屏幕区域（与截帧同一坐标系）。
+///
+/// **同一份区域**同时喂两件事：注入侧的 `map_abs`（归一化 → 像素，
+/// 决定「点哪」）与光标遥测的归一化（像素 → 归一化，决定「光标在哪」）。
+/// 两处口径必须是同一个 region，否则发起端看到的光标位置与实际落点会叉开。
 #[derive(Debug, Clone, Copy)]
 pub struct ScreenRegion {
     pub x: i32,
@@ -400,6 +378,188 @@ impl ScreenRegion {
             }
         }
     }
+}
+
+/// 本次会话的抓帧范围（注入与光标遥测的唯一口径）。
+///
+/// 🔴 收口（规则 11.1）：这个 `match` 原先是 `inbound.rs` 注入路径里的一段
+/// 内联代码。光标遥测也要算「光标在抓帧范围的哪个归一化位置」——两处各写
+/// 一份 `monitor >= 0 → 主屏/virtual` 的判定，迟早有一天某一处忘了处理
+/// `monitor` 分支，症状是「指定副屏会话里点击落点对、光标位置不对」，
+/// 而这种错在真机上要逐像素比对才看得出来。所以判定只此一份。
+pub(in crate::rc) fn capture_region(opts: &StreamOpts) -> ScreenRegion {
+    if opts.monitor >= 0 {
+        // 指定屏几何是 Windows 宿主能力（mobile 无多屏采集）
+        #[cfg(target_os = "windows")]
+        {
+            match crate::screenshot::monitor_region(opts.monitor) {
+                Ok((x, y, w, h)) => ScreenRegion { x, y, w, h },
+                Err(_) => ScreenRegion::virtual_screen(),
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            ScreenRegion::virtual_screen()
+        }
+    } else if opts.virtual_screen {
+        ScreenRegion::virtual_screen()
+    } else {
+        #[cfg(target_os = "windows")]
+        {
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
+            };
+            let (w, h) =
+                unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+            ScreenRegion {
+                x: 0,
+                y: 0,
+                w: w.max(1),
+                h: h.max(1),
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            ScreenRegion::virtual_screen()
+        }
+    }
+}
+
+/// 光标遥测的最小重发间隔（毫秒）。
+///
+/// 推流循环每圈（30~60fps）都会问一次光标，而 Windows 的鼠标移动上报在
+/// 拖动时可达每秒上千次。40ms ≈ 25Hz：对「电脑光标此刻在哪」完全够
+/// （手指路径有本地环做零延迟反馈，遥测只负责真相位置），又不至于把
+/// 可靠流（与输入/心跳同一条半流）刷爆。
+pub const CURSOR_MIN_SEND_MS: u64 = 40;
+
+/// 位置变化的最小归一化步长（0..=65535，与 `InputEvent` 鼠标同口径）。
+///
+/// 4K 虚拟屏下一像素 ≈17 步；低于 16 步（≈1px @ 4K）的位置抖动重发出去，
+/// 只是拿可靠流带宽换噪点——接收端光标会高频抽动。
+pub const CURSOR_MIN_MOVE_STEP: u16 = 16;
+
+/// 这份光标遥测要不要发给对端（纯判断，无平台依赖，可离线单测）。
+///
+/// 三件事会让它变成 `true`：
+/// 1. 从没发过（首帧 / 上一发失败后的重试）；
+/// 2. 形状或可见性变了（I-beam↔箭头、远端藏了光标）——**不受节流限制**，
+///    这是语义变化，晚 40ms 用户就会看到错的形状；
+/// 3. 位置挪动超过 [`CURSOR_MIN_MOVE_STEP`] 且距上次发送已过
+///    [`CURSOR_MIN_SEND_MS`]。
+pub fn cursor_should_send(
+    prev: Option<&RemoteCursor>,
+    now: &RemoteCursor,
+    since_last_ms: u64,
+) -> bool {
+    let Some(prev) = prev else { return true };
+    if prev.shape != now.shape {
+        return true;
+    }
+    let moved = match (prev.x, prev.y, now.x, now.y) {
+        (Some(px), Some(py), Some(nx), Some(ny)) => {
+            px.abs_diff(nx) >= CURSOR_MIN_MOVE_STEP || py.abs_diff(ny) >= CURSOR_MIN_MOVE_STEP
+        }
+        // 可见性翻转（隐藏 ↔ 显示）：位置没有可比性，但必须立刻通报
+        _ => prev.x.is_some() != now.x.is_some(),
+    };
+    moved && since_last_ms >= CURSOR_MIN_SEND_MS
+}
+
+/// 桌面像素 → `region` 内 0..=65535 归一化（[`map_abs`] 的正向逆）。
+///
+/// 与 `map_abs` 用同一套 `origin + span` 口径：窗口铺在副屏、副屏在
+/// 主屏左侧（`origin` 为负）时，位置仍落在 region 范围内；越界钳到端点，
+/// 不会翻到另一头。
+///
+/// 只服务被控端（Windows）的 `cursor_telemetry`；其它平台拿不到光标，
+/// 编进去只是死代码。
+#[cfg(target_os = "windows")]
+fn pixel_to_region_norm(p: i32, origin: i32, span: i32) -> u16 {
+    if span <= 1 {
+        return 0;
+    }
+    let rel = (p - origin).clamp(0, span - 1);
+    ((rel as i64 * 65_535) / (span as i64 - 1)) as u16
+}
+
+/// 当前光标遥测：形状 + 归一化位置（**一次** `GetCursorInfo` 拿全）。
+///
+/// 🔴 B 方案（2026-10-02）：被控端帧里**没有**光标（DXGI 桌面复制不含
+/// 指针，`dxgi.rs` 也没有合成），发起端只能自己画一个本地环——本机鼠标
+/// 一有 hover 副作用、或用户从别处动了鼠标，那个环就开始撒谎。这里把
+/// 「形状 + 位置 + 可见性」一起随控制帧推给发起端（同 RustDesk 的
+/// `cursor_id` + `cursor_position` 路线），让发起端画**真的**光标。
+///
+/// `x`/`y` 相对 `region` 归一化（与 `InputEvent` 鼠标坐标同口径，发起端
+/// 无需知道对端分辨率）；`None` = 远端此刻不可见（游戏/演示藏了光标），
+/// 发起端应把光标整体收起，而不是摆在最后一次的位置继续说谎。
+#[cfg(target_os = "windows")]
+pub fn cursor_telemetry(region: &ScreenRegion) -> RemoteCursor {
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorInfo, CURSORINFO, CURSOR_SHOWING};
+
+    let mut ci = CURSORINFO {
+        cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+        ..Default::default()
+    };
+    // 拿不到（无桌面 / 系统 API 失败）→ Unknown + 位置 None，
+    // 不能拿 (0,0) 冒充「光标在左上角」。
+    if unsafe { GetCursorInfo(&mut ci) }.is_err() {
+        return RemoteCursor::hidden_or_unknown(CursorShape::Unknown);
+    }
+    // CURSOR_SHOWING 未置位 = 远端把光标藏了：形状报 Hidden，
+    // 位置必须为 None（Hidden 是显式状态，不是「位置未知」）。
+    if (ci.flags.0 & CURSOR_SHOWING.0) == 0 {
+        return RemoteCursor::hidden_or_unknown(CursorShape::Hidden);
+    }
+    let pt = ci.ptScreenPos;
+    RemoteCursor {
+        shape: shape_from_hcursor(ci.hCursor.0 as isize).as_str().to_string(),
+        x: Some(pixel_to_region_norm(pt.x, region.x, region.w)),
+        y: Some(pixel_to_region_norm(pt.y, region.y, region.h)),
+    }
+}
+
+/// 非 Windows 平台：没有光标可取（也不会是被控端）。
+#[cfg(not(target_os = "windows"))]
+pub fn cursor_telemetry(_region: &ScreenRegion) -> RemoteCursor {
+    RemoteCursor::hidden_or_unknown(CursorShape::Unknown)
+}
+
+/// 标准光标句柄 → 形状（光标句柄表只建一次）。
+#[cfg(target_os = "windows")]
+fn shape_from_hcursor(hcursor: isize) -> CursorShape {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        LoadCursorW, IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_NO,
+        IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_UPARROW, IDC_WAIT,
+    };
+    static MAP: OnceLock<HashMap<isize, CursorShape>> = OnceLock::new();
+    let map = MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        let mut add = |idc: windows::core::PCWSTR, shape: CursorShape| {
+            // 加载失败（资源被卸）就跳过：宁可 Unknown，也不硬塞一个错形状
+            if let Ok(h) = unsafe { LoadCursorW(None, idc) } {
+                m.insert(h.0 as isize, shape);
+            }
+        };
+        add(IDC_ARROW, CursorShape::Arrow);
+        add(IDC_IBEAM, CursorShape::IBeam);
+        add(IDC_WAIT, CursorShape::Wait);
+        add(IDC_CROSS, CursorShape::Cross);
+        add(IDC_SIZENWSE, CursorShape::SizeNwse);
+        add(IDC_SIZENESW, CursorShape::SizeNesw);
+        add(IDC_SIZENS, CursorShape::SizeNs);
+        add(IDC_SIZEWE, CursorShape::SizeWe);
+        add(IDC_SIZEALL, CursorShape::SizeAll);
+        add(IDC_NO, CursorShape::No);
+        add(IDC_HAND, CursorShape::Hand);
+        add(IDC_APPSTARTING, CursorShape::AppStarting);
+        add(IDC_UPARROW, CursorShape::UpArrow);
+        m
+    });
+    map.get(&hcursor).copied().unwrap_or(CursorShape::Unknown)
 }
 
 /// 0..=65535 归一化 → 指定区域像素坐标。
@@ -673,7 +833,11 @@ fn inject_win(ev: &InputEvent, region: &ScreenRegion, mode: KeyMode) -> Result<(
         InputEvent::ClipboardPush { text } => set_clipboard_text(text),
         InputEvent::ClipboardPull => Ok(()),
         InputEvent::Ping { .. } => Ok(()),
+        // 后台保活（2026-10-02）：生命周期事件不注入任何东西，落地在
+        // `inbound_tasks::spawn_input_reader`（记状态 + 补关键帧）。
+        InputEvent::BgPause | InputEvent::BgResume => Ok(()),
         InputEvent::NetHint { .. } => Ok(()),
+        InputEvent::FramePresented { .. } => Ok(()),
         InputEvent::SetBitratePct { .. } => Ok(()),
         InputEvent::SetQuality { .. }
         | InputEvent::SetCaptureScope { .. }
@@ -799,6 +963,118 @@ mod tests {
         assert!(assert_control_allowed(Capability::Control).is_ok());
     }
 
+    fn cur(shape: &str, x: Option<u16>, y: Option<u16>) -> RemoteCursor {
+        RemoteCursor {
+            shape: shape.to_string(),
+            x,
+            y,
+        }
+    }
+
+    /// 首帧必发：会话刚建立时对端什么都没有，不可能靠「比对」推出来。
+    #[test]
+    fn 光标遥测首帧必发() {
+        let now = cur("arrow", Some(100), Some(200));
+        assert!(cursor_should_send(None, &now, 0));
+    }
+
+    /// 形状变化**不受节流限制**：I-beam↔箭头是语义变化，晚 40ms 用户就看到错的形状。
+    #[test]
+    fn 光标形状变化立即发不受节流限制() {
+        let prev = cur("arrow", Some(1000), Some(2000));
+        let now = cur("ibeam", Some(1000), Some(2000));
+        assert!(cursor_should_send(Some(&prev), &now, 0));
+    }
+
+    /// 重名防呆：同形状同位置，节流窗口内不得重发（否则可靠流被高频刷爆）。
+    #[test]
+    fn 光标同形状同位置节流窗口内不发() {
+        let prev = cur("arrow", Some(1000), Some(2000));
+        let now = cur("arrow", Some(1000), Some(2000));
+        assert!(!cursor_should_send(Some(&prev), &now, 10));
+        // 过了窗口也不发：什么都没变，节流不是「定时重发」的借口
+        assert!(!cursor_should_send(Some(&prev), &now, 5000));
+    }
+
+    /// 亚像素抖动（<CURSOR_MIN_MOVE_STEP）不配重发。
+    #[test]
+    fn 光标亚像素抖动不发() {
+        let prev = cur("arrow", Some(1000), Some(2000));
+        let now = cur("arrow", Some(1000 + CURSOR_MIN_MOVE_STEP - 1), Some(2000));
+        assert!(!cursor_should_send(Some(&prev), &now, 5000));
+    }
+
+    /// 位置真的挪了 + 过了窗口 → 发；没过窗口 → 不发（40ms 节流生效）。
+    #[test]
+    fn 光标位置移动受节流约束() {
+        let prev = cur("arrow", Some(1000), Some(2000));
+        let now = cur("arrow", Some(4000), Some(2000));
+        assert!(!cursor_should_send(Some(&prev), &now, CURSOR_MIN_SEND_MS - 1));
+        assert!(cursor_should_send(Some(&prev), &now, CURSOR_MIN_SEND_MS));
+    }
+
+    /// 可见性翻转（远端藏了/放出了光标）必须立刻通报，且不得拿旧位置冒充。
+    #[test]
+    fn 光标可见性翻转立即发() {
+        let shown = cur("arrow", Some(1000), Some(2000));
+        let hidden = cur("hidden", None, None);
+        assert!(cursor_should_send(Some(&shown), &hidden, 0));
+        assert!(cursor_should_send(Some(&hidden), &shown, 0));
+        // Hidden 的位置必须是 None——否则接收端会把光标摆在最后一次的位置继续说谎
+        assert!(hidden.x.is_none() && hidden.y.is_none());
+    }
+
+    /// 归一化往返：`map_abs`（归一化→像素）与 `pixel_to_region_norm`（正向逆）
+    /// 误差 ≤1 像素。这是「发起端看到的光标在哪，点下去就落在哪」的根基。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn 光标归一化与注入映射互为逆() {
+        // 副屏在主屏左侧：origin 为负。region 覆盖两块屏。
+        let region = ScreenRegion {
+            x: -1920,
+            y: 0,
+            w: 3840,
+            h: 1080,
+        };
+        for (nx, ny) in [
+            (0u16, 0u16),
+            (1, 1),
+            (21845, 32768),
+            (65534, 65534),
+            (65535, 65535),
+        ] {
+            let (px, py) = map_abs(nx, ny, &region);
+            let bx = pixel_to_region_norm(px, region.x, region.w);
+            let by = pixel_to_region_norm(py, region.y, region.h);
+            let step_x = 3840.0 / 65535.0;
+            let step_y = 1080.0 / 65535.0;
+            assert!(
+                (bx as i32 - nx as i32).abs() as f64 * step_x <= 1.0,
+                "x 往返误差超 1px：{nx} → {px} → {bx}"
+            );
+            assert!(
+                (by as i32 - ny as i32).abs() as f64 * step_y <= 1.0,
+                "y 往返误差超 1px：{ny} → {py} → {by}"
+            );
+        }
+    }
+
+    /// 钳位：光标在 region 外（副屏右侧远处的角落、或鼠标在区域外）不得翻到另一头。
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn 光标越界钳到端点不翻转() {
+        let region = ScreenRegion {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        assert_eq!(pixel_to_region_norm(-500, region.x, region.w), 0);
+        assert_eq!(pixel_to_region_norm(999_999, region.x, region.w), 65535);
+        // 1080 高、y=960（差 120px 触底）：(960*65535)/1079 ≈ 58307
+        assert_eq!(pixel_to_region_norm(960, region.y, region.h), 58307);
+    }
+
     #[test]
     fn 剪贴板重试退避按40ms递增() {
         assert_eq!(clipboard_retry_delay_ms(0), 0);
@@ -817,6 +1093,22 @@ mod tests {
         let s = serde_json::to_string(&e).unwrap();
         let back: InputEvent = serde_json::from_str(&s).unwrap();
         assert_eq!(e, back);
+    }
+
+    /// 后台保活事件走的是**同一套 serde tag**；线上名字钉死为 bg_pause/bg_resume
+    /// ——发端（TS `RcInputEvent`）与收端（Rust）任何一侧改名，对面就静默丢帧。
+    #[test]
+    fn 后台保活事件线格式钉住() {
+        assert_eq!(
+            serde_json::to_string(&InputEvent::BgPause).unwrap(),
+            r#"{"kind":"bg_pause"}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&InputEvent::BgResume).unwrap(),
+            r#"{"kind":"bg_resume"}"#
+        );
+        let back: InputEvent = serde_json::from_str(r#"{"kind":"bg_pause"}"#).unwrap();
+        assert_eq!(back, InputEvent::BgPause);
     }
 
     #[test]

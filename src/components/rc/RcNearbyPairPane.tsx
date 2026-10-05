@@ -1,43 +1,8 @@
 /**
- * RcNearbyPairPane — 远程电脑主页的**常驻配对卡**（统一入口）。
- *
- * 设计稿：`design/远程电脑-一键配对-统一入口-设计稿.html` §1 / §2。
- *
- * # 为什么从折叠里搬到主区
- *
- * 旧入口在侧栏「这台电脑」卡的折叠「更多方式与设备号」里，用户找不到；
- * 配对又是**只用一次但必须先做**的动作，藏起来等于把新用户挡在第一个界面。
- * 现在它是设备页主区的第一块卡：附近能看到的直接点，看不到的走主按钮。
- *
- * # 🔴 一个入口，不让用户判断网络
- *
- * 卡上只有「附近设备点一下」和「＋ 配对新设备」两个动作。
- * 「内网还是公网」「用二维码还是配对码」都不进界面——传输选路由由 iroh 自己做，
- * 界面只回答「我是出示方还是输入方」这件用户天然知道的事。
- *
- * # 卡内原地切核对屏
- *
- * 点「配对」后同一块卡切成配对码核对态（不弹层、不跳页）：两端显示同一个
- * 8 位配对码，一样就各点确认。任一端取消即整轮作废。
- *
- * # 失败不许静默弹回列表（U3）
- *
- * `near.pair` 从有到无且没有 `done` 陪伴时，说明这一轮没成（对方取消 / 60 秒
- * 超时 / 本端 gone）。此时卡里给一条**带原因的结束条 + 重新发起**，
- * 不静默回到列表——那会把失败渲染成「空」。
- *
- * # 暂停提示说的是真实行为
- *
- * `rc_enabled`（允许别人连接本机）只挡**会话建立**，不挡局域网招呼包——
- * 招呼包由 presence 线程发，与开关无关（`rc/service/inbound_accept.rs` 那道闸
- * 才是它真正管的事）。所以提示写「仍能和你配对，但连不上你」，
- * 不写「附近的人看不到你」——后者与代码不符。
- *
- * # 轮询
- *
- * `useRcNearbyPair({ idlePollMs })`：配对进行中 2 秒（UDP 重传等不起），
- * 空闲 5 秒。窗口不可见时 hook 自己停。未实测更激进的优化（事件推送 /
- * 共享请求），所以这里只做间隔收俭。
+ * 首页使用 requestsOnly：不渲染附近列表，只在对方发起时弹出核对。
+ * 必须保留 5 秒来访观察，rc_nearby_status 还是后端握手重传的驱动点。
+ * 统一配对弹窗接手时暂停此观察者，避免双重完成通知。
+ * 默认卡片模式仍保留给旧宿主兼容；新的首页不再挂载其列表。
  */
 import { useEffect, useRef, useState } from "react";
 import { Radar } from "lucide-react";
@@ -47,19 +12,27 @@ import { fingerprintOf } from "@/lib/fingerprint";
 import { NEARBY_IDLE_POLL_MS, useRcNearbyPair } from "@/hooks/useRcNearbyPair";
 import { RcNearbyList } from "@/components/settings/RcNearbyList";
 import { RcPairPin } from "@/components/settings/RcPairPin";
+import { RcConnectionShell } from "@/components/settings/RcConnectionShell";
 import styles from "./RemoteComputerA2.module.css";
 
 export function RcNearbyPairPane({
   rc,
   toast,
   onPairMore,
+  requestsOnly = false,
+  suspended = false,
+  onPairAccepted,
 }: {
   rc: UseRc;
   toast: ToastFn;
   /** 「＋ 配对新设备」：打开统一配对屏（步骤②落地前指现有配对对话框）。 */
   onPairMore: () => void;
+  requestsOnly?: boolean;
+  suspended?: boolean;
+  onPairAccepted?: (id: string) => void;
 }) {
-  const near = useRcNearbyPair({ idlePollMs: NEARBY_IDLE_POLL_MS });
+  // 首页只观察来访请求，不展示列表；弹窗打开时交给弹窗唯一消费完成状态。
+  const near = useRcNearbyPair({ idlePollMs: NEARBY_IDLE_POLL_MS, enabled: !suspended, incomingOnly: requestsOnly });
   /** 这一轮配对是不是从本卡发起的——决定成功 toast 归谁（done 全局只有一个读者）。 */
   const initiatedHere = useRef(false);
   /** 上一轮配对刚刚结束且没成：显示结束条。 */
@@ -88,6 +61,7 @@ export function RcNearbyPairPane({
       const peer = lastPairPeer.current;
       const paired = Boolean(near.done) || (peer !== null && rc.targets.some((t) => t.node_id === peer));
       setEnded(!paired);
+      if (!paired && requestsOnly) toast("这次配对已结束，对方取消或确认超时，请重新发起。", "info");
       if (!paired) void rc.refreshTargets();
     }
     wasPairing.current = has;
@@ -116,12 +90,13 @@ export function RcNearbyPairPane({
      是打扰。工作台的选中语义自己会处理这两种情况。 */
   useEffect(() => {
     const d = near.done;
-    if (!d || !initiatedHere.current) return;
+    if (!d || (!initiatedHere.current && !requestsOnly)) return;
     initiatedHere.current = false;
     setEnded(false);
     const name = d.peer_name.trim() || fingerprintOf(d.peer_id);
     toast(`已与「${name}」配对，设备已进列表${d.initiator ? "，点「连接」即可发起" : ""}`, "success");
     void rc.refreshTargets();
+    onPairAccepted?.(d.peer_id);
     // 只跟 near.done 走：rc/toast 都是稳定引用，进依赖会让副作用被无关渲染重触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [near.done]);
@@ -152,6 +127,7 @@ export function RcNearbyPairPane({
 
   const cancel = async () => {
     initiatedHere.current = false;
+    wasPairing.current = false;
     await near.cancel();
     // 取消后回到列表态。不摆结束条——取消是用户的决定，不是失败。
     setEnded(false);
@@ -168,6 +144,13 @@ export function RcNearbyPairPane({
       setEnabling(false);
     }
   };
+
+  if (requestsOnly) {
+    if (suspended || !near.pair || near.pair.initiator) return null;
+    return <RcConnectionShell title="收到配对请求" subtitle="核对两台设备上的数字，确认是你要连接的设备。" onClose={() => void cancel()}>
+      <RcPairPin prompt={near.pair} busy={near.busy} onConfirm={() => void confirm()} onCancel={() => void cancel()} />
+    </RcConnectionShell>;
+  }
 
   return (
     <section className={styles.nearbyCard} aria-label="附近的设备">

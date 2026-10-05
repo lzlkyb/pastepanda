@@ -27,6 +27,8 @@ impl RcService {
         requested: Capability,
         trust: InboundTrust,
     ) -> Result<Session, String> {
+        // 人工、白名单与无人值守路径共用；新调用点也无法建立无画面的会话。
+        crate::rc::host_capability::require_inbound_host()?;
         if !self.enabled() {
             return Err("本机已关闭「允许被远程协助」".into());
         }
@@ -61,6 +63,7 @@ impl RcService {
             started_ms: now_ms(),
             started_mono: crate::rc::mono::mono_ms(),
             granted: true,
+            bg_since_mono: 0,
         };
         inner.session = Some(s.clone());
         // 新会话的推流所有权从头分配（上一场的标记必须清，否则第一个批准循环
@@ -195,6 +198,9 @@ pub(in crate::rc) async fn spawn_inbound_video(
     peer_dgram: bool,
     peer_fec_rs: bool,
     peer_audio: bool,
+    peer_video_plane: bool,
+    peer_media_plane: bool,
+    peer_media_feedback: bool,
 ) {
     let Some(svc) = global() else {
         return;
@@ -203,8 +209,17 @@ pub(in crate::rc) async fn spawn_inbound_video(
     // （音频状态是 Windows 宿主专属字段，mobile 无可置/可清，跳过）
     #[cfg(target_os = "windows")]
     svc.audio_set_peer_wants(peer_audio);
-    let Some(video) =
-        crate::rc::inbound::InboundVideo::try_new(svc.clone(), peer, send, conn, peer_dgram, peer_fec_rs)
+    let Some(video) = crate::rc::inbound::InboundVideo::try_new(
+        svc.clone(),
+        peer,
+        send,
+        conn,
+        peer_dgram,
+        peer_fec_rs,
+        peer_video_plane,
+        peer_media_plane,
+        peer_media_feedback,
+    )
     else {
         #[cfg(target_os = "windows")]
         svc.audio_reset();

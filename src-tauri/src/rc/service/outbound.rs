@@ -9,7 +9,6 @@ use super::*;
 impl RcService {
     /// 查询对端是否也粘贴了本机码。查询本身不申请屏幕或键鼠权限。
     pub async fn pair_check(&self, peer: &str) -> Result<bool, String> {
-        use crate::sync::transport::{read_frame, write_frame};
         let Some((ep, presence)) = self.transport_ready() else {
             return Err("远程通道未启动".into());
         };
@@ -17,18 +16,41 @@ impl RcService {
         let conn = tokio::time::timeout(std::time::Duration::from_secs(8), ep.connect(addr, ALPN))
             .await.map_err(|_| "等待对方上线超时".to_string())?
             .map_err(|e| format!("暂时连不上对方：{e}"))?;
-        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| format!("开流失败：{e}"))?;
-        let result = tokio::time::timeout(std::time::Duration::from_secs(8), async {
-            write_frame(&mut send, &RcFrame::PairCheck.encode()?).await?;
-            let raw = read_frame(&mut recv).await?;
-            match RcFrame::decode(&raw)? {
-                RcFrame::PairStatus { paired } => Ok(paired),
-                RcFrame::Deny { reason, .. } => Err(format!("[pair_failed] {reason}")),
-                _ => Err("对方未响应配对确认".into()),
-            }
-        }).await.map_err(|_| "等待对方确认超时".to_string())?;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(8),
+            self.check_pair_identity(&conn, peer, true),
+        ).await.map_err(|_| "等待对方确认超时".to_string())?;
         conn.close(0u32.into(), b"pair-check");
         result
+    }
+
+    // Identity comes from the authenticated iroh peer, not from an arbitrary node_id.
+    // Probes reuse this exchange to repair older unnamed devices without remote access.
+    async fn check_pair_identity(
+        &self, conn: &iroh::endpoint::Connection, peer: &str, confirm_local: bool,
+    ) -> Result<bool, String> {
+        use crate::sync::transport::{read_frame, write_frame};
+        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| format!("开流失败：{e}"))?;
+        write_frame(&mut send, &RcFrame::PairCheck {
+            name: Some(crate::rc::local_device_name()), os: Some(crate::rc::local_os_label()),
+        }.encode()?).await?;
+        let raw = read_frame(&mut recv).await?;
+        match RcFrame::decode(&raw)? {
+            RcFrame::PairStatus { paired, name, os } => {
+                if paired {
+                    if confirm_local && !self.confirm_exchange(peer)? {
+                        return Ok(false);
+                    }
+                    if self.store.rc_device_note_identity(
+                        peer, name.as_deref().unwrap_or(""), os.as_deref().unwrap_or(""),
+                    )? {
+                        self.emit_pair_changed();
+                    }
+                }
+                Ok(paired)
+            }
+            RcFrame::Deny { reason, .. } => Err(format!("[pair_failed] {reason}")),
+            _ => Err("对方未响应配对确认".into()),
+        }
     }
 
     /// 非阻塞发起远程：立刻落 OutboundPending 并返回，dial 在后台跑。
@@ -80,6 +102,7 @@ impl RcService {
                 started_ms: now_ms(),
                 started_mono: crate::rc::mono::mono_ms(),
                 granted: false,
+                bg_since_mono: 0,
             };
             inner.session = Some(sess.clone());
             (id, sess)
@@ -166,6 +189,7 @@ impl RcService {
                     if svc.session_id_is(&session_id) {
                         *svc.outbound_send.lock().await = Some(send);
                         *svc.outbound_conn.lock().await = Some(conn.clone());
+                        crate::rc::underlay::start(svc.clone(), session_id.clone(), conn.clone(), false);
                         svc.spawn_outbound_video(&peer, recv, conn);
                     } else {
                         log::info!("[RC] 会话在建立途中已被取消，丢弃刚建好的流句柄");
@@ -272,15 +296,22 @@ impl RcService {
             .await
             .map_err(|_| "探测超时".to_string())?
             .map_err(|e| format!("连不上：{}", e))?;
-        // 探通立刻收：不占对端 accept 槽，也不进入 Request 流程
+        // 已信任设备顺带更新名称/系统；旧版本不支持时仍保留拨通的结果。
+        // 不写 last_seen，不申请屏幕/键鼠权限，也不创建本地信任行。
+        if self.is_rc_paired(peer) {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(1),
+                self.check_pair_identity(&conn, peer, false),
+            ).await;
+        }
+        // 探通收口：不进入 Request 流程
         conn.close(0u32.into(), b"probe");
-        // ❗ 到这里**故意什么库都不写**：探测是瞬时事实，不是在线状态。
+        // ❗ 不写在线状态：探测是瞬时事实。名称/系统是独立的身份元数据。
         //    写 last_seen 会污染「上次在线」语义并制造假在线（见上面 doc）。
         Ok(())
     }
 
     /// 批量探活：并发短超时拨，结果 node_id → 是否可达。
-    /// 上限 8 台并行——自有设备列表远小于此；再大也是用户自己配的，超时仍 3s/台。
+    /// 上限 8 台并行——自有设备列表远小于此；再大也是用户自己配的，拨号 3s，身份更新最多再等 1s/台。
     pub async fn probe_peers(&self, peers: &[String]) -> std::collections::HashMap<String, bool> {
         use std::collections::HashMap;
         let mut out = HashMap::new();
@@ -340,6 +371,8 @@ impl RcService {
             .await
             .map_err(|e| format!("开流失败：{}", e))?;
 
+        let _ = send.set_priority(crate::rc::media::CONTROL_PRIORITY);
+
         // 连接已通，先把句柄登记进去：会话进入 Active 之前界面就能报出路径档位
         // （「是不是绕中继」恰恰是用户连上之前最想知道的）。
         // 若随后 Request 被拒，调用方的错误分支会 `link.detach()` 清掉——
@@ -360,6 +393,12 @@ impl RcService {
             fec_rs: vid_dgram_capability(),
             // G3：本端支持音频。会话中由 AudioOn 开关；被控端无渲染设备时自动无声
             audio: Some(true),
+            // 「传输分 plane」（2026-10-03）：本端支持在独立单向流上收视频。
+            // 被控端置位后才把 H.264 写到专属 uni 流（积压可整段重建丢弃）；
+            // 旧被控端忽略此位照常受理（视频留在会话半流，行为同今天）。
+            video_plane: Some(true),
+            media_plane: Some(true),
+            media_feedback: Some(true),
         };
         // ❗ 这一对读写的失败必须过 `explain`：对端要是以「未配对 / 忙 / 被禁」为由
         //   关掉连接，原始错误只会是 `读帧长度失败：connection lost`（见 `explain`）。

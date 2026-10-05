@@ -51,18 +51,17 @@ fn 收尾冲突时递增换名() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Android 接收目录的包名段写死在 Rust 里（`EXTERNAL_STORAGE` 环境变量拿不到
-/// 包名），必须与 tauri.conf.json 的 identifier 一致——分叉的表现是文件落进
-/// 一个包名不存在的幽灵目录，手机文件管理器里永远找不到。
-/// 本测试在桌面跑：跨平台配置的另一半永远没人编译就没人验（P1 文档坑 6 的教训）。
+/// 桌面测试也守住手机的取值口：不能再猜包名/存储根目录，推送与取回必须同源。
 #[test]
-fn android_app_id_与_tauri配置一致() {
-    let conf = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"))
-        .expect("tauri.conf.json 必须在 crate 根");
-    let ident = conf
-        .split("\"identifier\"")
-        .nth(1)
-        .and_then(|rest| rest.split('"').nth(1))
-        .expect("tauri.conf.json 里要有 identifier");
-    assert_eq!(ANDROID_APP_ID, ident, "Android 包名段必须跟 tauri.conf.json 走");
+fn android接收目录必须由系统提供且所有入口同源() {
+    let transfer = include_str!("../file_transfer.rs");
+    let boot = include_str!("../../lib.rs");
+    let commands = include_str!("../../commands/rc_file.rs");
+    let api = include_str!("api.rs");
+    assert!(!transfer.contains("EXTERNAL_STORAGE"));
+    assert!(!transfer.contains("/storage/emulated/0"));
+    assert!(boot.contains("handle.path().download_dir()"));
+    assert!(boot.contains("rc::file_transfer::init_android_receive_dir(dir)"));
+    assert!(commands.contains("file_transfer::effective_receive_dir(&config)"));
+    assert!(api.contains("file_transfer::effective_receive_dir(&cfg)"));
 }

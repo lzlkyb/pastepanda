@@ -319,20 +319,52 @@ impl RcService {
     /// 混墙钟会让系统时间一跳就把在用会话判死（或反向让死链永不断）。
     ///
     /// 锁序 stream → inner（与 `status()` 一致，见那边 D6 的 ABBA 说明）。
-    pub fn inbound_heartbeat_stale(&self) -> bool {
+    pub fn inbound_disconnect_reason(&self) -> Option<&'static str> {
         let evidence = self.last_activity_ms();
+        let timeout = self.heartbeat_timeout_ms();
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
             Some(s) if s.phase == SessionPhase::InboundActive => {
-                crate::rc::link::link_stale_kick(
+                crate::rc::link::peer_bg_watchdog(
+                    s.bg_since_mono,
                     s.started_mono,
                     evidence,
                     crate::rc::mono::mono_ms(),
-                    crate::rc::link::LINK_STALE_KICK_MS,
+                    timeout,
                 )
             }
-            _ => false,
+            _ => None,
         }
+    }
+
+    /// 两端使用同一恢复预算，慢中继与快速直连不能共用固定 15 秒判据。
+    pub(in crate::rc) fn heartbeat_timeout_ms(&self) -> i64 {
+        crate::rc::link::foreground_heartbeat_timeout_ms(
+            self.link.path_kind_str() == "relay", self.video_rtt_ms(),
+        )
+    }
+
+    /// 🔴 后台保活（2026-10-02）：记录发起端的进/出后台。
+    ///
+    /// 被控端收到 `BgPause` 置 `bg_since_mono`，收到 `BgResume` 清零。调用点在
+    /// `inbound_tasks::spawn_input_reader`——它已核过会话归属（snapshot 同源），
+    /// 迟到的 bg 帧挂不到新会话上。
+    pub fn note_peer_background(&self, paused: bool) {
+        let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(s) = inner.session.as_mut() {
+            s.bg_since_mono = if paused { crate::rc::mono::mono_ms() } else { 0 };
+        }
+    }
+
+    /// 发起端进后台的时刻（mono ms）；`0` = 前台。会话不存在时返回 0
+    /// （看门狗遇 0 按前台判，保守）。
+    pub fn peer_background_since(&self) -> i64 {
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        inner
+            .session
+            .as_ref()
+            .map(|s| s.bg_since_mono)
+            .unwrap_or(0)
     }
 
     /// 🔴 P1-5：发起端 — 被控端是否已经失联（同一判据的镜像侧）。
@@ -361,13 +393,14 @@ impl RcService {
             self.link.last_pong_ms(),
             self.link.last_inbound_ms(),
         );
+        let timeout = self.heartbeat_timeout_ms();
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
             Some(s) if s.phase == SessionPhase::OutboundActive => crate::rc::link::link_stale_kick(
                 s.started_mono,
                 evidence,
                 crate::rc::mono::mono_ms(),
-                crate::rc::link::LINK_STALE_KICK_MS,
+                timeout,
             ),
             _ => false,
         }

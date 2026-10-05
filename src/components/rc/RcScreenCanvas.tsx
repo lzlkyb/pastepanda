@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import type { FitMode } from "@/lib/rcSessionStats";
 import type { RcCursorShape } from "@/hooks/useRcCursor";
-import { cursorCssFor } from "@/hooks/useRcCursor";
+import { cursorCssFor } from "@/lib/utils";
 import { canvasStyleFor, cursorOverlayStyle } from "./rcCanvasStyle";
 import type { useRcInput } from "@/hooks/useRcInput";
 import styles from "./RemoteComputer.module.css";

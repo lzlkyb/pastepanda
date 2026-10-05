@@ -25,7 +25,7 @@ export function createJpegSink(opts: {
   /** 写画布几何（值不变时由内部保证不重复 setState）。 */
   setSize: Dispatch<SetStateAction<{ w: number; h: number }>>;
   /** 一帧真的上了屏（fps 计数 / hasFrame 置位）。 */
-  onShown: () => void;
+  onShown: (atMs: number) => void;
   /** 向被控端要一个强制关键帧。 */
   requestKey: () => void;
 }): (f: RcBinFrame, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) => Promise<void> {
@@ -66,7 +66,7 @@ export function createJpegSink(opts: {
         const r = f.rect;
         ctx.drawImage(bmp, r.x, r.y);
       }
-      onShown();
+      onShown(f.at_ms);
     } finally {
       bmp.close();
     }

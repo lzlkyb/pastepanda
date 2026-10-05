@@ -1,0 +1,34 @@
+EasyTier v2.6.4, Copyright EasyTier contributors, licensed under GNU LGPL v3.
+Licenses: LICENSE and COPYING-GPL-3.0.txt in this directory.
+Source and build instructions: https://github.com/EasyTier/EasyTier/tree/v2.6.4
+Original binaries: https://github.com/EasyTier/EasyTier/releases/tag/v2.6.4
+
+Android arm64: unmodified Linux aarch64 static release binary.
+Windows x86_64: modified UDP-only prototype, labelled 2.6.4-pp-underlay.
+Corresponding source recipe and exact patches: scripts/build-easytier.py
+Source archive SHA256:
+b08ecc378b7ad679b3f4188fa5b9f6417670b5e3c1e5f53b2f19d06c021814cb
+Windows recipe disables default features, enables wireguard/smoltcp/socks5/websocket, skips
+legacy Windows thunks, and disables pnet_datalink's Windows capture backend.
+Windows UDP punch pacing uses a scoped 1ms timer request and a fixed schedule;
+its corresponding source is scripts/easytier/windows_punch_pace.rs.
+It retains EasyTier's network-interface based address enumeration. Capture
+channels return Unsupported; its pnet fallback enumeration returns no rows.
+No Npcap/Packet.dll is distributed. Component hashes are in windows-x86_64/build.json.
+
+pnet_datalink 0.35.0, Copyright Robert Clipsham and libpnet contributors.
+Source: https://github.com/libpnet/libpnet/tree/v0.35.0
+Source crate SHA256:
+e79e70ec0be163102a332e1d2d5586d362ad76b01cec86f830241f2b6452a7b7
+License: MIT OR Apache-2.0; see pnet-LICENSE-MIT.txt / pnet-LICENSE-APACHE.txt.
+Modified Windows backend only; exact modification is in the source recipe above.
+
+Windows x86_64 archive SHA256:
+27af91e270e554709b048bd32327fefd2dfce5062ae1e8701af7550c6f525f84
+Linux aarch64 static archive SHA256 (packaged as Android libeasytier.so):
+f533ec25a7ea714e09f645615012200278058525795cc3bb690ff011aec1a70f
+
+No TUN, OS routes, services, UPnP changes or public forwarding are enabled.
+The application communicates with these separate executables over local TCP/UDP.
+The components can be replaced independently under their original license.
+This is an opt-in remote-session prototype, not a VPN installation.

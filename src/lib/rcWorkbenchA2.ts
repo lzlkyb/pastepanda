@@ -19,11 +19,11 @@ export function resolveRcA2Selection(
   return targets[0]?.node_id ?? null;
 }
 
-/** 会话是强状态：不能被用户之前停留的文件、记录或设置页遮住。 */
+/** 出站画面始终优先；等待/被控允许工具导航，会话由工作台状态条常驻提示。 */
 export function resolveRcA2Surface(mode: WbMainMode, page: RcA2Page): RcA2Surface {
   if (mode === "outbound") return "session";
-  if (mode === "pending") return "pending";
-  if (mode === "inbound") return "inbound";
+  if (page === "devices" && mode === "pending") return "pending";
+  if (page === "devices" && mode === "inbound") return "inbound";
   return page;
 }
 

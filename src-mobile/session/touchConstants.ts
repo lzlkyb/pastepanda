@@ -5,8 +5,6 @@
  * 分散在状态机/输入层里必然漂移。数值为业界常用值，标注了依据。
  */
 
-/** 点按时长上限：按下→抬起低于此值才算点按（超过则进超时无事件窗）。 */
-export const TAP_MAX_MS = 220;
 /** 点按/长按允许的最大位移（≈3mm，防手抖误判为拖动）。 */
 export const TAP_MAX_PX = 12;
 /**
@@ -19,7 +17,9 @@ export const DBL_TAP_MS = 320;
 /** 双击：两次点按的位置接近度上限。 */
 export const DBL_TAP_PX = 24;
 /** 双指手势分类的噪声地板：位移低于此值不判定主导量（防抖动误分类）。 */
-export const TWO_FINGER_CLASSIFY_PX = 4;
+export const TWO_FINGER_CLASSIFY_PX = 10;
+/** 等待另一指的事件；一指保持不动时仍可捏合，不无限等第二指。 */
+export const TWO_FINGER_SETTLE_MS = 48;
 /** 捏合主导判据：|Δ间距| > 1.4×|Δ中点| → 捏合，否则滚动。 */
 export const PINCH_DOMINANCE = 1.4;
 /** 滚轮量化：双指每累积这么多 CSS 像素发一档 ±120（Windows WHEEL_DELTA）。 */
@@ -30,12 +30,13 @@ export const SCROLL_MAX_NOTCHES = 3;
 export const WHEEL_MERGE_MS = 16;
 /** 指针移动节流（桌面 useRcInput 同口径 16ms；绝对坐标 latest-wins）。 */
 export const MOVE_THROTTLE_MS = 16;
-/** 横屏沉浸：顶缘热区高度（桌面 3px 是给鼠标的，指尖命中下限要求更宽）。 */
-export const HOT_ZONE_PX = 24;
-/** 横屏沉浸：唤出后无交互自动隐藏（桌面 RcSessionCapsule 同参）。 */
-export const CAPSULE_FADE_MS = 2500;
-/** 横屏沉浸：会话首次进横屏的常驻教学时长（桌面同参）。 */
-export const CAPSULE_FIRST_SHOW_MS = 15000;
+/**
+ * 点按前预发自移 + 悬停消化时长。桌面语义 = 先移动再点击：不少控件
+ * （hover 菜单/自定义绘制/UWP）对「没有悬停过程的点击」不响应——真机
+ * 联调 2026-10-01 用户报「tap 别处鼠标不过去、点击没用」的根因。
+ * 60ms 远低于人的点击感知阈值（~100ms），观感仍是「即点即有」。
+ */
+export const CLICK_HOVER_MS = 60;
 /** 本地视野缩放范围（design §1 手势⑦）。 */
 export const PINCH_MIN = 0.5;
 export const PINCH_MAX = 4;

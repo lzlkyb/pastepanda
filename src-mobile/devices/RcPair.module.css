@@ -1,0 +1,226 @@
+.card,
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.intro {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.intro strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.scanEntry {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 96px;
+  padding: 24px 16px;
+  border: 0;
+  border-radius: var(--mobile-radius-group);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  text-align: left;
+}
+.scanEntry > svg {
+  flex: none;
+}
+.scanEntry > span {
+  flex: 1;
+  min-width: 0;
+}
+.scanEntry strong,
+.scanEntry small {
+  display: block;
+}
+.scanEntry strong {
+  font-size: 20px;
+  font-weight: 650;
+}
+.scanEntry small {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+.form {
+  gap: 8px;
+}
+.form label {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+.codeInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 72px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  caret-color: var(--accent-strong);
+  font-size: 26px; /* ui-rule-ok: 已确认 B 方案的八位配对码输入字号 */
+  letter-spacing: 3px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.codeInput::placeholder {
+  color: var(--text-secondary);
+  font-size: var(--mobile-input-size);
+  letter-spacing: 0;
+}
+.hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.primary,
+.secondary {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.primary {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+}
+.form .primary {
+  margin-top: 8px;
+}
+.secondary {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+.primary:disabled,
+.ownEntry:disabled,
+.secondary:disabled {
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  cursor: default;
+}
+.ownEntry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: 15px;
+}
+.ownEntry > span {
+  flex: 1;
+  min-width: 0;
+}
+.ownEntry > svg {
+  flex: none;
+}
+.ownIntro {
+  text-align: center;
+}
+.ownIntro h2,
+.pendingHero h2 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 650;
+}
+.ownIntro p,
+.pendingHero p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.ownCode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--section-bg);
+}
+.bigCode {
+  color: var(--accent-strong);
+  font-size: 32px; /* ui-rule-ok: 已确认 B 方案的本机配对码展示字号 */
+  font-weight: 700;
+  letter-spacing: 4px;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.ttl {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ttlHot {
+  color: var(--warning);
+}
+.pendingHero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  text-align: center;
+}
+.pendingIcon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  border-radius: var(--mobile-radius-group);
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+.scanEntry:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible,
+.ownEntry:focus-visible,
+.codeInput:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+.scanEntry:active,
+.primary:active:not(:disabled),
+.secondary:active:not(:disabled),
+.ownEntry:active:not(:disabled) {
+  transform: scale(0.99);
+}

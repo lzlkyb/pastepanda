@@ -1,0 +1,18 @@
+/* Motion overrides keep material variants and the existing layout intact. */
+.phone .top strong { font-size:23px; transform-origin:left center; transition:transform 200ms cubic-bezier(.2,0,0,1); }
+.phone .top.scrolled strong { font-size:23px; transform:scale(.8); }
+.phone .nav .selection { transition:none; }
+.phone .sheet { animation:none; transition:none; transform:translateY(0); position:relative; z-index:1; }
+.phone .overlay { background:transparent; }
+.scrim { position:absolute; inset:0; background:var(--overlay-bg); opacity:0; transition:opacity 150ms cubic-bezier(.2,0,0,1); }
+.sheet-open .scrim { opacity:1; }
+.phone button:active:not(:disabled) { transition-duration:0ms; }
+.phone .row:active:not(:disabled) { transform:scale(.992); }
+.phone .handle:active:not(:disabled) { transform:none; }
+.motion-demo { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 24px; }
+.motion-demo p { flex-basis:100%; margin:0; font-size:13px; color:var(--text-secondary); }
+@media(prefers-reduced-motion:reduce) {
+  .phone .top.scrolled strong { transform:none; }
+  .phone button:active:not(:disabled), .phone .row:active:not(:disabled) { transform:none; }
+  .scrim { transition:none; }
+}

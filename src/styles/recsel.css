@@ -1,0 +1,389 @@
+/* recsel.css — 录屏覆盖层专用样式（透明全屏窗口）。
+ *
+ * 视觉复用截图遮罩（styles/screenshot.css）同一套语言：
+ * 暗遮罩四块、选区 3px --accent 描边 + 外发光 + 1px 黑影、
+ * 深色玻璃条 --shot-bar-*、主题令牌跟随（浅色主题下玻璃走浅色浮层令牌）。
+ * 录制态描边换 --danger（语义色）呼吸脉动——与截图蓝框区分「真的在录」。
+ *
+ * 豁免注释（标记见各处）分三类，与截图窗存量惯例一致：
+ * ① 盖在**用户任意画面**上的压暗层（遮罩/暗带/倒计时底）——不能用主题背景色，
+ *    否则浅色主题在深色壁纸上看不见、深色主题在浅色壁纸上洗白；
+ * ② 选区 1px 黑影——分隔录制画面与边界，防主题色框在相近色内容上糊在一起；
+ * ③ 危险实底按钮（--danger 底 + 深字）——语义色对上无现成反白 token。 */
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+/* ===== 暗遮罩（四块，与截图同款；录制中被「录制中模式」整层移除） ===== */
+.rec-shade {
+  position: absolute;
+  background: rgba(10, 14, 24, 0.6); /* ui-rule-ok: 压在任意用户画面上，见文件头① */
+  pointer-events: none;
+}
+
+/* ===== 选区框：与截图 .sel-rect 同规格 ===== */
+.rec-rect {
+  position: absolute;
+  outline: 3px solid var(--accent);
+  /* ui-rule-ok: 选区边界分隔影，同截图 .sel-rect，见文件头② */
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
+  pointer-events: none;
+}
+
+.rec-rect.full {
+  /* ui-rule-ok: 选区边界分隔影，见文件头② */
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 0 16px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* 全屏预览四边暗带（同截图 .edge-band） */
+.rec-edge-band {
+  position: absolute;
+  background: rgba(10, 14, 24, 0.5); /* ui-rule-ok: 见文件头① */
+  pointer-events: none;
+}
+
+/* ===== 录制中：--danger 语义色 + 呼吸脉动 ===== */
+.rec-rect.recording {
+  outline: 2px solid var(--danger);
+  animation: recPulse 2s ease-in-out infinite;
+}
+
+@keyframes recPulse {
+  0%,
+  100% {
+    /* ui-rule-ok: 选区边界分隔影，见文件头② */
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.55),
+      0 0 6px color-mix(in srgb, var(--danger) 35%, transparent);
+  }
+  50% {
+    /* ui-rule-ok: 选区边界分隔影，见文件头② */
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.55),
+      0 0 18px color-mix(in srgb, var(--danger) 75%, transparent);
+  }
+}
+
+/* ===== 深色玻璃条（尺寸标签 / 确认条 / 提示），同截图 .sel-size ===== */
+.rec-glass {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  border: 1px solid var(--shot-bar-border);
+  box-shadow: var(--float-card-shadow);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.rec-glass .muted {
+  color: var(--shot-bar-muted);
+  font-size: 11px;
+}
+
+.rec-glass kbd {
+  font-size: 11px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
+  border-bottom-width: 2px;
+  color: var(--shot-bar-text);
+  font-family: inherit;
+}
+
+/* ===== 确认条控件 ===== */
+.rec-btn-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-solid);
+  color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，全站主按钮惯例（无反白 token） */
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rec-btn-start .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff; /* ui-rule-ok: 同上，实色底上的白点 */
+}
+
+.rec-btn-start:hover {
+  filter: brightness(1.08);
+}
+
+.rec-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: var(--shot-bar-text);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rec-btn-ghost:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.rec-seg {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 18%, transparent);
+}
+
+.rec-seg button {
+  background: transparent;
+  color: color-mix(in srgb, var(--shot-bar-text) 65%, transparent);
+  border: none;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rec-seg button + button {
+  border-left: 1px solid color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.rec-seg button.on {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--shot-bar-text);
+  font-weight: 600;
+}
+
+.rec-snd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--shot-bar-text);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 18%, transparent);
+  border-radius: 999px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  background: transparent;
+}
+
+.rec-snd.off {
+  color: color-mix(in srgb, var(--shot-bar-text) 40%, transparent);
+}
+
+.rec-snd.on {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* ===== 倒计时 ===== */
+.rec-countdown {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(10, 14, 24, 0.28); /* ui-rule-ok: 见文件头① */
+  pointer-events: none;
+}
+
+.rec-countdown .num {
+  font-size: 72px; /* ui-rule-ok: 倒计时主数字，唯一的大号视觉锚（设计稿 §3） */
+  font-weight: 800;
+  line-height: 1;
+  color: #fff; /* ui-rule-ok: 盖在用户画面上的倒计时层内，不随主题反色 */
+  text-shadow: 0 4px 30px color-mix(in srgb, var(--accent) 80%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-countdown .esc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75); /* ui-rule-ok: 见文件头①（同在倒计时层内） */
+}
+
+/* ===== 失败/加载卡（同截图 .shot-fatal 的浮层令牌兜底） ===== */
+.rec-fatal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+}
+
+.rec-fatal .card {
+  max-width: 420px;
+  padding: 16px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+  background: color-mix(in srgb, var(--danger-bg) 40%, var(--float-card-bg, var(--card-bg)));
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--float-card-border, var(--border-color)));
+  box-shadow: var(--float-card-shadow);
+  color: var(--danger);
+}
+
+.rec-fatal .card button {
+  margin-top: 8px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--shot-bar-border);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ===== 控制条窗（rec-control.html）===== */
+.rec-ctrl-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  border: 1px solid var(--shot-bar-border);
+  box-shadow: var(--float-card-shadow);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.rec-ctrl-grip {
+  color: color-mix(in srgb, var(--shot-bar-text) 35%, transparent);
+  font-size: 13px;
+  letter-spacing: 2px;
+  cursor: grab;
+  /* 抓手是唯一的拖动热区，热区略宽 */
+  padding: 4px 4px;
+}
+
+.rec-recdot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--danger);
+}
+
+.rec-recdot i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: recBlink 1.2s ease-in-out infinite;
+}
+
+@keyframes recBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.rec-timer {
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.rec-qual-badge {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--shot-bar-text) 65%, transparent);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 16%, transparent);
+  border-radius: 4px;
+  padding: 0 8px;
+}
+
+.rec-btn-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--danger);
+  color: #180a0a; /* ui-rule-ok: 危险实底按钮的深字，见文件头③ */
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.rec-btn-stop i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px; /* ui-rule-ok: 停止方块图标自身形状，非 UI 圆角 */
+  background: #180a0a; /* ui-rule-ok: 见文件头③ */
+}
+
+.rec-btn-stop:hover {
+  filter: brightness(1.08);
+}
+
+.rec-writing {
+  font-size: 12px;
+  color: var(--shot-bar-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rec-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--shot-bar-text) 25%, transparent);
+  border-top-color: var(--shot-bar-text);
+  animation: recSpin 0.4s linear infinite;
+}
+
+@keyframes recSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

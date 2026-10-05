@@ -1,0 +1,158 @@
+/* Composer —— 提问框渐变光晕。设计依据：
+   design/PastePanda-提问框渐变光晕Composer-设计稿.html
+   提案 1（完整解剖：输入在上、提示 + 发送在下）= `.composer`
+   提案 2（单行紧凑：只借光晕 + 发送钮）        = `.composerSlim`
+   颜色和强度全部来自 src/styles/theme.css 的 :root 令牌，本文件只消费。 */
+
+.composer,
+.composerSlim {
+  border: 1px solid transparent;
+  /* U5 顶格档：已拍板不为 composer 单开一档、不改 U5 与 lint 规则 */
+  border-radius: 12px;
+  /* 描边用双层背景：padding-box 那层把底色铺到内容盒，border-box 那层只在 1px
+     描边环里露出来 —— 这是本仓已有的渐变描边写法（先例 DiagramCanvas.module.css） */
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-rest), var(--composer-halo-b-rest)) border-box;
+  box-shadow: var(--control-elev);
+  /* 🔴 只声明真会动的那条：实测（稿子页 evaluate，动画时钟冻结时焦点那一帧就已读到
+     最终值）Chromium **不过渡 background-image 里的渐变**，所以稿里那句
+     `transition: background 200ms` 是条假动画，没搬过来。光晕因此是瞬切，
+     淡入的只有 3px 焦点外环。时长/曲线取 U2 快档与常规曲线。 */
+  transition: box-shadow 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.composer:focus-within,
+.composerSlim:focus-within {
+  background:
+    linear-gradient(var(--dialog-bg), var(--dialog-bg)) padding-box,
+    linear-gradient(100deg, var(--composer-halo-a-focus), var(--composer-halo-b-focus)) border-box;
+  /* 焦点可达性走稿 §6 P4 的 B 案（实色外环）：§4 反解出 12% 淡环在六套主题上
+     只读成 1.13–1.19:1，够不到 U7 的 3:1；实色 --accent 环六套全 3.01–6.49:1。
+     ❗ 与顶栏搜索框（TopBar `.focused`）是**同形不同色**：它给的是
+     `0 0 0 3px var(--accent-shadow)`，而 --accent-shadow 只有 15–20% α，压在
+     --card-bg 上同样够不到 3:1（本仓其余 3px 环几乎都用它：KnowledgeView /
+     ToolboxView / Settings / AiTab…）。这里刻意用实色，因为光晕静息只有 10%，
+     环是本框唯一的可达性兜底；半透明那一档是「柔光」语义，不承担可达性。 */
+  box-shadow: var(--control-elev), 0 0 0 3px var(--accent);
+}
+
+.composerInput {
+  display: block;
+  width: 100%;
+  min-height: 20px;
+  /* ❗ 这里**不写 max-height**：增高的上限归 `useAutoGrow`（它按 inline height 写，
+     而 CSS 的 max-height 会连 inline 一起夹住）。宿主给了 containerRef 时上限是
+     「面板高 40%，夹 3~10 行」，写死 4 行会把这条自适应打死（设计稿 §3 那条
+     「max-height: 92px = 4 行同口径」的注释对 KB 是错的，没搬过来）。 */
+  border: 0;
+  /* 焦点由外环表达。globals.css 的兜底环是零特异性 :where()，任何自带 outline
+     的规则都赢得过它 —— 不显式关掉就会在光晕里面再套一圈，读成两层边框 */
+  outline: none;
+  background: transparent;
+  resize: none;
+  overflow-y: auto;
+  font: inherit;
+  /* 字号由宿主给（追问 12.5 = --kb-fs-body、AI 追问 11、指令条 12）：
+     三处原本各有各的字号，光晕整改不该顺手把它们改成同一个 */
+  font-size: var(--composer-fs, 13px);
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.composerInput::placeholder {
+  color: var(--text-muted);
+}
+
+.composerInput:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* 提案 2 的左侧图标位（指令条的 ✦ 走宿主自己的 .icon，不在这儿定义） */
+.composerSlim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 🔴 上下 5px 是量出来的组成项：5 + 24px 发送钮 + 5 + 边框 2 = 稿 §3 的「外框恒 36px」。
+     换成表里的 4px 就掉到 34，引用的那条数就不成立了。左右取 U5 档（稿里的 12/6 只为对齐，不承重） */
+  padding: 5px 8px 5px 12px; /* ui-rule-ok: 上下 5px 见上——它是 36px 外框的组成项，不是随手值 */
+}
+
+.composerSlim .composerInput {
+  display: inline;
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  min-height: 22px;
+}
+
+/* ── 以下三节只在提案 1（full）出现 ─────────────────────────── */
+
+.composer {
+  padding: 8px 12px;
+}
+
+.composerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* 🔴 实测教训（稿 §3）：这一行必须 nowrap，且提示要能省略号截断。
+     不加的话提示在 320/360px 容器里换行，工具行从 24px 撑到 66px（AI 追问）
+     /132px（指令条），量的「外框恒 68px」直接翻车。 */
+  flex-wrap: nowrap;
+  /* 6px 不是随手值：它是稿 §3 量出「外框恒 68px」= 8 + 20(输入) + 6 + 24(发送行) + 8 + 边框 2
+     的组成项；调成表里的 4 或 8 都会让那条引用数字失效 */
+  margin-top: 6px; /* ui-rule-ok: 6px 见上一行——改它等于改稿子里量出来的 68px */
+}
+
+.composerHint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composerSend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 24px 是 U7 命中区下限，也是 slim 那 36px 外框的算法项。内边距只给 4px：
+     图标（14px）时靠 min-width 撑到 24×24 正方，带文字的宿主（AI 追问的「追问」）
+     自己长宽，高度一律不动 ⇒ 外框还是 36 */
+  min-width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  /* 🔴 实心底 + 白字必须用 --accent-solid，不能用 --accent 或
+     linear-gradient(--accent, --accent-strong)（那是旧 .followGo 的写法）：
+     白字压 --accent 实测只有 2.79–4.10:1，压 --accent-strong 在午夜/海洋两套里
+     根本等于 --accent（那两主题的 --accent-strong 就是 var(--accent)），所以渐变
+     两头都救不了；而 --accent-solid 六套全 4.53–4.80:1，本仓 40+ 个文件都拿它当
+     实心底（buttons.css / CardList / AiQuickBar / Settings…），同一条理由也写在各处。
+     图标（↑ / ⏎）也吃这条：它是图形元素，门槛 3:1，2.79 直接不合格。 */
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* hover 用压暗而不是 .rbPri 的 brightness(1.08)：实测 1.08 会把白字对比度
+   从 4.53 打到 3.95–4.20（六套全掉回 4.5 以下），压暗到 0.94 反而升到 5.02–5.30。
+   也不用 opacity——它把字和底一起淡，实测 0.9 时是 4.29–4.53，五套不达标。 */
+.composerSend:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.composerSend:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

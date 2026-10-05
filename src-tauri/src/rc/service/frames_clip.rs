@@ -89,10 +89,15 @@ impl RcService {
     /// - **Ping / NetHint / SetBitratePct / SetQuality / SetCodec / RequestKey**：
     ///   只看会话的流控与自愈——否则 View 发不出心跳会误暂停推流。
     /// - **AudioOn**：只看可收系统声音（收声不改主机环境）。
+    /// - **BgPause / BgResume**（2026-10-02）：后台保活是生命周期事件，不是
+    ///   主机侧操作——只看会话切后台同样要保活，否则 View 会话后台必断。
     /// - **SetCaptureScope 要求 Control**：改采集范围会切到对方其它屏，属于
     ///   改主机可观测内容，只看不得改（与 SetHostMute 同级）。
     pub async fn send_input(&self, ev: &crate::rc::input::InputEvent) -> Result<(), String> {
         use crate::rc::input::InputEvent;
+        if let InputEvent::FramePresented { session_id, at_ms } = ev {
+            return self.note_media_presented(session_id, *at_ms);
+        }
         let needs_control = !matches!(
             ev,
             InputEvent::Ping { .. }
@@ -101,6 +106,8 @@ impl RcService {
                 | InputEvent::SetQuality { .. }
                 | InputEvent::SetCodec { .. }
                 | InputEvent::AudioOn { .. }
+                | InputEvent::BgPause
+                | InputEvent::BgResume
                 | InputEvent::RequestKey
         );
         if needs_control {

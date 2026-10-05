@@ -15,7 +15,7 @@
 //! | `spawn_audio_task` | 采集系统声音走专用流 | 对端听不到声音 |
 //! | `spawn_stats_sampler` | 采样本端 RTT / 丢包喂码控 | 弱网不缩码率 |
 //! | `spawn_input_reader` | 收输入事件 + 心跳回 pong | 会话收口（控制通道断） |
-//! | `maybe_send_cursor` | 每圈比对光标形状，变则发 | 对端光标形状不跟随 |
+//! | `maybe_send_cursor` | 每圈问一次光标遥测（形状+位置），变则发 | 对端看不到光标形状/位置 |
 //!
 //! # 🔴 两条不变量（搬到这里时保持原样，别顺手改）
 //!
@@ -35,12 +35,38 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use super::input::{current_cursor_shape, InputEvent};
+use super::input::{cursor_should_send, cursor_telemetry, InputEvent, ScreenRegion};
 use super::protocol::{RcFrame, SessionPhase};
 use super::service::RcService;
 use crate::sync::transport::{read_frame, write_frame};
 
 use super::inbound::{handle_inbound_input, InboundVideo};
+
+impl InboundVideo {
+    /// 单调毫秒（光标遥测节流判据）。`mono_ms` 恒 ≥0，钳一手防负数。
+    fn mono_now_ms(&self) -> u64 {
+        crate::rc::mono::mono_ms().max(0) as u64
+    }
+
+    /// 光标遥测的抓帧范围。🔴 必须与注入侧同一口径（`input::capture_region`
+    /// 收口，规则 11.1），否则「光标位置」和「点击落点」会叉开。
+    ///
+    /// 带缓存：`monitor_region` 会枚举显示器，每圈（30~60fps）都算是白烧。
+    /// opts 的 `(monitor, virtual_screen)` 变了才重算——用户中途改画面范围
+    /// 时 region 会跟着换，不会一直用旧的。
+    fn cursor_region(&mut self) -> ScreenRegion {
+        let opts = self.svc.stream_opts_snapshot();
+        let key = (opts.monitor, opts.virtual_screen);
+        match &self.cursor_region_cache {
+            Some((k, r)) if *k == key => *r,
+            _ => {
+                let r = super::input::capture_region(&opts);
+                self.cursor_region_cache = Some((key, r));
+                r
+            }
+        }
+    }
+}
 
 impl InboundVideo {
     /// P0-3：数据报读取任务——发起端的鼠标移动走 QUIC 不可靠数据报
@@ -220,66 +246,68 @@ impl InboundVideo {
         let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
-            let mut prev: Option<(u64, u64)> = None;
-            let mut ema_permille: u64 = 0;
-            let mut has_ema = false;
+            let mut loss_sampler = crate::rc::media::LossSampler::default();
+            let mut last_route = None;
+            let mut last_transport_log = std::time::Instant::now();
             loop {
                 if !svc.session_id_is(&my_id) {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let st = conn.stats();
-                // iroh 的 ConnectionStats 是连接级扁平计数：丢包分母用发出的
-                // UDP 包数（udp_tx.datagrams），RTT 走 conn.rtt(初始路径)
-                let (lost, sent) = (st.lost_packets, st.udp_tx.datagrams);
-                let sample: i64 = match prev {
-                    Some((pl, ps)) if sent > ps => {
-                        let d_sent = sent - ps;
-                        let d_lost = lost.saturating_sub(pl);
-                        let pm = d_lost * 1000 / d_sent.max(1);
-                        // 指数平滑：单窗口抖动别直接打到码控上
-                        let next = if has_ema {
-                            (ema_permille * 7 + pm * 3) / 10
-                        } else {
-                            pm
-                        };
-                        has_ema = true;
-                        ema_permille = next;
-                        ema_permille as i64
+                let Some((rtt, sample)) = loss_sampler.sample(&conn) else { continue; };
+                let paths = conn.paths();
+                let selected = paths.iter().find(|p| p.is_selected());
+                let route = selected.as_ref().map(|p| format!("{} {:?}", p.id(), p.remote_addr()));
+                if route != last_route {
+                    // paths() 只有已形成的路径，不能用它断言对端没有交换 IP 候选。
+                    log::info!("[RC-PATH] selected={route:?} rtt={rtt}ms open_paths={:?}",
+                        paths.iter().map(|p| format!("{:?}", p.remote_addr())).collect::<Vec<_>>());
+                    last_route = route;
+                }
+                if last_transport_log.elapsed() >= std::time::Duration::from_secs(5) {
+                    last_transport_log = std::time::Instant::now();
+                    if let Some(path) = selected {
+                        // 小包 RTT 不代表整帧交付；记录原始窗口/计数定位等待，
+                        // 不把 cwnd/RTT 当作容量回填媒体预算。
+                        let stats = path.stats();
+                        let pacing = conn.congestion_state(path.id()).map(|c| {
+                            let metrics = c.metrics();
+                            (metrics.pacing_rate, metrics.send_quantum)
+                        });
+                        log::info!("[RC-TRANSPORT] path={} rtt={}ms cwnd={}B mtu={} tx={}B/{}dg rx={}B/{}dg lost={}pkt/{}B congestion={} spurious={} blackholes={} pacing={pacing:?}",
+                            path.id(), stats.rtt.as_millis(), stats.cwnd, stats.current_mtu,
+                            stats.udp_tx.bytes, stats.udp_tx.datagrams, stats.udp_rx.bytes, stats.udp_rx.datagrams,
+                            stats.lost_packets, stats.lost_bytes, stats.congestion_events,
+                            stats.spurious_congestion_events, stats.black_holes_detected);
                     }
-                    _ => -1,
-                };
-                prev = Some((lost, sent));
-                let rtt = conn
-                    .rtt(iroh::endpoint::PathId::ZERO)
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                // P3.2：带宽估计 = 拥塞窗口×8 / rtt（BBR 下 window/rtt 即其
-                // 带宽估计；Cubic 下是当前允许的发送速率上限）。取主路径
-                // （PathId::ZERO）——RC 会话只有一条。
-                let bw = conn
-                    .rtt(iroh::endpoint::PathId::ZERO)
-                    .zip(conn.congestion_state(iroh::endpoint::PathId::ZERO))
-                    .and_then(|(rtt_d, cc)| {
-                        let rtt_ms = rtt_d.as_millis().max(1) as u64;
-                        cc.window().checked_mul(8)?.checked_div(rtt_ms)
-                    })
-                    .map(|v| v.min(i64::MAX as u64) as i64)
-                    .unwrap_or(0);
+                }
+                // cwnd / RTT 是发送窗口上限，不能代替实测媒体交付容量。
+                let bw = 0;
                 svc.note_stream_health(rtt, sample, bw);
             }
         });
     }
 
-    /// P1-6：光标形状变化时发一条控制帧（每圈比对一次，变化才发）。
+    /// P1-6 → B 方案（2026-10-02）：每圈问一次光标遥测（形状 + 归一化
+    /// 位置 + 可见性），**变则发**。判定与节流收口在
+    /// `input::cursor_should_send`（纯函数、有守卫单测）；消息加 `x`/`y`
+    /// 字段，旧版发起端读到不认识的字段会忽略，向后兼容。
     pub(super) async fn maybe_send_cursor(&mut self) {
-        let shape = current_cursor_shape();
-        let s = shape.as_str();
-        if self.last_cursor == Some(s) {
+        let region = self.cursor_region();
+        let now = cursor_telemetry(&region);
+        let since = self.mono_now_ms().saturating_sub(self.last_cursor_ms);
+        if !cursor_should_send(self.last_cursor.as_ref(), &now, since) {
             return;
         }
-        self.last_cursor = Some(s);
-        let msg = serde_json::json!({ "t": "cursor", "s": s });
+        self.last_cursor_ms = self.mono_now_ms();
+        self.last_cursor = Some(now.clone());
+        // x/y 缺省 = 远端此刻不可见（发起端应收起光标，而不是摆在旧位置）
+        let msg = serde_json::json!({
+            "t": "cursor",
+            "s": now.shape,
+            "x": now.x,
+            "y": now.y,
+        });
         if let Ok(b) = serde_json::to_vec(&msg) {
             let mut guard = self.send.lock().await;
             let _ = write_frame(&mut guard, &b).await;
@@ -354,6 +382,18 @@ impl InboundVideo {
                         // P0-2：解码断链请求关键帧——只立标志，推流循环
                         // 下一帧前对编码器 ForceKeyFrame
                         force_key.store(true, Ordering::SeqCst);
+                    } else if matches!(ev, InputEvent::BgPause | InputEvent::BgResume) {
+                        // 🔴 后台保活（2026-10-02）：对端进后台 → 挂起推流 +
+                        // 看门狗放宽（判据见 `link::peer_bg_watchdog`）；回前台 →
+                        // 立即补关键帧——对端解码器饿了一整段，P 帧接不上，
+                        // 没有 IDR 画面要花到下一个自然关键帧才恢复。
+                        // 都算活性证据（上面的 touch_activity 已刷）。
+                        let paused = matches!(ev, InputEvent::BgPause);
+                        svc.note_peer_background(paused);
+                        if !paused {
+                            force_key.store(true, Ordering::SeqCst);
+                        }
+                        log::info!("[RC] 对端{}后台", if paused { "进入" } else { "退出" });
                     } else {
                         // 输入提帧：注入前就唤醒（DXGI 的 AcquireNextFrame
                         // 等待窗口正好覆盖注入生效所需的几毫秒）

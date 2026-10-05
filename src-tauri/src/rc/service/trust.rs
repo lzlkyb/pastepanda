@@ -75,10 +75,8 @@ impl RcService {
     }
 
     pub fn enabled(&self) -> bool {
-        self.cfg()
-            .get(CFG_ENABLED)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
+        // 唯一读取点在 `super::cfg_enabled`（含缺省值），别在这里再写一份默认判断。
+        super::cfg_enabled(&self.store)
     }
 
     /// 本机是否开了「会话期间防休眠」。唯一读取点在 `super::cfg_keep_awake`。

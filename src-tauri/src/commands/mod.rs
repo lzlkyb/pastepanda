@@ -234,6 +234,7 @@ mod sticky;
 mod system;
 mod tags;
 mod update;
+pub mod update_android;
 mod url_summary;
 
 #[cfg(test)]
@@ -280,4 +281,5 @@ pub use sticky::*;
 pub use system::*;
 pub use tags::*;
 pub use update::*;
+pub use update_android::*;
 pub use url_summary::*;

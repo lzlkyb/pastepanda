@@ -1,69 +1,70 @@
-/* RcMobileSession — 会话壳样式。令牌与 src/styles/theme.css 同源（带兜底）。 */
-
+/* 会话内容实底，玻璃只用于短小的工具胶囊。 */
 .root {
   position: fixed;
-  inset: 0;
+  top: var(--mobile-viewport-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--mobile-viewport-height, 100dvh);
   display: flex;
   flex-direction: column;
-  background: var(--app-bg, #0b1220);
-  color: var(--text-primary, #e6edf7);
+  background: var(--app-bg);
+  color: var(--text-primary);
   overflow: hidden;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
-
-/* ── 竖屏状态行 ── */
+/* 会话页头（RcSessionHeader）。R2 后无玻璃模糊；padding 走 header 自身的
+   布局，不再带 safe-area（root 已统一处理 inset）。 */
 .statusRow {
+  background: var(--mobile-glass);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px calc(6px + env(safe-area-inset-top, 0px));
-  font-size: 13px;
-  color: var(--text-secondary, #9aa8bd);
-  border-bottom: 1px solid var(--border-color, #22304a);
-}
-.statusDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent-green, #34d399);
-  flex-shrink: 0;
+  min-height: 48px;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: 15px;
+  color: var(--text-secondary);
 }
 .statusTitle {
-  color: var(--text-primary, #e6edf7);
+  color: var(--text-primary);
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.statusSub {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
+.headerIdentity { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.headerSubtitle { color: var(--text-secondary); font-size: 12px; }
+.landscapeTools {
+  z-index: var(--mobile-layer-nav);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-
-/* ── 画面区 ── */
+.landscapeTools .toolHandle { position: static; }
 .screenArea {
   position: relative;
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--section-bg);
 }
 .canvas {
   display: block;
   width: 100%;
   height: 100%;
-  /* contain 语义：canvas 内部像素按比例缩放，letterbox 由容器底色承担
-     （与桌面 rcCanvasStyle fit 分支同口径） */
   object-fit: contain;
 }
-
-/* 本地触摸反馈（design §1：反馈即时，不靠猜） */
 .cursorRing {
   position: absolute;
   width: 22px;
   height: 22px;
   margin: -11px 0 0 -11px;
   border-radius: 50%;
-  border: 2px solid var(--accent-cyan, #22d3ee);
-  background: rgba(34, 211, 238, 0.14);
+  border: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
   pointer-events: none;
   opacity: 0;
-  transition: opacity 150ms;
+  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
   z-index: 3;
 }
 .cursorRingOn {
@@ -75,28 +76,46 @@
   height: 30px;
   margin: -15px 0 0 -15px;
   border-radius: 50%;
-  border: 2px solid var(--accent-amber, #fbbf24);
+  border: 2px solid var(--warning);
   pointer-events: none;
   opacity: 0;
   z-index: 3;
 }
 .chargeRingOn {
   opacity: 1;
-  animation: chargePulse 550ms linear forwards;
 }
 .chargeRingDrag {
   opacity: 1;
-  border-color: var(--accent-green, #34d399);
-  background: rgba(52, 211, 153, 0.22);
-  animation: none;
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 22%, transparent);
 }
-@keyframes chargePulse {
-  from {
-    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5);
-  }
-  to {
-    box-shadow: 0 0 0 26px rgba(251, 191, 36, 0);
-  }
+/**
+ * B 方案（2026-10-02）：**真的**电脑光标。与本地反馈环（cursorRing）的分工：
+ * 环答「我手点了哪」，这个答「电脑光标此刻在哪」——被控端帧里没有光标
+ * （DXGI 桌面复制不含指针），位置/形状由控制帧遥测推来，见 useRemoteCursor。
+ * 默认收起（收到第一个位置前）：没位置就画，光标会出现在左上角，比不显示更糟。
+ * 图形是白填充 + 深描边（双色描边思路），深浅底都看得见，所以不套玻璃/模糊。
+ */
+.remoteCursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  /* 箭头热点在左上角：往左上偏 2px，让箭头尖端正对光标的真实位置 */
+  margin: -2px 0 0 -2px;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 4;
+  will-change: left, top;
+}
+.remoteCursor.isOn {
+  opacity: 1;
+}
+.remoteCursor svg {
+  display: block;
+  /* 轻微投影：白填充贴在浅色画面上需要一条边缘才认得出形状 */
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 35%));
 }
 .ripple {
   position: absolute;
@@ -104,16 +123,19 @@
   height: 14px;
   margin: -7px 0 0 -7px;
   border-radius: 50%;
-  border: 2px solid var(--accent, #6366f1);
+  border: 2px solid var(--accent);
   pointer-events: none;
-  animation: rip 450ms ease-out forwards;
+  animation: rip 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
   z-index: 3;
 }
 .rippleRight {
-  border-color: var(--accent-amber, #fbbf24);
+  border-color: var(--warning);
 }
 .rippleBig {
-  border-color: var(--accent-cyan, #22d3ee);
+  border-width: 3px;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
 }
 @keyframes rip {
   from {
@@ -125,15 +147,15 @@
     opacity: 0;
   }
 }
-
-/* ── 修饰键条（软键盘上缘） ── */
 .modifierBar {
-  border-top: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
-  background: var(--card-bg, #111a2e);
-  padding: 7px 8px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card-bg);
+  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  max-height: 40%;
+  overflow-y: auto;
 }
 .modRow {
   display: flex;
@@ -142,161 +164,393 @@
   align-items: center;
 }
 .mkKey {
-  min-width: 42px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid var(--border-color, #22304a);
-  color: var(--text-primary, #e6edf7);
-  font-size: 13px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 15px;
   font-weight: 600;
-}
-.mkSticky {
-  background: rgba(34, 211, 238, 0.22);
-  border-color: var(--accent-cyan, #22d3ee);
-  color: var(--accent-cyan, #22d3ee);
-}
-.mkSep {
-  width: 1px;
-  align-self: stretch;
-  background: var(--border-color, #22304a);
-  margin: 2px 4px;
 }
 .modeRow {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
-.modeBtn {
-  padding: 5px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border-color, #22304a);
-  background: transparent;
-  color: var(--text-secondary, #9aa8bd);
-  font-size: 12px;
-}
-.modeOn {
-  border-color: var(--accent, #6366f1);
-  color: var(--text-primary, #e6edf7);
-  background: rgba(99, 102, 241, 0.16);
-}
-.modeHint {
-  font-size: 11px;
-  color: var(--text-muted, #64748b);
-}
-
-/* ── 工具条：竖屏底栏 / 横屏顶缘胶囊 ── */
 .toolbar {
   display: flex;
   justify-content: space-around;
-  border-top: 1px solid var(--border-color, #22304a);
-  background: var(--card-bg, #111a2e);
-  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-  /* 剪贴板菜单 / hint 以本条为锚（竖屏静态时也要有定位上下文） */
+  gap: 4px;
+  border-radius: 0;
+  background: var(--mobile-glass);
+  backdrop-filter: blur(var(--mobile-glass-blur));
+  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
+  padding: 4px;
+  margin: 0;
   position: relative;
+  z-index: var(--mobile-layer-nav);
 }
 .toolbarCapsule {
-  position: absolute;
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
-  border-radius: 22px;
-  padding: 6px 10px;
-  gap: 4px;
-  background: var(--glass, rgba(17, 26, 46, 0.72));
-  backdrop-filter: blur(6px);
-  z-index: 4;
-  transition: opacity 200ms;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-/* 横屏隐藏态三重纪律（桌面 RcSessionCapsule 同款） */
 .toolbarHidden {
-  pointer-events: none;
-  visibility: hidden;
-  opacity: 0;
+  display: none;
+}
+:global(body[data-mobile-sheets]) .toolbar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .toolbar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 .tbBtn {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 56px;
-  padding: 4px 8px;
-  border: none;
-  border-radius: 10px;
+  justify-content: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 54px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--text-secondary, #9aa8bd);
-  font-size: 11px;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 .tbBtn:active {
-  background: rgba(99, 102, 241, 0.14);
+  background: var(--accent-light);
 }
 .tbOn {
-  color: var(--accent-cyan, #22d3ee);
+  color: var(--accent-strong);
+  background: var(--accent-light);
 }
-.tbEnd {
-  color: var(--accent-red, #f87171);
-}
-.tbIcon {
-  font-size: 18px;
-  line-height: 1;
-}
-.tbLabel {
-  white-space: nowrap;
-}
-
-/* ── 剪贴板入口（推/取二选一菜单）+ 操作反馈条 ──
-   竖屏底栏向上弹，横屏胶囊向下弹（同一条规则按容器翻面）。 */
-.tbWrap {
-  position: relative;
-  display: flex;
-}
-.tbMenu {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 50%;
-  transform: translateX(-50%);
+.panelActions {
   display: flex;
   flex-direction: column;
-  min-width: 132px;
-  padding: 4px;
-  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
+  gap: 12px;
+}
+.qualityChoices {
+  display: flex;
+  gap: 8px;
+}
+.qualityChoices button {
+  flex: 1;
+  min-width: 0;
+}
+.panelHint {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+/* R2：工具与状态留在同一层级；指针热路径继续用现有 DOM 反馈。 */
+.controlArea {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.headerButton {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  border: 0;
   border-radius: 12px;
-  background: var(--card-bg, #111a2e);
-  z-index: 5;
-}
-.toolbarCapsule .tbMenu {
-  bottom: auto;
-  top: calc(100% + 10px);
-}
-.tbMenuItem {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 8px;
+  color: var(--text-primary);
   background: transparent;
-  color: var(--text-primary, #e6ebf5);
-  font-size: 13px;
-  text-align: left;
-  white-space: nowrap;
 }
-.tbMenuItem:active {
-  background: rgba(99, 102, 241, 0.14);
-}
-.tbHint {
+.modePill {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 12px;
-  right: 12px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-color, #22304a);
-  border-radius: 8px;
-  background: var(--glass, rgba(17, 26, 46, 0.9));
-  color: var(--text-primary, #e6ebf5);
-  font-size: 12px;
-  text-align: center;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: calc(100% - 24px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 13px;
   pointer-events: none;
 }
-.toolbarCapsule .tbHint {
-  bottom: auto;
-  top: calc(100% + 8px);
+.toolHandle {
+  position: absolute;
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  z-index: var(--mobile-layer-nav);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.mouseAssist {
+  background: var(--card-bg);
+  padding: 8px 12px;
+  flex: none;
+}
+.portraitTools { display: contents; }
+.toolRail {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--card-bg);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.toolRail .landscapeTools { flex-direction: column; gap: 4px; }
+.toolRail .landscapeTools > button {
+  min-width: 0;
+  width: 100%;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  border-radius: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.toolRail .landscapeTools > button:not(.toolHandle) > svg:last-child { display: none; }
+.toolRail .mouseAssist { padding: 4px 0; }
+.toolRail .mouseActions { flex-direction: column; gap: 4px; }
+.toolRail .mouseActions button { font-size: 12px; padding: 8px 4px; min-width: 0; flex: none; }
+.toolRail .tbBtn { flex: none; min-width: 0; min-height: 48px; padding: 4px; white-space: normal; }
+.toolRail .pointerWide { flex: none; }
+.toolRail .pointerWide span { white-space: normal; }
+.frameWaiting, .frameNotice { position: absolute; z-index: 6; overflow-y: auto; overscroll-behavior: contain; }
+.frameWaiting { inset: 0; display: grid; place-items: center; padding: 16px; }
+.frameWaiting > section { margin: auto; border: 0; background: transparent; text-align: center; width: min(100%, 360px); }
+.frameWaiting section > div { justify-content: center; flex-wrap: wrap; margin-left: 0; }
+.frameWaiting strong { flex-basis: 100%; }
+.frameWaiting p { margin-left: 0; }
+.frameNotice { top: 8px; left: 8px; right: 8px; max-height: calc(100% - 16px); }
+.frameNotice > section { margin: 0; background: var(--card-bg); }
+.mouseActions {
+  display: flex;
+  gap: 8px;
+}
+.pointerOption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  text-align: left;
+}
+.pointerWide { flex: 1.6; }
+.pointerWide span { white-space: nowrap; }
+.pointerOption[aria-pressed="true"] {
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+.pointerOptionText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  font-size: 13px;
+}
+.pointerOptionText strong { font-size: 15px; }
+.pointerSelected { flex: none; font-size: 12px; }
+.pointerAdvanced {
+  min-height: 44px;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.pointerAdvanced:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mouseActions button {
+  flex: 1;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+}
+.mouseActions button[aria-pressed="true"],
+.mkKey[aria-pressed="true"] {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.trackpad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 120px;
+  margin-top: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--mobile-radius-group);
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  touch-action: none;
+  user-select: none;
+}
+.quickKeys {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+}
+.quickKeys button {
+  flex: none;
+}
+.textEntry {
+  display: flex;
+  gap: 8px;
+}
+.textEntry input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  caret-color: var(--accent);
+  font-size: var(--mobile-input-size);
+}
+.textEntry input::placeholder {
+  color: var(--text-secondary);
+}
+.root button {
+  transition:
+    background-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+.root button:disabled {
+  opacity: 0.5;
+}
+.root button:active:not(:disabled) {
+  background: var(--accent-light);
+}
+.root button:focus-visible,
+.textEntry input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.root[data-landscape="true"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.root[data-landscape="true"] .controlArea { grid-column: 1; grid-row: 1; min-width: 0; flex-direction: row; }
+.root[data-landscape="true"] .modifierBar { grid-column: 1 / -1; grid-row: 2; max-height: min(40dvh, 160px); }
+.root[data-landscape="true"] .controlArea > .mouseAssist { width: clamp(144px, 22vw, 184px); display: flex; flex-direction: column; padding: 8px; overflow-y: auto; }
+.root[data-landscape="true"] .controlArea > .mouseAssist .mouseActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.root[data-landscape="true"] .trackpad { flex: 1; height: auto; min-height: 80px; padding: 8px; }
+.root[data-landscape="true"] .modePill { top: auto; bottom: 8px; }
+@media (max-width: 359px) {
+  .statusRow { padding-inline: 4px; }
+  .headerButton { padding: 4px; }
+  .statusTitle { font-size: 13px; }
+  .toolbar .tbBtn { padding-inline: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root button,
+  .cursorRing,
+  .toolbarCapsule {
+    transition: none;
+  }
+  .ripple {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+.feedbackSlot { position: absolute; z-index: var(--mobile-layer-notice); bottom: calc(72px + env(safe-area-inset-bottom, 0px)); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); min-width: 0; max-height: min(40%, 240px); overflow-y: auto; }
+.feedbackSlot:empty { display: none; }
+.root[data-landscape="true"] .feedbackSlot { bottom: max(8px, env(safe-area-inset-bottom, 0px)); right: calc(76px + env(safe-area-inset-right, 0px)); }
+.root[data-keyboard="true"] .feedbackSlot { bottom: auto; top: max(8px, env(safe-area-inset-top, 0px)); max-height: 30%; }
+/* 横屏首次引导（2026-10-05）：收起后把手的一次性脉冲与气泡。
+   脉冲随用户首次打开工具栏/点画面停止（teaching→hint→done），非常驻；
+   后台时 WebView 随 Activity 暂停，不空转。 */
+.toolHandlePulse { animation: toolPulse 1.8s ease-out infinite; }
+@keyframes toolPulse {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  to { box-shadow: 0 0 0 8px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toolHandlePulse { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
+}
+.toolTip {
+  position: absolute;
+  z-index: var(--mobile-layer-nav);
+  top: calc(56px + env(safe-area-inset-top, 0px));
+  right: calc(76px + env(safe-area-inset-right, 0px));
+  max-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--mobile-radius-group);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.toolTip::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 18px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: var(--card-bg);
+  border-left: 1px solid var(--accent);
+  border-top: 1px solid var(--accent);
+}
+.keyboardTop {
+  display: flex;
+  gap: 8px;
+}
+.keyboardTop .quickKeys {
+  flex: 1;
+  min-width: 0;
+}
+.keyboardTop > button {
+  flex: none;
 }

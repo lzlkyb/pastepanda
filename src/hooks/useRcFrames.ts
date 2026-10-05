@@ -27,6 +27,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { rcDrainFrames, parseFrameBatch, rcSendInput, type RcBinFrame } from "@/lib/api/rc";
 import { H264Decoder, type HwCodec } from "@/lib/rcH264";
+import { rcWaitStage, type RcSessionPhase } from "@/lib/rcWaitStage";
 // JPEG 上屏编排（整帧覆盖 / 脏块贴块 + 两条不变量）拆在这里，本文件压在 400 行内
 import { createJpegSink } from "@/lib/rcJpegSink";
 // 积压时丢掉过期帧的判据（纯函数 + 单测），安全边界见该文件头
@@ -58,6 +59,12 @@ export function useRcFrames(
      * 不该对 rc_drain_frames 空转 IPC。缺省 true，桌面行为不变。
      */
     enabled?: boolean;
+    /**
+     * §17.3（2026-10-03）：会话阶段。首帧之前的等待由三段构成（拨号/等批准/
+     * 编码器起帧），阶段文案让界面说实话（见 lib/rcWaitStage）。不给则退回
+     * 通用「等待对方画面…」——消费方不传阶段时行为不变。
+     */
+    phase?: RcSessionPhase;
   },
 ) {
   const visible = useWindowVisible();
@@ -83,12 +90,16 @@ export function useRcFrames(
   // 帧遥测 EMA 与微抖动缓冲：纯计算在类里，换会话时 reset（与 fpsMeter 同法）
   const stats = useRef(new FrameStats());
   const jitter = useRef(new RenderDelayBuffer());
+  /** §17.3：等画面等太久的一句人话（阶段文案见 rcWaitStage），空串 = 正常时长内。 */
+  const [waitHint, setWaitHint] = useState("");
 
   // skew / 输入时刻 / 画质档提示不参与取帧循环的依赖——用 ref 透传，
   // status 刷新或换档不打断播放循环
   const skewRef = useRef(0);
   const lastInputRef = useRef<React.RefObject<number> | null>(null);
   const qualityRef = useRef(opts?.qualityHint ?? "");
+  /** §17.3：会话阶段用 ref 透传（轮询刷新不打断取帧循环，与 skew 同法）。 */
+  const phaseRef = useRef<RcSessionPhase | undefined>(opts?.phase);
   useEffect(() => {
     skewRef.current = opts?.clockSkewMs ?? 0;
   }, [opts?.clockSkewMs]);
@@ -98,10 +109,14 @@ export function useRcFrames(
   useEffect(() => {
     qualityRef.current = opts?.qualityHint ?? "";
   }, [opts?.qualityHint]);
+  useEffect(() => {
+    phaseRef.current = opts?.phase;
+  }, [opts?.phase]);
 
   useEffect(() => {
     setHasFrame(false);
     setStatusText("等待对方画面…");
+    setWaitHint("");
     setCodec("jpeg");
     setFps(0);
     setLatencyMs(0);
@@ -189,6 +204,9 @@ export function useRcFrames(
     let wake: (() => void) | null = null;
     /** 连续整轮取帧失败计数；任一帧上屏即清零（见 noteFrameShown）。 */
     let tickFails = 0;
+    /** 首帧到过没有——等画面文案的停表判据（见下方 waitTick）。 */
+    let gotFrame = false;
+    let receivedFrame = false;
     const noteTickFailure = (e: unknown) => {
       tickFails += 1;
       console.warn("[rc] 取帧轮次失败", e);
@@ -196,6 +214,23 @@ export function useRcFrames(
       // 必须让占位文案说实话，而不是继续演「等待对方画面…」。
       if (tickFails === 5) setStatusText("画面接收异常，正在自动重试…");
     };
+    // §17.3（2026-10-03 真机教训）：首帧前的等待按会话阶段说实话——拨号/
+    // 等对方批准/编码器起帧是三段不同的等待，共用一句静态「等待对方画面…」
+    // 让用户只能判断「卡死了」。1s 一拍刷阶段文案与「等太久」提示（阈值见
+    // rcWaitStage）；收到帧、连续取帧失败、窗口不可见时各自收摊。
+    // 纯 CSS 呼吸动画在呈现层（MobileNotice pending 图标），这里零动效开销。
+    const waitStartedAt = performance.now();
+    const applyWaitStage = () => {
+      if (!alive || gotFrame) return;
+      if (tickFails >= 5) return; // 异常文案优先，别被阶段文案盖回去
+      const stage = rcWaitStage(phaseRef.current, performance.now() - waitStartedAt);
+      // 宽比较：setState 同值不触发渲染（React bailout），按节拍重复设无成本
+      setStatusText(stage.text);
+      setWaitHint(stage.hint);
+    };
+    // 立即来一次：换会话后 reset effect 给的是通用兜底文案，别让用户先看一秒旧话
+    applyWaitStage();
+    const waitTick = window.setInterval(applyWaitStage, 1000);
     void listen("rc-frame-ready", () => {
       wake?.();
     })
@@ -210,8 +245,19 @@ export function useRcFrames(
         console.warn("[rc] rc-frame-ready 监听注册失败，退化为纯轮询", e);
       });
 
-    const noteFrameShown = () => {
+    let lastProgressMs = -200;
+    const noteFrameShown = (atMs: number) => {
+      const now = performance.now();
+      if (sessionId && atMs > 0 && now - lastProgressMs >= 200) {
+        lastProgressMs = now;
+        void rcSendInput({ kind: "frame_presented", session_id: sessionId, at_ms: atMs }).catch(() => {});
+      }
       tickFails = 0;
+      // configure/decode 入队成功不代表画面已解出；否则每次提交都清零，
+      // 连续损坏参考链会永远只有一次失败，JPEG 兜底永远触发不了。
+      h264Miss = 0;
+      if (!gotFrame) console.info("[rc] 首帧已显示", { sessionId, ...contentRef.current });
+      gotFrame = true;
       fpsMeter.current.push();
       // 🔴 C3：performance.now 域——此 ref 唯一消费者是 `useRcLinkState`
       // （停滞/未响应判据），整条判据链不碰墙钟。别的 epoch 用量（画面延迟
@@ -220,6 +266,7 @@ export function useRcFrames(
       setFps(fpsMeter.current.fps());
       setHasFrame(true);
       setStatusText("");
+      setWaitHint("");
     };
 
     // JPEG 上屏：整帧覆盖 / 脏块贴块。判据与两条不变量（宽高没变不 setState、
@@ -239,7 +286,7 @@ export function useRcFrames(
       setCodec(f.codec);
       const std: HwCodec = f.codec === "hevc" ? "hevc" : f.codec === "av1" ? "av1" : "h264";
       curStd = std;
-      h264 ??= new H264Decoder(
+      const decoder = (h264 ??= new H264Decoder(
         (vf) => {
           const c = canvasRef.current;
           if (!c) return;
@@ -254,9 +301,10 @@ export function useRcFrames(
           contentRef.current = { w, h };
           setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
           cx.drawImage(vf, 0, 0);
-          noteFrameShown();
+          noteFrameShown(vf.timestamp);
         },
-        () => {
+        (error) => {
+          console.warn("[rc] 视频解码失败", { sessionId, codec: curStd, error });
           h264?.close();
           h264 = null;
           if (!waitingKey) {
@@ -271,8 +319,8 @@ export function useRcFrames(
           //（先 HEVC 后 H.264 会误 forceH264，反之会跳过 H.264 直接砸 JPEG）。
           if (h264Miss >= 3) (curStd === "h264" ? forceJpeg : forceH264)();
         },
-      );
-      h264.ensureConfigured(
+      ));
+      decoder.ensureConfigured(
         f.width || 1280,
         f.height || 720,
         // 2026-09-22：fps144/fps165 档进表——1080p144/165 超出 L5.1 宏块率，
@@ -281,9 +329,9 @@ export function useRcFrames(
         QUALITY_FPS[qualityRef.current] ?? 0,
         std,
       );
-      if (h264.available) {
-        h264Miss = 0;
-        h264.decode(f.data, f.key, f.at_ms);
+      if (h264 !== decoder) return; // 配置失败回调已经收口/回退，不能再访问 h264。
+      if (decoder.available) {
+        decoder.decode(f.data, f.key, f.at_ms);
         return;
       }
       h264Miss += 1;
@@ -315,6 +363,10 @@ export function useRcFrames(
           idleMs += pollMs;
           pollMs = idleMs > 1000 ? 200 : idleMs > 250 ? 64 : 16;
           return;
+        }
+        if (!receivedFrame) {
+          receivedFrame = true;
+          console.info("[rc] 首批视频帧已到前端", { sessionId, codec: frames[0].codec, count: frames.length });
         }
         idleMs = 0;
         pollMs = 16;
@@ -422,6 +474,7 @@ export function useRcFrames(
       wake?.();
       unlisten?.();
       h264?.close();
+      window.clearInterval(waitTick);
     };
   }, [sessionId, visible, canvasRef, enabled]);
 
@@ -431,6 +484,8 @@ export function useRcFrames(
     visible,
     hasFrame,
     statusText,
+    /** §17.3：等画面等太久的一句人话（见 rcWaitStage 阈值）；空串 = 正常时长内。 */
+    waitHint,
     codec,
     fps,
     contentRef,

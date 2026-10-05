@@ -6,10 +6,31 @@ use crate::rc::service::RcService;
 use crate::rc::session::{gate_inbound, CFG_CAPABILITY, CFG_DEVICE_DENY, CFG_ENABLED};
 
 #[test]
+fn default_允许被远程开着_但没配对的设备照样进不来() {
+    // 🔴 2026-10-03 守卫：`rc_enabled` 缺省从 false 翻成 true——新装 App 的
+    // 「远程控制」按钮不再直接置灰。默认开**不**等于谁都能控：没配对的设备被
+    // 门禁第一层 NotPaired 拦下；显式关过的安装照旧 Disabled（尊重用户选择）。
+    let s = store();
+    let svc = RcService::new(s.clone());
+    assert!(svc.enabled(), "允许被远程缺省为开");
+    let g = gate_inbound(
+        svc.enabled(),
+        svc.max_capability(),
+        &svc.device_deny(),
+        "p",
+        false, // 未配对
+        Capability::View,
+        false,
+    );
+    assert_eq!(g, crate::rc::session::Gate::NotPaired, "默认开也不放过没配对的设备");
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
+    assert!(!RcService::new(s).enabled(), "显式关过必须照旧关");
+}
+
+#[test]
 fn default_rejects_everything() {
     let s = store();
     let svc = RcService::new(s.clone());
-    assert!(!svc.enabled());
     assert_eq!(svc.max_capability(), Capability::View);
     // 无会话时 require_active 必须失败
     assert!(svc.require_active().is_err());
@@ -48,6 +69,8 @@ async fn request_without_rc_pair_fails() {
 async fn request_rc_paired_but_no_transport() {
     let s = store();
     s.rc_device_pair(&"bb".repeat(32), "远程机").unwrap();
+    // 显式关「允许被远程」——缺省已是开，要验证「发起不依赖它」必须手动关上
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
     let svc = RcService::new(s);
     // 有配对 → needs_channel 为真，但通道尚未 start
     assert!(svc.needs_channel());
@@ -86,7 +109,10 @@ async fn request_with_uno_code_skips_pairing_gate() {
 }
 
 #[test]
-fn needs_channel_when_paired_without_being_remoted() {    let s = store();
+fn needs_channel_when_paired_without_being_remoted() {
+    let s = store();
+    // 显式关「允许被远程」——缺省已是开，「没配对又关着才不起通道」得手动关
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
     assert!(!RcService::new(s.clone()).needs_channel());
     s.rc_device_pair(&"cc".repeat(32), "甲").unwrap();
     let svc = RcService::new(s.clone());
@@ -103,6 +129,8 @@ fn needs_channel_when_only_sync_paired() {
     // B9：仅同步配对、无远程配对、未开被控 → 仍要起通道，
     // 否则用户看得见设备（source="sync"）却发不起。
     let s = store();
+    // 显式关「允许被远程」——缺省已是开，这条验的就是「关着也能发起」
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
     s.device_pair(&"ff".repeat(32), "同步机", "").unwrap();
     let svc = RcService::new(s);
     assert!(!svc.enabled(), "发起不依赖「允许被远程」");
@@ -148,8 +176,9 @@ async fn end_without_session_fails() {
 
 #[test]
 fn inbound_gate_matrix_in_service_config() {
-    // 服务未开 → Disabled
+    // 服务未开 → Disabled（缺省已是开，「未开」得显式关出来）
     let s = store();
+    set_cfg(&s, CFG_ENABLED, serde_json::Value::Bool(false));
     let svc = RcService::new(s.clone());
     let g = gate_inbound(
         svc.enabled(),

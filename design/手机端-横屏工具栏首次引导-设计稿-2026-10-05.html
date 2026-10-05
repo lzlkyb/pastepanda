@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>手机端 · 横屏工具栏首次引导 · 设计稿（2026-10-05）</title>
+<!-- status: implemented 2026-10-05（useImmersiveCapsule 相位机 + SessionFeedback 教学条 + SessionToolbar 把手脉冲/气泡；屏幕点按代替「点画面」取消路径） -->
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: rgba(20, 30, 52, 0.72);
+    --glass: rgba(15, 23, 42, 0.62);
+    --line: rgba(148, 163, 184, 0.22);
+    --text: #e6edf7;
+    --text-2: #94a0bd;
+    --accent: #6366f1;
+    --accent-light: rgba(99, 102, 241, 0.16);
+    --cyan: #22d3ee;
+    --warn: #f59e0b;
+    --ok: #34d399;
+    --r: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px 20px 80px; }
+  main { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .intro p { color: var(--text-2); margin: 4px 0; }
+  .intro .caption { font-size: 12px; }
+  .scenes { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 14px; }
+  .scenes button { background: var(--panel); border: 1px solid var(--line); color: var(--text-2); padding: 9px 16px; border-radius: 999px; font-size: 13px; cursor: pointer; min-height: 36px; }
+  .scenes button[aria-pressed="true"] { background: var(--accent-light); border-color: var(--accent); color: var(--text); }
+  .stage { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+  .phone { flex: none; }
+  /* 横屏手机框：740×360 ≈ 真机横屏比例，内含真实结构比例（右侧 68px 工具栏） */
+  .device { width: 740px; height: 360px; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; position: relative; background: #0d1526; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+  .session { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0,1fr) 68px; grid-template-rows: minmax(0,1fr) auto; }
+  .control { grid-column: 1; grid-row: 1; position: relative; overflow: hidden; }
+  .desktop { position: absolute; inset: 0; background: linear-gradient(160deg, #101a30, #0d1526); }
+  .desktop .bar { position: absolute; left: 0; right: 0; height: 26px; background: rgba(148,163,184,.08); display: flex; align-items: center; padding: 0 12px; color: var(--text-2); font-size: 11px; gap: 10px; }
+  .desktop .bar.top { top: 0; } .desktop .bar.bottom { bottom: 0; }
+  .desktop .icon-grid { position: absolute; top: 44px; left: 18px; display: grid; grid-template-columns: repeat(2, 84px); gap: 14px 20px; }
+  .desktop .icon { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-2); font-size: 10px; }
+  .desktop .icon i { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, rgba(99,102,241,.5), rgba(34,211,238,.35)); }
+  .cursor { position: absolute; left: 46%; top: 52%; width: 15px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); z-index: 4; }
+  /* 右侧 68px 工具栏（toolRail） */
+  .rail { grid-column: 2; grid-row: 1 / -1; background: rgba(15, 23, 42, 0.9); border-left: 1px solid var(--line); display: flex; flex-direction: column; padding: 4px; gap: 4px; overflow-y: auto; }
+  .rail .handle { display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: rgba(30, 41, 66, 0.9); color: var(--text); font-size: 12px; cursor: pointer; width: 100%; padding: 4px; }
+  .rail .tools-collapsed { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; z-index: 6; }
+  .tools-collapsed .handle { min-height: 44px; padding: 8px 12px; background: rgba(20, 30, 52, 0.92); border: 1px solid var(--line); border-radius: var(--r); color: var(--text); font-size: 15px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .tb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 48px; border: 0; border-radius: 999px; background: transparent; color: var(--text-2); font-size: 11px; cursor: pointer; white-space: normal; }
+  .tb.on { color: #a5b4fc; background: var(--accent-light); }
+  .tb svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  .badge { display: flex; align-items: center; justify-content: center; min-height: 40px; border-radius: var(--r); background: rgba(52, 211, 153, 0.12); color: var(--ok); font-size: 10px; text-align: center; padding: 4px; }
+  /* 鼠标辅助（竖排贴 rail 底） */
+  .mouse-assist { margin-top: auto; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px; padding: 4px 0; }
+  .mouse-assist button { font-size: 11px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 8px; background: rgba(30,41,66,.6); color: var(--text-2); cursor: pointer; min-height: 40px; }
+  .mouse-assist button[aria-pressed="true"] { background: var(--accent-light); border-color: var(--accent); color: #a5b4fc; }
+  /* 反馈槽（feedbackSlot：横屏位于左下、让开右侧栏） */
+  .feedback-slot { position: absolute; left: 10px; bottom: 10px; z-index: 5; display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+  .toast { display: flex; gap: 8px; align-items: flex-start; background: var(--glass); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 12px; font-size: 12px; color: var(--text); backdrop-filter: blur(10px); }
+  .toast b { font-weight: 600; }
+  .toast.tone-info i { color: var(--cyan); }
+  .toast i { width: 14px; height: 14px; border-radius: 50%; flex: none; margin-top: 3px; background: var(--cyan); }
+  .toast .x { margin-left: auto; color: var(--text-2); cursor: pointer; flex: none; }
+  /* 教学提示条（新增元素） */
+  .teach { border-color: rgba(99,102,241,.55); background: linear-gradient(135deg, rgba(99,102,241,.18), rgba(34,211,238,.10)); }
+  .teach .count { flex: none; font-variant-numeric: tabular-nums; font-size: 11px; color: #a5b4fc; border: 1px solid rgba(99,102,241,.5); border-radius: 999px; padding: 1px 8px; }
+  /* 把手注意脉冲（新增元素，尊重 prefers-reduced-motion） */
+  .pulse { position: relative; }
+  .pulse::after { content: ""; position: absolute; inset: -4px; border-radius: 14px; border: 2px solid rgba(34,211,238,.6); animation: pulse 1.8s ease-out infinite; }
+  @keyframes pulse { from { opacity: .9; transform: scale(.96); } to { opacity: 0; transform: scale(1.12); } }
+  .tip { position: absolute; top: 64px; right: 12px; z-index: 6; max-width: 200px; background: var(--glass); border: 1px solid rgba(34,211,238,.45); border-radius: var(--r); padding: 8px 12px; font-size: 12px; backdrop-filter: blur(10px); }
+  .tip::before { content: ""; position: absolute; top: -6px; right: 22px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--glass); border-left: 1px solid rgba(34,211,238,.45); border-top: 1px solid rgba(34,211,238,.45); }
+  /* 标注 */
+  .callout { position: absolute; z-index: 8; font-size: 11px; color: #0b1220; background: var(--warn); border-radius: 8px; padding: 3px 8px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+  .callout::after { content: ""; position: absolute; width: 8px; height: 8px; background: var(--warn); transform: rotate(45deg); bottom: -3px; right: 16px; }
+  /* 说明卡 */
+  .notes { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 12px; }
+  .note-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+  .note-card h3 { margin: 0 0 8px; font-size: 14px; }
+  .note-card p, .note-card li { color: var(--text-2); font-size: 12.5px; margin: 4px 0; }
+  .note-card ul { padding-left: 18px; margin: 6px 0; }
+  .note-card .new { color: var(--cyan); font-weight: 600; }
+  .note-card .keep { color: var(--ok); font-weight: 600; }
+  code { background: rgba(148,163,184,.14); border-radius: 6px; padding: 1px 6px; font-size: 11.5px; }
+  @media (prefers-reduced-motion: reduce) { .pulse::after { animation: none; opacity: .5; } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header class="intro">
+    <h1>手机端 · 横屏工具栏首次引导（设计稿）</h1>
+    <p>问题：横屏收起后只有一个很小的「工具」把手（右上角），首次横屏的用户不知道工具在哪、也不知道能收起/唤出——触屏与微动升级、画面优先改版都把「发现性」留成了遗留项。</p>
+    <p class="caption">交互设计稿 · 电脑内容为示意，不连真实设备。基线 = R2 落地态（显式收起、把手常驻、不吞画面顶缘输入），本次只加「首次引导」，不改已定语义。</p>
+  </header>
+
+  <div class="scenes" role="tablist" aria-label="查看状态">
+    <button data-scene="now" aria-pressed="true">① 现状问题</button>
+    <button data-scene="teach" aria-pressed="false">② 方案：首次横屏自动展开 15s</button>
+    <button data-scene="after" aria-pressed="false">③ 教学后：把手引导提示</button>
+  </div>
+
+  <div class="stage">
+    <div class="phone">
+      <div class="device">
+        <div class="session">
+          <div class="control">
+            <div class="desktop">
+              <div class="bar top">工作电脑 — 远程画面</div>
+              <div class="icon-grid">
+                <span class="icon"><i></i>此电脑</span><span class="icon"><i></i>项目资料</span>
+                <span class="icon"><i></i>会议记录</span><span class="icon"><i></i>回收站</span>
+              </div>
+              <div class="bar bottom">开始<span>任务视图</span><span>PastePanda</span></div>
+            </div>
+            <svg class="cursor" viewBox="0 0 24 30" aria-hidden="true"><path d="M3 2v22l6-6 4 10 4-2-4-10h8Z" fill="#fff" stroke="#334" stroke-width="1.4"/></svg>
+            <div class="tools-collapsed" id="collapsedTools">
+              <button class="handle" id="revealBtn" aria-expanded="false">▾ 工具</button>
+            </div>
+            <div class="tip hidden" id="firstTip">画面、键盘、画质工具都收在这里</div>
+            <div class="feedback-slot" id="feedbackSlot"></div>
+          </div>
+          <aside class="rail hidden" id="rail">
+            <button class="handle" id="collapseBtn" aria-expanded="true">▴ 收起</button>
+            <button class="tb on"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 12h10"/></svg><span>触控板</span></button>
+            <button class="tb"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 11h.01M11 11h.01M15 11h.01M8 14h8"/></svg><span>键盘</span></button>
+            <button class="tb"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M9 21h6"/></svg><span>画面</span></button>
+            <button class="tb"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg><span>更多</span></button>
+            <div class="mouse-assist">
+              <button>左键</button><button>右键</button>
+              <button aria-pressed="false">拖拽</button><button aria-pressed="false">滚动</button>
+            </div>
+            <div class="badge">延时 36ms<br>局域网</div>
+          </aside>
+        </div>
+        <div class="callout hidden" id="callout" style="top: 6px; right: 76px;">横屏进来的用户只看得到这个</div>
+      </div>
+    </div>
+
+    <div class="notes">
+      <div class="note-card" id="noteNow">
+        <h3>① 现状（问题）</h3>
+        <p>首次横屏：工具栏收起，只有右上角 44px 高的「工具」把手。真实手机上它贴着刘海/系统栏，与画面内容对比弱。</p>
+        <ul>
+          <li>用户不知道「画面与画质 / 剪贴板 / 断开」都在这里；</li>
+          <li>横屏热区拦截与自动浮现机制在 R2 时被移除，但<b>替代的首次引导一直没做</b>（touchConstants 里 CAPSULE_* 三个死常量就是它的残迹，本次已清理）。</li>
+        </ul>
+      </div>
+      <div class="note-card hidden" id="noteTeach">
+        <h3>② 方案：会话首次进横屏 → 自动展开 15 秒</h3>
+        <ul>
+          <li><span class="new">新增</span>：每个会话第一次进入横屏，工具栏自动展开，并出一条倒计时提示「工具栏在这里 · <b>15</b> 秒后自动收起，之后点「工具」随时唤出」；</li>
+          <li><span class="keep">保留</span>：教学期间一切照旧——四个入口、鼠标辅助、延时角标都可直接用；用户手动点「收起」立即结束教学；</li>
+          <li><span class="keep">保留</span>：15 秒后收回到把手态，之后<b>纯手动</b>（R2 语义：显式收起、把手常驻，不再自动隐藏）；</li>
+          <li>提示条走 <code>feedbackSlot</code> 同域展示（规则 15：触发与反馈同可见性域），不与画面手势抢层。</li>
+        </ul>
+        <p>触发口径：<code>useImmersiveCapsule</code> 检测「本会话内 landscape 首次为真」→ 展开 + 15s 定时；不做跨会话记忆（每次会话都值得教一次，代价只是 15 秒）。</p>
+      </div>
+      <div class="note-card hidden" id="noteAfter">
+        <h3>③ 收起后：把手的可发现性兜底</h3>
+        <ul>
+          <li><span class="new">新增</span>：教学结束（或用户提前收起）后，若本会话还没主动打开过工具栏，把上加一次性的注意脉冲 + 气泡「画面、键盘、画质工具都收在这里」；</li>
+          <li>用户第一次点开工具栏后，气泡与脉冲永久消失（本会话内不再出现）；</li>
+          <li>点按目标 ≥44px；气泡出现在把手正下方，不遮画面中心；尊重 <code>prefers-reduced-motion</code>（脉冲退化为静态高亮）。</li>
+        </ul>
+        <p>两级取消：气泡不挡任何操作，点「工具」、点画面、切竖屏都会让它消失。</p>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+  const sceneBtns = [...document.querySelectorAll(".scenes button")];
+  const rail = document.getElementById("rail");
+  const collapsed = document.getElementById("collapsedTools");
+  const callout = document.getElementById("callout");
+  const teachSlot = document.getElementById("feedbackSlot");
+  const firstTip = document.getElementById("firstTip");
+  const revealBtn = document.getElementById("revealBtn");
+  const collapseBtn = document.getElementById("collapseBtn");
+  const notes = { now: document.getElementById("noteNow"), teach: document.getElementById("noteTeach"), after: document.getElementById("noteAfter") };
+  let teachTimer = null;
+
+  function clearTeach() {
+    if (teachTimer) { clearInterval(teachTimer); teachTimer = null; }
+    teachSlot.innerHTML = "";
+  }
+  function showTeach() {
+    clearTeach();
+    let left = 15;
+    const bar = document.createElement("div");
+    bar.className = "toast teach tone-info";
+    bar.innerHTML = `<i></i><div><b>工具栏在这里</b> · 画面、画质、剪贴板、断开都在这列。之后点「工具」随时唤出。</div><span class="count">${left}s</span><span class="x" title="我知道了">✕</span>`;
+    const count = bar.querySelector(".count");
+    bar.querySelector(".x").onclick = () => { clearTeach(); endTeach(false); };
+    teachSlot.appendChild(bar);
+    teachTimer = setInterval(() => {
+      left -= 1;
+      if (left <= 0) { clearTeach(); endTeach(false); return; }
+      count.textContent = `${left}s`;
+    }, 1000);
+  }
+  function expand(open) {
+    rail.classList.toggle("hidden", !open);
+    collapsed.classList.toggle("hidden", open);
+    revealBtn.setAttribute("aria-expanded", String(open));
+    collapseBtn.setAttribute("aria-expanded", String(open));
+    firstTip.classList.add("hidden");
+    revealBtn.classList.remove("pulse");
+  }
+  function endTeach(userCollapsed) {
+    expand(false);
+    if (userCollapsed) return;
+    revealBtn.classList.add("pulse");
+    firstTip.classList.remove("hidden");
+  }
+  function scene(name) {
+    sceneBtns.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.scene === name)));
+    Object.entries(notes).forEach(([k, el]) => el.classList.toggle("hidden", k !== name));
+    clearTeach();
+    revealBtn.classList.remove("pulse");
+    firstTip.classList.add("hidden");
+    callout.classList.add("hidden");
+    if (name === "now") { expand(false); callout.classList.remove("hidden"); }
+    if (name === "teach") { expand(true); showTeach(); }
+    if (name === "after") { expand(false); revealBtn.classList.add("pulse"); firstTip.classList.remove("hidden"); }
+  }
+  sceneBtns.forEach(b => b.onclick = () => scene(b.dataset.scene));
+  revealBtn.onclick = () => { expand(true); clearTeach(); };
+  collapseBtn.onclick = () => endTeach(true);
+  scene("now");
+</script>
+</body>
+</html>

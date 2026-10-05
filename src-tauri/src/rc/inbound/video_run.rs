@@ -25,46 +25,21 @@ impl InboundVideo {
                 //（与它写给对端 HUD 的是同一组数——两侧口径天然一致，不会出现
                 // 「日志说 30ms、HUD 说 80ms」这种自相矛盾）
                 let send_t0 = std::time::Instant::now();
-                let mut guard = self.send.lock().await;
-                if let Some(r) = enc_out.rect {
-                    if let Err(e) = crate::rc::video::write_dirty_meta(&mut guard, r).await {
-                        log::info!("[RC] 脏矩形元数据写失败：{e}");
+                #[cfg(target_os = "windows")]
+                let media_sent = if self.peer_media_plane {
+                    if !self.send_jpeg_plane(&enc_out).await { return Step::End; }
+                    true
+                } else { false };
+                #[cfg(not(target_os = "windows"))]
+                let media_sent = false;
+                if !media_sent {
+                    let mut guard = self.send.lock().await;
+                    if crate::rc::video::write_jpeg_frame(&mut guard, &enc_out).await.is_err() {
                         drop(guard);
-                        self.svc
-                            .force_end_if_session(&self.my_id, "画面推送失败")
-                            .await;
+                        self.svc.force_end_if_session(&self.my_id, "画面推送失败").await;
                         return Step::End;
                     }
                 }
-                // P2-10：JPEG 帧也带采集时间戳（H.264 走 meta JSON）；
-                // P0-2：顺带采集/编码耗时，发起端 HUD 分段显示
-                if let Err(e) = crate::rc::video::write_vts_meta(
-                    &mut guard,
-                    enc_out.frame.at_ms,
-                    enc_out.frame.cap_ms,
-                    enc_out.frame.enc_ms,
-                )
-                .await
-                {
-                    log::info!("[RC] 时间戳元数据写失败：{e}");
-                    drop(guard);
-                    self.svc
-                        .force_end_if_session(&self.my_id, "画面推送失败")
-                        .await;
-                    return Step::End;
-                }
-                if crate::rc::video::write_jpeg(&mut guard, &enc_out.frame.jpeg)
-                    .await
-                    .is_err()
-                {
-                    log::info!("[RC] 画面写入失败，停止推流");
-                    drop(guard);
-                    self.svc
-                        .force_end_if_session(&self.my_id, "画面推送失败")
-                        .await;
-                    return Step::End;
-                }
-                drop(guard);
                 // 探针：JPEG 路径的分段耗时（抓屏+编码来自 capture_and_encode，
                 // 发送取上面三次 write 的合计）
                 self.perf_last = crate::rc::perf::FrameTiming::produced(
@@ -133,12 +108,29 @@ impl InboundVideo {
             // busy 闸一直被占。15 秒零入站证据已经不是抖动而是失联，直接收口：
             // 走 `force_end_if_session`（按 session id 认领，绝不误杀同 peer 的
             // 新会话），于是 `release_all` 补发 up、历史落库、设备标离线全部照走。
-            if self.svc.inbound_heartbeat_stale() {
-                log::info!("[RC] 发起端失联（心跳超时），自动结束会话");
-                self.svc
-                    .force_end_if_session(&self.my_id, "对端失联（心跳超时）")
-                    .await;
+            // 🔴 后台保活（2026-10-02）：看门狗升级为 bg 感知（纯判据在
+            // `link::peer_bg_watchdog`，有守卫单测）。发起端进后台（BgPause）
+            // 后 WebView/进程会被冻结，心跳断是**预期内**的——按前台口径的
+            // 15s 失联判死就是「切后台再回来远程就断了」的根因；后台连续
+            // 无入站证据达到 5 分钟才收口，健康心跳不受后台时长限制。
+            let bg_since = self.svc.peer_background_since();
+            if let Some(reason) = self.svc.inbound_disconnect_reason() {
+                log::info!("[RC] {reason}，自动结束会话，恢复窗口={}ms",
+                    self.svc.heartbeat_timeout_ms());
+                self.svc.force_end_if_session(&self.my_id, reason).await;
                 break;
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(pipe) = &mut self.media_pipe {
+                pipe.set_paused(self.svc.media_paused());
+            }
+            if bg_since > 0 {
+                // 对端在后台：整圈跳过——不采集、不编码、不发送。
+                // 对端前端已暂停消费（useWindowVisible），推出去只会堆在 outbox
+                // 里等过期，采集+编码是纯白烧 CPU/电。BgResume 一到就强制 IDR
+                // （spawn_input_reader），下一圈画面整帧恢复。
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                continue;
             }
             if self.svc.should_pause_stream() {
                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -156,6 +148,11 @@ impl InboundVideo {
                 ))
                 .await;
                 continue;
+            }
+            #[cfg(target_os = "windows")]
+            if self.peer_video_plane || self.peer_media_plane {
+                if !self.wait_media_capacity().await { break; }
+                if self.svc.media_paused() { continue; }
             }
             // 等待：到点（固定节奏）或 输入提帧（拖动跟手）。
             // 提帧走 `boost_frame`（notify_one，**存许可**）⇒ 本圈干活期间到达的
@@ -192,7 +189,8 @@ impl InboundVideo {
                     gpu_disabled,
                 )
             };
-            let boost_gap = std::time::Duration::from_millis(boost_gap_ms(interval));
+            let boost_gap = std::time::Duration::from_millis(
+                boost_gap_ms(interval).max(1000 / self.svc.media_fps_limit(&self.my_id) as u64));
             let frame_start = {
                 let now = tokio::time::Instant::now();
                 let min_next = self.last_frame_at + boost_gap;
@@ -302,12 +300,11 @@ impl InboundVideo {
             // 动画期间每圈都活跃，于是被以 60fps 连续抓取；旧实现只在输入
             // 事件那一瞬间提一帧，200ms 的动画总共只抓到 2 帧。
             next_tick = frame_start
-                + std::time::Duration::from_millis(next_period_ms(
-                    active,
-                    interval,
-                    self.pace_scale,
-                ));
+                + std::time::Duration::from_millis(next_period_ms(active, interval, self.pace_scale)
+                    .max(1000 / self.svc.media_fps_limit(&self.my_id) as u64));
         }
+        #[cfg(target_os = "windows")]
+        self.discard_media_stream();
         // 探针（2026-09-21）：会话收尾无条件打一条全量摘要。
         // 周期性汇总会随退出丢掉最后一截（不足 5s 的部分），而那一截往往
         // 正是「刚改完设置重启会话」的现场。

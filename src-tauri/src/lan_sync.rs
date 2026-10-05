@@ -513,9 +513,7 @@ pub struct LanDevice {
 /// ❗ 写成自由函数而不是 `LanSync` 的方法：调用方是那个脱离 `&self` 跑的
 /// 广播线程，以及「手动刷新」时的立即触发（方法里再包一层）。
 fn send_hello(device_id: &str) {
-    let name = hostname::get()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "未知设备".to_string());
+    let name = crate::device_identity::local_device_name();
     send_pair_raw(&crate::lan_pair::PairPacket::hello(
         device_id,
         &name,
@@ -805,9 +803,7 @@ impl LanSync {
             }
         }
 
-        let device_name = hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "未知设备".to_string());
+        let device_name = crate::device_identity::local_device_name();
         let pairing_key = self.get_pairing_key();
 
         let msg = LanMessage {

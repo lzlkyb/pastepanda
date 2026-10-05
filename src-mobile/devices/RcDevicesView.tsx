@@ -1,220 +1,221 @@
-/**
- * RcDevicesView — 设备页签内容：空态 / 列表态 / 配对卡 / pending 等待卡。
- *
- * 编排按设计稿 §1 三态 + §2/§3 状态机；数据全来自 useRc（rcStore），
- * 会话 active 态由 App 换屏（本组件只管 pending 卡）。错误条常驻页内
- * （规则 15.3：失败不靠 toast 一闪），文案说人话。
- */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { KeyRound, Monitor, Plus, ScanLine, ShieldCheck } from "lucide-react";
 import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { RcDeviceList } from "./RcDeviceList";
+import { RcDeviceActions } from "./RcDeviceActions";
 import { RcPairCard } from "./RcPairCard";
 import { RcUnoJoinCard } from "./RcUnoJoinCard";
-import styles from "./RcDevices.module.css";
+import { RcInboundAskCard } from "./RcInboundAskCard";
 import { rcErrorText } from "./rcErrorText";
+import { MobilePage } from "../ui/MobilePage";
+import { MobileSheet } from "../ui/MobileSheet";
+import { MobileNotice } from "../ui/MobileNotice";
+import { MobileToast } from "../ui/MobileToast";
+import ui from "../ui/MobileUi.module.css";
+import styles from "./RcDevices.module.css";
 
 export function RcDevicesView({
   rc,
   session,
   onSendFiles,
+  active = true,
+  onErrorScopeChange,
+  pageNotice,
 }: {
   rc: UseRc;
-  /** status.session（App 传下）：outbound_pending → 本组件渲染等待卡。 */
   session: RcSession | null;
-  /** 动作面板「传文件」→ App 切到文件页并预选这台设备。 */
   onSendFiles: (nodeId: string) => void;
+  active?: boolean;
+  onErrorScopeChange?: (owned: boolean) => void;
+  pageNotice?: ReactNode;
 }) {
   const [pairing, setPairing] = useState(false);
-  /** 无人值守接入卡。fixedTarget 非空 = 从设备动作面板进来（已锁定对象）。 */
   const [unoJoin, setUnoJoin] = useState<{ fixedTarget: string | null } | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
-  const [confirmForget, setConfirmForget] = useState(false);
+  const [notice, setNotice] = useState("");
   const targets = rc.targets ?? [];
-  const channelUp = rc.status?.running ?? null;
-
-  // 列表落地后探一轮可达性（与桌面侧栏同源数据，手机上一次就够；下拉刷新再探）
-  useEffect(() => {
-    if (!rc.targetsLoaded || targets.length === 0) return;
-    void rc.probeTargets().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rc.targetsLoaded, targets.length]);
-
   const pending = session?.phase === "outbound_pending" ? session : null;
-  const pendingName = pending
-    ? (targets.find((t) => t.node_id === pending.peer)?.display_name ?? pending.peer_name)
-    : "";
-  const pickedTarget = picked ? targets.find((t) => t.node_id === picked) : null;
-
-  const request = useCallback(
-    (capability: "control" | "view") => {
-      if (!picked) return;
-      void rc.request(picked, capability);
-      setPicked(null); // 结果由 status.session 驱动：pending 卡 / active 换屏 / 错误条
-    },
-    [picked, rc],
+  // 入站申请的确认卡（2026-10-02）：只有 App 开着就一定看得到。同屏来多条时
+  // 全部列出——后到的可能是另一台电脑，不能只露出最新那条就把人堵死。
+  const inbound = (rc.status?.pending ?? []).filter(
+    () => !session || session.phase !== "outbound_active",
   );
-
-  const errText = rc.error ?? rc.targetsError;
-  const errFriendly = errText ? rcErrorText(errText) : null;
-
+  const pickedTarget = targets.find((target) => target.node_id === picked);
+  const dismissNotice = useCallback(() => setNotice(""), []);
+  const ownsError = active && (!!pickedTarget || !!unoJoin);
+  useEffect(() => {
+    onErrorScopeChange?.(ownsError);
+    return () => onErrorScopeChange?.(false);
+  }, [ownsError, onErrorScopeChange]);
+  const probeTargets = rc.probeTargets;
+  // 探测失败不得静默（规则 15.3）：静默的后果是设备点永远停在「检查中」，
+  // 用户把「不可用」当成「离线」。失败转成一条可重试的提醒。
+  const [probeError, setProbeError] = useState(false);
+  const probe = useCallback(() => {
+    setProbeError(false);
+    void probeTargets().catch(() => setProbeError(true));
+  }, [probeTargets]);
+  useEffect(() => {
+    if (active && rc.targetsLoaded && targets.length > 0) probe();
+    // Pages stay mounted for paging; probe on entering, never for an offscreen preview.
+  }, [active, rc.targetsLoaded, targets.length, probe]);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {errText && (
-        <div className={styles.errBar} role="alert">
-          <span className={styles.errBarText}>{errFriendly}</span>
-          <button
-            type="button"
-            className={styles.errBtn}
-            onClick={() => {
-              rc.clearError();
-              void rc.refreshTargets();
-            }}
-          >
-            重试
-          </button>
-          <button type="button" className={styles.errBtn} onClick={rc.clearError}>
-            ✕
-          </button>
-        </div>
-      )}
-
-      {pending ? (
-        <div className={styles.pendingCard} role="status">
-          <div>
-            <span className={styles.spin} />
-          </div>
-          <div className={styles.pendingTitle}>正在连接 {pendingName || "对方"}…</div>
-          <div className={styles.pendingSub}>等对方在电脑上确认（受信任设备将自动通过）</div>
-          <button type="button" className={styles.ghostBtn} onClick={() => void rc.cancel()}>
-            取消
-          </button>
-        </div>
-      ) : unoJoin ? (
-        <RcUnoJoinCard
-          rc={rc}
-          fixedTarget={unoJoin.fixedTarget}
-          onClose={() => setUnoJoin(null)}
-          onConnected={() => setUnoJoin(null)}
+    <MobilePage
+      title="设备"
+      pageNotice={pageNotice}
+      subtitle="连接电脑，让工作随身。"
+      action={
+        <button className={ui.textButton} onClick={() => setPairing(true)}>
+          <Plus size={20} aria-hidden="true" />
+          添加
+        </button>
+      }
+    >
+      {rc.targetsError && (
+        <MobileNotice
+          error
+          title="设备列表未能更新"
+          detail={rcErrorText(rc.targetsError)}
+          action={
+            <button className={ui.textButton} onClick={() => void rc.refreshTargets()}>
+              重试
+            </button>
+          }
         />
-      ) : pairing ? (
-        <RcPairCard
-          onClose={() => setPairing(false)}
-          onPaired={() => {
+      )}
+      {active && notice && <MobileToast tone="success" title={notice} onDismiss={dismissNotice} />}
+      {probeError && targets.length > 0 && (
+        <MobileNotice tone="warning" title="在线状态检查失败"
+          detail="设备的可用性可能不是最新，可重新检查。"
+          action={<button className={ui.textButton} onClick={probe}>重新检查</button>} />
+      )}
+      {inbound.map((k) => (
+        <RcInboundAskCard
+          key={k.peer}
+          knock={k}
+          busy={rc.busy}
+          onDeny={rc.deny}
+        />
+      ))}
+      {session?.phase === "inbound_active" && (
+        <MobileNotice tone="warning" title="这台手机无法提供远程画面或控制" detail="这是旧版本建立的连接，请结束后改为从手机连接电脑。"
+          action={<button className={ui.secondary} disabled={rc.busy} onClick={() => void rc.end()}>
+            {rc.busy ? "正在结束…" : "结束连接"}
+          </button>} />
+      )}
+      {pending && (
+        <MobileNotice tone="pending" title={`正在连接 ${pending.display_name || pending.peer_name}…`} detail="等待电脑端确认，受信任设备将自动通过。"
+          action={<button className={ui.secondary} disabled={rc.busy} onClick={() => void rc.cancel()}>
+            取消连接
+          </button>} />
+      )}
+      <div className={styles.channel}>
+        <div>
+          <strong>
+            {rc.status?.running
+              ? "远程通道已开启"
+              : rc.status?.enabled === false
+                ? "远程通道已关闭"
+                : rc.status
+                  ? "远程通道尚未启动"
+                  : "正在检查远程通道…"}
+          </strong>
+          <p>{targets.length} 台已配对设备</p>
+        </div>
+        <span>
+          <ShieldCheck size={22} aria-hidden="true" />
+        </span>
+      </div>
+      <div className={styles.actionsRow}>
+        <button className={ui.secondary} onClick={() => setPairing(true)}>
+          <ScanLine size={19} aria-hidden="true" />
+          添加电脑
+        </button>
+        <button className={ui.secondary} onClick={() => setUnoJoin({ fixedTarget: null })}>
+          <KeyRound size={19} aria-hidden="true" />
+          无人值守
+        </button>
+      </div>
+      <div className={ui.sectionHead}>
+        <span>已配对设备</span>
+        <button
+          className={ui.textButton}
+          disabled={rc.busy}
+          onClick={() => {
             void rc.refreshTargets();
-            window.setTimeout(() => setPairing(false), 1400);
+            probe();
           }}
-        />
-      ) : targets.length === 0 ? (
-        <div className={styles.empty}>
-          <div className={styles.emptyIcon}>🖥</div>
-          <div className={styles.emptyTitle}>
-            {rc.targetsLoaded ? "还没有配对的电脑" : "正在获取设备…"}
+        >
+          重新检查
+        </button>
+      </div>
+      {targets.length > 0 ? (
+        <>
+          <div className={ui.group}>
+            <RcDeviceList
+              targets={targets}
+              reachability={rc.reachability}
+              channelUp={rc.status?.running ?? null}
+              onPick={setPicked}
+            />
           </div>
-          <div className={styles.emptyHint}>
-            和电脑互相输入对方的 8 位配对码，
-            <br />
-            一次配对，长期可用
-          </div>
-          <button type="button" className={styles.primaryBtn} onClick={() => setPairing(true)}>
-            配对电脑
-          </button>
-        </div>
+          <p className={ui.hint}>点设备选择远程控制、观看或传文件。</p>
+        </>
       ) : (
-        <>
-          <div className={styles.selfCard}>
-            <div className={styles.deviceName}>
-              <span className={`${styles.dot} ${styles.dotOk}`} aria-hidden="true" />
-              {rc.identity?.device_name || "这台手机"}
-              <span className={styles.selfTag}>本机</span>
-            </div>
-            {rc.identity?.fingerprint && (
-              <div className={styles.deviceSub}>
-                指纹 <span className={styles.fp}>{rc.identity.fingerprint.slice(-8)}</span>
-              </div>
-            )}
-          </div>
-          <RcDeviceList
-            targets={targets}
-            reachability={rc.reachability}
-            channelUp={channelUp}
-            onPick={setPicked}
+        <div className={ui.empty}>
+          <Monitor aria-hidden="true" />
+          <h2>{rc.targetsLoaded ? "还没有配对的电脑" : "正在获取设备…"}</h2>
+          <p>
+            在电脑端打开远程电脑，
+            <br />
+            扫码或输入配对码，即可开始。
+          </p>
+          {rc.targetsLoaded && (
+            <button className={ui.primary} onClick={() => setPairing(true)}>
+              添加第一台电脑
+            </button>
+          )}
+        </div>
+      )}
+      <MobileSheet open={active && pairing} title="添加电脑" onClose={() => setPairing(false)}>
+        {active && pairing && (
+          <RcPairCard
+            onPaired={(name) => {
+              void rc.refreshTargets();
+              setPairing(false);
+              setNotice(`已与「${name}」配对。`);
+            }}
           />
-          <div className={styles.actionsRow}>
-            <button type="button" className={styles.ghostBtn} onClick={() => setPairing(true)}>
-              ＋ 配对新电脑
-            </button>
-            <button
-              type="button"
-              className={styles.ghostBtn}
-              onClick={() => setUnoJoin({ fixedTarget: null })}
-            >
-              无人值守接入
-            </button>
-          </div>
-        </>
-      )}
-
-      {pickedTarget && (
-        <>
-          <div className={styles.sheetBackdrop} onClick={() => setPicked(null)} />
-          <div className={styles.sheet} role="dialog" aria-label={`连接 ${pickedTarget.display_name || pickedTarget.name}`}>
-            <div className={styles.sheetTitle}>{pickedTarget.display_name || pickedTarget.name}</div>
-            <button type="button" className={styles.sheetBtn} onClick={() => request("control")}>
-              远程控制
-            </button>
-            <button type="button" className={`${styles.sheetBtn} ${styles.sheetBtnCyan}`} onClick={() => request("view")}>
-              只看画面
-            </button>
-            <button
-              type="button"
-              className={styles.sheetBtn}
-              onClick={() => {
-                onSendFiles(pickedTarget.node_id);
-                setPicked(null);
-              }}
-            >
-              传文件
-            </button>
-            <button
-              type="button"
-              className={styles.sheetBtn}
-              onClick={() => {
-                setUnoJoin({ fixedTarget: pickedTarget.node_id });
-                setPicked(null);
-              }}
-            >
-              无人值守接入
-            </button>
-            <button
-              type="button"
-              className={`${styles.sheetBtn} ${styles.sheetBtnDanger}`}
-              onClick={() => {
-                if (!confirmForget) {
-                  setConfirmForget(true);
-                  return;
-                }
-                void rc.forget(pickedTarget.node_id).then(() => {
-                  setConfirmForget(false);
-                  setPicked(null);
-                });
-              }}
-            >
-              {confirmForget ? "再点一次确认解除" : "解除配对"}
-            </button>
-            <button
-              type="button"
-              className={`${styles.sheetBtn} ${styles.sheetBtnGhost}`}
-              onClick={() => {
-                setPicked(null);
-                setConfirmForget(false);
-              }}
-            >
-              取消
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+        )}
+      </MobileSheet>
+      <MobileSheet open={active && !!unoJoin} title="无人值守接入" onClose={() => setUnoJoin(null)}>
+        {active && unoJoin && (
+          <RcUnoJoinCard
+            rc={rc}
+            fixedTarget={unoJoin.fixedTarget}
+            onClose={() => setUnoJoin(null)}
+            onConnected={() => setUnoJoin(null)}
+          />
+        )}
+      </MobileSheet>
+      <MobileSheet open={active && !!pickedTarget} title="设备操作" onClose={() => setPicked(null)}>
+        {active && pickedTarget && (
+          <RcDeviceActions
+            rc={rc}
+            target={pickedTarget}
+            onClose={() => setPicked(null)}
+            onSendFiles={() => {
+              onSendFiles(pickedTarget.node_id);
+              setPicked(null);
+            }}
+            onUno={() => {
+              setUnoJoin({ fixedTarget: pickedTarget.node_id });
+              setPicked(null);
+            }}
+          />
+        )}
+      </MobileSheet>
+    </MobilePage>
   );
 }

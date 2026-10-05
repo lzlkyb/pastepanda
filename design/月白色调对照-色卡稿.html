@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>月白 · 色调对照色卡稿（现状天蓝 / A 黛青 / D 松烟墨蓝 / B 石墨 + 蓝系横排 11 档）</title>
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<style>
+/* 本稿外壳（不是软件样式，只包外壳） */
+body { margin:0; background:#22262c; color:#e8edf4; font:13px/1.6 "Segoe UI",system-ui,sans-serif; padding:24px 26px 60px; }
+.wrap { max-width:1180px; margin:0 auto; }
+h1 { font-size:19px; margin:0 0 6px; }
+h2 { font-size:14px; margin:28px 0 10px; color:#ffd479; font-weight:600; }
+p.lead { font-size:12.5px; color:#a8b1bd; margin:0 0 14px; max-width:1060px; }
+code, .mono { font-family:"Cascadia Mono",Consolas,monospace; font-size:11px; }
+.card-doc { background:#2b3037; border:1px solid #3a414b; border-radius:10px; padding:12px 14px; }
+table { border-collapse:collapse; width:100%; font-size:11.5px; }
+th, td { text-align:left; padding:4px 8px; border-bottom:1px solid #3a414b; vertical-align:top; }
+th { color:#a8b1bd; font-weight:600; }
+.pass { color:#5ad17f; } .warn { color:#ffc766; } .fail { color:#ff8f8f; }
+
+/* ── 控件条 ── */
+.ctl { display:flex; gap:18px; align-items:center; flex-wrap:wrap; background:#2b3037; border:1px solid #3a414b; border-radius:10px; padding:10px 14px; margin:0 0 18px; }
+.ctl legend { font-size:11px; color:#a8b1bd; }
+.ctl label { font-size:12px; display:inline-flex; align-items:center; gap:5px; margin-right:12px; cursor:pointer; }
+.ctl input { accent-color:#6ab4e8; margin:0; }
+
+/* ── 色带：① 每族 262 宽带档名；②b 蓝系 150 窄带，只按同一顺序铺五个档 ── */
+.bands { display:flex; gap:14px; flex-wrap:wrap; margin:0 0 20px; }
+.band { width:262px; }
+.band.compact { width:150px; }
+.band.compact .chip span { display:none; }
+.band .name { font-size:12px; color:#dbe1e9; margin-bottom:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.band.compact .name { font-size:11px; }
+.band .chips { display:flex; height:30px; border-radius:7px; overflow:hidden; }
+.band .chip { flex:1; position:relative; }
+.band .chip span { position:absolute; inset:auto 0 2px 0; text-align:center; font:9px/1 "Cascadia Mono",monospace; color:#22262c; background:rgba(255,255,255,.62); padding:1px 0; }
+
+/* ── 舞台栅格：① 列 262 宽 / ②b 蓝系列 150 宽，都是定宽，headless 视口可以是 0 ── */
+.stages { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+.col { width:262px; }
+.col.narrow { width:150px; }
+.col.narrow .stage { width:150px; }
+.col.narrow .colhead { flex-direction:column; gap:1px; }
+.col.narrow .colhead .k { font-size:10px; color:#8b95a3; text-align:left; }
+.col.narrow .readings table { font-size:10.5px; }
+.col.narrow .readings td { padding:2px 3px; overflow-wrap:break-word; }
+.colhead { font-size:11.5px; color:#dbe1e9; margin-bottom:6px; display:flex; justify-content:space-between; gap:6px; }
+.colhead b { font-weight:600; }
+.colhead .k { font:10px/1.4 "Cascadia Mono",monospace; color:#8b95a3; text-align:right; }
+.colhead { flex-wrap:wrap; }
+.colhead .famband { flex-basis:100%; display:flex; height:14px; border-radius:4px; overflow:hidden; margin-top:3px; border:1px solid #3a414b; }
+.colhead .famband i { flex:1; }
+.stage { width:262px; height:430px; border-radius:12px; overflow:hidden; background:var(--app-bg); color:var(--text-primary); position:relative; border:1px solid var(--card-border); display:flex; flex-direction:column; gap:7px; padding:8px; box-sizing:border-box; font-size:12px; }
+.readings { margin-top:8px; }
+.readings table td:first-child { width:47%; }
+.readings table td:last-child { color:#8b95a3; font-size:10.5px; }
+
+/* ───────── 以下每一条都是从真组件 .module.css 逐字搬来的 ───────── */
+/* Sidebar.module.css:88-97 + 100-112（.item / .item.active / 激活项左侧色条） */
+.side { background:var(--sidebar-bg); border-radius:8px; padding:4px; }
+.item { position:relative; padding:6px 8px 6px 12px; border-radius:6px; color:var(--text-secondary); }
+.item.active { background:var(--accent-light); color:var(--accent-strong); font-weight:600; }
+.item.active::before { content:''; position:absolute; left:2px; top:50%; transform:translateY(-50%); width:3px; height:16px; border-radius:2px; background:var(--accent); box-shadow:0 0 6px var(--accent-shadow); }
+/* TopBar.module.css:176-192（.search / .focused） */
+.search { height:30px; padding:0 10px; border-radius:8px; background:var(--control-glass, var(--search-bg)); border:1px solid var(--search-border); box-shadow:var(--control-elev, 0 1px 4px rgba(0,0,0,0.03)); color:var(--text-muted); display:flex; align-items:center; }
+.focused { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-shadow), 0 2px 8px var(--accent-shadow); background:var(--card-bg); }
+/* CardList.module.css:203-212（.card:focus-visible / .selected）+ 卡片基础底 */
+.card { background:var(--card-bg); border:1px solid var(--card-border); border-radius:10px; padding:7px 9px; color:var(--text-primary); }
+.card.sel { background:var(--card-selected-bg); border-color:var(--card-selected-border); box-shadow:var(--card-selected-shadow), 0 4px 16px var(--accent-shadow); }
+/* app.css:213-217（搜索高亮） */
+.search-highlight { background:var(--accent-light); color:var(--accent-strong); padding:0 1px; font-weight:600; }
+/* Toast.module.css:81（info 图标压在 accent 14% 淡底上） */
+.infoBox { background:color-mix(in srgb, var(--accent) 14%, transparent); border:1px solid color-mix(in srgb, var(--accent) 25%, transparent); color:var(--accent-strong); border-radius:8px; padding:5px 8px; font-size:11.5px; }
+/* Sidebar.module.css:383-392（确认圆钮：白字压 --accent-solid） */
+.okBtn { width:20px; height:20px; border-radius:50%; border:none; background:var(--accent-solid); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+/* TopBar.module.css:505-510（筛选下拉激活项） */
+.filterItem.active { color:var(--accent-strong); font-weight:600; background:var(--accent-light); }
+/* theme.css:464-465 版本徽章渐变 */
+.badge { align-self:flex-start; font-size:10.5px; font-weight:600; color:#fff; background:var(--version-badge-gradient); border-radius:999px; padding:2px 9px; }
+.row2 { display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>月白 · 色调对照色卡稿</h1>
+  <p class="lead">
+    只换 <b>accent 一族</b>（含吃同一族的两层背景氛围与徽章渐变），<b>灰阶 ramp（slate）一个字不动</b> —— 上次那条已被你否掉，这里不再碰。
+    每一列用的是<b>同一段真结构</b>：侧栏选中项与 3px 指示条、搜索框聚焦态、普通卡与选中卡、搜索命中标、Toast info、确认圆钮、筛选激活项、版本徽章，
+    每条规则都逐字抄自真组件并在样式里标了出处。所有对比度由 <b>canvas 逐像素合成读色 + WCAG 相对亮度</b>当场量出，不是注释里的历史数字。
+    ② 是四族横排（含现状基线），②b 是蓝系 12 列（同样带现状基线）。
+  </p>
+
+  <div class="ctl">
+    <fieldset>
+      <legend>背景氛围层（theme.css:348-350 两层 radial + 底色渐变）</legend>
+      <label><input type="radio" name="bg" value="tint" checked />跟着新色族走（淡染同族冷调）</label>
+      <label><input type="radio" name="bg" value="keep" />保持现状蓝氛围（只换控件色）</label>
+    </fieldset>
+  </div>
+
+  <h2>① 色带：每族五个档（light / accent / solid / strong / 信息底 14%）</h2>
+  <div class="bands" id="bands"></div>
+
+  <h2>② 同屏四列（第一列 = 现状真 theme.css，零覆盖）</h2>
+  <div class="stages" id="stages"></div>
+
+  <h2>②b 蓝系横排（11 档 + 现状基线 · 每档头部一排五个色卡 = light / accent / solid / strong / 信息底 14%）</h2>
+  <p class="lead" style="margin-bottom:8px">
+    和 ② 完全同一段结构、同一套门槛、同一个派生器，只是列宽压到 150px 好并排比眼睛（窄列里被裁掉的字是排版副产物，量色只读计算样式与合成像素，不受裁剪影响）。
+    <b>不换色相族，只把天蓝那个坐标挪走</b>：hue 仍在 195°–232°，chroma 从 197 掉到 54–80、亮度往下压。
+    第一格是现状列（零覆盖），用来当同排标尺。最后一档 <b>雾蓝</b> 是故意留在里面的反例——它白字压不住 4.5:1，
+    所以那一列末行会显示「两档都得留」，证明这套门槛真的在筛东西，不是排好队全绿。
+  </p>
+  <div class="stages" id="stages2"></div>
+
+  <h2>②c 蓝系横扫小结（运行时直接从每列读数表抓，不是另一套数字）</h2>
+  <div class="card-doc"><table id="blueSummary"></table></div>
+
+  <h2>③ 落地清单：换色族要一起动的令牌，和它们现在被谁吃</h2>
+  <div class="card-doc"><table id="landTable"></table></div>
+
+  <h2>④ 三档各自的代价（本稿量不到的，写在明处）</h2>
+  <div class="card-doc"><table>
+    <tbody>
+      <tr><td style="width:13%">A 黛青</td><td>与「深海 ocean-dark」同族冷青，两列并排看会像同一主题的深浅两版；侧栏选中项与命中标的可辨度靠 12% 淡底，比现状的 #e0f2fe 更弱一点（见 ② 第 7 行），要靠字重补。</td></tr>
+      <tr><td>D 松烟墨蓝</td><td>改动最小、风险最低，但它是"把现状降饱和"，蓝的身份还在——你要的"换个色调"它其实没换，只是换成熟一点。</td></tr>
+      <tr><td>B 石墨</td><td>最耐看，代价最实在：<b>色相线索整条消失</b>。本稿只演示了 8 处吃 accent 的元素，而全仓 <code>var(--accent*)</code> 引用实测 <b>1464 处 / 133 个文件</b>（CardList 102、RemoteComputer 68、FullscreenEditor 58、dialog 57…）——换色<b>组件代码一行不用改</b>（纯令牌工程），但这一套里 1464 个点的观感会一起变，靠蓝区分的状态要改由「亮度差 + 字重」承重，等于交互层重做而不是换色。</td></tr>
+      <tr><td>蓝系横排（②b）</td><td>代价最小的一档：只挪 <code>--accent</code> 的坐标，hue 仍在蓝区、灰阶与组件一行不动。本稿实测：<b>选中底可辨度并没有变好</b>——现状 1.05，蓝系 1.04–1.10，基本持平（我早前一版口头表里的"1.08 升到 1.10–1.16"是按别的底色算的，这里以读数为准），所以亮度差<b>接不了色相的班</b>，选中态仍然要靠字重和边框承重。真正的收益在别处：chroma 从 197 掉到 54–80，白字从 4.10 涨到 4.58–12.50（雾蓝 4.19 除外）。门槛结果分三档看：<b>8 档五道全过</b>（普鲁士蓝 / 天青灰 / 钴蓝压灰 / 石板蓝 / 藏青靛 / 墨蓝 / 牛仔靛 / 群青灰），<b>2 档只卡在 Toast 信息底</b>（钢蓝灰 4.48、薰衣草蓝灰 4.50——都比现状的 4.33 好，但过不了 4.5），<b>1 档连白字都不过</b>（雾蓝，故意留的反例）。所以「换个色调」它只满足一半：远看还是蓝，只是从天蓝变成深蓝灰。</td></tr>
+      <tr><td>共同收益</td><td>达标的档 <code>--accent</code> 本身都能直接托住白字 ≥4.5:1，<b>意味着 <code>--accent-solid</code> 和 <code>--accent-strong</code> 两个补丁档可以砍掉</b>——这两个令牌存在的唯一理由就是"天蓝太亮，白字只有 4.10:1"（注释原话见 theme.css:363,365）。</td></tr>
+      <tr><td>量不到</td><td>真 GPU 上背景两层 radial 的采样开销、切主题时的过渡观感、以及六套主题并排时新色族会不会和「森林/晨曦」打架——这些要跑 dev 用眼睛判，本稿只给静态色等价物。</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>⑤ 本稿自检（运行时逐表核对，不靠人眼）</h2>
+  <div class="card-doc" id="selfCheck"></div>
+  <p style="font-size:11.5px;color:#8b95a3;margin:10px 0 0">
+    几何申报：② 每列舞台 262×430、②b 每列舞台 150×430（全为定宽，headless 视口可以是 0；窄列里被裁掉的字是排版副产物，量色只读计算样式与合成像素）；色带 262×30（②b 150×30）；指示条 3×16；确认圆钮 20×20。
+    读数时机：首帧同步量一次 + 两层 requestAnimationFrame 后再量一次，另配不依赖帧的 setTimeout 兜底通道。
+  </p>
+</div>
+
+<script>
+/* ───────── 读色工具 ─────────
+   🔴 Chromium 会把 color-mix() 的计算值吐成 `color(srgb 0.0078 0.5176 0.7804 / 0.14)`（分量 0~1）。
+   上一稿的 parseRgb 不认这个格式，导致刻意留下的两处蓝被静默跳过、计数假归零。本稿两种都认。 */
+const cvs = document.createElement("canvas");
+cvs.width = cvs.height = 8;
+const ctx = cvs.getContext("2d", { willReadFrequently: true });
+
+function parseRgb(str) {
+  const s = String(str).trim().toLowerCase();
+  const h = s.match(/^#([0-9a-f]{6})$/);
+  if (h) return { r: parseInt(h[1].slice(0, 2), 16), g: parseInt(h[1].slice(2, 4), 16), b: parseInt(h[1].slice(4, 6), 16), a: 1 };
+  const m = s.match(/rgba?\(([^)]+)\)/i);
+  if (m) {
+    const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(parseFloat);
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  const c = s.match(/^color\(\s*[a-z0-9-]+\s+([^)]+)\)$/i);
+  if (c) {
+    const p = c[1].trim().split(/[\s,\/]+/).filter(Boolean).map(parseFloat);
+    if (p.length >= 3 && p.every((v) => Number.isFinite(v))) return { r: p[0] * 255, g: p[1] * 255, b: p[2] * 255, a: p.length > 3 ? p[3] : 1 };
+  }
+  return null;
+}
+const hexOf = (c) => "#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+const toHexArr = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+const cr = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const mixArr = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const WHITE = [255, 255, 255];
+/** 把任意 CSS 颜色画在 base 上，返回合成后的 rgb（canvas 自己会算 alpha） */
+function composite(base, colorStr) {
+  ctx.clearRect(0, 0, 8, 8);
+  ctx.fillStyle = base; ctx.fillRect(0, 0, 8, 8);
+  ctx.fillStyle = colorStr; ctx.fillRect(0, 0, 8, 8);
+  const d = ctx.getImageData(4, 4, 1, 1).data;
+  return [d[0], d[1], d[2]];
+}
+function layered(el, baseRgb) {
+  const s = getComputedStyle(el).backgroundColor;
+  if (s === "rgba(0, 0, 0, 0)") return baseRgb;
+  const p = parseRgb(s);
+  if (p && p.a === 1) return [p.r, p.g, p.b];
+  return composite(`rgb(${baseRgb.map(Math.round).join(",")})`, s);
+}
+function hueOf(c) {
+  const [r, g, b] = c.map((v) => v / 255);
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  if (d < 0.012) return null;
+  return (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60;
+}
+const chromaOf = (c) => Math.round(Math.max(...c) - Math.min(...c));
+
+/* HSL 互转（派生 ramp 用；与 CSS color-mix 的 srgb 插值不是一回事，所以产出的是「成品 hex」而不是公式） */
+function rgbToHsl(c) {
+  const [r, g, b] = c.map((v) => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (d > 1e-6) { s = d / (1 - Math.abs(2 * l - 1)); h = (mx === r ? ((g - b) / d + 6) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60; }
+  return [h, s, l];
+}
+function hue2rgb(p, q, t) { if (t < 0) t += 1; if (t > 1) t -= 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; }
+function hslToRgb([h, s, l]) {
+  if (s === 0) return [l * 255, l * 255, l * 255];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  return [h / 360 + 1 / 3, h / 360, h / 360 - 1 / 3].map((t) => hue2rgb(p, q, ((t % 1) + 1) % 1) * 255);
+}
+/** 沿同色相往下压亮度，直到达到 need 对比（target 是它要压着的底 / 或白字） */
+function darkenUntil(c, target, need, whiteText) {
+  if (cr(whiteText ? WHITE : c, whiteText ? c : target) >= need) return c.slice();
+  const [h, s, l0] = rgbToHsl(c);
+  for (let k = 1; k <= 200; k++) {
+    const cand = hslToRgb([h, s, Math.max(0, l0 - k * 0.004)]);
+    if (cr(whiteText ? WHITE : cand, whiteText ? cand : target) >= need) return cand;
+  }
+  return c.slice();
+}
+
+/* ───────── 族定义：给一个 accent，其余全按「门槛 + 同色相」当场派生成成品值 ───────── */
+const FAM_NOW = { id: "now", name: "现状 天蓝", accent: "#0284c7", light: "#e0f2fe", strong: "#0273ad", solid: "#027cbb", real: true, note: "theme.css 原文，零覆盖" };
+/* ② 换色相族的三档 */
+const FAM_A = [
+  FAM_NOW,
+  { id: "dai", name: "A 黛青", accent: "#1e5f6b", note: "青黑系·和月白同族（推荐）" },
+  { id: "song", name: "D 松烟墨蓝", accent: "#47697d", note: "现状降饱和·改动最小" },
+  { id: "graphite", name: "B 石墨", accent: "#262c33", note: "macOS Graphite 式·色相线索归零" },
+];
+/* ②b 不换族，只把天蓝的坐标（L≈45% / chroma 197）挪进耐看区间：hue 195–232、chroma 54–80 */
+const FAM_BLUE = [
+  FAM_NOW,
+  { id: "prussia", name: "普鲁士蓝", accent: "#1f5069", note: "200°·现状同色相压暗" },
+  { id: "cerulean", name: "天青灰", accent: "#4b7c8c", note: "195°·最接近现状的观感" },
+  { id: "cobalt", name: "钴蓝压灰", accent: "#3a5f8a", note: "212°·chroma 80，这排里最艳" },
+  { id: "slateblue", name: "石板蓝", accent: "#4a6382", note: "213°·中间档" },
+  { id: "steel", name: "钢蓝灰", accent: "#55708c", note: "211°·这排里最亮的一档" },
+  { id: "navy", name: "藏青靛", accent: "#24405f", note: "212°·深，留白多" },
+  { id: "ink", name: "墨蓝", accent: "#1c3552", note: "212°·最深·接近中性但留蓝" },
+  { id: "denim", name: "牛仔靛", accent: "#33507a", note: "215°·丹宁感" },
+  { id: "ultramarine", name: "群青灰", accent: "#4a5490", note: "231°·偏紫的蓝" },
+  { id: "lavender", name: "薰衣草蓝灰", accent: "#6a72a8", note: "232°·最柔" },
+  { id: "mist", name: "雾蓝（反例）", accent: "#5b7fa3", note: "故意留下：白字压不住 4.5" },
+];
+const GROUPS = [
+  { id: "g1", host: "stages", fams: FAM_A, narrow: false },
+  { id: "g2", host: "stages2", fams: FAM_BLUE, narrow: true },
+];
+function derive(f) {
+  if (f.real) return { ...f, accentArr: toHexArr(f.accent), lightArr: toHexArr(f.light), info14: f.light, bgLabel: "现状" };
+  const a = toHexArr(f.accent);
+  const light = hexOf(mixArr(WHITE, a, 0.12));                 // 选中底：白 + 12% accent
+  const strongHex = hexOf(darkenUntil(a, toHexArr(light), 4.6, false)); // 淡底上的文字
+  const solidHex = hexOf(darkenUntil(a, null, 4.6, true));      // 实色动作底（白字）
+  const info14 = hexOf(mixArr(WHITE, a, 0.14));
+  return { ...f, accentArr: a, lightArr: toHexArr(light), light, strong: strongHex, solid: solidHex, info14 };
+}
+/* 背景两层 radial + 三段渐变：bg=keep 时维持现状那两层蓝紫，tint 时跟着新族淡染 */
+const CUR_STOPS = ["#f4f8fc", "#eef3f8", "#e8f0f7"];
+function bgFor(d) {
+  if (d.real) return "var(--app-bg)";
+  if (document.querySelector('input[name=bg]:checked').value === "keep") {
+    return `radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2,132,199,.14), transparent 55%),
+      radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109,40,217,.08), transparent 50%),
+      linear-gradient(168deg, ${CUR_STOPS[0]} 0%, ${CUR_STOPS[1]} 42%, ${CUR_STOPS[2]} 100%)`;
+  }
+  const a = d.accentArr, stops = [0.045, 0.075, 0.11].map((t) => hexOf(mixArr([247, 248, 250], a, t)));
+  const [h, s, l] = rgbToHsl(a);
+  const second = hslToRgb([(h + 38) % 360, Math.min(1, s * 0.8), l * 0.72]).map(Math.round);
+  return `radial-gradient(ellipse 900px 420px at 18% -10%, rgba(${a.join(",")},.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(${second.join(",")},.08), transparent 50%),
+    linear-gradient(168deg, ${stops[0]} 0%, ${stops[1]} 42%, ${stops[2]} 100%)`;
+}
+
+const STAGE_HTML = `
+  <div class="side">
+    <div class="item">剪贴板栈</div>
+    <div class="item active">知识库</div>
+    <div class="item">远程电脑</div>
+  </div>
+  <div class="search focused">搜索月白…</div>
+  <div class="card">普通卡片 <span class="search-highlight">月白</span></div>
+  <div class="card sel">选中卡片</div>
+  <div class="row2"><span class="filterItem active">全部类型</span><button class="okBtn">✓</button></div>
+  <div class="infoBox">ℹ 已复制到剪贴板</div>
+  <span class="badge">v5.3.0</span>
+`;
+
+/* 每个 (组, 族) 一个条目；key 带组前缀，现状基线在两组各出现一次也不撞 id */
+const ENTRIES = [];
+function buildStages() {
+  ENTRIES.length = 0;
+  for (const g of GROUPS) {
+    const host = document.getElementById(g.host);
+    host.innerHTML = "";
+    for (const f of g.fams) {
+      const key = g.id + "-" + f.id;
+      const col = document.createElement("div");
+      col.className = "col" + (g.narrow ? " narrow" : "");
+      const band = g.narrow ? `<div class="famband">${"<i></i>".repeat(5)}</div>` : "";
+      col.innerHTML = `<div class="colhead"><b>${f.name}</b><span class="k">${f.note}</span>${band}</div>
+        <div class="stage" id="st-${key}"></div><div class="readings card-doc" id="rd-${key}"></div>`;
+      host.appendChild(col);
+      const stage = col.querySelector(".stage");
+      stage.innerHTML = STAGE_HTML;
+      ENTRIES.push({ key, g, f, stage, rd: col.querySelector(".readings"), band: [...col.querySelectorAll(".famband i")] });
+    }
+  }
+}
+function applyFamily(e) {
+  const f = e.f;
+  if (f.real) return f;
+  const d = derive(f), s = e.stage.style;
+  /* 派生令牌在 theme.css 是 :root 声明、就地解析——挂 --accent 不会让它们重算，
+     所以这里一律写「成品值」，且用字面 hex 而不是 var(--accent)。 */
+  const set = {
+    "--app-bg": bgFor(d),
+    "--accent": d.accent,
+    "--accent-light": d.light,
+    "--accent-strong": d.strong,
+    "--accent-solid": d.solid,
+    "--accent-border": `color-mix(in srgb, ${d.accent} 35%, transparent)`,
+    "--accent-shadow": `color-mix(in srgb, ${d.accent} 15%, transparent)`,
+    "--accent-glow": `color-mix(in srgb, ${d.accent} 18%, transparent)`,
+    "--card-selected-bg": `linear-gradient(180deg, #ffffff 0%, ${d.light} 100%)`,
+    "--card-selected-border": `color-mix(in srgb, ${d.accent} 35%, transparent)`,
+    "--card-selected-shadow": `0 0 0 3px color-mix(in srgb, ${d.accent} 16%, transparent), 0 8px 24px color-mix(in srgb, ${d.accent} 16%, transparent)`,
+    "--version-badge-gradient": `linear-gradient(135deg, ${d.accent}, ${d.solid})`,
+  };
+  for (const [k, v] of Object.entries(set)) s.setProperty(k, v);
+  return d;
+}
+
+function measure(e) {
+  const f = e.f, st = e.stage, q = (x) => st.querySelector(x);
+  const rawBg = getComputedStyle(st).getPropertyValue("--app-bg").trim();
+  const solidBg = rawBg.includes("gradient") ? composite("#ffffff", rawBg.match(/#[0-9a-f]{6}/gi).slice(-1)[0]) : composite("#ffffff", rawBg);
+  const bgCss = `rgb(${solidBg.map(Math.round).join(",")})`;
+  const side = layered(q(".side"), solidBg);
+  const card = layered(q(".card:not(.sel)"), solidBg);
+  const accentCss = getComputedStyle(st).getPropertyValue("--accent").trim();
+  const solidCss = getComputedStyle(st).getPropertyValue("--accent-solid").trim();
+  const strongCss = getComputedStyle(st).getPropertyValue("--accent-strong").trim();
+  const selBg = layered(q(".item.active"), side);
+  const selInk = composite(bgCss, getComputedStyle(q(".item.active")).color);
+  const infoBg = layered(q(".infoBox"), card);
+  const infoInk = composite(bgCss, getComputedStyle(q(".infoBox")).color);
+  const hl = layered(q(".search-highlight"), card);
+  const focusBorder = composite(bgCss, getComputedStyle(q(".search.focused")).borderTopColor);
+  const focusGlow = composite(bgCss, getComputedStyle(st).getPropertyValue("--accent-shadow").trim() || "rgba(2,132,199,.15)");
+  const bar = composite(bgCss, accentCss);
+  const okWhite = cr([255, 255, 255], layered(q(".okBtn"), solidBg));
+  const accentWhite = cr([255, 255, 255], composite(bgCss, accentCss));
+  const dAcc = parseRgb(accentCss), dSo = parseRgb(solidCss), dSt = parseRgb(strongCss);
+  const accArr = [dAcc.r, dAcc.g, dAcc.b];
+  const same = (p, r) => p && r && Math.abs(p.r - r[0]) < 1.2 && Math.abs(p.g - r[1]) < 1.2 && Math.abs(p.b - r[2]) < 1.2;
+  const patch = same(dSo, accArr) ? (same(dSt, accArr) ? "两档补丁都能砍" : "solid 可砍，strong 留") : "两档都得留（天蓝的处境）";
+  const lightCss = getComputedStyle(st).getPropertyValue("--accent-light").trim();
+  const infoCss = hexOf(composite("#ffffff", getComputedStyle(q(".infoBox")).backgroundColor));
+  const rows = [
+    ["确认圆钮 白字 vs accent-solid", okWhite, 4.5, "白字压实心动作底"],
+    ["若直接用 --accent 托白字", accentWhite, 4.5, "≥4.5 就意味着补丁档没存在必要"],
+    ["选中字 vs 选中底（侧栏）", cr(selInk, selBg), 4.5, "现靠 --accent-strong，文字 AA"],
+    ["3px 指示条 vs 侧栏底", cr(bar, side), 3, "非文本 3:1，当前项唯一不靠色相的承重物"],
+    ["焦点边框（实色）vs 应用底", cr(focusBorder, solidBg), 3, "可达性由这条边框承担"],
+    ["焦点柔光 3px vs 应用底", cr(focusGlow, solidBg), 1.1, "氛围层，只求看得见一圈"],
+    ["选中底 vs 侧栏底（可辨度）", cr(selBg, side), 1.05, "选中态靠亮度还剩多少"],
+    ["搜索命中标 vs 白卡", cr(hl, card), 1.1, "命中靠底色差被看见"],
+    ["信息底 14% 上的文字", cr(infoInk, infoBg), 4.5, "Toast info / loading"],
+    ["白卡 vs 应用底", cr(card, solidBg), 1.1, "层级主要交给边框 + 阴影，这里只作参考"],
+    ["accent 饱和度 chroma", chromaOf(accArr), null, "现状天蓝 197；优雅区间约 40–80"],
+    ["应用底色相残留 max-min", chromaOf(solidBg), null, "月白要不要「泛蓝」，看这一格"],
+  ];
+  return { rows, patch, hexes: [lightCss, accentCss, solidCss, strongCss, infoCss] };
+}
+const fmt = (v) => v.toFixed(v < 10 ? 2 : 1) + ":1";
+const badge = (v, need) => need == null ? `<span class="mono">${Math.round(v)}</span>` : `<span class="${v >= need ? "pass" : v >= need * 0.85 ? "warn" : "fail"}">${fmt(v)}</span><span style="color:#8b95a3"> / ${need}:1</span>`;
+const WHY = { 3: "非文本 AA 3:1", 4.5: "文字 AA 4.5:1", 1.05: "可辨度下限（自定）", 1.1: "氛围层下限（自定）" };
+
+/* 🔴 「两档都得留」里没有「都留」这个子串——上一版就是拿它判色，把说反话的那格涂成了绿。 */
+const patchBad = (p) => p.indexOf("得留") >= 0;
+function renderReadings(list) {
+  for (const it of list) {
+    it.e.rd.innerHTML = `<table><tbody>${it.m.rows.map(([k, v, need]) =>
+      `<tr><td>${k}</td><td style="width:104px">${badge(v, need)}</td><td>${need != null ? WHY[need] || "门槛 " + need : "无量纲，只看趋势"}</td></tr>`).join("")}
+      <tr><td>补丁令牌必要性</td><td colspan="2" class="mono" style="color:${patchBad(it.m.patch) ? "#ff8f8f" : "#5ad17f"}">${it.m.patch}</td></tr></tbody></table>`;
+    /* 头部五档色卡：直接吃这一列实测用的同一份 hexes，不是另算的 */
+    it.e.band.forEach((el, i) => { el.style.background = it.m.hexes[i]; });
+  }
+}
+const CHIP_NAMES = ["light", "accent", "solid", "strong", "info14"];
+function renderBands(list) {
+  document.getElementById("bands").innerHTML = list.filter((it) => !it.e.g.narrow).map((it) =>
+    `<div class="band"><div class="name">${it.e.f.name} <span class="mono" style="color:#8b95a3">${it.m.hexes[1]}</span></div>
+      <div class="chips">${it.m.hexes.map((hxv, i) => `<div class="chip" style="background:${hxv}"><span>${CHIP_NAMES[i]} ${String(hxv).replace("#", "")}</span></div>`).join("")}</div></div>`
+  ).join("");
+}
+/* ②c 蓝系小结：每个数字都是从上面那张读数表里取的，不另起一套量法 */
+function pick(m, label) { const r = m.rows.find((x) => x[0].startsWith(label)); return r ? r[1] : NaN; }
+function renderBlueSummary(list) {
+  const blue = list.filter((it) => it.e.g.id === "g2" && !it.e.f.real);
+  const base = list.find((it) => it.e.key === "g1-now");
+  const b = base ? base.m : null;
+  const cell = (v, need) => need == null ? `<span class="mono">${Math.round(v)}</span>`
+    : `<span class="${v >= need ? "pass" : "fail"}">${v.toFixed(2)}</span>`;
+  const rows = blue.map((it) => {
+    const m = it.m;
+    const chroma = pick(m, "accent 饱和度");
+    const white = pick(m, "若直接用 --accent 托白字");
+    const sel = pick(m, "选中字 vs 选中底");
+    const bar = pick(m, "3px 指示条");
+    const foc = pick(m, "焦点边框");
+    const info = pick(m, "信息底 14%");
+    const wash = pick(m, "选中底 vs 侧栏底");
+    const gates = [["accent 托白字", white, 4.5], ["3px 指示条", bar, 3], ["焦点边框", foc, 3], ["选中字/底", sel, 4.5], ["信息底文字", info, 4.5]];
+    const bad = gates.filter((g) => g[1] < g[2]);
+    return `<tr><td>${it.e.f.name}</td><td class="mono">${m.hexes[1]}</td><td>${cell(chroma, null)}</td>
+      <td>${cell(white, 4.5)}</td><td>${cell(bar, 3)}</td><td>${cell(foc, 3)}</td><td>${cell(sel, 4.5)}</td><td>${cell(info, 4.5)}</td>
+      <td><span class="mono">${wash.toFixed(2)}</span></td>
+      <td class="${bad.length ? "fail" : "pass"}">${bad.length ? bad.map((g) => `${g[0]} ${g[1].toFixed(2)}（差 ${(g[2] - g[1]).toFixed(2)}）`).join("、") : "五道门槛全过 · 补丁档可退役"}</td></tr>`;
+  });
+  const blurb = (t, s) => `<th>${t}<br><span style="font-size:9.5px">${s}</span></th>`;
+  const nowVals = b ? {
+    chroma: pick(b, "accent 饱和度"), white: pick(b, "若直接用 --accent 托白字"), bar: pick(b, "3px 指示条"),
+    foc: pick(b, "焦点边框"), sel: pick(b, "选中字 vs 选中底"), info: pick(b, "信息底 14%"), wash: pick(b, "选中底 vs 侧栏底"),
+  } : null;
+  const nowGates = nowVals ? [["accent 托白字", nowVals.white, 4.5], ["3px 指示条", nowVals.bar, 3], ["焦点边框", nowVals.foc, 3], ["选中字/底", nowVals.sel, 4.5], ["信息底文字", nowVals.info, 4.5]] : [];
+  const nowBad = nowGates.filter((g) => g[1] < g[2]);
+  const bnote = b ? `<tr style="background:#232830"><td>现状 天蓝（标尺）</td><td class="mono">${b.hexes[1]}</td><td>${cell(nowVals.chroma, null)}</td>
+      <td>${cell(nowVals.white, 4.5)}</td><td>${cell(nowVals.bar, 3)}</td><td>${cell(nowVals.foc, 3)}</td>
+      <td>${cell(nowVals.sel, 4.5)}</td><td>${cell(nowVals.info, 4.5)}</td><td><span class="mono">${nowVals.wash.toFixed(2)}</span></td>
+      <td class="fail">${nowBad.map((g) => `${g[0]} ${g[1].toFixed(2)}`).join("、")} —— chroma ${Math.round(nowVals.chroma)}，白字只有 ${nowVals.white.toFixed(2)}:1，所以才有 solid / strong 两个补丁档</td></tr>` : "";
+  document.getElementById("blueSummary").innerHTML =
+    `<thead><tr><th>档</th><th>accent</th>${blurb("chroma", "现状 " + Math.round(nowVals.chroma))}${blurb("accent 托白字", "≥4.5")}${blurb("3px 指示条", "≥3")}${blurb("焦点边框", "≥3")}${blurb("选中字/底", "≥4.5")}${blurb("信息底文字", "≥4.5")}${blurb("选中底可辨", "参考 · 现状 " + nowVals.wash.toFixed(2))}<th>门槛不过的具体项</th></tr></thead><tbody>${bnote}${rows.join("")}</tbody>`;
+}
+function paintLand() {
+  const rows = [
+    ["theme.css:348-350", "--app-bg 两层 radial + 三段渐变", "radial 现在写死 rgba(2,132,199,.14) / rgba(109,40,217,.08)", "跟着新族重算（本稿 ① 控件可切「保持现状 / 跟族淡染」当场比）"],
+    ["theme.css:360-365", "--accent / --accent-light / --accent-border / --accent-solid / --accent-strong", "天蓝五件套", "换族 = 五件一起；solid/strong 两档在新族里可退役（见每列末行）"],
+    ["theme.css:421-424", "--card-selected-bg / -border / -shadow, --accent-shadow", "选中卡渐变 + 3px 柔环", "柔环现状只有 1.22:1，本来就不过非文本 3:1，换族顺手要提浓度"],
+    ["theme.css:435,464-465,478,489-494,514-515", "--card-top-light / --version-badge-gradient / --glass-card-hover-glow / --control-ring / --accent-glow / --hero-glow", "六处吃同一个蓝", "逐个改成品值，别指望 color-mix 自己重算（:root 就地解析）"],
+    ["消费点", "Sidebar:94,110,164,239,376,390 / CardList:150,205,212,373,478,521-523,636-652 / TopBar:189-191,507-509 / Toast:81-82 / app.css:214-216", "全部只认令牌，不改", "所以换族是<b>纯令牌工程</b>，组件 CSS 一行不动"],
+    ["SkinScene.tsx / 场景", "ocean 分支：不渲染", "—", "换色不牵动动画，也没有 GPU 新开销"],
+  ];
+  document.getElementById("landTable").innerHTML = `<thead><tr><th style="width:22%">出处</th><th style="width:30%">令牌 / 消费点</th><th>现状</th><th>换族时要做的事</th></tr></thead><tbody>` +
+    rows.map((r) => `<tr><td class="mono">${r[0]}</td><td class="mono" style="font-size:10.5px">${r[1]}</td><td style="color:#a8b1bd">${r[2]}</td><td>${r[3]}</td></tr>`).join("") + "</tbody>";
+}
+
+function selfCheck(list) {
+  const rows = [];
+  const fail = (m) => { throw new Error(m); };
+  const byId = (id) => FAM_A.concat(FAM_BLUE).find((x) => x.id === id);
+  const stages = [...document.querySelectorAll(".stage")];
+  rows.push(["theme.css 真的加载了", () => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() !== ""]);
+  rows.push(["data-theme=ocean 生效在 html 上", () => document.documentElement.getAttribute("data-theme") === "ocean"]);
+  rows.push([`两排共 ${list.length} 列，子元素数相等（同一段结构，只差令牌）`, () => {
+    const n = stages.map((s) => s.querySelectorAll("*").length);
+    return n.length === list.length && n.every((v) => v === n[0]) ? true : fail(n.join(","));
+  }]);
+  rows.push(["现状基线两排各一条，且都没被污染（style 属性为 null）", () => {
+    const real = list.filter((it) => it.e.f.real);
+    return real.length === 2 && real.every((it) => it.e.stage.getAttribute("style") === null) ? true : fail(real.length + " 条");
+  }]);
+  rows.push([`${list.length - 2} 个提案列各自 12 个覆盖令牌全部落进 CSSOM`, () => {
+    const need = ["--app-bg", "--accent", "--accent-light", "--accent-strong", "--accent-solid", "--accent-border", "--accent-shadow", "--accent-glow", "--card-selected-bg", "--card-selected-border", "--card-selected-shadow", "--version-badge-gradient"];
+    for (const it of list.filter((x) => !x.e.f.real)) {
+      const cs = it.e.stage.style;
+      if (!need.every((t) => cs.getPropertyValue(t))) return fail(it.e.key);
+    }
+    return true;
+  }]);
+  rows.push(["派生器反例：A 的 accent 换成 D、普鲁士蓝换成薰衣草，solid 必须跟着变（跑完复原）", () => {
+    for (const [id, other] of [["dai", "#47697d"], ["prussia", "#6a72a8"]]) {
+      const f = byId(id), keep = f.accent;
+      f.accent = other; const moved = derive(f).solid;
+      f.accent = keep; const back = derive(f).solid;
+      if (moved === back || moved !== derive({ accent: other }).solid) return fail(`${id}: ${moved} / ${back}`);
+    }
+    return true;
+  }]);
+  rows.push(["派生器不变量：14 个提案档 solid 上白字 ≥4.5、strong 压 light ≥4.5", () => {
+    const uniq = [];
+    for (const it of list) if (!it.e.f.real && !uniq.some((u) => u.id === it.e.f.id)) uniq.push(it.e.f);
+    for (const f of uniq) {
+      const d = derive(f);
+      if (cr(WHITE, toHexArr(d.solid)) < 4.5) return fail(f.id + " solid");
+      if (cr(toHexArr(d.strong), toHexArr(d.light)) < 4.5) return fail(f.id + " strong");
+    }
+    return uniq.length === 14 ? true : fail("唯一族 " + uniq.length);
+  }]);
+  rows.push(["门槛真的在筛：反例档雾蓝必须判「两档都得留」且白字 <4.5", () => {
+    const it = list.find((x) => x.e.key === "g2-mist");
+    if (!it) return fail("没有雾蓝列");
+    if (!patchBad(it.m.patch)) return fail("反例档也全绿 → 这套门槛是装饰");
+    if (pick(it.m, "若直接用 --accent 托白字") >= 4.5) return fail("白字门槛没过却报过了");
+    return true;
+  }]);
+  rows.push(["量具自检：parseRgb 认十六进制 / 认 color(srgb)", () => {
+    const a = parseRgb("#0284c7"), b = parseRgb("color(srgb 0.00784314 0.517647 0.780392 / 0.14)");
+    return !!(a && a.r === 2 && a.g === 132 && a.b === 199) && !!(b && Math.abs(b.r - 2) < 1.2 && Math.abs(b.g - 132) < 1.2 && Math.abs(b.b - 199) < 1.2);
+  }]);
+  rows.push(["量具自检：canvas 合成 alpha 落在底与源之间（不猜整数）", () => {
+    const c = composite("#ffffff", "rgba(30, 95, 107, 0.14)"), c0 = composite("#ffffff", "rgba(30, 95, 107, 0)");
+    const between = (v, lo, hi) => v >= Math.min(lo, hi) - 1 && v <= Math.max(lo, hi) + 1;
+    return c0.join() === "255,255,255" && c.every((v, i) => between(v, 255, [30, 95, 107][i])) && c.join() !== "255,255,255";
+  }]);
+  rows.push(["量具盲区：所有列里没有 parseRgb 认不出的实色元素", () => {
+    const blind = [];
+    for (const st of stages) for (const el of st.querySelectorAll("*")) {
+      const b = getComputedStyle(el).backgroundColor;
+      if (b === "rgba(0, 0, 0, 0)" || b === "transparent") continue;
+      if (!parseRgb(b)) blind.push((el.className || el.tagName) + "=" + b.slice(0, 22));
+    }
+    if (blind.length) throw new Error("跳过 " + blind.join(" | "));
+    return true;
+  }]);
+  rows.push(["读数表已生成（每列 ≥10 行；rAF 不回调时的探针）", () => list.every((it) => it.e.rd.querySelectorAll("tbody tr").length >= 10)]);
+  rows.push(["②b 每列头部五档色卡都已被 painted（背景非空）", () => {
+    const sw = list.filter((it) => it.e.band.length);
+    return sw.length === 12 && sw.every((it) => it.e.band.every((el) => el.style.background !== "")) ? true : fail(sw.length + " 列带色卡");
+  }]);
+  rows.push(["① 色带 4 条 × 5 档都在", () => document.querySelectorAll("#bands .band").length === 4 && document.querySelectorAll("#bands .chip").length === 20]);
+  rows.push(["②c 小结 = 11 档 + 现状标尺，且每个数字都回查得到本列读数表", () => {
+    const blue = list.filter((it) => it.e.g.id === "g2" && !it.e.f.real);
+    const trs = [...document.querySelectorAll("#blueSummary tbody tr")].slice(1);
+    if (trs.length !== 11 || blue.length !== 11) return fail(`${trs.length} 行 / ${blue.length} 档`);
+    const keys = ["accent 饱和度", "若直接用 --accent 托白字", "3px 指示条", "焦点边框", "选中字 vs 选中底", "信息底 14%", "选中底 vs 侧栏底"];
+    for (let i = 0; i < blue.length; i++) {
+      const m = blue[i].m, c = trs[i].children;
+      if (c[1].textContent.trim() !== m.hexes[1]) return fail(`${blue[i].e.f.name} accent 格串列了`);
+      keys.forEach((k, j) => {
+        const want = pick(m, k), got = parseFloat(c[j + 2].textContent);
+        if (!(got >= want - 0.011 && got <= want + 0.011)) return fail(`${blue[i].e.f.name} 第 ${j + 1} 格 ${got} ≠ 读数表 ${want.toFixed(2)}`);
+      });
+    }
+    return true;
+  }]);
+  rows.push(["几何：② 列舞台 262 / ②b 列舞台 150（都是定宽）", () => {
+    for (const it of list) {
+      const w = it.e.stage.getBoundingClientRect().width;
+      const want = it.e.g.narrow ? 150 : 262;
+      if (w !== want) return fail(`${it.e.key} = ${w}（应为 ${want}）`);
+    }
+    return true;
+  }]);
+
+  document.getElementById("selfCheck").innerHTML =
+    `<table><thead><tr><th>检查项</th><th style="width:150px">结果</th></tr></thead><tbody>` +
+    rows.map(([name, fn]) => {
+      let ok = false, err = "";
+      try { ok = !!fn(); } catch (e) { err = " " + e.message; }
+      return `<tr><td>${name}</td><td class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}${err}</td></tr>`;
+    }).join("") + "</tbody></table>";
+}
+
+function refresh() {
+  const measured = ENTRIES.map((e) => { applyFamily(e); return { e, m: measure(e) }; });
+  renderBands(measured);
+  renderReadings(measured);
+  renderBlueSummary(measured);
+  selfCheck(measured);
+}
+function boot() {
+  buildStages();
+  paintLand();
+  const second = () => refresh();
+  refresh();
+  requestAnimationFrame(() => requestAnimationFrame(second));
+  setTimeout(second, 80);
+}
+document.querySelectorAll('input[name=bg]').forEach((i) => i.addEventListener("change", refresh));
+boot();
+</script>
+</body>
+</html>

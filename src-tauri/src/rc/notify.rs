@@ -4,14 +4,19 @@
 //! 以及只调它们的方法。前三个是纯搬位置 + 收口（逻辑、时序、文案、锁粒度
 //! 一律不变）；`notify_path` 是 2026-09-17 新增的路径切换通知。
 
+use super::input::RemoteCursor;
 use std::sync::{Arc, Mutex};
 
 /// 会话状态变化时通知前端（由 lib.rs 注入，避免 RcService 依赖 AppHandle）。
 pub(super) type NotifyFn = Arc<dyn Fn() + Send + Sync>;
 /// 被控端画面范围被对端改动时的回调（参数为新的 scope 串）。
 pub(super) type ScopeNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
-/// 远端光标形状变化时的回调（参数为形状串，见 input::CursorShape）。
-pub(super) type CursorNotifyFn = Arc<dyn Fn(&str) + Send + Sync>;
+/// 远端光标遥测变化时的回调（形状 + 归一化位置，见 `input::RemoteCursor`）。
+///
+/// B 方案（2026-10-02）从「只有形状串」升级成带位置：帧里没有光标，
+/// 发起端要画**真的**光标就得同时知道它在哪。旧签名 `Fn(&str)` 作废，
+/// 唯一注入点在 lib.rs、唯一调用点在 `emit_cursor_changed`。
+pub(super) type CursorNotifyFn = Arc<dyn Fn(&RemoteCursor) + Send + Sync>;
 /// 会话路径自动切换时的回调（参数为 from / to 的档位串）。
 ///
 /// iroh 每 60s 会尝试把中继路径升级成直连（`UPGRADE_INTERVAL`），
@@ -154,20 +159,20 @@ impl NotifyState {
         }
     }
 
-    /// 注入「远端光标形状变化」的回调（lib.rs 在 manage 之后调用）。
+    /// 注入「远端光标遥测变化」的回调（lib.rs 在 manage 之后调用）。
     pub(super) fn set_cursor_notify(&self, f: CursorNotifyFn) {
         *self.notify_cursor.lock().unwrap_or_else(|p| p.into_inner()) = Some(f);
     }
 
-    /// 远端光标形状变了 → 告诉发起端前端（形状只在变化时发，无需节流）。
-    pub(super) fn emit_cursor_changed(&self, shape: &str) {
+    /// 远端光标遥测变了 → 告诉发起端前端（只在变化时发，节流在发送侧）。
+    pub(super) fn emit_cursor_changed(&self, cur: &RemoteCursor) {
         let f = self
             .notify_cursor
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
         if let Some(f) = f {
-            f(shape);
+            f(cur);
         }
     }
 

@@ -1,0 +1,22 @@
+.icon {
+  flex: none;
+}
+
+.screen {
+  fill: var(--accent-light);
+}
+
+.meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type {
+  color: var(--text-primary);
+  font-weight: 600;
+}

@@ -11,6 +11,7 @@
 import { X } from "lucide-react";
 import { classifyErr, closingText, isTerminal, taskLine } from "@/lib/rcFile";
 import type { RcFileTask } from "@/lib/api/rcFile";
+import { MobileNotice } from "../ui/MobileNotice";
 import styles from "./RcDevices.module.css";
 
 export function RcFileTaskList({
@@ -26,7 +27,7 @@ export function RcFileTaskList({
     <ul className={styles.fileTasks} aria-label="传输任务">
       {tasks.map((t) => {
         const terminal = isTerminal(t.state);
-        const tip = t.state === "failed" ? classifyErr(t.err).tip : "";
+        const tip = t.state === "failed" ? classifyErr(t.err).tip : t.state === "denied" ? "请在对方的 PastePanda 确认文件请求，再重新发送或取回。" : "";
         return (
           <li key={t.id} className={styles.fileTask}>
             <div className={styles.fileTaskHead}>
@@ -42,6 +43,7 @@ export function RcFileTaskList({
                   onClick={() => onCancel(t.id)}
                 >
                   <X size={14} aria-hidden="true" />
+                  <span>取消</span>
                 </button>
               )}
             </div>
@@ -54,7 +56,7 @@ export function RcFileTaskList({
               />
             )}
             <div className={styles.fileTaskLine}>{taskLine(t, rateOf(t))}</div>
-            {tip && <div className={styles.fileTaskErr}>{tip}</div>}
+            {tip && <MobileNotice compact tone={t.state === "denied" ? "warning" : "error"}>{tip}</MobileNotice>}
             {closingText(t) && <div className={styles.fileTaskSub}>{closingText(t)}</div>}
             <div className={styles.fileTaskPeer}>{t.peer_name || t.peer}</div>
           </li>

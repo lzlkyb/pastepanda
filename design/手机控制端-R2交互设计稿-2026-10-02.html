@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PastePanda · R2 手机控制端设计稿</title><link rel="stylesheet" href="../src/styles/theme.css"><link rel="stylesheet" href="mobile-control-r2-2026-10-02/preview.css"></head>
+<body><main>
+<header class="intro"><h1>手机控制端 · 精准触控板</h1><p>延续 C 方案。先把指针放准，再完成操作。</p><p class="caption">交互设计稿 · 电脑内容、键盘、连接状态均为示意，不连接真实设备。</p></header>
+<div class="scenarios" aria-label="查看设计状态">
+<button data-scene="control" aria-pressed="true">控制中</button><button data-scene="mouse">鼠标辅助</button><button data-scene="pad">独立触控板</button><button data-scene="keyboard">键盘展开</button><button data-scene="landscape">横屏收起</button><button data-scene="waiting">等待画面</button><button data-scene="error">连接异常</button><button id="theme">深色外观</button>
+</div>
+<div class="workspace"><div class="device" id="device">
+<div class="session" id="session">
+<header class="session-head"><button data-act="end" class="small" aria-label="返回设备"><i data-icon="ArrowLeft"></i></button><div><strong>工作电脑</strong><span id="connectionLabel">控制中</span></div><button class="small" data-act="view" aria-label="调整画面"><i data-icon="Monitor"></i></button></header>
+<div class="screen" id="screen">
+<div class="desktop" id="desktop"><div class="desktop-top">PastePanda 示例电脑<span>文档</span></div><div class="explorer"><aside><strong>文件</strong><p>主页</p><p>桌面</p><p class="picked">文档</p><p>下载</p></aside><article><header><strong>项目资料</strong><span>搜索文档</span></header><div class="crumb">文档 / 项目资料</div><div class="file-row"><i data-icon="FolderOpen"></i><b>产品设计</b><span>文件夹</span></div><div class="file-row" id="target"><i data-icon="Monitor"></i><b>手机端交互规划</b><span>今天 09:30</span></div><div class="file-row"><i data-icon="Clipboard"></i><b>会议记录</b><span>昨天 18:20</span></div><div class="note" id="remoteNote">指针移动到目标后，点按完成操作。</div></article></div><div class="desktop-bottom">开始<span>文件管理器</span><span>PastePanda</span></div></div>
+<div class="cursor" id="cursor" aria-hidden="true"><svg viewBox="0 0 24 30"><path d="M3 2v22l6-6 4 10 4-2-4-10h8Z"/></svg></div>
+<div class="mode-pill" id="modePill">触控板 · 划动移动指针</div><div class="feedback" id="feedback" role="status" hidden></div>
+<div class="state-cover" id="stateCover" hidden><i data-icon="Monitor"></i><h2 id="stateTitle"></h2><p id="stateText"></p><div id="stateActions"></div></div>
+</div>
+<div class="mouse-tools" id="mouseTools" hidden><button data-act="left">左键</button><button data-act="right">右键</button><button data-act="drag" aria-pressed="false">拖拽</button><button data-act="scroll" aria-pressed="false">滚动</button></div>
+<div class="trackpad" id="trackpad" hidden><div><span>独立触控板</span><button data-act="pad">收起</button></div><div id="padSurface" class="pad-surface">划动移动指针 · 点按左键</div></div>
+<div class="keyboard" id="keyboard" hidden><div class="shortcuts"><button data-key="Ctrl" aria-pressed="false">Ctrl</button><button data-key="Alt" aria-pressed="false">Alt</button><button data-key="Tab">Tab</button><button data-key="Esc">Esc</button><button data-key="Enter">Enter</button><button data-act="keys" aria-label="扩展按键"><i data-icon="Ellipsis"></i></button></div>
+<div class="type-line"><input id="draft" placeholder="中文输入，确认后发送" aria-label="输入电脑文字"><button data-act="send">发送</button><button data-act="keyboard" aria-label="收起键盘"><i data-icon="ChevronDown"></i></button></div>
+<div class="system-keys"><div class="key-caption">系统键盘示意</div><div id="keyRows"></div><div class="key-footer"><button data-text="你好">中文</button><button data-text=" ">空格</button><button data-text="⌫" aria-label="删除一个字">删除</button></div></div></div>
+<nav class="toolbar" id="toolbar" aria-label="会话工具"><button data-act="mode"><i data-icon="MousePointer2"></i><span id="modeLabel">触控板</span></button><button data-act="keyboard"><i data-icon="Keyboard"></i><span>键盘</span></button><button data-act="rotate"><i data-icon="RotateCw"></i><span id="rotateLabel">横屏</span></button><button data-act="more"><i data-icon="Ellipsis"></i><span>更多</span></button><button id="collapseToolbar" data-act="reveal" hidden aria-label="收起工具栏"><i data-icon="ChevronDown"></i><span>收起</span></button></nav>
+<button class="tool-handle" id="toolHandle" data-act="reveal" hidden><i data-icon="ChevronDown"></i><span>工具</span></button>
+<div class="overlay" id="overlay" hidden><section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" tabindex="-1"><div class="sheet-handle"></div><header><h2 id="sheetTitle"></h2><button data-act="close" aria-label="关闭面板"><i data-icon="X"></i>关闭</button></header><div id="sheetBody"></div></section></div>
+</div></div>
+<aside class="explanation"><h2 id="explainTitle">划动与点击，各做一件事</h2><p id="explainText">整块画面就是触控板。划动移动指针，点按在指针位置点击；小按钮不用靠指尖直接命中。</p><div class="principles"><h3>本次重点</h3><p>右键、拖拽、滚动有明确按钮。</p><p>键盘打开时只保留一行快捷键。</p><p>工具收起后仍有可见把手。</p><p>调整手机视野，不改变电脑分辨率。</p><p>异常状态暂停输入，恢复后再操作。</p></div><p class="caption">可在画面或独立触控板上划动，试用按钮、模式、输入、横竖屏和返回层级。</p><p><a href="../docs/手机控制端交互重做方案-2026-10-02.md">完整方案文档</a></p></aside></div>
+</main><script src="mobile-ui-abc-2026-10-01/icons.js"></script><script src="mobile-control-r2-2026-10-02/preview.js"></script></body></html>

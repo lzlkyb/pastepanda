@@ -10,19 +10,20 @@
  *   IDLE →(down)→ PENDING →(位移≥12px 未充能)→ MOVE（纯移动，无按键）
  *                └→(按住550ms)→ CHARGED →(位移≥12px)→ DRAG（左键拖拽）
  *                                        └→(原位抬起)→ 右键单击
- *                └→(<220ms 抬起)→ TAP（左键单击；320ms 内第二次 = 双击第二击）
- *   超时窗（220–550ms 抬起且未动）→ 无事件（防误触）。
- * 双指：第二指落下冻结单指态（拖拽中例外：第二指整体忽略）；每帧比较
- *   |Δ间距| 与 |Δ中点|（噪声地板 4px）分类为 滚动/捏合，分类后锁定到全部抬起。
+ *                └→(<550ms 抬起且位移<12px)→ TAP（左键单击；320ms 内第二次 = 双击第二击）
+ *   点按窗与长按窗是同一个窗（550ms）：充能前抬起都可能是一次点按，没有
+ *   「防误触死窗」——该概念在接线上从未生效，2026-10-05 口径收口删除。
+ * 双指：第二指落下冻结单指态（拖拽中例外：第二指整体忽略）；等待两指的
+ *   起手信息，累计位移达到 10px 后分类并锁定；单指静止时最多等待 48ms。
  */
 import {
   DBL_TAP_MS,
   DBL_TAP_PX,
   LONG_PRESS_MS,
   PINCH_DOMINANCE,
-  TAP_MAX_MS,
   TAP_MAX_PX,
   TWO_FINGER_CLASSIFY_PX,
+  TWO_FINGER_SETTLE_MS,
 } from "./touchConstants";
 
 /** 判定结果的出口。坐标一律 client 坐标（CSS 像素），归一化由上层做。 */
@@ -45,7 +46,7 @@ export interface TouchCallbacks {
   onScrollDelta(dxF: number, dyF: number, midX: number, midY: number): void;
   /** 双指分类为捏合（一次）。 */
   onPinchStart(midX: number, midY: number): void;
-  /** 捏合：ratio 相对捏合起点（1.0），中点位移供平移。 */
+  /** 捏合：ratio 相对上一帧（1.0），与视野增量缩放口径一致。 */
   onPinchUpdate(ratio: number, midDxF: number, midDyF: number, midX: number, midY: number): void;
 }
 
@@ -75,11 +76,14 @@ export class TouchClassifier {
   private prevMidX = 0;
   private prevMidY = 0;
   private prevDist = 0;
-  private pinchStartDist = 0;
+  private twoTimer: unknown = null;
+  private readonly movedPointers = new Set<number>();
 
   constructor(
     private readonly cb: TouchCallbacks,
     private readonly clock: ClassifierClock,
+    /** 与长按充能同一窗口：充能前抬起都算点按（生产接线也传 LONG_PRESS_MS）。 */
+    private readonly tapMaxMs = LONG_PRESS_MS,
   ) {}
 
   down(id: number, x: number, y: number): void {
@@ -93,8 +97,8 @@ export class TouchClassifier {
       this.prevMidX = (a.x + b.x) / 2;
       this.prevMidY = (a.y + b.y) / 2;
       this.prevDist = Math.hypot(a.x - b.x, a.y - b.y);
-      this.pinchStartDist = this.prevDist;
       this.two = "unclassified";
+      this.movedPointers.clear();
       return;
     }
     this.st = "pending";
@@ -117,30 +121,15 @@ export class TouchClassifier {
     p.x = x;
     p.y = y;
     if (this.pointers.size === 2 && this.two !== "none") {
-      const [a, b] = [...this.pointers.values()];
-      const midX = (a.x + b.x) / 2;
-      const midY = (a.y + b.y) / 2;
-      const dist = Math.hypot(a.x - b.x, a.y - b.y);
-      const dDist = Math.abs(dist - this.prevDist);
-      const dMid = Math.hypot(midX - this.prevMidX, midY - this.prevMidY);
-      if (this.two === "unclassified" && Math.max(dDist, dMid) > TWO_FINGER_CLASSIFY_PX) {
-        this.two = dDist > PINCH_DOMINANCE * dMid ? "pinch" : "scroll";
-        if (this.two === "pinch") this.cb.onPinchStart(midX, midY);
+      this.movedPointers.add(id);
+      if (this.two !== "unclassified" || this.movedPointers.size === 2) this.updateTwo();
+      else if (this.twoTimer === null) {
+        // Pointer events arrive separately: wait for the other finger before locking intent.
+        this.twoTimer = this.clock.schedule(() => {
+          this.twoTimer = null;
+          this.updateTwo();
+        }, TWO_FINGER_SETTLE_MS);
       }
-      if (this.two === "scroll") {
-        this.cb.onScrollDelta(midX - this.prevMidX, midY - this.prevMidY, midX, midY);
-      } else if (this.two === "pinch") {
-        this.cb.onPinchUpdate(
-          dist / this.pinchStartDist,
-          midX - this.prevMidX,
-          midY - this.prevMidY,
-          midX,
-          midY,
-        );
-      }
-      this.prevMidX = midX;
-      this.prevMidY = midY;
-      this.prevDist = dist;
       return;
     }
     // 拖拽进行中第二指被忽略（down 时 two 保持 "none"）：拖拽指的移动必须继续流过，
@@ -181,6 +170,7 @@ export class TouchClassifier {
 
   up(id: number, x: number, y: number): void {
     if (!this.pointers.delete(id)) return;
+    this.cancelTwoTimer();
     const now = this.clock.now();
     // 拖拽指抬起：立即结算拖拽（即使另一指还在）——按下的左键必须有配对的 up。
     if (this.st === "drag" && id === this.dragId) {
@@ -209,9 +199,10 @@ export class TouchClassifier {
         break;
       case "charged":
         if (dist < TAP_MAX_PX) this.cb.onRightClick(this.sx, this.sy);
+        else this.cb.onChargeCancel();
         break;
       case "pending":
-        if (dt < TAP_MAX_MS && dist < TAP_MAX_PX) {
+        if (dt < this.tapMaxMs && dist < TAP_MAX_PX) {
           const isDouble =
             now - this.lastTapAt < DBL_TAP_MS &&
             Math.hypot(x - this.lastTapX, y - this.lastTapY) < DBL_TAP_PX;
@@ -220,7 +211,7 @@ export class TouchClassifier {
           this.lastTapY = y;
           this.cb.onTap(x, y, isDouble);
         }
-        // else：220–550ms 超时窗 / 超距 → 无事件（防误触，design §1 注）
+        // else：超距抬起 → 无事件（转移动；长按窗内原位抬起已在上面判为点按）
         break;
       default:
         break; // move 抬起 / idle：无事件
@@ -229,11 +220,39 @@ export class TouchClassifier {
 
   /** 全量复位（pointercancel / 失焦 / 旋转）。按键收尾由输入层 releaseAll 负责。 */
   cancelAll(): void {
+    this.cancelCharge();
+    this.cancelTwoTimer();
     this.pointers.clear();
     this.st = "idle";
     this.two = "none";
     this.dragId = null;
-    this.cancelCharge();
+    this.lastTapAt = -Infinity;
+  }
+
+  private cancelTwoTimer(): void {
+    if (this.twoTimer !== null) this.clock.cancel(this.twoTimer);
+    this.twoTimer = null;
+  }
+
+  private updateTwo(): void {
+    if (this.pointers.size !== 2 || this.two === "none") return;
+    const [a, b] = [...this.pointers.values()];
+    const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (this.two === "unclassified") {
+      const dDist = Math.abs(dist - this.prevDist);
+      const dMid = Math.hypot(midX - this.prevMidX, midY - this.prevMidY);
+      if (Math.max(dDist, dMid) < TWO_FINGER_CLASSIFY_PX) return;
+      this.cancelTwoTimer();
+      this.two = dDist > PINCH_DOMINANCE * dMid ? "pinch" : "scroll";
+      if (this.two === "pinch") this.cb.onPinchStart(midX, midY);
+    }
+    if (this.two === "scroll") this.cb.onScrollDelta(midX - this.prevMidX, midY - this.prevMidY, midX, midY);
+    else this.cb.onPinchUpdate(dist / Math.max(1, this.prevDist), midX - this.prevMidX, midY - this.prevMidY, midX, midY);
+    // Keep the starting geometry until classified: slow movement must accumulate.
+    this.prevMidX = midX;
+    this.prevMidY = midY;
+    this.prevDist = dist;
   }
 
   private cancelCharge(): void {

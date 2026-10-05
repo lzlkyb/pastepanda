@@ -1,65 +1,54 @@
-/**
- * useSessionClipboard — 会话内剪贴板推/取（手机端）。
- *
- * 与桌面 `RcClipboardBar` 同一条命令通道（`rcPushClipboard` / `rcPullClipboard`
- * ——后端按当前活动会话路由），不另走输入事件。反馈不放浮条：吐一个 `hint`
- * 给工具条渲染（规则 15.1：触发与反馈同一可见性域），几秒自清。
- *
- * 手机侧各多一步系统剪贴板读写（`navigator.clipboard`）：读要用户手势
- * （按钮点击满足）、写一般直接放行；被系统拒绝时给人话，不静默。
- */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rcPullClipboard, rcPushClipboard } from "@/lib/api/rc";
+import { rcErrorText } from "../devices/rcErrorText";
+import type { MobileFeedback } from "../ui/MobileNotice";
 
+/** Keep feedback with its buttons, including failures and retries. */
 export function useSessionClipboard() {
-  const [hint, setHintState] = useState("");
+  const [feedback, setFeedback] = useState<MobileFeedback | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-
-  const setHint = useCallback((msg: string) => {
-    setHintState(msg);
-    if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setHintState(""), 4000);
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const alive = useRef(true);
+  const last = useRef<"push" | "pull">("push");
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const dismiss = useCallback(() => setFeedback(null), []);
+  const toggleClip = useCallback(() => setClipOpen(v => !v), []);
+  const openClip = useCallback(() => setClipOpen(true), []);
+  const run = useCallback(async (direction: "push" | "pull") => {
+    if (locked.current) return;
+    locked.current = true;
+    last.current = direction;
+    setBusy(true);
+    setClipOpen(true);
+    setFeedback({ tone: "pending", title: direction === "push" ? "正在推送剪贴板…" : "正在取回剪贴板…" });
+    let stage: "phone" | "remote" = direction === "push" ? "phone" : "remote";
+    const report = (next: MobileFeedback) => { if (alive.current) setFeedback(next); };
+    try {
+      const text = direction === "push" ? await navigator.clipboard.readText() : await rcPullClipboard();
+      if (!alive.current) return;
+      if (text == null) {
+        report({ tone: "error", title: "未能取回电脑剪贴板", detail: "请确认电脑仍在线，然后重试。" });
+        return;
+      }
+      if (!text) {
+        report({ tone: "info", title: direction === "push" ? "手机剪贴板是空的" : "电脑剪贴板是空的", detail: "先复制文字，再试一次。" });
+        return;
+      }
+      stage = direction === "push" ? "remote" : "phone";
+      if (direction === "push") await rcPushClipboard(text);
+      else await navigator.clipboard.writeText(text);
+      report({ tone: "success", title: direction === "push" ? "已推送到电脑" : "已复制到手机", detail: `${text.length} 字符` });
+    } catch (error) {
+      report({ tone: "error", title: direction === "push" ? "剪贴板未能推到电脑" : "剪贴板未能取到手机",
+        detail: stage === "phone" ? "无法访问手机剪贴板，请检查系统的剪贴板访问设置后重试。" : rcErrorText(error) });
+    } finally {
+      locked.current = false;
+      if (alive.current) setBusy(false);
+    }
   }, []);
-  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
-
-  const toggleClip = useCallback(() => setClipOpen((v) => !v), []);
-
-  /** 手机 → 电脑：读本机剪贴板推过去。空剪贴板不是失败（重试也还是空）。 */
-  const push = useCallback(async () => {
-    setClipOpen(false);
-    try {
-      const t = await navigator.clipboard.readText();
-      if (!t) {
-        setHint("手机剪贴板是空的");
-        return;
-      }
-      await rcPushClipboard(t);
-      setHint(`已推送到电脑 · ${t.length} 字符`);
-    } catch (e) {
-      setHint(`推送失败：${String(e)}`);
-    }
-  }, [setHint]);
-
-  /** 电脑 → 手机：拉对方剪贴板写进本机。空剪贴板同理不是失败。 */
-  const pull = useCallback(async () => {
-    setClipOpen(false);
-    try {
-      const t = await rcPullClipboard();
-      if (t == null) {
-        setHint("取回失败");
-        return;
-      }
-      if (t === "") {
-        setHint("电脑剪贴板是空的");
-        return;
-      }
-      await navigator.clipboard.writeText(t);
-      setHint(`已复制到手机 · ${t.length} 字符`);
-    } catch (e) {
-      setHint(`取回失败：${String(e)}`);
-    }
-  }, [setHint]);
-
-  return { hint, clipOpen, toggleClip, push, pull };
+  const push = useCallback(() => run("push"), [run]);
+  const pull = useCallback(() => run("pull"), [run]);
+  const retry = useCallback(() => run(last.current), [run]);
+  return { feedback, hint: feedback?.title ?? "", clipOpen, toggleClip, openClip, push, pull, retry, dismiss, busy };
 }

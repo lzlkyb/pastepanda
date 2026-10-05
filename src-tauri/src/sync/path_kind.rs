@@ -98,9 +98,9 @@ impl PathKind {
 ///   只看 v4 的 `is_private()` 会把 IPv6 局域网当成公网直连。
 fn is_lan_ip(ip: std::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
+        std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
         std::net::IpAddr::V6(v6) => {
-            v6.is_unique_local() || v6.is_unicast_link_local() || v6.is_loopback()
+            v6.is_unique_local() || v6.is_unicast_link_local()
         }
     }
 }
@@ -122,10 +122,18 @@ fn is_lan_ip(ip: std::net::IpAddr) -> bool {
 /// 没有任何一条被选中时（快照可能正落在路径迁移中间）才退回「开放路径里最好的」，
 /// 优先级 局域网直连 > 公网直连 > 中继。
 pub fn path_kind_of<'a>(paths: impl Iterator<Item = (bool, &'a TransportAddr)>) -> PathKind {
+    path_kind_with_underlay(paths, false)
+}
+
+fn path_kind_with_underlay<'a>(paths: impl Iterator<Item = (bool, &'a TransportAddr)>, underlay: bool) -> PathKind {
     let mut selected = PathKind::None;
     let mut any = PathKind::None;
     for (is_selected, addr) in paths {
-        let k = kind_of_addr(addr);
+        // localhost 代理不能进入 LAN 凭证放宽路径；只有获批会话确认了
+        // 底层 UDP P2P 才显示公网直连，未经确认的代理保守显示中继。
+        let k = if matches!(addr, TransportAddr::Ip(a) if a.ip().is_loopback()) {
+            if underlay { PathKind::Direct } else { PathKind::Relay }
+        } else { kind_of_addr(addr) };
         if is_selected && rank(k) > rank(selected) {
             selected = k;
         }
@@ -175,13 +183,55 @@ pub fn of_conn(conn: &iroh::endpoint::Connection) -> PathKind {
         .iter()
         .map(|p| (p.is_selected(), p.remote_addr().clone()))
         .collect();
-    path_kind_of(owned.iter().map(|(sel, addr)| (*sel, addr)))
+    let active = underlays().lock().unwrap_or_else(|p| p.into_inner())
+        .get(&conn.remote_id().to_string()).is_some_and(|count| *count > 0);
+    path_kind_with_underlay(owned.iter().map(|(sel, addr)| (*sel, addr)), active)
+}
+
+fn underlays() -> &'static std::sync::Mutex<std::collections::HashMap<String, usize>> {
+    static ACTIVE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, usize>>> = std::sync::OnceLock::new();
+    ACTIVE.get_or_init(Default::default)
+}
+
+pub(crate) struct UnderlayGuard(String);
+pub(crate) fn register_underlay(peer: String) -> UnderlayGuard {
+    *underlays().lock().unwrap_or_else(|p| p.into_inner()).entry(peer.clone()).or_default() += 1;
+    UnderlayGuard(peer)
+}
+impl Drop for UnderlayGuard {
+    fn drop(&mut self) {
+        let mut peers = underlays().lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(count) = peers.get_mut(&self.0) {
+            *count -= 1;
+            if *count == 0 { peers.remove(&self.0); }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn localhost_underlay_never_grants_lan_semantics() {
+        let addr = ip("127.0.0.1:18000");
+        assert_eq!(path_kind_of([(true, &addr)].into_iter()), PathKind::Relay);
+        assert_eq!(path_kind_with_underlay([(true, &addr)].into_iter(), true), PathKind::Direct);
+        let native = ip("192.168.31.2:18000");
+        assert_eq!(path_kind_with_underlay([(true, &native)].into_iter(), true), PathKind::Lan);
+    }
+
+    #[test]
+    fn older_session_cleanup_does_not_remove_new_underlay_label() {
+        let peer = format!("test-{}", uuid::Uuid::new_v4());
+        let old = register_underlay(peer.clone());
+        let newer = register_underlay(peer.clone());
+        drop(old);
+        assert_eq!(underlays().lock().unwrap().get(&peer), Some(&1));
+        drop(newer);
+        assert!(!underlays().lock().unwrap().contains_key(&peer));
+    }
 
     fn ip(s: &str) -> TransportAddr {
         TransportAddr::Ip(s.parse().unwrap())

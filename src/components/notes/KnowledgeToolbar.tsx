@@ -9,6 +9,11 @@
  * ❗ 「＋新建」没跟着搬，且**不要搬**：它是对**当前文件夹**做的事，`newHint` 里写着
  *   「落入「…」」，而那个文件夹名就是旁边的面包屑——挪到顶栏等于切断它唯一的落点线索。
  *
+ * ❗ 溢出菜单的 `trigger` 必须在**本组件**拿（而不是 `KnowledgeView`）：
+ *   `KnowledgeView` 自己渲染 `<ContextMenu>`，所以它在 `CtxMenuCtx.Provider`
+ *   的**外面**，`useContext` 在那里拿不到东西。菜单项的数据由它算好传下来。
+ *   （同 `BatchBar` 当时只能自造下拉的同类问题。）
+ *
  * 样式沿用 `KnowledgeView.module.css`：这几个类本来就是给它写的，
  * 再开一个 css module 只会让同一行的样式散在两个文件里。
  */

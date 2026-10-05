@@ -1,549 +1,475 @@
-/* 设备页（列表 / 配对 / 会话发起）样式。令牌与 theme.css 同源（带兜底）。 */
-
-.errBar {
+/* C 方案：卡片实底，颜色全部来自桌面语义变量。 */
+.channel {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 0 10px;
-  padding: 10px 14px;
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  border-radius: 12px;
-  background: rgba(248, 113, 113, 0.1);
-  color: var(--text-primary, #e6edf7);
-  font-size: 13px;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0 24px;
 }
-.errBarText {
+.channel strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+.channel p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+.channel > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--accent-light);
+}
+.actionsRow {
+  display: flex;
+  gap: 10px;
+}
+.actionsRow > button {
   flex: 1;
   min-width: 0;
-}
-.errBtn {
-  border: 1px solid var(--border-color, #22304a);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary, #9aa8bd);
-  font-size: 12px;
-  padding: 4px 10px;
-  white-space: nowrap;
-}
-
-.selfCard,
-.deviceCard {
-  border: 1px solid var(--border-color, #22304a);
-  border-radius: 14px;
-  background: var(--card-bg, #111a2e);
-  padding: 14px 16px;
-}
-.deviceCard {
-  border-color: rgba(99, 102, 241, 0.35);
-  text-align: left;
-  width: 100%;
-}
-.deviceName {
-  font-weight: 700;
+  background: var(--card-bg);
+  color: var(--accent-strong);
   font-size: 15px;
-  color: var(--text-primary, #e6edf7);
+}
+.deviceCard {
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 2px;
-}
-.deviceSub {
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
-  margin-top: 3px;
-}
-.selfTag {
-  font-size: 11px;
-  color: var(--text-muted, #64748b);
-  font-weight: 400;
-  margin-left: 6px;
-}
-.fp {
-  font-family: Consolas, monospace;
-  font-size: 10px;
-}
-
-.dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 8px;
-  flex-shrink: 0;
-}
-.dotOk { background: var(--accent-green, #34d399); }
-.dotChecking { background: var(--accent-cyan, #22d3ee); }
-.dotUnknown { background: var(--text-muted, #64748b); }
-
-.primaryBtn {
-  display: block;
+  gap: 12px;
   width: 100%;
-  text-align: center;
-  padding: 13px;
+  padding: 18px 14px;
+  min-height: 96px;
+  text-align: left;
+}
+.deviceCard + .deviceCard {
+  border-top: 1px solid var(--border-color);
+}
+.deviceCard:active,
+.deviceCard:hover {
+  background: var(--section-bg);
+  transform: none;
+}
+.deviceCard:active:not(:disabled) {
+  transform: scale(0.992);
+}
+.deviceIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: none;
   border-radius: 12px;
-  border: 1px solid var(--accent, #6366f1);
-  background: rgba(99, 102, 241, 0.16);
-  color: var(--text-primary, #e6edf7);
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--section-bg);
 }
-.primaryBtn:disabled {
-  opacity: 0.5;
+.deviceIconOnline {
+  color: var(--text-secondary);
+  background: var(--section-bg);
 }
-.ghostBtn {
+.deviceText {
+  min-width: 0;
+  flex: 1;
+}
+.deviceText strong {
   display: block;
-  width: 100%;
-  text-align: center;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border-color, #22304a);
-  background: transparent;
-  color: var(--text-secondary, #9aa8bd);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.deviceType {
   font-size: 13px;
 }
 
-.empty {
+.deviceSub {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.chevron {
+  color: var(--text-secondary);
+  flex: none;
+}
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 4px;
+  margin-right: 5px;
+  vertical-align: 2px;
+}
+.dotOk {
+  background: var(--success);
+}
+.dotChecking {
+  background: var(--accent);
+}
+.dotUnknown {
+  background: var(--text-secondary);
+}
+.deviceHero {
   text-align: center;
-  padding: 40px 12px 0;
+  margin: 8px 0 16px;
 }
-.emptyIcon {
-  font-size: 34px;
+.deviceHero > svg {
+  color: var(--accent-strong);
+  stroke-width: 1.3;
 }
-.emptyTitle {
-  font-weight: 700;
-  color: var(--text-primary, #e6edf7);
+.deviceHero h2 {
+  font-size: 20px;
+  margin: 12px 0 4px;
+  overflow-wrap: anywhere;
+}
+.deviceHero p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.primaryBtn,
+.ghostBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 12px;
   font-size: 15px;
-  margin: 8px 0 4px;
+  font-weight: 600;
 }
-.emptyHint {
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
-  margin-bottom: 18px;
+.primaryBtn {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
 }
-
-/* 配对卡 */
+.ghostBtn {
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-weight: 500;
+}
 .pairCard {
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  border-radius: 14px;
-  background: var(--card-bg, #111a2e);
-  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
-.pairHint {
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
-}
-.bigCode {
-  font-family: Consolas, monospace;
-  font-size: 30px;
-  letter-spacing: 4px;
-  text-align: center;
-  color: var(--accent-cyan, #22d3ee);
-  padding: 6px 0 0;
-}
-.codeExp {
-  font-size: 11px;
-  color: var(--text-muted, #64748b);
-  text-align: center;
+.pairHint,
+.dirHint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 .codeInput {
   width: 100%;
+  min-height: 52px;
   padding: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color, #22304a);
-  background: rgba(99, 102, 241, 0.08);
-  color: var(--text-primary, #e6edf7);
-  font-size: 18px;
-  font-family: Consolas, monospace;
-  letter-spacing: 3px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 20px;
   text-align: center;
+  letter-spacing: 3px;
+  font-variant-numeric: tabular-nums;
 }
 .codeInput::placeholder {
-  font-size: 13px;
-  font-family: inherit;
-  letter-spacing: normal;
-  color: var(--text-muted, #64748b);
+  font-size: 15px;
+  letter-spacing: 0;
+  color: var(--text-secondary);
 }
-.notice {
-  font-size: 12.5px;
-  color: var(--text-secondary, #9aa8bd);
-}
-.noticeError {
-  color: var(--accent-red, #f87171);
-}
-.noticeSuccess {
-  color: var(--accent-green, #34d399);
-}
-.spin {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--accent-cyan, #22d3ee);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  vertical-align: -1px;
-  margin-right: 6px;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* pending 等待卡 */
 .pendingCard {
-  border: 1px solid rgba(34, 211, 238, 0.4);
-  border-radius: 14px;
-  background: var(--card-bg, #111a2e);
-  padding: 18px 16px;
-  text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  border-radius: var(--mobile-radius-group);
+  padding: 16px;
+  margin: 0 0 16px;
+}
+.pendingCard p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
 }
 .pendingTitle {
-  font-weight: 700;
-  color: var(--text-primary, #e6edf7);
   font-size: 15px;
+  font-weight: 600;
 }
-.pendingSub {
-  font-size: 12px;
-  color: var(--text-muted, #64748b);
-  margin-bottom: 8px;
-}
-
-/* 底部动作面板（非模态） */
-.sheetBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-}
-.sheet {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
-  z-index: 21;
-  margin: 0 10px;
-  border: 1px solid var(--glass-border, rgba(99, 102, 241, 0.22));
-  border-radius: 16px;
-  background: var(--glass, rgba(17, 26, 46, 0.92));
-  backdrop-filter: blur(8px);
-  padding: 12px;
+/* 入站申请确认卡的按钮行：允许/拒绝并排，允许是主操作。 */
+.askActions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  animation: sheetUp 160ms ease-out;
+  gap: 10px;
 }
-@keyframes sheetUp {
-  from {
-    transform: translateY(14px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
+.askActions button {
+  flex: 1;
 }
-.sheetTitle {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary, #e6edf7);
-  text-align: center;
-  padding-bottom: 2px;
-}
-.sheetBtn {
-  padding: 13px;
-  border-radius: 12px;
-  border: 1px solid var(--accent, #6366f1);
-  background: rgba(99, 102, 241, 0.16);
-  color: var(--text-primary, #e6edf7);
-  font-size: 14px;
-  font-weight: 700;
-}
-.sheetBtnCyan {
-  border-color: var(--accent-cyan, #22d3ee);
-  background: rgba(34, 211, 238, 0.12);
-  font-weight: 400;
-  color: var(--text-primary, #e6edf7);
-}
-.sheetBtnGhost {
-  border-color: var(--border-color, #22304a);
-  background: transparent;
-  color: var(--text-secondary, #9aa8bd);
-  font-weight: 400;
-}
-.sheetBtn:disabled {
-  opacity: 0.5;
-}
-
-/* 出示侧的二维码（次要形态）：电脑没摄像头扫不了它，所以压到 160px 不抢大字码。 */
 .pairQr {
-  width: 160px;
-  height: 160px;
-  border-radius: 8px;
+  width: 180px;
+  height: 180px;
+  border-radius: 12px;
   align-self: center;
-  margin: 8px 0;
 }
 .pairQr[data-ready="0"] {
   display: none;
 }
-
-/* ── 扫一扫浮层 ──
-   全宽取景 + 一行状态说明。失败态不弹窗、不 toast：摄像头权限被拒是常见路径，
-   用户需要的是"还能手动输入"，这句话必须一直在屏幕上（规则 15.3）。 */
 .scanOverlay {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 .scanHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+.scanHead button {
+  width: auto;
 }
 .scanTitle {
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .scanVideo {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 12px;
-  background: #0b1220;
+  border-radius: var(--mobile-radius-group);
+  background: var(--section-bg);
 }
-.scanHint {
-  font-size: 12px;
-  color: var(--text-secondary, #94a3b8);
-  line-height: 1.6;
+.filesView {
+  width: 100%;
 }
-
-/* ── 单码出示态：遮罩 / 亮码 / 读秒（2026-09-29 设计稿 §3） ──
-   与桌面 usePairCodeVisibility 同一套规则，样式按手机密度单独一份。 */
-.codeBar {
+.fileLayout, .fileControls, .fileRecords { min-width: 0; }
+:global(html[data-mobile-layout="landscape"]) .channel { margin: 0 0 12px; gap: 12px; }
+:global(html[data-mobile-layout="landscape"]) .channel > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+:global(html[data-mobile-layout="landscape"]) .channel > span { width: 32px; height: 32px; }
+:global(html[data-mobile-layout="landscape"]) .deviceCard { min-height: 80px; padding: 12px; }
+:global(html[data-mobile-layout="landscape"]) .transferActions button { min-height: 64px; flex-direction: row; padding: 12px 8px; gap: 8px; }
+@media (min-width: 700px) {
+  :global(html[data-mobile-layout="landscape"]) .fileLayout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+  :global(html[data-mobile-layout="landscape"]) .fileRecords > div:first-child { margin-top: 0; }
+}
+.peerSelect {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-color, #e3e6ea);
-  border-radius: 8px;
-  background: var(--card-bg, #fff);
+  gap: 12px;
+  width: 100%;
+  background: var(--card-bg);
+  border: 0;
+  border-radius: var(--mobile-radius-group);
+  padding: 16px;
+  color: var(--text-primary);
+  text-align: left;
 }
-.codeBarMasked {
-  border-style: dashed;
-  background: var(--section-bg, #eef1f5);
+.peerSelect strong {
+  display: block;
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
-.maskedLabel {
-  flex: 1;
-  min-width: 0;
+.peerSelect small {
+  display: block;
   font-size: 12px;
-  color: var(--text-muted, #64748b);
+  color: var(--text-secondary);
 }
-.bigCode {
+.peerSelect > span {
   flex: 1;
   min-width: 0;
-  font: 700 24px/1 ui-monospace, Consolas, monospace;
-  letter-spacing: 4px;
-  color: var(--accent, #2f6fed);
-  white-space: nowrap;
-  user-select: text;
 }
-/* tabular-nums：读秒等宽才不会左右抖 */
-.ttl {
-  font-size: 11px;
-  color: var(--text-muted, #64748b);
-  font-variant-numeric: tabular-nums;
+.peerSelect > svg {
+  color: var(--accent-strong);
   flex: none;
 }
-.ttlHot { color: var(--warning, #b7791f); font-weight: 600; }
-
-
-/* ── 文件页（P1.5）：落点卡 / ask 确认 / 任务列表 ── */
-.filesView {
+.transferActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.transferActions button {
+  flex: 1;
+  min-width: 0;
+  min-height: 92px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  max-width: 420px;
+  font-size: 15px;
+  gap: 9px;
+}
+.transferActions .ghostBtn {
+  background: var(--card-bg);
+  color: var(--accent-strong);
 }
 .dirCard {
-  border: 1px solid var(--border-color, #232b3d);
+  background: var(--section-bg);
   border-radius: 12px;
-  background: var(--card-bg, #131824);
-  padding: 12px;
+  padding: 14px;
 }
 .dirLabel {
-  font-size: 11px;
-  color: var(--text-muted, #8a94a8);
-  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
 }
 .dirPath {
-  font: 12px/1.5 ui-monospace, Consolas, monospace;
-  color: var(--text-primary, #e6ebf5);
-  word-break: break-all;
+  color: var(--text-primary);
+  font:
+    13px/1.7 ui-monospace,
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
   user-select: text;
 }
 .dirHint {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-muted, #8a94a8);
-}
-.fileEmpty {
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--text-muted, #8a94a8);
-  padding: 12px 0;
-}
-.fileAsk {
-  border: 1px solid var(--accent, #6366f1);
-  border-radius: 12px;
-  background: var(--card-bg, #131824);
-  padding: 12px;
-}
-.fileAskTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary, #e6ebf5);
-  margin-bottom: 4px;
-}
-.fileAskLead {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-secondary, #b6c0d4);
-  margin-bottom: 10px;
-  word-break: break-all;
-}
-.fileAskBtns {
-  display: flex;
-  gap: 8px;
-}
-.fileAskBtns .primaryBtn,
-.fileAskBtns .ghostBtn {
-  flex: 1;
-  margin-top: 0;
+  margin-top: 8px;
 }
 .peerPick {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
 }
 .peerChip {
-  padding: 6px 12px;
-  border: 1px solid var(--border-color, #232b3d);
-  border-radius: 999px;
-  background: var(--card-bg, #131824);
-  color: var(--text-secondary, #b6c0d4);
-  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: 12px;
+  min-height: 48px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 .peerChipOn {
-  border-color: var(--accent, #6366f1);
-  background: rgba(99, 102, 241, 0.16);
-  color: var(--text-primary, #e6ebf5);
+  background: var(--accent-light);
+  color: var(--accent-strong);
 }
-.fileTasksHead {
+.peerDetails {
+  flex: 1;
+  min-width: 0;
+}
+.peerDetails strong {
+  display: block;
+}
+.fileAsk {
+  padding: 16px;
+  border-radius: var(--mobile-radius-group);
+  background: var(--accent-light);
+  margin: 12px 0;
+}
+.fileAskTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.fileAskLead {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.fileAskBtns {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--text-muted, #8a94a8);
-  margin-top: 4px;
+  gap: 10px;
+  margin-top: 12px;
 }
-.fileClear {
-  border: none;
-  background: transparent;
-  color: var(--accent, #6366f1);
-  font-size: 12px;
-  padding: 4px 6px;
+.fileAskBtns button {
+  flex: 1;
 }
 .fileTasks {
   list-style: none;
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   padding: 0;
+  margin: 0;
+}
+.fileTask {
+  background: var(--card-bg);
+  border-radius: var(--mobile-radius-group);
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.fileTask {
-  border: 1px solid var(--border-color, #232b3d);
-  border-radius: 12px;
-  background: var(--card-bg, #131824);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 .fileTaskHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 .fileDir {
   flex: none;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent-cyan, #22d3ee);
+  font-size: 12px;
+  color: var(--accent-strong);
 }
 .fileDirIn {
-  color: var(--accent-green, #34d399);
+  color: var(--success);
 }
 .fileTaskName {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  color: var(--text-primary, #e6ebf5);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 .fileTaskCancel {
-  flex: none;
-  border: none;
+  border: 0;
   background: transparent;
-  color: var(--text-muted, #8a94a8);
-  padding: 4px;
+  color: var(--text-secondary);
+  min-width: 48px;
+  min-height: 48px;
+  padding: 8px;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
 }
 .fileTaskBar {
   width: 100%;
-  height: 6px;
+  height: 5px;
   appearance: none;
-  -webkit-appearance: none;
-  border: none;
-  border-radius: 999px;
+  border: 0;
+  border-radius: 4px;
   overflow: hidden;
-  background: var(--section-bg, #1a2130);
-  color: var(--accent, #6366f1);
+  background: var(--section-bg);
+  color: var(--accent);
+  accent-color: var(--accent);
 }
 .fileTaskBar::-webkit-progress-bar {
-  background: var(--section-bg, #1a2130);
+  background: var(--section-bg);
 }
 .fileTaskBar::-webkit-progress-value {
-  background: var(--accent, #6366f1);
+  background: var(--accent);
+  border-radius: 4px;
+}
+.fileTaskBar::-moz-progress-bar {
+  background: var(--accent);
 }
 .fileTaskLine {
-  font-size: 12px;
-  color: var(--text-secondary, #b6c0d4);
+  font-size: 13px;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.fileTaskErr {
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--danger, #f87171);
-}
-.fileTaskSub {
-  font-size: 11px;
-  color: var(--text-muted, #8a94a8);
-}
+.fileTaskSub,
 .fileTaskPeer {
-  font-size: 11px;
-  color: var(--text-muted, #8a94a8);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
-/* 视觉隐藏的 <input type="file">：承接系统选择器，按钮才是触摸目标 */
 .filePickInput {
   position: absolute;
   width: 1px;
@@ -551,48 +477,36 @@
   opacity: 0;
   pointer-events: none;
 }
-
-/* ── 无人值守接入卡（手机端 RcUnoJoinCard） ── */
 .unoModes {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+}
+.unoModes > button {
+  flex: 1;
+  font-size: 13px;
 }
 .unoInput {
   width: 100%;
-  min-height: 56px;
-  padding: 8px;
-  font: 13px/1.5 inherit;
-  font-family: ui-monospace, Consolas, monospace;
-  border: 1px solid var(--border-color, #232b3d);
-  border-radius: 8px;
-  background: var(--section-bg, #1a2130);
-  color: var(--text-primary, #e6ebf5);
-  resize: none;
+  min-height: 52px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--section-bg);
+  color: var(--text-primary);
+  font-size: 15px;
+  resize: vertical;
 }
 .unoFp {
-  font-size: 12px;
-  color: var(--text-muted, #8a94a8);
-  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 .unoPickBlock {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* 动作面板追加项（P1.5）：危险项独立色；页脚双入口并排 */
-.sheetBtnDanger {
-  border-color: var(--danger, #f87171);
-  background: rgba(248, 113, 113, 0.1);
-  color: var(--danger, #f87171);
-  font-weight: 400;
-}
-.actionsRow {
-  display: flex;
-  gap: 8px;
-}
-.actionsRow .ghostBtn {
-  flex: 1;
-  margin-top: 0;
+.unoInput {
+  font-size: var(--mobile-input-size);
 }

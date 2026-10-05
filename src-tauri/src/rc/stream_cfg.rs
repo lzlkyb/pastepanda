@@ -8,10 +8,19 @@
 //! **时间不进这个模块**：`touch_activity` / `should_pause` 的「现在」由调用方传入，
 //! 暂停判定因此可以用假时钟精确断言，不必 sleep 或依赖机器负载。
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Mutex;
 
 use super::service::{CFG_CAPTURE_SCOPE, CFG_CODEC, CFG_QUALITY};
+
+/// Q5：码率倍率的**默认值 = 最高档 200**（2026-10-02 用户拍板）。
+///
+/// 语义是「先给最好的」：健康链路上直接按 2× 基准码率跑（清晰优先）；
+/// 弱网由 auto 缩放（RTT/丢包/带宽/队列四路判据）**乘法**压回去——
+/// 用户 200% × auto 40% = 80%，弱网保护不被「尽量清晰」绕过。
+/// 用户在会话 UI 显式选别的档会写配置，那才是他的真实意愿；
+/// 未配置（新装 / 从没动过下拉）一律按 200 起步。
+pub const DEFAULT_USER_BITRATE_PCT: u32 = 200;
 
 /// 心跳超时：超过这么久没有输入/心跳 ⇒ 暂停推流。
 const HEARTBEAT_TIMEOUT_MS: i64 = 3_500;
@@ -81,12 +90,20 @@ pub(super) struct StreamCfg {
     /// 发起端设置的「码率倍率」（Q5，50–200，100 = 跟随链路）。
     /// 与 RTT/丢包自动缩放相乘：用户调的是天花板，弱网保护仍然有效。
     user_bitrate_pct: AtomicI64,
+    /// 本场会话是否已收到过发起端的码率/链路信息（`SetBitratePct` 或
+    /// `NetHint` 任一到达即置位，会话建立时复位）。
+    ///
+    /// 🔴 为什么需要（2026-10-03）：被控端起播要先开硬编，而发起端的倍率是
+    /// 会话建立后约 0.9s 才推到的。少了这个信号，起播宽限就只能按固定时长
+    /// 空等；有它就能「倍率一到就开、不到就等到期」——LAN 上几乎零等待，
+    /// 慢网上也有上界。见 `inbound/video.rs` 的起播宽限闸。
+    peer_net_seen: AtomicBool,
     /// 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。发起端由 pong 回包里的
     /// `hts` 估算；「画面延迟」= 本地时刻 − (帧采集时刻 − 偏差)。0 = 未校准。
     clock_skew_ms: AtomicI64,
     /// skew 样本过滤用的历史最小 RTT（0 = 尚无样本）。见 [`StreamCfg::note_clock_skew`]。
     skew_min_rtt_ms: AtomicI64,
-    /// skew 离群剔除的连续拒绝数（重锚判据，见 [`StreamCfg::note_clock_skew`]）。
+    /// RTT / skew 连续拒绝数（重锚判据，见 [`StreamCfg::note_clock_skew`]）。
     skew_rej_streak: AtomicI64,
     /// 发起端帧龄 EMA（NetHint `queue_ms`，2026-09-28）——AP 队列的 in-band 观测。
     /// 存的是**平滑后**的值（升快降慢，见 [`StreamCfg::set_peer_queue_ms`]）；0 = 尚未收到。
@@ -95,12 +112,23 @@ pub(super) struct StreamCfg {
     /// 与本端 conn 级丢包取 max 后喂码控与 RS 冗余——WiFi 丢包按突发砸帧，
     /// 帧粒度信号比 conn 包级更贴近接收端的真实观感。
     peer_loss_hint_pm: AtomicI64,
+    /// 会话 RTT 下限（ms，2026-10-05 中继实测）。只有「安静样本」会写入：
+    /// 收到过帧龄上报、帧龄 ≤90ms（码率缩放的全速带）、丢包 <10‰。
+    /// 中继 ~600ms 这类**传播延迟**会沉成下限，RTT 类判据从此只看
+    /// 「超额延迟 = 当前 RTT − 下限」，慢而宽的链路不再被当成拥塞砍码率/降档。
+    /// 0 = 尚未建立（超额按绝对 RTT 走，行为等同旧版，保守）。
+    rtt_floor_ms: AtomicI64,
+    /// 本场会话是否收到过帧龄（排队）上报——下限跟踪器要求该信号在线，
+    /// 起播阶段与不上报队列的旧对端都不能定安静样本。
+    peer_queue_seen: AtomicBool,
     /// 「自动」档状态（2A）：enabled 时推流循环每帧喂字节数，由 [`StreamCfg::auto_note_frame`]
     /// 决定是否换档（换档 = 直接改 `opts.profile`，推流循环下一圈自己比对套用）。
     auto: Mutex<AutoTier>,
 }
 
 /// RTT → 码率缩放百分比（25–100）。局域网 <50ms 全速；跨网逐步砍。
+/// 🔴 2026-10-05 起调用方喂的是**超额延迟**（RTT − 会话下限），语义从
+/// 「走得慢」改成「排队了」：中继 ~600ms 传播延迟不再被当成拥塞。
 pub fn bitrate_scale_for_rtt(rtt_ms: i64) -> u32 {
     match rtt_ms.max(0) {
         0..=49 => 100,
@@ -109,6 +137,45 @@ pub fn bitrate_scale_for_rtt(rtt_ms: i64) -> u32 {
         200..=399 => 40,
         _ => 25,
     }
+}
+
+/// 会话 RTT 下限的**纯更新函数**（守卫单测直喂样本）。安静样本判据：
+/// 收到过帧龄上报（`queue_reported`，旧对端不发则下限永不建立、退回绝对 RTT）、
+/// 帧龄 ≤90ms（`bitrate_scale_for_queue` 的全速带）、丢包 <10‰。
+/// 低于下限直接取新值（换路径/真改善要立刻生效）；高于下限每次只收敛 1/4
+/// （LAN→中继这类迁移不能拿一两个样本重锚，否则拥塞尖峰会把下限抬上去、
+/// 超额延迟判据就此失明）。非安静样本一律不动下限。
+pub(crate) fn next_rtt_floor(
+    floor: i64,
+    sample_ms: i64,
+    queue_reported: bool,
+    queue_ms: i64,
+    loss_pm: i64,
+) -> i64 {
+    if sample_ms <= 0 || !queue_reported || loss_pm >= 10 || queue_ms > 90 {
+        return floor;
+    }
+    if floor <= 0 || sample_ms < floor {
+        sample_ms
+    } else {
+        floor + (sample_ms - floor) / 4
+    }
+}
+
+/// 视频数据报是否**允许**使用（纯函数，2026-10-02 公网联调两次实测收口）。
+///
+/// 🔴 依据一（18:15 会话，直连）：桌面把上千帧全部走数据报发出、本地零丢弃，
+/// 对端重组器却一帧都凑不齐；同连接可靠流 pong 正常——数据报在公网路径近乎
+/// 全丢。依据二（19:05 会话，绕中继）：iroh 在**中继路径**上 `conn.rtt()`
+/// 恒为 0，按 RTT 降级的判据在最需要它的路径上失明，视频数据报灌爆桌面↔
+/// 中继连接的拥塞窗口，把 pong / 控制帧 / JPEG 流全部堵死，最终写流卡死断会。
+///
+/// 因此**默认可靠流，采样到且够快才切数据报**：`rtt_ms <= 0`（未采样，含
+/// 全部中继路径）不允许；RTT <300ms 且丢包 <150‰ 才放行。会话内允许
+/// 数据报→可靠流单向降级（调用方负责），可靠流→数据报只在采样首次达标
+/// 时进一次（局域网开场 ~1s 内完成，代价可忽略）。
+pub fn video_dgram_allowed(rtt_ms: i64, loss_permille: i64) -> bool {
+    rtt_ms > 0 && rtt_ms < 300 && loss_permille < 150
 }
 
 /// NetHint 档位判定（2026-09-27 重做，纯函数，守卫测试见 tests.rs）。
@@ -201,6 +268,13 @@ pub fn bitrate_scale_for_loss(permille: u64) -> u32 {
 use super::auto_quality::{auto_decide, auto_ladder, ladder_index_of, AutoTier, LinkSample, FRAME_WINDOW};
 
 impl StreamCfg {
+    pub(super) fn media_ceiling_kbps(&self) -> u32 {
+        // 保留画质档与用户倍率的上限意图，实际预算仍由交付闭环决定。
+        let width = self.opts.lock().unwrap_or_else(|p| p.into_inner()).profile.max_w;
+        let base = match width { 0..=1280 => 4_000, 1281..=1920 => 8_000, _ => 12_000 };
+        let pct = self.user_bitrate_pct.load(Ordering::Relaxed).clamp(50, 200) as u32;
+        (base * pct / 100).min(16_000)
+    }
     pub(super) fn new() -> Self {
         Self {
             opts: Mutex::new(StreamOpts::default()),
@@ -210,12 +284,15 @@ impl StreamCfg {
             path_rtt_ms: AtomicI64::new(0),
             path_loss_permille: AtomicI64::new(0),
             path_bw_kbps: AtomicI64::new(0),
-            user_bitrate_pct: AtomicI64::new(100),
+            user_bitrate_pct: AtomicI64::new(DEFAULT_USER_BITRATE_PCT as i64),
+            peer_net_seen: AtomicBool::new(false),
             clock_skew_ms: AtomicI64::new(0),
             skew_min_rtt_ms: AtomicI64::new(0),
             skew_rej_streak: AtomicI64::new(0),
             peer_queue_ms: AtomicI64::new(0),
             peer_loss_hint_pm: AtomicI64::new(0),
+            rtt_floor_ms: AtomicI64::new(0),
+            peer_queue_seen: AtomicBool::new(false),
             auto: Mutex::new(AutoTier::off()),
         }
     }
@@ -228,33 +305,91 @@ impl StreamCfg {
         self.last_rtt_ms.load(Ordering::Relaxed)
     }
 
+    /// 视频传输路选择用的「当前 RTT」：对端上报优先（发起端 ping 测的更稳），
+    /// 没有就用本端 QUIC stats 采样。0 = 尚无样本。与 [`Self::bitrate_scale`]
+    /// 里那份取值是同一口径，收口在这里避免两处漂移。
+    pub(super) fn video_rtt_ms(&self) -> i64 {
+        let peer = self.peer_rtt_ms.load(Ordering::Relaxed);
+        if peer > 0 {
+            peer
+        } else {
+            self.path_rtt_ms.load(Ordering::Relaxed)
+        }
+    }
+
     /// 被控端：记录对端上报的 RTT，并给出当前码率缩放（%）。
     pub(super) fn set_peer_rtt(&self, rtt_ms: i64) -> u32 {
         let v = rtt_ms.max(0);
         self.peer_rtt_ms.store(v, Ordering::Relaxed);
+        // 链路信息到了同样算「对端已发言」——倍率可能走单独的 SetBitratePct，
+        // 但先到的这个信号已足够结束起播宽限（见 `peer_net_seen` 字段注释）。
+        self.peer_net_seen.store(true, Ordering::Relaxed);
+        self.track_rtt_floor(v);
         self.bitrate_scale()
     }
 
-    pub(super) fn bitrate_scale(&self) -> u32 {
-        // RTT 优先用对端上报（发起端 ping 测的更稳）；没有就用本端 stats 采样
-        let peer = self.peer_rtt_ms.load(Ordering::Relaxed);
-        let rtt = if peer > 0 {
-            peer
+    /// 用当前排队/丢包上下文把一个 RTT 样本喂进下限跟踪器。
+    /// 🔴 调用顺序要求：NetHint 必须**先**更新帧龄与丢包**再**进来
+    /// （inbound.rs 已按此重排），否则风暴起步的那一拍会拿上一拍的旧队列
+    /// 把拥塞样本误判成安静样本、把下限抬进坑里。
+    fn track_rtt_floor(&self, sample_ms: i64) {
+        let floor = self.rtt_floor_ms.load(Ordering::Relaxed);
+        let next = next_rtt_floor(
+            floor,
+            sample_ms,
+            self.peer_queue_seen.load(Ordering::Relaxed),
+            self.peer_queue_ms.load(Ordering::Relaxed),
+            self.loss_permille(),
+        );
+        if next != floor {
+            self.rtt_floor_ms.store(next, Ordering::Relaxed);
+        }
+    }
+
+    /// 超额延迟（ms）= 当前 RTT − 会话下限。下限未建立（旧对端/起播前）
+    /// 时等于绝对 RTT——保守，等同旧行为；中继上几拍内下限沉到 ~600ms 后，
+    /// RTT 类判据就只对「比本场安静时刻更慢」的排队负责。
+    pub(super) fn excess_rtt_ms(&self) -> i64 {
+        let rtt = self.video_rtt_ms();
+        let floor = self.rtt_floor_ms.load(Ordering::Relaxed);
+        if floor <= 0 || rtt <= 0 {
+            rtt
         } else {
-            self.path_rtt_ms.load(Ordering::Relaxed)
-        };
+            (rtt - floor).max(0)
+        }
+    }
+
+    /// 本场会话是否已收到过对端码率/链路信息（起播宽限提前收闸用）。
+    pub(super) fn peer_net_seen(&self) -> bool {
+        self.peer_net_seen.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn bitrate_scale(&self) -> u32 {
+        let rtt = self.video_rtt_ms();
         let loss = self.loss_permille_u64();
         let bw = self.path_bw_kbps.load(Ordering::Relaxed);
         let queue = self.peer_queue_ms.load(Ordering::Relaxed);
-        let auto = bitrate_scale_for_rtt(rtt)
+        // RTT 路吃**超额延迟**：中继 ~600ms 固有传播不该砍码率（2026-10-05
+        // 实测被 40% 档误伤）；真排队时超额照涨，保护不失效。其余三路本来就是
+        // 「谁糟听谁」的拥塞直读，维持绝对值。
+        let auto = bitrate_scale_for_rtt(self.excess_rtt_ms())
             .min(bitrate_scale_for_loss(loss))
             .min(bitrate_scale_for_bw(bw))
             .min(bitrate_scale_for_queue(queue));
+        // 🔴 雪崩硬保护（2026-10-03）：帧龄 EMA 破秒 = 队列在单调积累（08:22
+        // 真机会话帧龄一路涨到 46s）。这时再乘用户倍率会把 15% 抬回 30%
+        // （200% 倍率），队列永不排干——熔断/降档的底线不该被「清晰优先」
+        // 乘回去。破秒后码控只听链路的，倍率暂停参与。
+        if queue > 1000 {
+            return auto;
+        }
         // Q5：用户倍率与之**相乘**（50–200，100 = 不干预）。乘法而非 min：
         // 弱网把 auto 砍到 40% 时，用户 200% 得到 80%——仍受保护但确实变清晰；
         // 若取 min，200% 在弱网下毫无意义。clamp 防退化（两端乘积域 12.5–200）。
         let user = self.user_bitrate_pct.load(Ordering::Relaxed).clamp(50, 200) as u32;
-        ((auto * user) / 100).clamp(10, 300)
+        let scaled = ((auto * user) / 100).clamp(10, 300);
+        // 未收到有效 RTT 前先保守起播，用户倍率不能放大未知链路。
+        crate::rc::media::scale_for_path(scaled, rtt, false)
     }
 
     /// 发起端设置码率倍率（Q5）。范围外拒绝——UI 滑条/下拉只出 50–200，
@@ -265,6 +400,8 @@ impl StreamCfg {
         }
         self.user_bitrate_pct
             .store(pct as i64, Ordering::Relaxed);
+        // 倍率偏好到了 = 起播宽限可以收了（见 `peer_net_seen` 字段注释）
+        self.peer_net_seen.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -320,6 +457,7 @@ impl StreamCfg {
             (prev + queue_ms) / 2
         };
         self.peer_queue_ms.store(next, Ordering::Relaxed);
+        self.peer_queue_seen.store(true, Ordering::Relaxed);
     }
 
     /// 发起端 NetHint 携带的帧粒度丢包率（permille）。非对称 EMA 同上。
@@ -360,24 +498,22 @@ impl StreamCfg {
         }
         const RTT_WINDOW_MS: i64 = 100;
         const REJECT_MS: u64 = 150;
-        const REANCHOR_AFTER: i64 = 20;
         let prev_min = self.skew_min_rtt_ms.load(Ordering::Relaxed);
         if prev_min == 0 || rtt_ms < prev_min {
             self.skew_min_rtt_ms.store(rtt_ms, Ordering::Relaxed);
         }
         let min = self.skew_min_rtt_ms.load(Ordering::Relaxed);
         if rtt_ms > min + RTT_WINDOW_MS {
+            // 路径可能已从直连切到中继。只在 skew 离群分支计数，会让
+            // 更慢路径的全部样本永远进不来，旧的错误时钟偏差也永远不变。
+            self.reject_clock_sample();
             return;
         }
         let prev = self.clock_skew_ms.load(Ordering::Relaxed);
         if prev != 0 && sample_ms.abs_diff(prev) > REJECT_MS {
             // 离群。连续拒绝过多说明锚点本身不可信（首锚误差大 / 时钟漂移），
             // 丢锚重来——否则坏锚永远无法被修正。
-            let streak = self.skew_rej_streak.fetch_add(1, Ordering::Relaxed) + 1;
-            if streak >= REANCHOR_AFTER {
-                self.clock_skew_ms.store(0, Ordering::Relaxed);
-                self.skew_rej_streak.store(0, Ordering::Relaxed);
-            }
+            self.reject_clock_sample();
             return;
         }
         self.skew_rej_streak.store(0, Ordering::Relaxed);
@@ -387,6 +523,14 @@ impl StreamCfg {
             (prev * 7 + sample_ms * 3) / 10
         };
         self.clock_skew_ms.store(next, Ordering::Relaxed);
+    }
+
+    fn reject_clock_sample(&self) {
+        if self.skew_rej_streak.fetch_add(1, Ordering::Relaxed) + 1 >= 20 {
+            self.clock_skew_ms.store(0, Ordering::Relaxed);
+            self.skew_min_rtt_ms.store(0, Ordering::Relaxed);
+            self.skew_rej_streak.store(0, Ordering::Relaxed);
+        }
     }
 
     pub(super) fn clock_skew_ms(&self) -> i64 {
@@ -414,10 +558,12 @@ impl StreamCfg {
         g.monitor = -1;
         g.codec = codec;
         self.peer_rtt_ms.store(0, Ordering::Relaxed);
-        // Q5：码率倍率回归「跟随链路」。发起端的偏好由它在会话建立后
-        // 主动推送（outbound.rs 启动即发 SetBitratePct），被控端不该继承
-        // 上一场会话留下的旧值——那可能是另一台设备设的。
-        self.user_bitrate_pct.store(100, Ordering::Relaxed);
+        // Q5：码率倍率回归默认（200，见 [`DEFAULT_USER_BITRATE_PCT`]）。
+        // 发起端的偏好由它在会话建立后**无条件**推送（outbound.rs 启动即发
+        // SetBitratePct），被控端不该继承上一场会话留下的旧值——那可能是
+        // 另一台设备设的。推送是常态，这里的初值只在推送到达前生效一瞬。
+        self.user_bitrate_pct
+            .store(DEFAULT_USER_BITRATE_PCT as i64, Ordering::Relaxed);
         // P0-1 B6：路径统计（本端 RTT / 丢包）是**上一场会话**的采样残留，
         // 新会话第一拍采样到来之前不该拿旧值缩码率、判链路好坏。
         self.path_rtt_ms.store(0, Ordering::Relaxed);
@@ -425,6 +571,12 @@ impl StreamCfg {
         self.path_bw_kbps.store(0, Ordering::Relaxed);
         self.peer_queue_ms.store(0, Ordering::Relaxed);
         self.peer_loss_hint_pm.store(0, Ordering::Relaxed);
+        // RTT 下限与会话同生命周期：换台/换路径（LAN↔中继）最小 RTT 完全不同。
+        self.rtt_floor_ms.store(0, Ordering::Relaxed);
+        self.peer_queue_seen.store(false, Ordering::Relaxed);
+        // 「对端已发言」是**本场会话**的信号：换场必须清零，否则新会话的
+        // 起播宽限会被上一场的残留立刻收闸，倍率又开错。
+        self.peer_net_seen.store(false, Ordering::Relaxed);
         self.clock_skew_ms.store(0, Ordering::Relaxed);
         // skew 过滤状态与会话同生命周期：换台对端 min-RTT 完全不同。
         self.skew_min_rtt_ms.store(0, Ordering::Relaxed);
@@ -507,7 +659,10 @@ impl StreamCfg {
             tier: a.tier,
             ladder_len: ladder.len(),
             down_bytes,
-            rtt_ms: rtt,
+            rtt_ms: self.excess_rtt_ms(),
+            // 🔴 帧龄参与判档（2026-10-03）：拥塞最直接的观测，见
+            // `auto_quality::AUTO_DOWN_QUEUE_MS`。
+            queue_ms: self.peer_queue_ms.load(Ordering::Relaxed),
             avg_bytes: avg,
             loss_permille: self.loss_permille().max(0) as u64,
             high_since: a.high_since,

@@ -127,6 +127,11 @@ export interface AppConfig {
   screenshot_hotkey: string; // 截图标注快捷键（v6.18 截图功能）
   daily_note_hotkey: string; // 今日速记：把剪贴板当前内容追加到今天那条（B2 #3 / D11）
   todo_island_hotkey: string; // 待办灵动岛唤起：收起态直进输入态（critique P1-1）
+  rec_hotkey: string; // 屏幕录制快捷键（录制中再按 = 停止）
+  rec_quality: string; // 录屏默认画质档（original/high/standard/smooth，键表 lib/recQuality）
+  rec_sys_audio: boolean; // 录屏录系统声音（默认开）
+  rec_mic_audio: boolean; // 录屏录麦克风（默认关，避免隐私意外）
+  rec_save_dir: string; // 录屏保存目录（空 = 视频\PastePanda\）
   // 转笔记模板（B2 #8）。**空 = 不套模板**（向后兼容：加这个功能不能改变旧用户的结果）
   note_template: string;
   // 按 content_type 的模板覆盖，JSON 字符串如 `{"code":"..."}`。
@@ -504,6 +509,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   screenshot_hotkey: "ctrl+q", // 2 键默认（Ctrl+Q）：左手顺按；QQ Ctrl+Alt+A / 微信 Alt+A 都是大占用源
   daily_note_hotkey: "ctrl+alt+d", // D=Daily；与上面六个以及 Ctrl+Alt+1..9（索引粘贴）都不冲突
   todo_island_hotkey: "alt+t", // T=Todo；与上面七个以及 Ctrl+Alt+1..9 都不冲突
+  rec_hotkey: "ctrl+alt+r", // R=Record；与上面全部热键不冲突
+  rec_quality: "high", // 默认「高清」：兼容性最好的原分辨率档（设计稿 §6）
+  rec_sys_audio: true, // 系统声音默认录
+  rec_mic_audio: false, // 麦克风默认不录（隐私）
+  rec_save_dir: "", // 空 = 默认「视频\PastePanda\」
   note_template: "", // 空 = 不套模板（不能默认给一份，否则升级后所有人的转笔记结果都变了）
   note_template_overrides: "",
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口

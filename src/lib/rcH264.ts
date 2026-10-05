@@ -114,7 +114,7 @@ export class H264Decoder {
 
   /**
    * 丢弃队列里所有未解码的 chunk（P1.2 drop-to-latest）。
-   * VideoDecoder.reset() 回到「已配置」空队列状态，不需要重新 configure；
+   * VideoDecoder.reset() 回到 unconfigured；下次恢复关键帧前必须重新 configure。
    * 调用方必须随后进入 waitingKey（P 帧引用链已断，delta 帧全部拦下）并
    * 向被控端要关键帧——H.264 不能中间丢帧，flush+等关键帧是唯一的
    * 「丢过期」方式（Moonlight 同款思路，代价是 ≤1 个 GOP 的冻结）。
@@ -122,6 +122,9 @@ export class H264Decoder {
   dropPending() {
     try {
       this.dec?.reset();
+      // reset 清掉的不仅是排队帧，还有配置；保留 ok 会让同规格的恢复帧
+      // 跳过 ensureConfigured，随后每次 decode 都报 InvalidStateError。
+      this.ok = false;
     } catch (e) {
       this.onError(e);
     }

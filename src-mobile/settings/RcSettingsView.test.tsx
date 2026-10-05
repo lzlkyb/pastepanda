@@ -7,6 +7,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UseRc } from "@/hooks/useRc";
 import { RcSettingsView } from "./RcSettingsView";
+// This suite exercises settings/history. The update section has an app-owned provider.
+vi.mock("./MobileUpdateSection", () => ({ MobileUpdateSection: () => null }));
 
 const api = vi.hoisted(() => ({
   history: vi.fn(),
@@ -46,14 +48,15 @@ const HISTORY = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.clear.mockResolvedValue(undefined);
-  api.setEnabled.mockResolvedValue(undefined);
+  api.clear.mockResolvedValue(true);
+  api.setEnabled.mockResolvedValue(true);
 });
 
 describe("会话历史", () => {
   it("渲染对端 / 方向 / 时长", async () => {
     api.history.mockResolvedValueOnce(HISTORY);
     renderView({});
+    fireEvent.click(screen.getByRole("button", { name: /会话历史/ }));
     expect(await screen.findByText(/连到 台式机/)).toBeTruthy();
     expect(screen.getByText(/被连 笔记本/)).toBeTruthy();
     // formatDuration 口径：分:秒（补零）
@@ -63,13 +66,16 @@ describe("会话历史", () => {
   it("空列表说人话", async () => {
     api.history.mockResolvedValueOnce([]);
     renderView({});
+    fireEvent.click(screen.getByRole("button", { name: /会话历史/ }));
     expect(await screen.findByText("还没有会话记录")).toBeTruthy();
   });
 
   it("拉取失败给出错误 + 重试", async () => {
     api.history.mockRejectedValueOnce("boom");
     renderView({});
-    expect(await screen.findByText(/boom/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /会话历史/ }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/操作未能完成/);
+    expect(screen.queryByText(/boom/)).toBeNull();
     // 🔴 先排队成功值再点重试：点击同步触发 reload，队列空了就会落到
     // 无默认实现的 mock 上（返回 undefined），list 变 undefined 直接崩渲染。
     api.history.mockResolvedValueOnce(HISTORY);
@@ -80,12 +86,13 @@ describe("会话历史", () => {
   it("清空两步确认：第一下只亮确认，第二下才调命令并刷新", async () => {
     api.history.mockResolvedValue(HISTORY);
     renderView({});
+    fireEvent.click(screen.getByRole("button", { name: /会话历史/ }));
     await screen.findByText(/连到 台式机/);
 
     fireEvent.click(screen.getByRole("button", { name: "清空" }));
     expect(api.clear).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "再点一次确认清空" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认清空" }));
     await waitFor(() => expect(api.clear).toHaveBeenCalledTimes(1));
   });
 });
@@ -93,7 +100,7 @@ describe("会话历史", () => {
 describe("远程通道开关", () => {
   it("开 → 点关闭 → setEnabled(false)", async () => {
     renderView({ enabled: true });
-    fireEvent.click(await screen.findByRole("button", { name: "关闭" }));
+    fireEvent.click(await screen.findByRole("switch", { name: "远程通道" }));
     expect(api.setEnabled).toHaveBeenCalledWith(false);
   });
 

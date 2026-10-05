@@ -294,6 +294,19 @@ pub async fn exchange(
 /// 比两码版 ≈ 53 bit 低一倍，比 PP1 邀请码的 128 位身份低 101 倍。换来的是
 /// 用户只记一个数。超出会合之后的一切（写白名单、连会话）都不受影响。
 /// 改这里之前先读模块头与 `docs/` 里 RC 配对的说明，别把这条当细节。
+/// 拨号方要连的临时端点 id：**监听方**那枚派生身份（角色位 `listen`）。
+///
+/// 🔴 2026-10-03 公网单码配对全程「连接超时」的真凶：这里原来直接传
+///    `pair_secret_pin(code, listen=false).public()`——拨号方**自己**那枚。
+///    而监听方 `bind_temp` 绑的是 `listen` 那枚，两端 pk 不同，拨号方拨的是
+///    一个没人监听的地址：现象是 PC 侧零日志（连接从未到达）、手机侧每 2 秒
+///    重拨直到码到期，报「连接超时 / 等待对方确认超时」，现场无法定位。
+///    两码版 (`exchange`) 两端派生同一枚 secret 所以从没踩中；单码版按角色
+///    分离后才暴露。守卫单测 `单码版拨号目标是监听方临时端点` 钉住对应关系。
+fn dial_target_pk(code: &str) -> Result<iroh::PublicKey, String> {
+    Ok(pair_secret_pin(code, true)?.public())
+}
+
 pub async fn exchange_pin(
     endpoint: Endpoint,
     me: &NodeIdentity,
@@ -311,7 +324,7 @@ pub async fn exchange_pin(
         temp.close().await;
         result
     } else {
-        run_dialer(&endpoint, secret.public(), code, code, &hello, deadline).await
+        run_dialer(&endpoint, dial_target_pk(code)?, code, code, &hello, deadline).await
     }
 }
 
@@ -370,6 +383,39 @@ mod tests {
         assert!(pair_secret_pin("", true).is_err());
     }
 
+    /// 🔴 拨号方拨的必须是**监听方**的派生身份，不是自己的（2026-10-03 公网
+    /// 全程「连接超时」的真凶）。这条红了 = 单码配对又拨错地址，而现象只是
+    /// 手机干等、PC 零日志，现场没有任何线索。
+    #[test]
+    fn 单码版拨号目标是监听方临时端点() {
+        let listener_pk = pair_secret_pin("41820620", true).unwrap().public();
+        let dialer_pk = pair_secret_pin("41820620", false).unwrap().public();
+        assert_eq!(dial_target_pk("41820620").unwrap(), listener_pk);
+        assert_ne!(
+            dial_target_pk("41820620").unwrap(),
+            dialer_pk,
+            "拨号方不能拨自己那枚——没人监听那个地址"
+        );
+        // 换一枚码，目标必须跟着换（否则两枚码会撞进同一条通道）
+        assert_ne!(dial_target_pk("41820620").unwrap(), dial_target_pk("41820621").unwrap());
+        assert!(dial_target_pk("4182062").is_err(), "坏码不许派生目标");
+    }
+
+    /// 离线结构校验：`bind_temp` 真绑出来的端点 id 必须等于拨号目标（不起网，
+    /// 只看身份对应）。 [#[ignore]] 的手测测试之外，这条进 CI 常关门禁。
+    #[tokio::test]
+    async fn 单码版监听方临时端点id等于拨号目标() {
+        let secret = pair_secret_pin("41820620", true).unwrap();
+        let temp = Endpoint::builder(presets::N0)
+            .secret_key(secret)
+            .alpns(vec![ALPN.to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        assert_eq!(temp.id(), dial_target_pk("41820620").unwrap());
+        temp.close().await;
+    }
+
     /// 手动验收用：走真正的 n0 中继，不能作为离线 CI 的默认门禁。
     #[tokio::test]
     #[ignore = "requires public n0 relay"]
@@ -398,6 +444,49 @@ mod tests {
         let (from_a, from_b) = tokio::join!(
             exchange(a_ep.clone(), &a, "11111111", "22222222", expires),
             exchange(b_ep.clone(), &b, "22222222", "11111111", expires),
+        );
+        let (a_peer, _, b_addr) = from_a.unwrap();
+        let (b_peer, _, _) = from_b.unwrap();
+        assert_eq!(a_peer, b.node_id());
+        assert_eq!(b_peer, a.node_id());
+        let (dial, accept) = tokio::join!(a_ep.connect(b_addr, b"rc/1"), accept_conn(&b_ep));
+        assert_eq!(dial.unwrap().remote_id().to_string(), b.node_id());
+        assert_eq!(accept.unwrap().remote_id().to_string(), a.node_id());
+        a_ep.close().await;
+        b_ep.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// 手动验收用（2026-10-03 单码配对修复后补）：走真 n0 中继跑**单码版**
+    /// 全握手——a 出示方（listen=true）/ b 输入方（listen=false），同一枚码。
+    /// 这条红了就是拨号方又连不到监听方（现场只表现为手机干等、PC 零日志）。
+    #[tokio::test]
+    #[ignore = "requires public n0 relay"]
+    async fn pin_endpoints_exchange_real_identities() {
+        let root =
+            std::env::temp_dir().join(format!("pastepanda-pin-pair-{}", uuid::Uuid::new_v4()));
+        let a_dir = root.join("a");
+        let b_dir = root.join("b");
+        std::fs::create_dir_all(&a_dir).unwrap();
+        std::fs::create_dir_all(&b_dir).unwrap();
+        let a = NodeIdentity::load_or_create(&a_dir).unwrap();
+        let b = NodeIdentity::load_or_create(&b_dir).unwrap();
+        let a_ep = Endpoint::builder(presets::N0)
+            .secret_key(a.iroh_secret())
+            .alpns(vec![b"rc/1".to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let b_ep = Endpoint::builder(presets::N0)
+            .secret_key(b.iroh_secret())
+            .alpns(vec![b"rc/1".to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let expires = chrono::Utc::now().timestamp_millis() + 35_000;
+        let (from_a, from_b) = tokio::join!(
+            exchange_pin(a_ep.clone(), &a, "41820620", true, expires),
+            exchange_pin(b_ep.clone(), &b, "41820620", false, expires),
         );
         let (a_peer, _, b_addr) = from_a.unwrap();
         let (b_peer, _, _) = from_b.unwrap();

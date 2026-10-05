@@ -15,6 +15,7 @@ import { RcFilesView } from "./RcFilesView";
 
 const api = vi.hoisted(() => ({
   defaultDir: vi.fn(),
+  receiveDirSet: vi.fn(),
   pull: vi.fn(),
   respond: vi.fn(),
   cancel: vi.fn(),
@@ -25,6 +26,7 @@ const api = vi.hoisted(() => ({
 
 vi.mock("@/lib/api/rcFile", () => ({
   rcFileDefaultDir: api.defaultDir,
+  rcFileReceiveDirSet: api.receiveDirSet,
   rcFilePull: api.pull,
   rcFileRespond: api.respond,
   rcFileCancel: api.cancel,
@@ -46,6 +48,7 @@ const TARGET = { node_id: "pc-1", name: "台式机", display_name: "台式机" }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useRcFileStore.setState({ error: null, errorPeer: null, busy: false });
   api.defaultDir.mockResolvedValue("/storage/emulated/0/Android/data/app/files/PastePanda 接收");
   api.respond.mockResolvedValue(undefined);
   api.cancel.mockResolvedValue(undefined);
@@ -60,8 +63,36 @@ function snapshotFor(payload: unknown) {
 }
 
 describe("接收落点与取回", () => {
+  it("取回目录被拒后可重置；只有重置成功才清错，下一次请求使用新目录", async () => {
+    api.pull.mockRejectedValueOnce("接收目录建不出来：Permission denied (os error 13)").mockResolvedValue(undefined);
+    api.receiveDirSet.mockRejectedValueOnce("接收目录仍不可用").mockResolvedValueOnce("/system/downloads/PastePanda 接收");
+    renderView([TARGET]);
+    await waitFor(() => expect((screen.getByRole("button", { name: "从电脑取文件" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
+    expect(await screen.findByText(/无法在当前接收位置保存文件/)).toBeTruthy();
+    expect(screen.queryByText("操作权限不足，请检查系统设置")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "重置接收位置" }));
+    expect(await screen.findByText("接收目录仍不可用")).toBeTruthy();
+    // 重置失败不把原取回失败伪装成已恢复；目录错误的重试可继续使用。
+    fireEvent.click(screen.getByRole("button", { name: "重置接收位置" }));
+    expect(await screen.findByText("已恢复默认接收位置，请重新取文件。")).toBeTruthy();
+    expect(api.receiveDirSet).toHaveBeenCalledWith("");
+    fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
+    await waitFor(() => expect(api.pull).toHaveBeenLastCalledWith("pc-1", "/system/downloads/PastePanda 接收"));
+  });
+
+  it("应用内部授权失败不显示重置目录或要求修改手机权限", async () => {
+    api.pull.mockRejectedValueOnce("command rc_file_pull permission denied");
+    renderView([TARGET]);
+    await waitFor(() => expect((screen.getByRole("button", { name: "从电脑取文件" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
+    expect(await screen.findByText(/应用内部授权失败/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "重置接收位置" })).toBeNull();
+  });
+
   it("落点显示后端给的原样路径", async () => {
     renderView([TARGET]);
+    fireEvent.click(screen.getByRole("button", { name: "查看接收位置" }));
     await waitFor(() => expect(screen.getByText(/Android\/data/)).toBeTruthy());
   });
 
@@ -81,9 +112,10 @@ describe("接收落点与取回", () => {
     expect(api.pull).toHaveBeenCalledWith("pc-1", "/storage/emulated/0/Android/data/app/files/PastePanda 接收");
   });
 
-  it("多台设备出现挑选 chips，选中的那台被传给 pull", async () => {
+  it("多台设备在弹层中选择，选中的那台被传给 pull", async () => {
     api.pull.mockResolvedValue(true);
     renderView([TARGET, { node_id: "pc-2", name: "笔记本", display_name: "笔记本" }]);
+    fireEvent.click(screen.getByRole("button", { name: /传输对象/ }));
     await waitFor(() => expect(screen.getByRole("radio", { name: "笔记本" })).toBeTruthy());
     await act(async () => {
       fireEvent.click(screen.getByRole("radio", { name: "笔记本" }));
@@ -137,7 +169,7 @@ describe("对方推来的 ask 卡", () => {
 
     // 手机拿不出真实路径——接受必须禁用，且说明写清原因与替代路径
     expect((screen.getByRole("button", { name: "去选择文件" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/用下面的「发文件到电脑」/)).toBeTruthy();
+    expect(screen.getByText(/手机无法接受电脑取文件的请求/)).toBeTruthy();
     // 拒绝仍是活路（60 秒超时等价拒绝，但主动拒绝不用干等）
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "拒绝" }));

@@ -57,6 +57,7 @@ export interface RcAudioFrame {
 export type RcAudioItem = { type: 0; cfg: RcAudioCfg } | ({ type: 1 } & RcAudioFrame);
 
 export type RcInputEvent =
+  | { kind: "frame_presented"; session_id: string; at_ms: number }
   | { kind: "mouse_move"; x: number; y: number }
   | { kind: "mouse_button"; x: number; y: number; button: number; down: boolean }
   | { kind: "wheel"; x: number; y: number; delta: number }
@@ -99,7 +100,15 @@ export type RcInputEvent =
    * 没勾它只回一条失败原因（`status.peer_input.err`），本机一个键都不吞。
    * 锁的是**物理输入**，不锁注入那一路——所以锁上之后你照常能操作对方机器。
    */
-  | { kind: "set_input_lock"; on: boolean };
+  | { kind: "set_input_lock"; on: boolean }
+  /**
+   * B 方案后台保活（2026-10-02）：发起端页面进/出后台。被控端收到 bg_pause
+   * 挂起推流 + 看门狗放宽到 5 分钟（`link::PEER_BG_TTL_MS`）；bg_resume 立即
+   * 补关键帧。生命周期事件，只看会话也发（免 Control 白名单）。
+   * 发送方：`useRcBackgroundPause`（桌面/手机两壳共用）。
+   */
+  | { kind: "bg_pause" }
+  | { kind: "bg_resume" };
 
 export interface RcHistoryItem {
   peer: string;

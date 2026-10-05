@@ -13,6 +13,7 @@
  * null/未开始状态，不再由格式化函数代劳。
  */
 import type { RcFileAsk, RcFileSnapshot, RcFileTask, RcFileTaskDir, RcFileTaskState } from "@/lib/api/rcFile";
+import { permissionErrorInfo } from "@/lib/utils";
 
 /** 确认条超时，与后端 `file_state::ASK_TIMEOUT_MS` **必须一致**（两端同倒计时）。 */
 export const ASK_TIMEOUT_MS = 60_000;
@@ -269,6 +270,8 @@ export function classifyErr(err?: string | null): ErrInfo {
   if (s.includes("[bad_node_id]")) {
     return { title: "对方设备号不合法", tip: "请重新从设备列表发起。", upgrade: false };
   }
+  const permission = permissionErrorInfo(s);
+  if (permission) return { title: permission.title, tip: permission.detail, upgrade: false };
   if (/超时|timeout/i.test(s)) {
     return { title: "等待超时", tip: "对方可能没看到确认条，可再试一次。", upgrade: false };
   }

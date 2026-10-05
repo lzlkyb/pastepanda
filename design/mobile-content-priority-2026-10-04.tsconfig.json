@@ -1,0 +1,5 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "noEmit": true },
+  "include": ["mobile-content-priority-2026-10-04.tsx", "../src/**/*.d.ts"]
+}

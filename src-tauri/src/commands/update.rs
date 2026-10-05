@@ -53,7 +53,7 @@ enum DownloadOutcome {
 // ===== 自动更新（后台线程，不阻塞 UI） =====
 
 /// 指数退避重试辅助函数
-async fn retry_with_backoff<F, Fut, T, E>(
+pub(crate) async fn retry_with_backoff<F, Fut, T, E>(
     max_retries: u32,
     operation_name: &str,
     f: F,
@@ -314,66 +314,92 @@ async fn download_with_speed_guard(
 
 /// 仅检查更新（不下载），支持多源 failover。
 /// 前端通过此命令统一走 Rust 多源路径，避免 JS 插件单源检查。
+///
+/// 🔴 Android 分派（方案甲，2026-10-03）：插件路径在移动端不可用
+/// （见 `build_updater` 的 mobile 守卫），改走 `update_android` 的
+/// apk-update.json 直检；**返回 shape 与事件名与桌面完全一致**，
+/// 前端与其余调用点不分派、不感知。
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let groups = candidate_endpoint_groups(&app);
+    #[cfg(target_os = "android")]
+    {
+        return super::update_android::check_apk_update(&app).await;
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let groups = candidate_endpoint_groups(&app);
 
-    let mut last_error = String::new();
+        let mut last_error = String::new();
 
-    for (i, group) in groups.iter().enumerate() {
-        let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
-        log::info!(
-            "[Update] 尝试更新源 {}/{}: {}",
-            i + 1,
-            groups.len(),
-            source_label
-        );
+        for (i, group) in groups.iter().enumerate() {
+            let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
+            log::info!(
+                "[Update] 尝试更新源 {}/{}: {}",
+                i + 1,
+                groups.len(),
+                source_label
+            );
 
-        let updater = match build_updater(&app, group) {
-            Ok(u) => u,
-            Err(e) => {
-                last_error = e;
-                continue;
-            }
-        };
+            let updater = match build_updater(&app, group) {
+                Ok(u) => u,
+                Err(e) => {
+                    last_error = e;
+                    continue;
+                }
+            };
 
-        match retry_with_backoff(2, &format!("检查更新({})", source_label), || {
-            updater.check()
-        })
-        .await
-        {
-            Ok(Some(update)) => {
-                log::info!(
-                    "[Update] 发现新版本 v{} (源: {})",
-                    update.version,
-                    source_label
-                );
-                return Ok(Some(serde_json::json!({
-                    "version": update.version,
-                    "body": update.body,
-                })));
-            }
-            Ok(None) => {
-                log::info!("[Update] 已是最新版本 (源: {})", source_label);
-                return Ok(None);
-            }
-            Err(e) => {
-                last_error = e.to_string();
-                log::warn!("[Update] 源 {} 失败: {}", source_label, last_error);
-                continue;
+            match retry_with_backoff(2, &format!("检查更新({})", source_label), || {
+                updater.check()
+            })
+            .await
+            {
+                Ok(Some(update)) => {
+                    log::info!(
+                        "[Update] 发现新版本 v{} (源: {})",
+                        update.version,
+                        source_label
+                    );
+                    return Ok(Some(serde_json::json!({
+                        "version": update.version,
+                        "body": update.body,
+                    })));
+                }
+                Ok(None) => {
+                    log::info!("[Update] 已是最新版本 (源: {})", source_label);
+                    return Ok(None);
+                }
+                Err(e) => {
+                    last_error = e.to_string();
+                    log::warn!("[Update] 源 {} 失败: {}", source_label, last_error);
+                    continue;
+                }
             }
         }
-    }
 
-    Err(format!("所有更新源均失败: {}", last_error))
+        Err(format!("所有更新源均失败: {}", last_error))
+    }
 }
 
 // ─── start_update 命令 ─────────────────────────────────
 
 /// 后台执行更新检查+下载安装，通过 Tauri event 推送状态到前端。
 /// 支持多源 failover：按优先级尝试 Gitee → ghproxy → GitHub。
+/// Android 分派到 `update_android::spawn_apk_update`（同事件契约，见 check_update 注释）。
 #[tauri::command]
 pub fn start_update(app: tauri::AppHandle) {
+    #[cfg(target_os = "android")]
+    {
+        super::update_android::spawn_apk_update(app);
+        return;
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        spawn_desktop_update(app);
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn spawn_desktop_update(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         let _ = app.emit("update:checking", ());
 

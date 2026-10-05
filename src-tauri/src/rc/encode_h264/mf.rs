@@ -71,6 +71,16 @@ unsafe fn codecapi_set_u32(api: &ICodecAPI, key: &windows::core::GUID, value: u3
 }
 
 impl MfH264Encoder {
+    pub(in crate::rc) fn set_bitrate(&mut self, bps: u32) -> bool {
+        let Some(api) = self.codec_api.as_ref() else { return false; };
+        let key = &CODECAPI_AVEncCommonMeanBitRate;
+        let value = windows::core::VARIANT::from(bps);
+        unsafe {
+            if api.IsModifiable(key).is_err() || api.SetValue(key, &value).is_err() { return false; }
+        }
+        self.bitrate = bps;
+        true
+    }
     pub fn open(codec: VideoCodec, width: u32, height: u32, fps: u32, bitrate: u32) -> Result<Self, String> {
         Self::open_inner(codec, width, height, fps, bitrate, None)
     }
@@ -513,6 +523,7 @@ impl MfH264Encoder {
                         Err(_) => self.pending.is_empty(),
                     };
                     self.pending.push(H264Packet {
+                        at_ms: 0,
                         data: to_annex_b(&bytes),
                         key,
                         width: self.width,

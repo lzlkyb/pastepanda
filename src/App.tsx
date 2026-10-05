@@ -658,6 +658,9 @@ function App() {
     let unlistenOcr: (() => void) | null = null;
     let unlistenShotFail: (() => void) | null = null;
     let unlistenCopyFail: (() => void) | null = null;
+    let unlistenRecDone: (() => void) | null = null;
+    let unlistenRecFail: (() => void) | null = null;
+    let unlistenRecStartupFail: (() => void) | null = null;
     async function setup() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -707,6 +710,31 @@ function App() {
             new CustomEvent("app-toast", { detail: { message: msg, type: "error" } }),
           );
         });
+        // 录屏完成：主窗 toast（选区/控制条窗收到同一事件是自行关窗）。
+        // 失败同样必须由主窗承接：录制窗可能已在收尾中销毁（规则 15.3 不静默）。
+        const fnRecDone = await listen<{ path: string; bytes: number }>("rec-done", (e) => {
+          const mb = (e.payload.bytes / 1024 / 1024).toFixed(1);
+          const name = e.payload.path.split(/[/]/).pop() ?? e.payload.path;
+          window.dispatchEvent(
+            new CustomEvent("app-toast", {
+              detail: { message: `🎬 录屏已保存 ${name} · ${mb} MB`, type: "success" },
+            }),
+          );
+        });
+        const fnRecFail = await listen<{ message?: string }>("rec-failed", (ev) => {
+          window.dispatchEvent(
+            new CustomEvent("app-toast", {
+              detail: { message: `录制失败：${ev.payload?.message ?? "未知原因"}`, type: "error" },
+            }),
+          );
+        });
+        const fnRecStartupFail = await listen("rec-startup-failed", () => {
+          window.dispatchEvent(
+            new CustomEvent("app-toast", {
+              detail: { message: "录屏窗未能启动，已自动关闭 · 请再按一次录屏热键", type: "error" },
+            }),
+          );
+        });
         if (cancelled) {
           // effect 已在本次 setup 完成前被清理（StrictMode 重挂载 / HMR），立即取消订阅，避免监听器泄漏
           fn();
@@ -715,6 +743,9 @@ function App() {
           fnOcr();
           fnShotFail();
           fnCopyFail();
+          fnRecDone();
+          fnRecFail();
+          fnRecStartupFail();
         } else {
           unlisten = fn;
           unlistenAi = fnAi;
@@ -722,6 +753,9 @@ function App() {
           unlistenOcr = fnOcr;
           unlistenShotFail = fnShotFail;
           unlistenCopyFail = fnCopyFail;
+          unlistenRecDone = fnRecDone;
+          unlistenRecFail = fnRecFail;
+          unlistenRecStartupFail = fnRecStartupFail;
         }
       } catch (e) { logger.warn("注册托盘事件监听失败", e); }
     }
@@ -734,6 +768,9 @@ function App() {
       if (unlistenOcr) unlistenOcr();
       if (unlistenShotFail) unlistenShotFail();
       if (unlistenCopyFail) unlistenCopyFail();
+      if (unlistenRecDone) unlistenRecDone();
+      if (unlistenRecFail) unlistenRecFail();
+      if (unlistenRecStartupFail) unlistenRecStartupFail();
     };
   }, []);
 
@@ -1157,6 +1194,10 @@ function App() {
     difffull: openFreeDiffFullscreen,
     newdiagram: handleNewDiagram,
     dailybrief: () => setShowDailyBrief(true),
+    screenrec: () => void invoke("rec_toggle").catch((e) => {
+      logger.error("打开屏幕录制失败", e);
+      toast("打开屏幕录制失败：" + String(e), "error");
+    }),
     remote: () => void invoke("rc_open_workbench").catch((e) => {
       logger.error("打开远程电脑窗口失败", e);
       toast("打开远程电脑窗口失败：" + String(e), "error");

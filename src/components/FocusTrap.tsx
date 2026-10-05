@@ -14,12 +14,14 @@ export function FocusTrap({
   children,
   active = true,
   initialFocus,
+  ariaLabel,
 }: {
   children: ReactNode;
   active?: boolean;
   /** 审查：指定挂载后聚焦的元素选择器——默认聚焦首个可聚焦元素（常是头部 X 按钮），
    *  会把 ConfirmDialog/PasteGuard 的 autoFocus 主操作覆盖掉；传 selector 如 "[data-autofocus]" 跳过头部 */
   initialFocus?: string;
+  ariaLabel?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -77,7 +79,7 @@ export function FocusTrap({
   }, [active]);
 
   return (
-    <div ref={ref} role="dialog" aria-modal="true" style={{ display: "contents" }}>
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={ariaLabel} style={{ display: "contents" }}>
       {children}
     </div>
   );

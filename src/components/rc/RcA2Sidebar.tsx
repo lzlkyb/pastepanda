@@ -4,13 +4,13 @@
  * 三段结构（对齐拼装稿左栏）：
  *  - 上半部随页切换：设备/文件/设置页 → `RcA2DeviceList`（在线/不在线分组，
  *    行内零按钮）；记录页 → `RcA2HistoryFilter`。
- *  - 「这台电脑」卡（`RcA2SelfCard`）：首页生成并复制配对码、粘贴对方码；
+ *  - 「这台电脑」卡（`RcA2SelfCard`）：手机扫码、输入配对码两个入口；
  *    设备号与无人值守入口收在「更多方式」。
- *  - 底部：单个「帮助」钮（亮码/输码收进一个弹层）+ 工具横排（文件/记录/设置）。
+ *  - 底部：工具横排（文件/记录/设置）。
  *
  * 连接动作从侧栏下架：行内零按钮后，发起只走详情面 hero 大钮（方案 3 拍板）。
  */
-import { FileUp, History, Settings, Users } from "lucide-react";
+import { FileUp, History, Settings } from "lucide-react";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import type { RcHistoryDevice } from "@/lib/rcHistory";
 import type { RcTransferStrip } from "@/hooks/useRcTransferNotice";
@@ -75,7 +75,7 @@ export function RcA2Sidebar({
   targetsError?: string | null;
   onSelect: (id: string) => void;
   onRefresh?: () => void;
-  onPair: () => void;
+  onPair: (entry?: "pair" | "pairCode" | "pairNearby" | "pairLegacy") => void;
   onNavigate: (page: RcA2Page) => void;
   selfEnabled?: boolean;
   onToggleSelf?: (enabled: boolean) => void;
@@ -125,6 +125,7 @@ export function RcA2Sidebar({
           onSelect={onSelect}
           onRefresh={onRefresh}
           onNavigate={onNavigate}
+          onNearby={() => onPair("pairNearby")}
           capFor={capFor}
           trustedOnly={trustedOnly}
           onExitTrustedFilter={onExitTrustedFilter}
@@ -141,17 +142,11 @@ export function RcA2Sidebar({
           onToggleSelf={onToggleSelf}
           onUnoGenerate={onUnoGenerate ?? (() => undefined)}
           onPair={onPair}
+          onHelp={onHelp}
         />
       )}
 
       <div className={styles.sideFoot}>
-        {onHelp && (
-          <button type="button" className={styles.helpBtn} onClick={onHelp}>
-            <Users size={14} aria-hidden="true" />
-            帮助
-            <small>让别人帮我 / 帮别人连一次</small>
-          </button>
-        )}
         <nav className={styles.toolRow} aria-label="远程电脑工具">
           {TOOLS.map(({ page: toolPage, label, icon: Icon }) => (
             <button

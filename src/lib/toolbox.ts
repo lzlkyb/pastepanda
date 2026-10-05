@@ -13,6 +13,7 @@
  */
 
 export type ToolKey =
+  | "screenrec"
   | "sequential"
   | "snippets"
   | "extract"
@@ -167,6 +168,20 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         name: "时间戳 / 数字",
         desc: "时间戳互转、进制、字节速览",
         hue: "rose",
+      },
+    ],
+  },
+  {
+    label: "捕获",
+    items: [
+      {
+        key: "screenrec",
+        icon: "🎬",
+        name: "屏幕录制",
+        desc: "录全屏或框选区域，存为高清 MP4",
+        hue: "sky",
+        shortcut: "Ctrl+Alt+R",
+        hero: true,
       },
     ],
   },
