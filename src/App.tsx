@@ -24,6 +24,8 @@ import { useTrayMenuBridge } from "@/hooks/useTrayMenuBridge";
 import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
 import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { togglePinAndDeposit } from "@/lib/notes/deposit";
+import { openNoteForCard } from "@/lib/notes/open";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
 import { migrateLegacyStorageKeys } from "@/lib/storageMigration";
 import {
@@ -1032,8 +1034,28 @@ function App() {
         store.selectAll();
         return;
       case "toggle_pin": {
-        const pinned = await togglePin(action.id);
-        if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+        // 星标动作收口（togglePinAndDeposit）：置顶持久化 + 开关开着时自动沉淀。
+        // 焦点指向已不在当前列表的条目时退化为纯置顶——没有卡片上下文就没法沉淀。
+        const item = filtered.find((i) => i.id === action.id);
+        if (!item) {
+          const pinned = await togglePin(action.id);
+          if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
+          return;
+        }
+        await togglePinAndDeposit(item, undefined, toast);
+        return;
+      }
+      case "convert_to_note": {
+        const item = filtered.find((i) => i.id === action.id);
+        if (!item) return;
+        // file 卡注定转不出笔记（正文只是路径）：与其静默无响应让人怀疑
+        // 按键没生效，不如直说。其它类型交给 openNoteForCard（抽不出初稿
+        // 时它自己会静默返回——那是入口本不该出现的防御分支）。
+        if (item.type === "file") {
+          toast("文件卡片不支持转为笔记", "info");
+          return;
+        }
+        void openNoteForCard(item);
         return;
       }
       case "open_free_diff":

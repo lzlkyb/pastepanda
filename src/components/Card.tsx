@@ -11,6 +11,9 @@ import { parseDiagram, diagramTitle } from "@/lib/diagram/types";
 import { applicableTransforms, getTransform } from "@/lib/transforms";
 import { extractNoteDraft } from "@/lib/notes/extract";
 import { openNoteForCard } from "@/lib/notes/open";
+import { openArticleForCard, isArticleCard, aiComposeArticleForCard } from "@/lib/notes/article";
+import { togglePinAndDeposit } from "@/lib/notes/deposit";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { useDialogStore } from "@/stores/dialogStore";
 import type { CSSProperties } from "react";
 import SourceBadge from "@/components/SourceBadge";
@@ -20,7 +23,7 @@ import { confirmAutoTags, removeItemTags, noteAppendDaily } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 import { TagRow } from "@/components/TagBadge";
 import { logger } from "@/lib/logger";
-import { togglePin, deleteHistory, copyItemToClipboard } from "@/lib/api";
+import { deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { pasteGuarded } from "@/lib/pasteGuard";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import { CardActionBar } from "@/components/card/CardActionBar";
@@ -491,7 +494,7 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
 
       {/* ★ 按钮模式：卡片内嵌操作按钮 */}
       {config.hover_mode === "inline" && (
-        <InlineCardActions item={item} hovered={hovered} onEdit={onEdit} />
+        <InlineCardActions item={item} hovered={hovered} onEdit={onEdit} ocrState={ocrState} />
       )}
     </div>
   );
@@ -550,12 +553,9 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
-    const pinned = await togglePin(item.id);
-    // 修复：失败（返回 null）此前完全静默，星标不变且用户不知道为什么
-    if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
-    else toast("置顶操作失败", "error");
-  }, [item.id, toast]);
+    // U2：走后端持久化 + 星标自动沉淀，全项目星标动作收口在 togglePinAndDeposit
+    await togglePinAndDeposit(item, ocrState, toast);
+  }, [item, ocrState, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -711,10 +711,12 @@ const InlineCardActions = memo(function InlineCardActions({
   item,
   hovered,
   onEdit,
+  ocrState,
 }: {
   item: HistoryItem;
   hovered: boolean;
   onEdit?: (item: HistoryItem) => void;
+  ocrState?: ImageOcrState;
 }) {
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
@@ -734,12 +736,9 @@ const InlineCardActions = memo(function InlineCardActions({
   const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    // U2：走后端持久化（原 store.togglePin 仅改本地状态，鼠标收藏重启后全部丢失）
-    const pinned = await togglePin(item.id);
-    // 修复：失败（返回 null）此前完全静默，星标不变且用户不知道为什么
-    if (pinned !== null) toast(pinned ? "已置顶" : "已取消置顶", "success");
-    else toast("置顶操作失败", "error");
-  }, [item.id, toast]);
+    // U2：走后端持久化 + 星标自动沉淀，全项目星标动作收口在 togglePinAndDeposit
+    await togglePinAndDeposit(item, ocrState, toast);
+  }, [item, ocrState, toast]);
 
   const handleEdit = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1080,6 +1079,16 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     void openNoteForCard(item, ocrState);
   }, [item, ocrState]);
 
+  // 抓取全文存知识库（「文章 → 知识库」阶段 2）：只对纯链接卡片注入
+  const handleFetchArticle = useCallback(() => {
+    void openArticleForCard(item, toast);
+  }, [item, toast]);
+
+  // AI 清洗成文（阶段 4）：只有 AI 可用时才注入菜单（规则 16 门控）
+  const handleAiCompose = useCallback(() => {
+    void aiComposeArticleForCard(item, toast);
+  }, [item, toast]);
+
   const menuItems = useMemo(() => createCardMenuItems({
     onEdit: (item.type === "text" || item.type === "diagram") && onEdit ? () => onEdit(item) : undefined,
     onEditTags: onEditTags ? () => onEditTags(item) : undefined,
@@ -1113,14 +1122,8 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     itemType: item.type,
     itemSubType: subType,
     onPin: async () => {
-      // U2：走后端持久化，按权威返回值提示
-      const pinned = await togglePin(item.id);
-      if (pinned !== null) {
-        toast(pinned ? "已置顶" : "已取消置顶", "success");
-      } else {
-        // 修复：置顶失败时此前完全静默，星标状态未变却用户不知道发生了什么
-        toast("置顶操作失败", "error");
-      }
+      // 星标动作收口：置顶持久化 + 自动沉淀（togglePinAndDeposit 内部带失败提示）
+      await togglePinAndDeposit(item, ocrState, toast);
     },
     onDelete: () => { void deleteHistory([item.id]); },
     onAddSnippet: handleAddSnippet,
@@ -1136,13 +1139,20 @@ export const CardWithContext = memo(function CardWithContext({ item, selected, o
     onRemoveAutoTags: hasAutoTags ? handleRemoveAutoTags : undefined,
     // 转为笔记（知识库 A 阶段）。noteDraft 为 null 时**不注入回调** → 菜单里根本不出现这一项
     onConvertToNote: noteDraft ? handleConvertToNote : undefined,
+    // 抓取全文存知识库（阶段 2）：纯链接卡且**还没转过笔记**才出现——
+    // 已转过时点击只会打开旧笔记而不是抓取（幂等口径），菜单若仍写
+    // 「抓取全文」就是说谎；打开旧笔记的入口由上面的「编辑笔记」承担。
+    onFetchArticle: isArticleCard(item) && !hasNote ? handleFetchArticle : undefined,
+    // AI 清洗成文（阶段 4）：AI 可用、有正文、且**还没转过笔记**才出现——
+    // 已转过时点它只会借 AI 入口建出第二份（幂等在函数里兜底，菜单也不再撒谎）。
+    onAiCompose: isAiAvailable() && noteDraft && !hasNote ? handleAiCompose : undefined,
     // 同一道门：抽不出正文的卡片（如 file）也没什么可追加的
     onAppendDaily: noteDraft ? () => void handleAppendDaily() : undefined,
     hasNote,
     hasUrl,
     hasAutoTags,
     pinned: item.pinned,
-  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, barcodeState, enabledRules, noteDraft, hasNote, handleConvertToNote, handleAppendDaily]);
+  }), [item, subType, hasUrl, fileTarget, canQrCode, hasAutoTags, toast, onEdit, onEditTags, onMoveToGroup, onQrCode, onRegexPreview, onManageRegexRules, handlePasteTransform, handleOpenHub, hubAvailable, handleAddSnippet, handleOpenUrl, handleOpenFile, handleRevealFile, handleConfirmAutoTags, handleRemoveAutoTags, ocrState, barcodeState, enabledRules, noteDraft, hasNote, handleConvertToNote, handleFetchArticle, handleAiCompose, handleAppendDaily]);
 
   return (
     <Card item={item} selected={selected} onClick={onClick} onDoubleClick={onDoubleClick} index={index} imageState={imageState} searchKeyword={searchKeyword} onRetryImage={onRetryImage} pasting={pasting} menuItems={menuItems} onEdit={onEdit} disablePreview={disablePreview} stackOrder={stackOrder} stackDone={stackDone} ocrState={ocrState} barcodeState={barcodeState} />

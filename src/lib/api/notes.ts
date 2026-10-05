@@ -51,6 +51,9 @@ export interface Note {
    * - `history_id` 非空但本字段为空 ⇒ 原卡片**已被删**，应显「来自卡片（已删）」。
    */
   source_kind?: string | null;
+  /** 星标自动沉淀的草稿身份（阶段 3）。true = 待用户「转正/丢弃」。
+   *  普通查询就会带这个字段（不像 source_kind 只在回收站有值）。 */
+  auto_deposited?: boolean;
 }
 
 /** 新建笔记。`historyId` 为空 = 与剪贴板无关的独立笔记。 */
@@ -69,6 +72,62 @@ export async function noteCreate(
     logger.error("创建笔记失败", e);
     toastActionFailed("创建笔记", e);
     return null;
+  }
+}
+
+/**
+ * 星标自动沉淀的草稿新建（阶段 3）。与 {@link noteCreate} 同一失败口径：
+ * 失败不静默（toast 已弹），返回 null 让调用方决定要不要再提示。
+ * 角标集合同步与手动路径一致——自动草稿也要让卡片立刻带上 📝。
+ */
+export async function noteCreateAuto(
+  historyId: string,
+  title: string,
+  content: string,
+): Promise<Note | null> {
+  try {
+    const note = await invoke<Note>("note_create_auto", { historyId, title, content });
+    if (note.history_id) useAppStore.getState().addNoteHistoryId(note.history_id);
+    return note;
+  } catch (e) {
+    logger.error("自动沉淀草稿创建失败", e);
+    toastActionFailed("自动沉淀草稿", e);
+    return null;
+  }
+}
+
+/** 转正一条自动沉淀草稿（只清标志位）。 */
+export async function noteConfirmAuto(id: string): Promise<boolean> {
+  try {
+    await invoke("note_confirm_auto", { id });
+    return true;
+  } catch (e) {
+    logger.error("转正草稿失败", e);
+    toastActionFailed("转正草稿", e);
+    return false;
+  }
+}
+
+/**
+ * 待确认的自动沉淀草稿列表。失败返回 `[]` 会让「N 篇待确认」条消失——
+ * 但调用方（确认条）只用它做批量转正，空列表的代价只是按钮无操作，可接受。
+ */
+export async function noteListAuto(limit = 50): Promise<Note[]> {
+  try {
+    return await invoke<Note[]>("note_list_auto", { limit });
+  } catch (e) {
+    logger.warn("读取自动沉淀草稿失败", e);
+    return [];
+  }
+}
+
+/** 待确认草稿条数（知识库「N 篇待确认」徽标）。失败返回 0（条不显示）。 */
+export async function noteCountAuto(): Promise<number> {
+  try {
+    return await invoke<number>("note_count_auto");
+  } catch (e) {
+    logger.warn("统计自动沉淀草稿数失败", e);
+    return 0;
   }
 }
 

@@ -13,6 +13,35 @@ import { extractNoteDraft } from "./extract";
 import { applyTemplateToDraft, parseTemplateOverrides } from "./template";
 
 /**
+ * 卡片 → 转笔记**终稿**的共享管线（规则 #11 收口）。
+ *
+ * 两个消费者：手动「转为笔记」（openNoteForCard）与星标自动沉淀（deposit.ts）。
+ * 模板**只在这一处套**——手动与自动的产出格式必须一致，否则同一个模板
+ * 用户在两种路径下看到两种结构。
+ *
+ * 今日速记**不走模板**：D11 写死了「不做模板引擎」，而且它的
+ * `## HH:MM · 来自 X` 是固定格式，套模板会打乱那个流水账结构。
+ *
+ * 配置现读而不缓存：用户在设置里刚改完模板，下一次转笔记就应该生效。
+ * 返回 `null` = 抽不出初稿（file 卡片、无 OCR 的图片、空文本）。
+ */
+export function buildCardDraft(
+  item: HistoryItem,
+  ocrState?: ImageOcrState,
+): ReturnType<typeof applyTemplateToDraft> | null {
+  const draft = extractNoteDraft(item, ocrState);
+  // 抽不出初稿就到此为止；模板是给「有正文」的卡片套的
+  if (!draft) return null;
+  const cfg = useAppStore.getState().config;
+  return applyTemplateToDraft(
+    draft,
+    item,
+    cfg.note_template ?? "",
+    parseTemplateOverrides(cfg.note_template_overrides),
+  );
+}
+
+/**
  * 打开这张卡片的笔记弹窗。
  *
  * - 已转过 → 编辑已有那条（幂等，不存第二份）
@@ -36,27 +65,14 @@ export async function openNoteForCard(item: HistoryItem, ocrState?: ImageOcrStat
     return;
   }
 
-  const draft = extractNoteDraft(item, ocrState);
+  /**
+   * 套转笔记模板（B2 #8）已收口到 {@link buildCardDraft}——手动与自动两条
+   * 转笔记路径共用同一份终稿管线，模板不会出现两套行为。
+   */
+  const final = buildCardDraft(item, ocrState);
   // 抽不出初稿（file 卡片、无 OCR 的图片、空文本）。正常情况下走不到这里——
   // 入口本就不会显示。真走到了就静默返回，而不是弹一个用户无法处理的错。
-  if (!draft) return;
-
-  /**
-   * 套转笔记模板（B2 #8）。**只在这一处套**——两个转笔记入口（右键菜单/角标、
-   * 待沉淀区）都走本函数，而 `extractNoteDraft` 在别处只用来判「能不能转」。
-   *
-   * 今日速记**不走模板**：D11 写死了「不做模板引擎」，而且它的
-   * `## HH:MM · 来自 X` 是固定格式，套模板会打乱那个流水账结构。
-   *
-   * 配置现读而不缓存：用户在设置里刚改完模板，下一次转笔记就应该生效。
-   */
-  const cfg = useAppStore.getState().config;
-  const final = applyTemplateToDraft(
-    draft,
-    item,
-    cfg.note_template ?? "",
-    parseTemplateOverrides(cfg.note_template_overrides),
-  );
+  if (!final) return;
 
   useDialogStore.getState().openNote({
     historyId: item.id,

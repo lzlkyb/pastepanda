@@ -43,10 +43,11 @@ function setup(folders: NoteFolder[] = []) {
   const onSetFolder = vi.fn();
   const onDelete = vi.fn();
   const onTogglePin = vi.fn();
+  const onConfirmAuto = vi.fn();
   const { result } = renderHook(() =>
-    useNoteMenu({ folders, onSetFolder, onDelete, onTogglePin }),
+    useNoteMenu({ folders, onSetFolder, onDelete, onTogglePin, onConfirmAuto }),
   );
-  return { result, onSetFolder, onDelete, onTogglePin };
+  return { result, onSetFolder, onDelete, onTogglePin, onConfirmAuto };
 }
 
 describe("useNoteMenu · buildMenu", () => {
@@ -56,6 +57,17 @@ describe("useNoteMenu · buildMenu", () => {
     expect(items[0].label).toBe("置顶");
     expect(items[items.length - 1].label).toBe("删除笔记");
     expect(items[items.length - 1].danger).toBe(true);
+  });
+
+  it("自动沉淀草稿第一项是「转正草稿」，普通笔记没有这一项", () => {
+    const { result, onConfirmAuto } = setup();
+    const draft = result.current.buildMenu(note({ auto_deposited: true }));
+    expect(draft[0].label).toBe("转正草稿");
+    draft[0].onClick!();
+    expect(onConfirmAuto).toHaveBeenCalledTimes(1);
+    // 普通笔记不出现转正项
+    const normal = result.current.buildMenu(note());
+    expect(normal.map((i) => i.label)).not.toContain("转正草稿");
   });
 
   it("已置顶的笔记第一项变成「取消置顶」", () => {

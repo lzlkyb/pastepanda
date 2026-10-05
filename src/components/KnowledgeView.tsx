@@ -37,6 +37,7 @@ import { ContextMenu } from "@/components/ContextMenu";
 import { KbTopBarActions } from "@/components/notes/KbTopBarActions";
 import { useTopBarSlot } from "@/lib/topbarSlot";
 import { KbInboxPanel } from "@/components/notes/KbInboxPanel";
+import { KbAutoConfirmBar } from "@/components/notes/KbAutoConfirmBar";
 import { DailyDistillSection } from "@/components/notes/DailyDistillSection";
 import { KbSyncCap } from "@/components/notes/KbSyncCap";
 import { KbHealthBar } from "@/components/notes/KbHealthBar";
@@ -259,6 +260,7 @@ export function KnowledgeView() {
     onSetFolder: act.handleSetFolder,
     onDelete: act.handleDelete,
     onTogglePin: (n) => void act.handleTogglePin(n),
+    onConfirmAuto: (n) => void act.handleConfirmAuto(n),
   });
 
   /** ④ 问答雏形（B2 #10）。它占哪块屏幕的规则全在 `useKbQaPane` 里。 */
@@ -391,6 +393,12 @@ export function KnowledgeView() {
               q.toggleTag(t.id);
               return true;
             }}
+          />
+          {/* 星标自动沉淀的待确认条（阶段 3）。有草稿才占一行，形态与体检条成对。 */}
+          <KbAutoConfirmBar
+            version={q.version}
+            onOpenNote={(id) => void qaPane.openRefNote(id)}
+            onChanged={q.refreshAll}
           />
           <KnowledgeToolbar
             folderName={q.currentFolderName}

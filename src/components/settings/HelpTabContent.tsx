@@ -164,6 +164,7 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
           <KeyRow desc="粘贴选中记录" value="Enter" isStatic />
           <KeyRow desc="快速预览" value="Space" isStatic />
           <KeyRow desc="删除" value="Delete" isStatic />
+          <KeyRow desc="转为知识库笔记" value="N" isStatic />
           <KeyRow desc="置顶 / 取消置顶" value="Ctrl+D" />
           <KeyRow desc="撤销删除" value="Ctrl+Z" />
           <KeyRow desc="全选" value="Ctrl+A" />

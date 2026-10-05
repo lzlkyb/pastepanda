@@ -1553,6 +1553,25 @@
   color: var(--text-secondary);
 }
 
+
+/* 星标自动沉淀的草稿身份徽标（阶段 3）。它不是错误（不用 warning），
+   是「等用户一个决定」——用强调色的浅底把它从普通笔记里挑出来，
+   关掉顶部确认条后，列表里仍然认得出哪些是待确认草稿。 */
+.rowDraftChip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 35%, var(--border-color));
+  border-radius: 4px;
+  background: var(--accent-soft, var(--section-bg));
+  color: var(--accent-strong);
+  font-size: var(--kb-fs-badge);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 /* 内容类型的色点。颜色来自 `CONTENT_TYPE_META[x].color`，不在这里再定一套
    ——那就是两处颜色定义，而且只有回收站这一处会过时。 */
 .trashKindDot {

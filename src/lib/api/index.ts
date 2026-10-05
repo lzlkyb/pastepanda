@@ -19,9 +19,9 @@ export type { BarcodeHit } from "@/lib/utils";
 export { loadMoreHistory, deleteHistory, togglePin, searchHistory, restoreDeleted } from "./history";
 export type { SearchFilters } from "./history";
 
-// 链接摘要（v6.4 A）
-export { fetchUrlSummary } from "./url";
-export type { UrlSummary } from "./url";
+// 链接摘要（v6.4 A）与文章全文（「文章 → 知识库」阶段 2）
+export { fetchUrlSummary, fetchUrlArticle } from "./url";
+export type { UrlSummary, UrlArticle } from "./url";
 
 // 云端 AI（注意：没有读取密钥的接口，只有 set / has / clear）
 export {
@@ -105,6 +105,11 @@ export {
   notePurge,
   notePurgeAll,
   noteCountExpired,
+  // 星标自动沉淀（「文章 → 知识库」阶段 3）
+  noteCreateAuto,
+  noteConfirmAuto,
+  noteListAuto,
+  noteCountAuto,
 } from "./notes";
 export type { Note } from "./notes";
 

@@ -121,6 +121,14 @@ pub struct Note {
     /// 前端只在相邻两行不同时插一个组头，不需要再去解析 id。
     #[serde(default)]
     pub group_key: Option<String>,
+    /// 星标自动沉淀的**草稿身份**（「文章 → 知识库」阶段 3）。
+    /// `true` = 系统在用户点亮星标时自动转的草稿，等用户「转正/丢弃」；
+    /// `false` = 正常笔记（手动转/新建/速记都是它）。
+    ///
+    /// 产物是**草稿不是正式文章**（两级取消原则）：确认（`note_confirm_auto`）
+    /// 只清标志位；丢弃走软删进回收站，误判零成本。
+    #[serde(default)]
+    pub auto_deposited: bool,
 }
 
 /// 取列顺序写一次，所有查询共用——否则加字段时必定漏改某一处。
@@ -129,7 +137,7 @@ pub struct Note {
 /// 它得用同一份列顺序，不能另写一份。
 pub(super) const NOTE_COLS: &str =
     "id, history_id, title, content, created_at, updated_at, source_agent, \
-     folder_id, summary, daily_date, deleted_at, pinned, last_agent";
+     folder_id, summary, daily_date, deleted_at, pinned, last_agent, auto_deposited";
 
 pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -150,6 +158,8 @@ pub(super) fn row_to_note(row: &rusqlite::Row) -> rusqlite::Result<Note> {
         pinned: row.get::<_, i64>(11)? != 0,
         // ❗ 下标 12 = §7.1 追在 `NOTE_COLS` 末尾的 `last_agent`。同上：**只能追在末尾**。
         last_agent: row.get(12)?,
+        // ❗ 下标 13 = 阶段 3 追在 `NOTE_COLS` 末尾的 `auto_deposited`。同上：只能追在末尾。
+        auto_deposited: row.get::<_, i64>(13)? != 0,
         tags: Vec::new(),
         // 同 `tags`：不在 NOTE_COLS 里，由 note_list_deleted 读完本函数后另行填
         source_kind: None,
@@ -1019,7 +1029,7 @@ impl DataStore {
         content: &str,
         source: &str,
     ) -> Result<Note, String> {
-        self.note_create_on(None, history_id, title, content, source)
+        self.note_create_on(None, history_id, title, content, source, false)
     }
 
     /// 用**指定 id** 新建——vault 导入专用（M6 P0）。
@@ -1039,10 +1049,72 @@ impl DataStore {
         title: &str,
         content: &str,
     ) -> Result<Note, String> {
-        self.note_create_on(Some(id), None, title, content, "")
+        self.note_create_on(Some(id), None, title, content, "", false)
+    }
+
+    /// 星标自动沉淀的草稿新建（「文章 → 知识库」阶段 3）。
+    ///
+    /// 单独立一个入口而不是给 [`Self::note_create`] 加布尔参数：那里十几个调用点
+    /// （vault 导入 / 同步冲突副本 / 速记 / 测试）没有一个该看见这个参数，
+    /// 传反了编译器也拦不住。自动写入路径必须显式报名字。
+    ///
+    /// 幂等不在这一层：调用方（前端 deposit）已先 `note_by_history` 判重。
+    pub fn note_create_auto(
+        &self,
+        history_id: &str,
+        title: &str,
+        content: &str,
+    ) -> Result<Note, String> {
+        self.note_create_on(None, Some(history_id), title, content, "", true)
+    }
+
+    /// 转正一条自动沉淀草稿：只清 `auto_deposited` 标志，正文/时间戳一律不动。
+    ///
+    /// 转正不是一次编辑——不该把笔记顶到「最近修改」最前（与 `note_toggle_pin`
+    /// 不动 `updated_at` 同一个口径）。
+    pub fn note_confirm_auto(&self, id: &str) -> Result<(), String> {
+        let n = self
+            .lock_conn()
+            .execute(
+                "UPDATE notes SET auto_deposited = 0 WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("笔记不存在或不是待确认草稿".to_string());
+        }
+        Ok(())
+    }
+
+    /// 待确认的自动沉淀草稿列表（`updated_at` 降序）。
+    pub fn note_list_auto(&self, limit: u32) -> Result<Vec<Note>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM notes WHERE deleted_at IS NULL AND auto_deposited = 1 \
+                 ORDER BY updated_at DESC LIMIT ?1",
+                NOTE_COLS
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([limit as i64], row_to_note)
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    }
+
+    /// 待确认草稿条数（知识库侧栏徽标用，不为一个数字拉全列表）。
+    pub fn note_count_auto(&self) -> Result<i64, String> {
+        self.lock_conn()
+            .query_row(
+                "SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL AND auto_deposited = 1",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())
     }
 
     /// 新建的唯一实现（规则 #11 收口）。`want_id` 为 `None` = 自己铸一个。
+    /// `auto` = 星标自动沉淀的草稿身份（阶段 3）；所有手动路径一律传 false。
     fn note_create_on(
         &self,
         want_id: Option<&str>,
@@ -1050,6 +1122,7 @@ impl DataStore {
         title: &str,
         content: &str,
         source: &str,
+        auto: bool,
     ) -> Result<Note, String> {
         let conn = self.lock_conn();
         // ❗ 只接受**形状合法的 UUID**：这一列是主键，不能让外部 `.md` 往里塞任意字符串。
@@ -1063,9 +1136,9 @@ impl DataStore {
             // §7.1：`last_agent` 与 `source_agent` 在新建时同值（都是 `?6`）——
             // 新建也是一次正文改动，创建者就是当下的最后改动者。
             // 之后两者会分开：别人改了正文只动 last_agent。
-            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, last_agent, updated_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?6, ?7)",
-            rusqlite::params![id, history_id, title, content, now, source, self.hlc_now()],
+            "INSERT INTO notes (id, history_id, title, content, created_at, updated_at, source_agent, last_agent, updated_ms, auto_deposited)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?6, ?7, ?8)",
+            rusqlite::params![id, history_id, title, content, now, source, self.hlc_now(), auto as i64],
         )
         .map_err(|e| e.to_string())?;
         Self::sync_note_indexes_on(&conn, &id);
@@ -1092,6 +1165,7 @@ impl DataStore {
             // 刚建的笔记当然没被删
             deleted_at: None,
             pinned: false,
+            auto_deposited: auto,
             // 新建返回的单条不属于任何列表视图，没有分组上下文
             group_key: None,
             tags: Vec::new(),

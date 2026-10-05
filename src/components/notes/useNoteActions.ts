@@ -17,7 +17,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast, UNDO_WINDOW_MS } from "@/components/Toast";
 import { confirmDialog } from "@/lib/confirm";
-import { noteDelete, noteRestoreDeleted, noteSetFolder, noteTogglePin, type Note } from "@/lib/api";
+import {
+  noteDelete,
+  noteRestoreDeleted,
+  noteSetFolder,
+  noteTogglePin,
+  noteConfirmAuto,
+  type Note,
+} from "@/lib/api";
+import { useAppStore } from "@/stores/appStore";
 
 /** 把标题塞进 toast 一行。按**码点**切，别把 emoji 劈成两半。 */
 function clipTitle(s: string, n = 16): string {
@@ -246,6 +254,20 @@ export function useNoteActions(opts: NoteActionsOpts) {
   );
 
   /**
+   * 转正一条星标自动沉淀的草稿（阶段 3）：只清 `auto_deposited` 标志，
+   * 正文/时间戳不动。回执靠行上草稿徽标消失 + 待确认条计数 -1，不弹 toast。
+   */
+  const handleConfirmAuto = useCallback(
+    async (note: Note) => {
+      if (!(await noteConfirmAuto(note.id))) return;
+      const s = useAppStore.getState();
+      s.setAutoDepositCount(s.autoDepositCount - 1);
+      refreshAll();
+    },
+    [refreshAll],
+  );
+
+  /**
    * 批量删除。循环调单条 `noteDelete` 而**不新增批量 IPC**：
    * 个人规模下几十次 IPC 无感，而新增一个批量命令就多一条需要单独守
    * 软删语义与 FTS 同步的路径（规则 #11.1）。
@@ -349,6 +371,7 @@ export function useNoteActions(opts: NoteActionsOpts) {
     handleDelete,
     handleSetFolder,
     handleTogglePin,
+    handleConfirmAuto,
     handleBatchDelete,
     handleBatchMove,
     handleDropNotes,

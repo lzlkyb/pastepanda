@@ -14,6 +14,7 @@ import { useToast } from "@/components/Toast";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { ToggleRow, SettingTile } from "../ToggleRow";
 import { NoteTemplateRows } from "../NoteTemplateRows";
+import { KbAutoDepositRows } from "../KbAutoDepositRows";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import { resolveAutoStartupDesync } from "@/lib/autoStartup";
 import styles from "../../Settings.module.css";
@@ -173,6 +174,7 @@ export function WindowEditorSection({
         </button>
       </div>
       <NoteTemplateRows config={config} updateAndSave={updateAndSave} />
+      <KbAutoDepositRows config={config} updateAndSave={updateAndSave} />
     </>
   );
 }

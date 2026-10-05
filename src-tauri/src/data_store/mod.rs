@@ -1976,6 +1976,30 @@ impl DataStore {
             }
         }
 
+        // notes.auto_deposited —— 星标自动沉淀的**草稿身份**列（「文章 → 知识库」阶段 3）。
+        // 1 = 系统在点亮星标时自动转的草稿，等用户「转正/丢弃」；0 = 正常笔记。
+        // 自动写入本身受前端 kb_auto_deposit 开关门控（默认关），这列只认身份。
+        let has_note_auto: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('notes') WHERE name = 'auto_deposited'",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if !has_note_auto {
+            if let Err(e) = conn
+                .execute_batch("ALTER TABLE notes ADD COLUMN auto_deposited INTEGER NOT NULL DEFAULT 0;")
+            {
+                if is_duplicate_column_error(&e) {
+                    log::warn!("[DataStore] notes.auto_deposited 列已存在，忽略: {}", e);
+                } else {
+                    log::error!("[DataStore] 添加 notes.auto_deposited 列失败: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
         // 回收站列表的索引。部分索引：只收已删那几行。
         // 建在全表上没意义——`deleted_at IS NULL` 命中的是绝大多数行，走索引反而更慢。
         if let Err(e) = conn.execute_batch(

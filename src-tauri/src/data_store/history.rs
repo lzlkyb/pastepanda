@@ -1076,7 +1076,7 @@ impl DataStore {
     /// 只处理 file:// 引用——那是 localize_html_images 采集时改写后的格式；
     /// 远程 http(s) 引用不是本地文件，不处理。
     fn extract_local_image_files_from_rich_content(content: &str) -> Vec<String> {
-        crate::clipboard_monitor::extract_img_srcs(content)
+        crate::html_images::extract_img_srcs(content)
             .into_iter()
             .filter(|src| src.starts_with("file:"))
             .filter_map(|src| {

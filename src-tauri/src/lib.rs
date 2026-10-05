@@ -33,6 +33,7 @@ pub mod data_store;
 pub mod dpapi;
 pub mod error;
 pub mod hashing;
+mod html_images;
 // 桌面专属子系统（手机端不编译）：热键建在 global-shortcut 插件上，手机无此概念。
 #[cfg(desktop)]
 mod hotkey_manager;
@@ -1513,6 +1514,13 @@ pub fn run() {
             commands::open_url,
             // v6.4 链接摘要（六大王牌 A，阶段 1：抓页 + 本地正文提取）
             commands::fetch_url_summary,
+            // 「文章 → 知识库」阶段 2：抓取文章全文 + 图片本地化
+            commands::fetch_url_article,
+            // 「文章 → 知识库」阶段 3：星标自动沉淀（草稿身份 + 转正/列表/计数）
+            commands::note_create_auto,
+            commands::note_confirm_auto,
+            commands::note_list_auto,
+            commands::note_count_auto,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

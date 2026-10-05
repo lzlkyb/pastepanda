@@ -15,9 +15,9 @@
 import { fetchUrlSummary } from "@/lib/api/url";
 import { aiRun } from "@/lib/api/ai";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
+import { isBareHttpUrl } from "@/lib/url";
 import type { Transform, TransformContext, TransformResult } from "./types";
 
-const URL_ONLY_RE = /^https?:\/\/[^\s]+$/i;
 /** 摘要正文展示上限 */
 const EXCERPT_CHARS = 300;
 
@@ -32,13 +32,14 @@ export const urlSummaryTransform: Transform = {
     const t = ctx.text.trim();
     if (!t) return 0;
     // 后端分类为 link，或文本本身就是 http(s) 链接 → 高置信
-    if (ctx.contentType === "link" || URL_ONLY_RE.test(t)) return 0.9;
+    // （判定收口到 lib/url.isBareHttpUrl，与「抓取全文存知识库」同一份）
+    if (ctx.contentType === "link" || isBareHttpUrl(t)) return 0.9;
     return 0;
   },
 
   async run(text: string): Promise<TransformResult> {
     const url = text.trim();
-    if (!URL_ONLY_RE.test(url)) {
+    if (!isBareHttpUrl(url)) {
       return { ok: false, message: "不是有效的 http/https 链接" };
     }
     try {

@@ -13,7 +13,7 @@
  */
 
 import {
-  Braces, CalendarDays, CalendarRange, CaseLower, CaseUpper, Code, Database,
+  BookOpen, Braces, CalendarDays, CalendarRange, CaseLower, CaseUpper, Code, Database,
   Eraser, FileText, Folder, GitBranch, GitCommitHorizontal, Globe, Hash,
   Languages, Link as LinkIcon, List, ListCollapse, Mail, Merge, MessageSquare,
   Minus, Palette, PenLine, Phone, Pilcrow, Quote, Regex, RemoveFormatting,
@@ -64,6 +64,7 @@ export const TRANSFORM_ICONS: Record<string, LucideIcon> = {
   "wand-sparkles": WandSparkles,
   workflow: Workflow,
   wrench: Wrench,
+  "book-open": BookOpen,
 };
 
 export function TIcon({ name, size = 15 }: { name?: string; size?: number }) {

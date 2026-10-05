@@ -6,6 +6,14 @@
 /** 带协议 schemes 的 URL 判定（卡片 hover/右键"在浏览器中打开"入口用） */
 export const URL_SCHEME_RE = /^(https?|ftp|file|ws|wss|sftp|telnet|ssh|rdp):\/\//i;
 
+/** 「整段文本就是一个 http(s) 链接」的判定（链接摘要变换 / 抓全文存知识库共用，
+ *  规则 #11）。ftp/file 等其它 scheme 不算——后端抓取只放行 http/https。 */
+const BARE_HTTP_URL_RE = /^https?:\/\/\S+$/i;
+
+export function isBareHttpUrl(text: string): boolean {
+  return BARE_HTTP_URL_RE.test(text.trim());
+}
+
 /** 安全解析 URL，失败返回 null */
 export function parseUrl(text: string): URL | null {
   try {

@@ -45,6 +45,9 @@ export function NoteItemBody({
             而「这条被我置顶了」是一眼就要看到的事。 */}
         {note.pinned && <Pin size={10} className={styles.rowPin} aria-label="已置顶" />}
         {highlight(note.title, keyword)}
+        {/* 星标自动沉淀的草稿身份（阶段 3）。关掉顶部确认条后，
+            列表里仍然认得出哪些在等「转正/丢弃」——否则草稿隐身。 */}
+        {note.auto_deposited && <span className={styles.rowDraftChip}>草稿</span>}
       </span>
       {/* 有 AI 摘要就用它，没有才回退到正文截断（B1 轻量 AI）。
           扫列表时一行摘要比一段截断的正文有用得多。

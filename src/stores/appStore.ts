@@ -176,6 +176,10 @@ export interface AppConfig {
   todo_island_remind: boolean;
   todo_island_remind_ms: number;
   todo_island_due_sort: boolean;
+  /** 星标自动沉淀（「文章 → 知识库」阶段 3）总开关。**默认关**：
+   *  自动化必须老用户自己打开才算授权；开了之后也只对点亮星标的卡片生效，
+   *  不是复制即入库。产物是草稿（notes.auto_deposited=1），等用户转正。 */
+  kb_auto_deposit: boolean;
 }
 
 // ===== 应用模式（三模式框架，D15）=====
@@ -360,6 +364,10 @@ interface AppState {
   addNoteHistoryId: (historyId: string) => void;
   /** 某张卡片的最后一条笔记被删后抹掉角标 */
   removeNoteHistoryId: (historyId: string) => void;
+  /** 待确认的自动沉淀草稿数（阶段 3）。知识库顶部确认条用它；
+   *  自动沉淀 +1、转正/丢弃 -1，进知识库时用 noteCountAuto 对账。 */
+  autoDepositCount: number;
+  setAutoDepositCount: (n: number) => void;
   addSearchHistory: (kw: string) => void;
   removeSearchHistory: (kw: string) => void;
   clearSearchHistory: () => void;
@@ -465,7 +473,7 @@ function splitAfterPasted(
 export const DEFAULT_CONFIG: AppConfig = {
   hotkey: "ctrl+alt+v",
   // 必须是合法 ThemeKey（见 lib/theme.ts）。旧值 "light" 匹配不到任何 [data-theme] 块，
-  // 只能落到 :root 兜底才碰巧渲染成经典白，设置页色板也因此一个都不高亮。
+  // 只能落到 :root 兜底才碰巧渲染成月白，设置页色板也因此一个都不高亮。
   theme: "ocean",
   auto_cleanup_days: 30,
   note_trash_days: 30,
@@ -523,6 +531,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   todo_island_remind: true,
   todo_island_remind_ms: 30_000,
   todo_island_due_sort: true,
+  kb_auto_deposit: false,
 };
 
 // ===== 搜索模式辅助 =====
@@ -819,6 +828,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       next.delete(historyId);
       return { noteHistoryIds: next };
     }),
+  autoDepositCount: 0,
+  setAutoDepositCount: (n) => set({ autoDepositCount: Math.max(0, n) }),
 
   // 搜索历史
   addSearchHistory: (kw) => {

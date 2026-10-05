@@ -43,6 +43,42 @@ pub fn note_create(
     Ok(note)
 }
 
+/// 星标自动沉淀的草稿新建（「文章 → 知识库」阶段 3）。
+///
+/// 单独立命令而不是给 `note_create` 加参数：自动写入路径必须显式报名字，
+/// 普通新建的调用点永远不该有机会顺手传个 `auto: true`。
+/// 幂等由前端 deposit 负责（已先 `note_by_history` 判重）。
+#[tauri::command]
+pub fn note_create_auto(
+    app: AppHandle,
+    store: State<DataStore>,
+    history_id: String,
+    title: String,
+    content: String,
+) -> Result<Note, String> {
+    let note = store.note_create_auto(&history_id, &title, &content)?;
+    refresh_island(&app);
+    Ok(note)
+}
+
+/// 转正一条自动沉淀草稿（只清标志位，正文/时间戳不动）。
+#[tauri::command]
+pub fn note_confirm_auto(store: State<DataStore>, id: String) -> Result<(), String> {
+    store.note_confirm_auto(&id)
+}
+
+/// 待确认的自动沉淀草稿列表（知识库顶部条用）。
+#[tauri::command]
+pub fn note_list_auto(store: State<DataStore>, limit: Option<u32>) -> Result<Vec<Note>, String> {
+    store.note_list_auto(clamp_limit(limit))
+}
+
+/// 待确认草稿条数（侧栏徽标用）。
+#[tauri::command]
+pub fn note_count_auto(store: State<DataStore>) -> Result<i64, String> {
+    store.note_count_auto()
+}
+
 /// 改标题与正文。id 不存在会报错而非静默成功（规则 #15.3）。
 ///
 /// 返回 [`NoteUpdateReport`]：改标题时会顺带重写其它笔记里的 `[[旧标题]]`（O-9），

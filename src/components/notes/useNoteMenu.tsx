@@ -14,7 +14,7 @@
  * 🔴 红线：无 AI。
  */
 import { useCallback } from "react";
-import { Trash2, FolderInput, Library, Pin, PinOff } from "lucide-react";
+import { Trash2, FolderInput, Library, Pin, PinOff, CheckCircle2 } from "lucide-react";
 import type { MenuItem } from "@/components/ContextMenu";
 import type { Note, NoteFolder } from "@/lib/api";
 
@@ -30,11 +30,14 @@ export function useNoteMenu({
   onSetFolder,
   onDelete,
   onTogglePin,
+  onConfirmAuto,
 }: {
   folders: NoteFolder[];
   onSetFolder: (note: Note, folderId: string | null) => void;
   onDelete: (note: Note) => void;
   onTogglePin: (note: Note) => void;
+  /** 星标自动沉淀的草稿转正（阶段 3）。只有 auto_deposited 的笔记会出现这一项 */
+  onConfirmAuto: (note: Note) => void;
 }): NoteMenus {
   /** 「移动到……」的文件夹列表。
    *
@@ -72,6 +75,16 @@ export function useNoteMenu({
       const children = folderMenu(note);
 
       const items: MenuItem[] = [];
+      // 自动沉淀草稿的「转正」摆最上：这是这条笔记当下最要紧的事
+      // （系统替用户做的决定在等确认）。丢弃没有独立项——「删除笔记」
+      // 本来就是软删进回收站，误判零成本，再造一个「丢弃」就是第二份真相。
+      if (note.auto_deposited) {
+        items.push({
+          icon: <CheckCircle2 size={14} />,
+          label: "转正草稿",
+          onClick: () => onConfirmAuto(note),
+        });
+      }
       // 置顶（B1）摆最上面：它是可逆、无害、高频的那一个，
       // 而删除在最下面且带 danger——菜单里的风险梯度从上到下递增。
       items.push({
@@ -91,11 +104,11 @@ export function useNoteMenu({
         label: "删除笔记",
         onClick: () => onDelete(note),
         danger: true,
-        separator: items.length > 0,
+        separator: true,
       });
       return items;
     },
-    [folderMenu, onDelete, onTogglePin],
+    [folderMenu, onDelete, onTogglePin, onConfirmAuto],
   );
 
   return { folderMenu, buildMenu };

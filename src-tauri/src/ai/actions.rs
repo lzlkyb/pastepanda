@@ -318,6 +318,17 @@ pub const ACTIONS: &[AiAction] = &[
         options: &[],
         content_types: &[],
     },
+    // 「文章 → 知识库」阶段 4：清洗成稿。整篇网页文章的清洗输出接近输入长度，
+    // 与 ai-translate 同取 2000；长文尾部可能被截，前端截断提示由 ai_run 统一给。
+    AiAction {
+        id: "ai-kb-article",
+        label: "清洗成知识库文章",
+        description: "去掉网页杂质，整理成结构干净的 Markdown 文章",
+        icon: "book-open",
+        max_tokens: 2000,
+        options: &[],
+        content_types: &[],
+    },
     AiAction {
         id: "ai-explain-code",
         label: "解释代码",
@@ -644,6 +655,18 @@ pub fn build_prompt(
             )
         }
         "ai-summarize" => format!("用一句话概括下面的内容：\n\n{}", trimmed),
+        // 「文章 → 知识库」阶段 4：把网页复制/抓取的杂料清洗成一篇干净的
+        // 知识库文章。输入是 htmlToMarkdown 之后的 Markdown（噪声已由本地
+        // 转换器清掉一层），AI 只负责收尾：去广告残留、补标题层级、
+        // 保结构不改写。输出直接进 NoteDialog，用户可编辑后再存。
+        "ai-kb-article" => format!(
+            "下面是从网页保存的一段文章内容，里面可能混着导航残留、广告碎片或排版噪声。\
+             请把它整理成一篇干净的 Markdown 文章：保留原文的全部信息与段落结构\
+             （标题层级、列表、加粗、链接、图片语法原样保留），删掉与正文无关的杂质，\
+             不要改写、不要总结、不要增删观点；第一行给出文章标题（# 开头）。\
+             只输出 Markdown：\n\n{}",
+            trimmed
+        ),
         // 输出格式说得死一点，因为它要被机器解析（parse_ai_tags）。
         // 但解析侧仍得容错：模型违反格式是常态，不能指望 prompt 兜底。
         "ai-note-tags" => format!(

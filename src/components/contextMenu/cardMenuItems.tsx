@@ -10,7 +10,7 @@
  * 原处必须去掉 —— 类型工具靠 primaryKey 去重，粘贴并变换靠 primary.transform 去重。
  */
 
-import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen, CalendarPlus, QrCode } from "lucide-react";
+import { Copy, ClipboardPaste, Pin, Trash2, ExternalLink, FileCode, Pencil, Tag, FolderInput, FolderOpen, FileText, Sparkles, Image as ImageIcon, Palette, MoreHorizontal, Regex, NotebookPen, CalendarPlus, QrCode, Globe } from "lucide-react";
 import { isCodeLike } from "@/lib/contentTypes";
 import type { RegexRule } from "@/lib/regexRules";
 import type { MenuItem } from "./menuModel";
@@ -47,6 +47,17 @@ export function createCardMenuItems(opts: {
    * 转成笔记没意义。**先显示再报错是更差的做法**（设计稿 §7）。
    */
   onConvertToNote?: () => void;
+  /**
+   * 抓取全文存知识库（「文章 → 知识库」阶段 2）。只对纯链接卡片注入：
+   * 链接卡的"正文"只是 URL 本身，真正的内容在链接指向的页面里，
+   * 由后端抓全文（含图片落盘）转成文章初稿。不传 = 不出现这一项。
+   */
+  onFetchArticle?: () => void;
+  /**
+   * AI 清洗成文（阶段 4）。**只在 AI 可用时注入**（isAiAvailable，规则 16）：
+   * 没开 AI / 没配 key，菜单里根本不出现这一项——零可见、零请求。
+   */
+  onAiCompose?: () => void;
   /**
    * 追加到今日速记（B2 #3 / D11）。不传 = 不出现这一项（同 `onConvertToNote` 的口径）。
    *
@@ -155,7 +166,28 @@ export function createCardMenuItems(opts: {
     });
   }
 
-  // ④.6 追加到今日速记（B2 #3）。紧跟在转笔记后面，不带 separator——
+  // ④.6 抓取全文存知识库（「文章 → 知识库」阶段 2）。与「转为笔记」相邻成组
+  //   （都是「把这条收进知识库」），只对纯链接卡片出现——转笔记存的是链接本身，
+  //   这个存的是链接指向的文章。
+  if (opts.onFetchArticle) {
+    items.push({
+      icon: <Globe size={14} />,
+      label: "抓取全文存知识库",
+      onClick: opts.onFetchArticle,
+    });
+  }
+
+  // ④.7 AI 清洗成文（阶段 4）。与转笔记同组；AI 不可用时调用方不注入，
+  //   菜单里零痕迹（规则 16）。
+  if (opts.onAiCompose) {
+    items.push({
+      icon: <Sparkles size={14} />,
+      label: "AI 清洗成文章",
+      onClick: opts.onAiCompose,
+    });
+  }
+
+  // ④.8 追加到今日速记（B2 #3）。紧跟在转笔记后面，不带 separator——
   //   两者是一组（都是「把这条收进知识库」），中间画线会把它们拆成两回事。
   if (opts.onAppendDaily) {
     items.push({

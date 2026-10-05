@@ -51,6 +51,8 @@ export type KeyAction =
   | { type: "delete"; ids: string[] }
   | { type: "select_all" }
   | { type: "toggle_pin"; id: string }
+  /** n：把聚焦/选中的卡片转成知识库笔记（加速器，菜单仍是主路径）。 */
+  | { type: "convert_to_note"; id: string }
   | { type: "undo" }
   | { type: "open_settings" }
   | { type: "quick_preview"; targetId: string }
@@ -145,8 +147,9 @@ export interface KeyEventHandlerState {
 // ===== 列表导航键集合 =====
 
 // ❗ 空格（快速预览）本来漏在名单外，弹窗开着时照样会弹预览。
+// ❗ n（转笔记）也在名单内：弹窗开着 / 非记录模式时按键必须让位（规则与 Enter 相同）。
 const LIST_NAV_KEYS = new Set([
-  "ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End", " ",
+  "ArrowDown", "ArrowUp", "Enter", "Delete", "Backspace", "Home", "End", " ", "n",
 ]);
 
 const LIST_NAV_CTRL_KEYS = new Set(["d", "z", "s", "h", "a"]);
@@ -274,6 +277,16 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     const id = state.selectedIds[0] || state.focusId;
     if (id) return { type: "toggle_pin", id };
     return { type: "ignore" };
+  }
+
+  // n = 转为知识库笔记（L1 加速器）。规则 17：鼠标全流程可达（右键菜单/角标），
+  // 键盘只是熟练后的捷径——没有焦点条目时静默消费，不报错。
+  // ❗ 修饰键必须排除：Ctrl+N / Ctrl+Shift+N 不能触发转换（与上面 Ctrl+D 同理，
+  //   按住修饰键时语义是系统/组合快捷键，不是列表加速器）。
+  if (!ctrlKey && !shiftKey && key === "n") {
+    const id = state.focusId || state.selectedIds[0] || null;
+    if (id) return { type: "convert_to_note", id };
+    return { type: "consume" };
   }
 
   if (ctrlKey && shiftKey && key.toLowerCase() === "d") {

@@ -1,0 +1,121 @@
+/* KbAutoConfirmBar.module.css — 「N 篇自动沉淀待确认」条。
+
+   与 KbHealthBar.module.css 是**成对**的文件：两条状态条在同一位置上下相邻，
+   类名、语气、24×24 的 ×、`color: inherit` 的文字链刻意保持一致，
+   改一边时另一边要跟着改（两边的文件头注释都写了这条契约）。 */
+
+.bar {
+  --dur-fast: 150ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* ui-rule-ok: 9px/14px 与成对的 KbHealthBar .status 逐像素一致（两状态条形态契约） */
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+/* 圆点用 info 色不是 warning：自动沉淀是「活儿还剩一步」，不是「库出问题了」
+   ——与 KbHealthBar 里 AI 未归类那行用 info 的口径一致。 */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--info, var(--accent-strong));
+}
+
+.statusText {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.expandBtn,
+.confirmAllBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+
+.confirmAllBtn:disabled {
+  cursor: default;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+/* 🔴 24×24（U7 / WCAG SC 2.5.8），与 KbHealthBar 的 × 同一份规格。 */
+.dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  /* ui-rule-ok: 14px 字形是成对 KbHealthBar 的 × 的既有规格（24×24 点击区内） */
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dismiss:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.itemTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 文字链靠下划线 + 手型表达可点（L6），颜色继承所在行。 */
+.linkBtn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+}

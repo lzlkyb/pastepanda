@@ -10,6 +10,7 @@ import type { HistoryItem } from "@/stores/appStore";
 import type { ImageOcrState } from "@/lib/utils";
 import { getImageOcrFullText } from "@/lib/utils";
 import { parseCsv, csvToMarkdown } from "@/lib/csv";
+import { htmlToMarkdown } from "./htmlToMd";
 
 /** 笔记初稿。`null` = 这张卡片不适合转笔记（菜单项应该根本不出现）。 */
 export interface NoteDraft {
@@ -73,15 +74,44 @@ export function extractNoteDraft(item: HistoryItem, ocrState?: ImageOcrState): N
       return draftFromText(item.text);
 
     case "rich":
-      // 图文混排：取纯文本形态（item.text）。HTML 形态在 content 里，
-      // 嵌进 Markdown 笔记会把一堆行内样式带进来。
-      return draftFromText(item.text);
+      // 图文混排：content 里是 CF_HTML（含结构），先转 Markdown 保住标题/列表/
+      // 加粗/图片——这是「文章 → 知识库」的主路径。转不出内容（无 HTML /
+      // 全是隐藏节点）再退纯文本，行为与升级前一致。
+      return draftFromHtml(item) ?? draftFromText(item.text);
 
     case "doc":
+      if (item.content_type === "csv") {
+        return draftFromText(item.text, item.content_type);
+      }
+      // doc 的 content 同样是 CF_HTML（doc 门控过了才有），同 rich 走转换器
+      return draftFromHtml(item) ?? draftFromText(item.text, item.content_type);
+
     case "text":
     default:
       return draftFromText(item.text, item.content_type);
   }
+}
+
+/**
+ * HTML 形态的初稿。`null` = 没有 HTML 或转不出可读内容，调用方回退纯文本。
+ *
+ * 🔴 rich/doc 卡片转笔记**只有这一个入口**碰 HTML（规则 #11 收口）：
+ * 手动「转为笔记」、待沉淀区、星标自动沉淀、链接抓取最终都汇到这里，
+ * 谁都不许绕开它自己拿 `item.content` 拼正文。
+ *
+ * 还有一道**保底回退**：转换结果明显短于纯文本（去空白后不足六成），
+ * 说明 HTML 解析丢了内容（源应用的 CF_HTML 只有片段是常见病），
+ * 此时纯文本更可信——转笔记宁可要全的散文本，不要残缺的结构。
+ */
+function draftFromHtml(item: HistoryItem): NoteDraft | null {
+  const html = item.content;
+  if (!html) return null;
+  const md = htmlToMarkdown(html);
+  if (!md) return null;
+  const clean = (s: string) => s.replace(/\s+/g, "");
+  const textClean = clean(item.text ?? "");
+  if (textClean && clean(md).length < textClean.length * 0.6) return null;
+  return { title: titleFromContent(md), content: md };
 }
 
 /**
