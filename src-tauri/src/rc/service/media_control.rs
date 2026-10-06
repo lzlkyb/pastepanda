@@ -37,7 +37,8 @@ impl RcService {
 
     pub(in crate::rc) fn media_fps_limit(&self, id: &str) -> u32 {
         let relay = !matches!(self.link.path_kind_str().as_str(), "lan" | "direct");
-        self.with_media(id, |s| { s.flow.budget(relay, self.stream.media_ceiling_kbps()); s.flow.fps_limit(relay) }).unwrap_or(10)
+        let now = crate::rc::mono::mono_ms() as u64;
+        self.with_media(id, |s| { s.flow.budget(relay, self.stream.media_ceiling_kbps()); s.flow.fps_limit(relay, now) }).unwrap_or(10)
     }
 
     pub(in crate::rc) fn media_admission(&self, id: &str) -> Admission {
@@ -79,15 +80,18 @@ impl RcService {
             let before = s.flow.kbps;
             let now = crate::rc::mono::mono_ms() as u64;
             let loss = self.loss_permille();
-            s.flow.feedback(now, f, self.stream.media_ceiling_kbps(), loss);
+            s.flow.feedback(now, f, self.stream.media_ceiling_kbps(), loss, self.video_rtt_ms());
             // 覆盖旧 NetHint 帧龄口径：auto_quality 也应看到额外积压，而非传播时间。
-            self.set_peer_queue_ms(s.flow.queue_ms);
+            // 口径是线上积压：对面合成器的固有渲染深度不该把自动档一路踩到 smooth。
+            self.set_peer_queue_ms(s.flow.backlog_ms);
             // 预算压到地板后也留有界健康采样，否则持续的码控压力会完全不见。
             if before != s.flow.kbps || now.saturating_sub(s.last_health_log_ms) >= 5_000 {
                 s.last_health_log_ms = now;
-                log::info!("[RC-MEDIA] budget={}kbps delivered={}kbps queue={}ms receive_queue={:?}ms display_delay={:?}ms sample={}ms presented={} received={} rtt={}ms loss={}pm",
-                    s.flow.kbps, s.flow.delivered_kbps, s.flow.queue_ms, f.receive_queue_ms,
-                    f.display_delay_ms, f.sample_ms, f.presented_at_ms, f.received_at_ms, self.video_rtt_ms(), loss);
+                log::info!("[RC-MEDIA] budget={}kbps delivered={}kbps capacity={}kbps queue={}ms backlog={}ms receive_queue={:?}ms app_limited={} tx_work={}ms display_delay={:?}ms sample={}ms presented={} received={} rtt={}ms loss={}pm",
+                    s.flow.kbps, s.flow.delivered_kbps, s.flow.capacity_kbps, s.flow.queue_ms,
+                    s.flow.backlog_ms, f.receive_queue_ms, s.flow.app_limited,
+                    s.flow.tx_work_ms, f.display_delay_ms, f.sample_ms,
+                    f.presented_at_ms, f.received_at_ms, self.video_rtt_ms(), loss);
             }
         });
     }
