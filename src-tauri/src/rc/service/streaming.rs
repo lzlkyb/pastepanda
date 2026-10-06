@@ -136,6 +136,11 @@ impl RcService {
         self.stream.auto_tier_name()
     }
 
+    /// 自动档最近一次判档的输入快照（汇总行用，见 `StreamCfg::auto_diag`）。
+    pub fn auto_diag(&self) -> String {
+        self.stream.auto_diag()
+    }
+
     /// 会话收尾时复位推流侧的**会话级**状态（`end_session` 调）。
     ///
     /// 目前只有自动档：它与会话同生命周期，跨会话残留会让界面显示上一场

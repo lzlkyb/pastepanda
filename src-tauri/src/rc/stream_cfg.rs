@@ -106,7 +106,9 @@ pub(super) struct StreamCfg {
     /// RTT / skew 连续拒绝数（重锚判据，见 [`StreamCfg::note_clock_skew`]）。
     skew_rej_streak: AtomicI64,
     /// 发起端帧龄 EMA（NetHint `queue_ms`，2026-09-28）——AP 队列的 in-band 观测。
-    /// 存的是**平滑后**的值（升快降慢，见 [`StreamCfg::set_peer_queue_ms`]）；0 = 尚未收到。
+    /// 存的是**平滑后**的值（升 α=1/2 / 降 α=1/2，见 [`StreamCfg::set_peer_queue_ms`]）；
+    /// **0 = 已排空的确凿样本**，「尚未收到」由 `peer_queue_seen` 表示（2026-10-06 A-甲
+    /// 之前这里是「0 = 未收到」，于是排空样本被丢弃、整个槽只升不降）。
     peer_queue_ms: AtomicI64,
     /// 帧粒度丢包反馈（NetHint `frame_loss_pm`，permille，非对称 EMA）。0 = 尚未收到。
     /// 与本端 conn 级丢包取 max 后喂码控与 RS 冗余——WiFi 丢包按突发砸帧，
@@ -317,6 +319,12 @@ impl StreamCfg {
         }
     }
 
+    /// 测试探针：读回平滑后的排队压力槽（口径见 [`Self::set_peer_queue_ms`]）。
+    #[cfg(test)]
+    pub(super) fn peer_queue_ms_for_test(&self) -> i64 {
+        self.peer_queue_ms.load(Ordering::Relaxed)
+    }
+
     /// 被控端：记录对端上报的 RTT，并给出当前码率缩放（%）。
     pub(super) fn set_peer_rtt(&self, rtt_ms: i64) -> u32 {
         let v = rtt_ms.max(0);
@@ -442,19 +450,32 @@ impl StreamCfg {
         self.loss_permille() as u64
     }
 
-    /// 发起端 NetHint 携带的帧龄排队压力（ms）。发起端已经做过一次「升快降慢」
-    /// 的 EMA——这里**只做轻度平滑（升 α=1/2 / 降 α=1/2）**：两层慢速平滑叠加
-    /// 的等效恢复时间是几十秒（真机复盘 2026-09-28：一次 13s 停顿把码率钉死在
-    /// 15% 半分钟），码率会糊成马赛克还不回升。0/负值 = 无样本，不更新。
+    /// 排队压力（ms）有两个来源，都写这一个槽：发起端 NetHint 携带的**帧龄 EMA**，
+    /// 以及本端控制器每拍喂的**线上积压**（`media_control::apply_media_feedback` 里的
+    /// `flow.backlog_ms`——注释早就写明它要「覆盖旧 NetHint 帧龄口径」）。
+    ///
+    /// 🔴 A-甲（2026-10-06）：**0 是「已经排空」的确凿样本，不是「无样本」**。旧写法
+    /// `if queue_ms <= 0 { return; }` 把排空样本整条丢掉，这个槽因此**只能升不能降**：
+    /// 本端积压明明已经是 0，槽里仍留着对端上一次上报的 1100ms 帧龄 ⇒
+    /// `bitrate_scale_for_queue` 停在 60%/40%、`auto_quality` 的 `queue ≥ 300` 持续定罪。
+    /// 实测形态：v6 直连 `rtt 17–57ms / loss 0pm / backlog 0ms` 却钉在 balanced 不升档
+    /// （`docs/链路切换画质回升-业界源码对照-2026-10-06.md` §10）。
+    /// 「无样本」的哨兵本来就是**负值**（`probe_out::age_ema_ms()` 未采到返回 -1，
+    /// NetHint 的 `queue_ms` 是 `Option`），这里跟着收成 `< 0` 才丢——同一个语义
+    /// 写两套哨兵（0 与 -1）正是它烂掉的原因（AGENTS 规则 11.1）。
+    ///
+    /// 平滑仍只做轻度（升 α=1/2 / 降 α=1/2）：两层慢速平滑叠加的等效恢复时间是几十秒
+    /// （真机复盘 2026-09-28：一次 13s 停顿把码率钉死在 15% 半分钟），码率会糊成马赛克
+    /// 还不回升。播种与否看 `peer_queue_seen`，不看槽值——0 现在是合法值。
     pub(super) fn set_peer_queue_ms(&self, queue_ms: i64) {
-        if queue_ms <= 0 {
+        if queue_ms < 0 {
             return;
         }
         let prev = self.peer_queue_ms.load(Ordering::Relaxed);
-        let next = if prev <= 0 {
-            queue_ms
-        } else {
+        let next = if self.peer_queue_seen.load(Ordering::Relaxed) {
             (prev + queue_ms) / 2
+        } else {
+            queue_ms
         };
         self.peer_queue_ms.store(next, Ordering::Relaxed);
         self.peer_queue_seen.store(true, Ordering::Relaxed);
@@ -589,6 +610,7 @@ impl StreamCfg {
         a.high_since = None;
         a.low_since = None;
         a.recent.clear();
+        a.diag.clear();
     }
 
     /// 发起端在会话中改画质。
@@ -609,6 +631,7 @@ impl StreamCfg {
             a.high_since = None;
             a.low_since = None;
             a.recent.clear();
+            a.diag.clear();
             return Ok(());
         }
         if !matches!(
@@ -655,16 +678,28 @@ impl StreamCfg {
         // has_gpu 在会话内不变（caps 单例），tier 与梯子不会错位。
         let ladder = auto_ladder(a.has_gpu);
         let down_bytes = super::video::EncodeProfile::of_name(ladder[a.tier]).adapt_down;
+        let loss_pm = self.loss_permille().max(0);
+        let excess = self.excess_rtt_ms();
+        let queue = self.peer_queue_ms.load(Ordering::Relaxed);
+        let queue_seen = self.peer_queue_seen.load(Ordering::Relaxed);
+        let clear = super::media_flow::transport_clear(rtt, loss_pm);
         let (new_tier, high, low) = auto_decide(LinkSample {
             tier: a.tier,
             ladder_len: ladder.len(),
             down_bytes,
-            rtt_ms: self.excess_rtt_ms(),
-            // 🔴 帧龄参与判档（2026-10-03）：拥塞最直接的观测，见
-            // `auto_quality::AUTO_DOWN_QUEUE_MS`。
-            queue_ms: self.peer_queue_ms.load(Ordering::Relaxed),
+            rtt_ms: excess,
+            // 超额为 0 = 「与本场安静时刻同级」的好读数，不是没测到（A-甲 孪生缺陷）。
+            rtt_measured: rtt > 0,
+            // 🔴 帧龄参与判档（2026-10-03），但**传输层清白时不再单独定罪**
+            // （2026-10-06 A-乙，见 `auto_quality::AUTO_DOWN_QUEUE_MS` 注释）。
+            queue_ms: queue,
+            queue_measured: queue_seen,
             avg_bytes: avg,
-            loss_permille: self.loss_permille().max(0) as u64,
+            // 判据与 `Flow::feedback` 的定罪豁免**必须同源**（AGENTS 规则 11.1）：
+            // 写两遍必漏一处，而这两处对同一个队列状态给出相反结论时，用户看到的
+            // 就是「码率预算够、画面却糊在低档」。
+            transport_clear: clear,
+            loss_permille: loss_pm as u64,
             high_since: a.high_since,
             low_since: a.low_since,
             last_change_ms: a.last_change_ms,
@@ -672,6 +707,19 @@ impl StreamCfg {
         });
         a.high_since = high;
         a.low_since = low;
+        // 5s 汇总行读这份快照（`.cache` 复测里「为什么不升档」只能靠它自证）。
+        // 每个判定窗（8 帧）重写一次，不在每帧格式化字符串。
+        a.diag = format!(
+            "近帧{}B(降档线{}B) 超额{}ms 帧龄{}ms{} 丢{}‰ 传输清白={} 好窗已{}",
+            avg,
+            down_bytes,
+            excess,
+            queue,
+            if queue_seen { "" } else { "(未上报)" },
+            loss_pm,
+            clear,
+            low.map_or(0, |s| now_ms - s)
+        );
         let Some(t) = new_tier else {
             return false;
         };
@@ -686,7 +734,9 @@ impl StreamCfg {
         drop(a);
         self.opts.lock().unwrap_or_else(|p| p.into_inner()).profile =
             super::video::EncodeProfile::of_name(name);
-        log::info!("[RC] 自动画质：链路 rtt={rtt}ms 近帧均值 {avg}B → 切到「{name}」");
+        log::info!(
+            "[RC] 自动画质：链路 rtt={rtt}ms 超额={excess}ms 近帧均值 {avg}B 帧龄={queue}ms 传输清白={clear} → 切到「{name}」"
+        );
         true
     }
 
@@ -702,6 +752,15 @@ impl StreamCfg {
         // 🔴 tier 越界防御：has_gpu 理论上会话内不变，但 reset 竞态下 tier 可能
         // 短暂指向旧梯子的高位——取不到就退最低档，别 panic 在推流线程上。
         ladder.get(a.tier).unwrap_or(&ladder[0]).to_string()
+    }
+
+    /// 最近一次判档的输入快照（5s 汇总行用；未判过则空串）。
+    pub(super) fn auto_diag(&self) -> String {
+        self.auto
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .diag
+            .clone()
     }
 
     /// 会话收尾：自动档状态整体复位。

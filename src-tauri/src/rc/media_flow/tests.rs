@@ -123,7 +123,7 @@ fn bounded_window_discards_entire_reference_chain_and_recovers() {
     flow.budget(false, 8_000);
     flow.sent(0, 0, 1, MAX_PENDING + 1);
     assert_eq!(flow.admission(1, 50), Admission::Reset);
-    flow.discard(1, 0);
+    flow.discard(1, 0, 0);
     assert_eq!(flow.admission(2, 50), Admission::Ready);
     flow.sent(2, 2, 2, 50_000);
     flow.feedback(100, &feedback(2, 50_000, 50), 8_000, 0, 0);
@@ -135,7 +135,7 @@ fn bounded_window_discards_entire_reference_chain_and_recovers() {
 fn late_feedback_cannot_regress_ack_or_retain_discarded_bytes() {
     let mut flow = Flow::default();
     flow.sent(1, 1, 10, 100);
-    flow.discard(2, 0);
+    flow.discard(2, 0, 0);
     flow.sent(3, 3, 20, 100);
     flow.feedback(4, &feedback(10, 100, 10), 8_000, 0, 0);
     assert_eq!(flow.pending_bytes, 100);
@@ -164,7 +164,7 @@ fn discarded_stream_feedback_cannot_shorten_recovery_startup() {
     flow.sent(0, 0, 10, 100);
     flow.feedback(200, &feedback(10, 100, 30), 8_000, 0, 0);
     flow.sent(300, 300, 20, 100);
-    flow.discard(1_000, 0);
+    flow.discard(1_000, 0, 0);
     flow.feedback(1_050, &feedback(20, 100, 900), 8_000, 0, 0); // RESET 前的迟到反馈。
     flow.sent(1_100, 1_100, 30, 100);
     assert_ne!(flow.admission(2_300, 500), Admission::Reset,
@@ -275,7 +275,7 @@ fn relay_ack_jitter_allowance_does_not_override_real_queue_or_byte_limits() {
     f.receive_queue_ms = Some(400);
     flow.feedback(1_950, &f, 8_000, 0, 0);
     assert_eq!(flow.admission(1_951, 548), Admission::Reset);
-    flow.discard(1_951, 0);
+    flow.discard(1_951, 0, 0);
     flow.sent(1_952, 1_952, 4, MAX_PENDING + 1);
     assert_eq!(flow.admission(3_001, 548), Admission::Reset);
 }
@@ -516,7 +516,7 @@ fn bandwidth_step_bounds_backlog_and_resumes_after_recovery() {
         }
         if now < capture_due { continue; }
         match flow.admission(now, 80) {
-            Admission::Reset => { flow.discard(now, 0); packets.clear(); wire_end = now; resets += 1; }
+            Admission::Reset => { flow.discard(now, 0, 0); packets.clear(); wire_end = now; resets += 1; }
             // P0 口径：拿不到额度就丢帧并记账，**不阻塞生产者**。旧写法只 `continue`，
             // 于是这份仿真对 `note_drop` 那半判据天然瞎（丢帧证据从没被喂进去过）。
             Admission::Wait => { flow.note_drop(); continue; }
@@ -584,21 +584,21 @@ fn discard_only_decays_the_budget_with_congestion_evidence() {
     flow.kbps = 2_000;
     flow.last_feedback_ms = Some(90);
     flow.backlog_ms = 20;
-    flow.discard(100, 0);
+    flow.discard(100, 0, 0);
     assert_eq!(flow.kbps, 2_000, "ACK progressing, no loss, shallow backlog must not shrink the budget");
 
     flow.last_feedback_ms = Some(90);
-    flow.discard(100, 60);
+    flow.discard(100, 60, 0);
     assert_eq!(flow.kbps, 1_400, "frame-granular loss is evidence");
 
     flow.backlog_ms = 400;
     flow.last_feedback_ms = Some(90);
-    flow.discard(100, 0);
+    flow.discard(100, 0, 0);
     assert_eq!(flow.kbps, 980, "a deep receive queue is evidence");
 
     flow.backlog_ms = 0;
     flow.last_feedback_ms = Some(90);
-    flow.discard(1_200, 0);
+    flow.discard(1_200, 0, 0);
     assert_eq!(flow.kbps, 686, "going ACK-blind is evidence");
 }
 
@@ -804,7 +804,7 @@ fn reset_storm_with_flowing_ack_is_not_congestion_evidence() {
     flow.feedback(200, &f, 8_000, 0, 0);
     for n in 1..4u64 {
         flow.sent(n * 200, n * 200, n as i64 + 10, 5_000);
-        flow.discard(n * 200 + 300, 0);
+        flow.discard(n * 200 + 300, 0, 0);
     }
     assert_eq!(flow.kbps, 2_000, "零丢包、浅队列、ACK 五个采样周期内刚到过的连续 RESET 不该缩预算");
 }
@@ -871,7 +871,7 @@ fn clean_transport_vetoes_absolute_depth_but_not_a_rising_trend() {
     deep.kbps = 4_000;
     wire(&mut deep, 1_000, 0, 4_000 * 25);
     wire_opts(&mut deep, 2_000, 400, 4_000 * 25, &o);
-    deep.discard(2_500, 0);
+    deep.discard(2_500, 0, 0);
     let after_ramp = deep.kbps;
     assert!(deep.backlog_ms > BACKLOG_DOWN_MS);
     for n in 3..11u64 { wire_opts(&mut deep, n * 1_000, 400, 4_000 * 25, &o); }

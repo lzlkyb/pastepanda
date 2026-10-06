@@ -471,7 +471,15 @@ impl InboundVideo {
             self.pipeline_label()
         };
         let active_quality = if self.svc.auto_enabled() {
-            self.svc.auto_tier_name()
+            // 带上判档快照：「为什么不升档」以前只能反推，这次根因恰恰是反推
+            // 不出来的一句 `> 0`（见 `StreamCfg::auto_diag`）。
+            let diag = self.svc.auto_diag();
+            let name = self.svc.auto_tier_name();
+            if diag.is_empty() {
+                name
+            } else {
+                format!("{name}（{diag}）")
+            }
         } else {
             String::new()
         };

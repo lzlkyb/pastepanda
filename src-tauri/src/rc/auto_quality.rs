@@ -44,8 +44,13 @@ const AUTO_DOWN_RTT_MS: i64 = 200;
 const AUTO_DOWN_HOLD_MS: i64 = 10_000;
 /// 稳定公网直连也允许恢复；超额口径下中继会话同样可能达标（这是有意的——
 /// 换路重测容量的活由 `Flow::budget` 负责，这里只管档位）。
+/// 🔴 A-乙（2026-10-06）：持续窗 30s → 12s。定标来自 §10 的真机形态：v6 直连
+/// `rtt 17–57ms / loss 0pm / budget 8000kbps / delivered 2.4–5.8Mbps` 却整场停在
+/// `balanced@100ms`，用户口径「需要自己手工切，自动挡就没有意义了」。冷却仍是
+/// 15s（换档动作的抖动保护），所以从条件成立到升档最快 12s、两次换档间隔 ≥15s，
+/// 不会形成新的来回跳。
 const AUTO_UP_RTT_MS: i64 = 100;
-const AUTO_UP_HOLD_MS: i64 = 30_000;
+const AUTO_UP_HOLD_MS: i64 = 12_000;
 /// 两次换档之间的冷却：档位来回跳会让画面尺寸忽大忽小，比糊更难受。
 const AUTO_COOLDOWN_MS: i64 = 15_000;
 /// 近帧均值低于此值才认为有余量升档（帧都很轻 = 链路吃得下）。
@@ -56,6 +61,16 @@ const AUTO_FRAME_WINDOW: usize = 8;
 /// `bitrate_scale_for_queue` 的 300ms 档同源（≈19 帧排队）。RTT 是 pong 测的，
 /// 队列深时 pong 一起被堵，RTT 反而「钝」；帧龄是拥塞最直接的观测，
 /// 该独立参与降档，不能只搭 RTT 的便车。
+/// 🔴 2026-10-06 A-乙**收窄了这条的适用范围**（不是删掉）：`transport_clear` 为真
+/// （RTT 有样本、<150ms、零丢包）时它**不再单独定罪**。理由有两层：
+/// ① 这个槽里的数早就不是纯网络观测——它混着对端上报的**帧龄**（含对面解码+绘制
+///   深度，真机实测稳定 1100ms 上下）与本端积压，传输层清白时它剩下的只有这两样，
+///   砍码率治不了它们，只会把画面做糊（§10 现场：`rtt 17–57ms / loss 0 / backlog 0`
+///   却因帧龄 1100ms 被钉在 balanced）。
+/// ② 真拥塞并不因此失去降档通道：真排队时 `excess_rtt ≥ 200` 或 `loss ≥ 20‰∧有交付
+///   压力` 照样触发；而**码率这一路的降档完全不经这个判据**——`Flow` 用自己的
+///   send→ack `backlog` 砍 `kbps`，`fps_limit`/`resolution_limit` 跟着 `kbps` 走。
+///   所以豁免只摘掉「自家生产节拍慢被记成网络拥塞」这一类误伤。
 const AUTO_DOWN_QUEUE_MS: i64 = 300;
 
 // 当前档画面持续重过本档预算 → 降档。阈值与该档自适应的 adapt_down 同源：
@@ -88,9 +103,24 @@ pub(super) struct LinkSample {
     /// 当前档的降档预算（`of_name(ladder[tier]).adapt_down`）。
     pub down_bytes: usize,
     /// 超额延迟（ms）= RTT − 会话下限；下限未建立时等于绝对 RTT。
+    /// 🔴 2026-10-06：口径改成超额之后，**0 的含义变了**——它现在是「与本场安静
+    /// 时刻同级」，即链路最好的那种读数，而不是「没测到」。未采样由
+    /// [`LinkSample::rtt_measured`] 表达（同一个错误在帧龄槽上叫 A-甲）。
     pub rtt_ms: i64,
-    /// 发起端帧龄 EMA（NetHint queue_ms）。0 = 未采样。
+    /// 是否真有一个 RTT 读数（`stream_cfg::video_rtt_ms() > 0`）。
+    /// 未测到 RTT 时不许升档（「没数据」不等于「很好」）。
+    pub rtt_measured: bool,
+    /// 排队压力 EMA（ms）：对端 NetHint 帧龄 ∨ 本端 `flow.backlog_ms`。
+    /// **0 = 已排空的确凿样本**（不是「未采样」，未采样是负值，见
+    /// `stream_cfg::set_peer_queue_ms`）。
     pub queue_ms: i64,
+    /// 本会话是否收到过任何帧龄上报（`stream_cfg::peer_queue_seen`）。
+    /// 「没见过上报」与「见过 0」必须能区分：前者是老对端，丢包得单独定罪；
+    /// 后者是确凿的排空证据，丢包不再能借排队之名踩档。
+    pub queue_measured: bool,
+    /// 传输层否认网络在排队（RTT 有样本、低于降速线、零丢包）——与 `Flow::feedback`
+    /// 的定罪豁免**同一个函数**，判据不许写两遍（AGENTS 规则 11.1）。
+    pub transport_clear: bool,
     pub avg_bytes: usize,
     pub loss_permille: u64,
     pub high_since: Option<i64>,
@@ -107,7 +137,10 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
         ladder_len,
         down_bytes,
         rtt_ms,
+        rtt_measured,
         queue_ms,
+        queue_measured,
+        transport_clear,
         avg_bytes,
         loss_permille,
         high_since,
@@ -115,23 +148,35 @@ pub(super) fn auto_decide(s: LinkSample) -> (Option<usize>, Option<i64>, Option<
         last_change_ms,
         now_ms,
     } = s;
-    // queue == 0 仍表示未采样，保留老客户端的丢包保护；有界交付不因随机丢包反复降档。
-    let measured_queue = (queue_ms > 0).then_some(queue_ms);
-    // 高 RTT / 深排队独立降档，丢包需与交付压力一起判断。
+    // A-甲 收口（2026-10-06）：这里曾经是第三处把 `0` 当成「未采样」的写法
+    // （`(queue_ms > 0)`）。0 现在是「已排空」的确凿样本，未采样改由
+    // `queue_measured` 表达——老对端从不上报帧龄时仍要让丢包单独定罪，
+    // 新对端上报 0 时则不许再借排队之名踩档。
+    let measured_queue = queue_measured.then_some(queue_ms);
+    // 高 RTT / 深排队独立降档，丢包需与交付压力一起判断。排队那一路受传输层否决，
+    // 口径与理由见 `AUTO_DOWN_QUEUE_MS`。
     let link_bad = rtt_ms >= AUTO_DOWN_RTT_MS
         || super::media::loss_pressure(measured_queue, loss_permille, 50)
-        || queue_ms >= AUTO_DOWN_QUEUE_MS;
+        || (queue_ms >= AUTO_DOWN_QUEUE_MS && !transport_clear);
     let high_since = if link_bad {
         Some(high_since.unwrap_or(now_ms))
     } else {
         None
     };
-    // 未测到 RTT 不能升档；丢包造成交付压力或队列过深时同样挡住升档。
-    let low_since = if rtt_ms > 0
+    // 🔴 A-甲 的孪生缺陷（2026-10-06 真机抓到）：这里原本写 `rtt_ms > 0`，那时
+    // `rtt_ms` 还是**绝对 RTT**，`> 0` = 「有读数」。2026-10-05 口径换成**超额延迟**
+    // 之后，`> 0` 变成了「必须比本场安静时刻更慢才准升档」——直连上 RTT 抖动只有
+    // 21..29ms，而 `next_rtt_floor` 把下限沉到最小值，于是超额经常正好是 0；
+    // 保持窗要**连续** 12s 成立，一拍归 0 就整窗作废 ⇒ 自动挡永远升不上去
+    // （实测：v6 直连 rtt 19–29ms / loss 0 / backlog 0 / budget 8000 跑了 50s 仍停
+    // balanced）。未采样这件事由 `rtt_measured` 表达，不许再用「读数等于 0」冒充。
+    let low_since = if rtt_measured
         && rtt_ms < AUTO_UP_RTT_MS
         && !super::media::loss_pressure(measured_queue, loss_permille, 20)
         // 码控在 150ms 以上已经降速，自动画质不能在同一队列状态下反向升档。
-        && queue_ms < 150
+        // 传输层否认排队时这份「150 以上」只剩本机采集/编码节拍与对面绘制深度，
+        // 升档不该被它按住（同一条豁免的理由见 `AUTO_DOWN_QUEUE_MS`）。
+        && (queue_ms < 150 || transport_clear)
     {
         Some(low_since.unwrap_or(now_ms))
     } else {
@@ -170,6 +215,12 @@ pub(super) struct AutoTier {
     pub(super) low_since: Option<i64>,
     /// 近若干帧的 JPEG 字节数。
     pub(super) recent: Vec<usize>,
+    /// 最近一次判档的输入快照（供 5s 汇总行打印）。空 = 本会话还没判过。
+    ///
+    /// 为什么要它：「自动挡为什么不给最好」以前只能从日志反推，而这次的根因
+    /// （升档闸把「超额=0」当成没测到）恰恰是**反推不出来**的那类——读数全都
+    /// 正常，坏的是一句 `> 0`。快照进日志才能当场看见保持窗到底有没有在走。
+    pub(super) diag: String,
 }
 
 impl AutoTier {
@@ -182,6 +233,7 @@ impl AutoTier {
             high_since: None,
             low_since: None,
             recent: Vec::new(),
+            diag: String::new(),
         }
     }
 }
@@ -268,7 +320,8 @@ mod tests {
     fn 稳定公网时延可恢复画质但排队仍挡升档() {
         let sample = |queue_ms| LinkSample {
             tier: 0, ladder_len: 4, down_bytes: 150_000,
-            rtt_ms: 80, queue_ms, avg_bytes: 5_000, loss_permille: 0,
+            rtt_ms: 80, rtt_measured: true, queue_ms, queue_measured: true, transport_clear: false,
+            avg_bytes: 5_000, loss_permille: 0,
             high_since: None, low_since: Some(0), last_change_ms: 0, now_ms: 30_000,
         };
         assert_eq!(auto_decide(sample(80)).0, Some(1),
@@ -283,7 +336,8 @@ mod tests {
     fn bounded_lossy_delivery_can_restore_quality_but_congestion_still_downgrades() {
         let sample = |queue_ms| LinkSample {
             tier: 0, ladder_len: 4, down_bytes: 150_000,
-            rtt_ms: 40, queue_ms, avg_bytes: 5_000, loss_permille: 60,
+            rtt_ms: 40, rtt_measured: true, queue_ms, queue_measured: true, transport_clear: false,
+            avg_bytes: 5_000, loss_permille: 60,
             high_since: None, low_since: Some(0), last_change_ms: 0, now_ms: 30_000,
         };
         let healthy = auto_decide(sample(50));
@@ -295,6 +349,94 @@ mod tests {
         let bad = auto_decide(congested);
         assert_eq!(bad.0, Some(0));
         assert_eq!(bad.2, None, "loss with queue pressure cannot restore quality");
+    }
+
+    /// A-乙 的**反例侧**：传输层不清白（有丢包）时，帧龄 ≥300ms 仍要独立定罪。
+    /// 2026-10-03 那条判据没有被删掉，只是不再能在「网络否认排队」时单独成立。
+    #[test]
+    fn 帧龄持续破300ms_且传输层不清白_会降档() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(20); // RTT 好
+        s.note_stream_health(20, 1, 0); // 但有 1‰ 丢包 ⇒ transport_clear 判假
+        s.set_peer_queue_ms(500);
+        s.set_peer_queue_ms(500);
+        assert_eq!(s.peer_queue_ms_for_test(), 500);
+        for i in 0..24 {
+            let changed = feed(&s, 10_000, i);
+            assert_eq!(changed, i == 23, "第 {i} 帧换档预期不符");
+        }
+        assert_eq!(s.auto_tier_name(), "smooth");
+    }
+
+    /// A-乙 的**豁免侧**（§10 真机现场）：v6 直连 rtt 17–57ms、loss 0、本端积压 0，
+    /// 对端上报的帧龄却有 1100ms（含对面绘制深度）。这时按帧龄定罪只会把画面钉在
+    /// 低档，砍码率治不了它 ⇒ 不许降档。注意本例同时满足升档条件（A-甲 让排空/
+    /// 清白样本能买到资格），所以断言只钉「绝不因帧龄往下」，不钉「纹丝不动」。
+    #[test]
+    fn 传输层清白时帧龄再高也不定罪() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(20);
+        s.set_peer_queue_ms(1100);
+        s.set_peer_queue_ms(1100);
+        for i in 0..60 {
+            feed(&s, 10_000, i);
+            assert_ne!(s.auto_tier_name(), "smooth", "第 {i} 帧：传输层清白时帧龄不能定罪降档");
+        }
+    }
+
+    /// A-甲 的第三处哨兵（判据侧）：**确凿排空**与**从未上报**是两回事。
+    /// 上报过 0 ⇒ `loss_pressure` 里那条「队列 ≥100ms」不成立，丢包不能借排队之名
+    /// 踩档；反例的另一半（从未上报时丢包必须仍然定罪）由
+    /// `丢包持续千分之50会降档` 钉住——那条用例不喂 `set_peer_queue_ms`，走的正是
+    /// `queue_measured = false` 这一臂。
+    #[test]
+    fn 确凿排空时丢包不再借排队定罪() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(10);
+        s.note_stream_health(10, 60, 0); // 6% 丢包，但传输层不清白
+        s.set_peer_queue_ms(0); // 对端确凿报告：已排空
+        assert!(s.peer_queue_ms_for_test() < 100, "0 样本必须留在 0 附近");
+        for i in 0..40 {
+            feed(&s, 10_000, i);
+            assert_ne!(
+                s.auto_tier_name(),
+                "smooth",
+                "第 {i} 帧：确凿排空时丢包不该借排队定罪"
+            );
+        }
+    }
+
+    /// A-甲 的现场回归：排空样本（0）必须能把帧龄 EMA 拉下来。
+    /// 旧写法 `if queue_ms <= 0 { return; }` 把 0 整条丢掉 ⇒ 这个槽只升不降，
+    /// 本端积压明明归零，判档仍看见上一次上报的 1100ms ⇒ 自动挡永不回升。
+    #[test]
+    fn 排空样本能把帧龄ema拉回并买到升档资格() {
+        let s = StreamCfg::new();
+        s.set_quality("auto").expect("合法");
+        s.set_peer_rtt(20);
+        s.set_peer_queue_ms(1100);
+        assert_eq!(s.peer_queue_ms_for_test(), 1100, "首样本直接播种");
+        // 每拍喂 0（本端积压已排空）：α=1/2 逐拍收敛，四拍内跌破升档线 150。
+        let mut crossed = None;
+        for i in 1..=5 {
+            s.set_peer_queue_ms(0);
+            if s.peer_queue_ms_for_test() < 150 {
+                crossed = Some(i);
+                break;
+            }
+        }
+        assert!(crossed.is_some(), "排空样本必须让 EMA 跌到升档线以下");
+        // 条件连续成立满 12s（A-乙 的新门槛）后应升档。
+        for i in 0..30 {
+            if feed(&s, 1_000, i) {
+                assert_eq!(s.auto_tier_name(), "sharp", "第 {i} 帧应升到清晰档");
+                return;
+            }
+        }
+        panic!("排空且传输清白的会话不该停在 balanced");
     }
 
     #[test]
@@ -400,30 +542,17 @@ mod tests {
         assert_eq!(s2.auto_tier_name(), "ultra", "无硬编天花板仍是超清");
     }
 
-    /// 🔴 帧龄参与判档（2026-10-03）：RTT 是 pong 测的，队列深时 pong 一起被堵，
-    /// RTT 反而「钝」；帧龄是拥塞最直接的观测，≥300ms 独立参与降档，
-    /// 不能只搭 RTT 的便车。节奏与「自动档下rtt持续差10s会降档」同源。
-    #[test]
-    fn 帧龄持续破300ms会降档() {
-        let s = StreamCfg::new();
-        s.set_quality("auto").expect("合法");
-        s.set_peer_rtt(20); // RTT 好，纯靠帧龄判据
-        s.set_peer_queue_ms(500);
-        s.set_peer_queue_ms(500);
-        // 每 1s 一帧：第 8 帧窗口收口首判（high_since 从那时起算），
-        // i=23 时持续 16s ≥ 10s → 降档
-        for i in 0..24 {
-            let changed = feed(&s, 10_000, i);
-            assert_eq!(changed, i == 23, "第 {i} 帧换档预期不符");
-        }
-        assert_eq!(s.auto_tier_name(), "smooth");
-    }
-
+    /// 2026-10-03 的原始判据（帧龄深 → 持续后降档、RTT 再好也不许升）在
+    /// **传输层不清白**时仍成立，见上面的
+    /// `帧龄持续破300ms_且传输层不清白_会降档`；传输层清白时的豁免与理由见
+    /// `传输层清白时帧龄再高也不定罪`。这里保留「深排队挡住升档」那一半：
+    /// 队列口径 ≥150ms 且网络不否认排队，自动画质不得反向升档。
     #[test]
     fn 帧龄深时不升档_且持续后降档() {
         let s = StreamCfg::new();
         s.set_quality("auto").expect("合法");
         s.set_peer_rtt(20); // RTT 极好，但队列深
+        s.note_stream_health(20, 1, 0); // 1‰ 丢包 ⇒ 传输层不否认排队
         s.set_peer_queue_ms(500);
         s.set_peer_queue_ms(500);
         for i in 0..60 {

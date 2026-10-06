@@ -513,7 +513,11 @@ impl OutboundVideo {
                                     }
                                     let svc = self.svc.clone();
                                     let ema = self.rtt_ema_ms;
-                                    let q = if queue > 0 { Some(queue) } else { None };
+                                    // A-甲（2026-10-06）：`age_ema_ms()` 的「未采样」哨兵是
+                                    // **-1**，0 是「帧龄已归零」的确凿样本。旧写法 `> 0`
+                                    // 把两者压成同一个 None，对端那个槽因此只升不降
+                                    // （口径见 `stream_cfg::set_peer_queue_ms`）。
+                                    let q = if queue >= 0 { Some(queue) } else { None };
                                     tauri::async_runtime::spawn(async move {
                                         let _ = svc
                                             .send_input(&super::input::InputEvent::NetHint {

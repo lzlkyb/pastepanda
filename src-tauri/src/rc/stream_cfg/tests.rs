@@ -603,7 +603,11 @@ fn 自动档看超额延迟_中继传播不踩档() {
     for i in 0..40i64 {
         s.auto_note_frame(10_000, base + i * 500);
     }
-    assert_eq!(s.auto_tier_name(), "balanced", "固有延迟不该降档");
+    // 第一段的旧期望（停在 balanced）本身就是那处哨兵缺陷的化石：`rtt_ms > 0`
+    // 在超额口径下 = 「必须比本场安静时刻更慢才准升档」，于是固有传播这条路
+    // 永远攒不满保持窗。修好后超额 0ms + 零丢包 + 帧龄 70ms 就该拿到升档资格
+    // —— 这正是用户要的「换到好链路画质自己回来」。
+    assert_eq!(s.auto_tier_name(), "sharp", "固有延迟不该降档，且干净链路要能升档");
 
     let legacy = c();
     legacy.set_quality("auto").expect("合法");

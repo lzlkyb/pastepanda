@@ -43,6 +43,20 @@ const CAPACITY_OVERUSE_ALPHA: u64 = 50;
 /// 定标来自 round4 中继段重放（同文档 §5乙）：门槛 7s 把切换 10→4、A→B→A 往返 5→2、
 /// 升档事件 4→1；≥15s 会把回升彻底杀光（0 次升档），已否决。
 const UPGRADE_HOLD_MS: u64 = 7_000;
+/// 🔴 G2（2026-10-06）：**绝对水位**（`backlog > 降速线`）要连续这么多拍才拿到定罪权。
+/// 业界没有单拍踩这一脚的：`rd_qos.rs:220-222` 要 2 连拍，WebRTC 的
+/// `aimd_rate_control.cc` 用「时长」而不是「次数」做门槛。我们此前的现场形态是
+/// 「自己把采集圈卡住 ⇒ 一拍 backlog 6813ms ⇒ 预算连砍三刀」
+/// （`docs/链路切换画质回升-业界源码对照-2026-10-06.md` §10）。
+/// 只给水位加门槛，**增长趋势（`rising`）与丢包仍单拍定罪**：前者是本端单调时钟的
+/// 差值、后者是链路直读，两者都不是采样相位能造出来的假象。
+const DEEP_STREAK_TICKS: u8 = 2;
+/// 🔴 G3（2026-10-06）：真正砍过一刀（或 RESET 过）之后，要再等这么多拍**新**证据才许
+/// 砍第二刀。口径来自 `rd_qos.rs` 的 `replies_after_bitrate_reduction`——刚降完码率时
+/// 窗口里那些 ACK 是**上一段拥塞的遗留**，拿它们当「还是拥塞」的复证就是自我循环。
+/// 硬证据（`rising` / 丢包）不受此限：拥塞真的在恶化时响应仍要快。
+/// 1s 的 `last_adjust_ms` 冷却不够，因为它对 RESET 之前就已经排好的队不设防。
+const POST_CUT_WAIT_TICKS: u8 = 2;
 
 /// 「传输层否认网络在排队」的唯一判据：RTT 已有样本、低于降速线、且零丢包。
 /// 🔴 单一数据源（AGENTS 规则 11.1）：控制器定罪（`feedback`）与采集圈的自适应降频
@@ -106,6 +120,10 @@ pub(super) struct Flow {
     presented_at_ms: i64,
     last_adjust_ms: u64,
     prev_backlog_ms: Option<i64>,
+    /// 绝对水位（`backlog > 降速线`）的连续拍数，G2 的计数（见 `DEEP_STREAK_TICKS`）。
+    deep_streak: u8,
+    /// 砍过一刀/RESET 之后还剩几拍「只观察不连砍」，G3 的计数（见 `POST_CUT_WAIT_TICKS`）。
+    post_cut_wait: u8,
     /// 探测带内的稳定平台：(平台水位, 站定起点)。
     plateau: Option<(i64, u64)>,
     /// 本窗累计「想发而被预算挡下」的帧数；`feedback` 取走并清零（`note_drop` 递增）。
@@ -138,6 +156,7 @@ impl Default for Flow {
             pending: VecDeque::new(),
             pending_bytes: 0, next_ms: 0, ack_at_ms: 0, presented_at_ms: 0, last_adjust_ms: 0,
             prev_backlog_ms: None, plateau: None, drops_in_window: 0, probe_floor: 0,
+            deep_streak: 0, post_cut_wait: 0,
             probe_at_ms: None, last_reset_ms: None, last_feedback_ms: None, baseline_age_ms: i64::MAX,
             baseline_ack_ms: u64::MAX, ack_delay_ms: None, ack_mean_ms: None,
             ack_variance_ms: 0, relay: None, fps: 15,
@@ -286,7 +305,15 @@ impl Flow {
         } else {
             self.plateau = None;
         }
-        let deep = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;
+        let deep_now = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;
+        // G2：绝对水位要连续两拍才拿到定罪权（口径见 `DEEP_STREAK_TICKS`）；
+        // `rising`/`loss_pressure` 仍是单拍硬证据，不等这一拍。
+        self.deep_streak = if deep_now {
+            self.deep_streak.saturating_add(1)
+        } else {
+            0
+        };
+        let deep = self.deep_streak >= DEEP_STREAK_TICKS;
         let congested = loss_pressure || deep || rising;
         // 🔴 P0 换回来的证据：本窗生产者有没有「想发而被预算挡下」的帧（`note_drop`）。
         // 旧实现把采集圈整个阻塞在准入闸上，控制器只看得到「交付变慢」，分不清是线路窄
@@ -323,10 +350,17 @@ impl Flow {
         let probe_active = self.probe_at_ms.is_some_and(|t| now.saturating_sub(t) < PROBE_HOLD_MS);
         let probe_cooled = self.probe_at_ms.is_none_or(|t| now.saturating_sub(t) >= PROBE_COOLDOWN_MS);
         if congested {
-            if probe_active {
+            if self.post_cut_wait > 0 && !(rising || loss_pressure) {
+                // G3：上一刀（或 RESET）之后还没等到足够新证据，这一拍只观察不连砍。
+                // 水位本身可能是 RESET 之前就排好的遗留队列，1s 的 `last_adjust_ms`
+                // 冷却对它不设防。硬证据（`rising`/丢包）不走这条路。
+                self.post_cut_wait -= 1;
+                self.plateau = None;
+            } else if probe_active {
                 // 探测期内的拥塞证据 = 探测失败：回到探测起点。对膨胀后的值再乘 0.8 等于
                 // 让一次试错挨两刀，代价是恢复期白白多糊一档。
                 self.kbps = self.probe_floor.max(MIN_KBPS);
+                self.post_cut_wait = POST_CUT_WAIT_TICKS;
             } else {
                 // 封顶用**本窗口**的实测交付：有拥塞证据时链路是满流的，这个速率就是管子宽度。
                 // 但窗口必须正常——被背压自己拉长的采样（实测 5..8s）和断粮窗口给出的是低值，
@@ -335,6 +369,7 @@ impl Flow {
                     (delivered as u64) * 9 / 10
                 } else { u64::MAX };
                 self.kbps = ((self.kbps as u64 * 8 / 10).min(cap) as u32).max(MIN_KBPS);
+                self.post_cut_wait = POST_CUT_WAIT_TICKS;
             }
             self.plateau = None;
         } else if had_drops && transport_clear && probe_cooled
@@ -400,7 +435,10 @@ impl Flow {
         } else { Admission::Ready }
     }
 
-    pub fn discard(&mut self, now: u64, loss_pm: i64) {
+    /// RESET（弃掉未交付的积压）后的预算处置。`rtt_ms` 只用于 G3 之外的**传输层否决**：
+    /// 与 `feedback` 的定罪豁免同一个函数，判据不许写两遍（AGENTS 规则 11.1）。
+    /// 调用方拿不到 RTT 样本时传 0 = 不豁免（保守，等同旧行为）。
+    pub fn discard(&mut self, now: u64, loss_pm: i64, rtt_ms: i64) {
         // 已废弃帧的迟到 ACK 不属于新的参考链，不能缩短新流的起播宽限。
         if let Some(last) = self.pending.back() { self.ack_at_ms = self.ack_at_ms.max(last.at_ms); }
         // 🔴 反棘轮 v2（2026-10-06 复测）：证据锚点必须跨 RESET 存活。上一版在这里
@@ -418,9 +456,19 @@ impl Flow {
         self.last_reset_ms = Some(now);
         // 换参考链后积压口径重新起算，跨 RESET 的差值不是增长趋势。
         self.prev_backlog_ms = None;
+        // G2 的水位连拍同样跨 RESET 无效：新链还没收到任何 ACK，不该背着旧链的计数砍。
+        self.deep_streak = 0;
         self.plateau = None;
-        if ack_blind || loss_pm >= 10 || self.backlog_ms > BACKLOG_DOWN_MS {
+        // ACK 停更 / 丢包 ≥10‰ 这两条照旧即时减码率（背压失效时不减会无限重发大 IDR）。
+        // 🔴 第三条（`backlog > 降速线`）现在要过传输层否决——RESET 之后第一拍的水位
+        // 常常是旧链残留 + 本机开销，网络否认排队时减它治不了病只会糊画面（§10 现场：
+        // 锁屏把采集圈卡住 8.7s，本端积压 6813ms，而链路 rtt 一直是 20–40ms、零丢包）。
+        let deep_backlog =
+            self.backlog_ms > BACKLOG_DOWN_MS && !transport_clear(rtt_ms, loss_pm);
+        if ack_blind || loss_pm >= 10 || deep_backlog {
             self.kbps = ((self.kbps as u64 * 7 / 10) as u32).max(MIN_KBPS);
+            // G3：刚减过，后面几拍必须拿到新证据才许再减。
+            self.post_cut_wait = POST_CUT_WAIT_TICKS;
         }
     }
 

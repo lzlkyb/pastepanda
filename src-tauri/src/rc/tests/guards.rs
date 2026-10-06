@@ -1046,3 +1046,264 @@ fn 守卫_汇总行必须带兜底增量() {
         "兜底段不再按「本区间有新增」门控"
     );
 }
+
+/// 守卫：帧龄的「未采样」哨兵必须端到端只有一套口径（2026-10-06 A-甲）。
+///
+/// 事故形状：`probe_out::age_ema_ms()` 用 **-1** 表示未采样、0 表示「已排空」，
+/// 而线上三处各自把 0 当成「没数据」扔掉（`outbound` 的 `> 0`、`set_peer_queue_ms`
+/// 的 `<= 0`）。结果对端那个槽只升不降，本端积压明明归零，自动挡仍按上一次上报的
+/// 1100ms 定罪 ⇒ 换到 v6 后画质不回升。验收标准（AGENTS.md §11.1）：第 4 个取值点
+/// 若再写 `> 0` 仍会走错 ⇒ 所以钉住「0 是合法样本、未采样只有负数」这条线，
+/// 并钉住 EMA 的 `prev` 必须在 `store` 之前读（读在后面 = 最后一个样本被算两次）。
+#[test]
+fn 守卫_帧龄哨兵口径必须端到端收口() {
+    let out = include_str!("../outbound.rs");
+    let cfg = include_str!("../stream_cfg.rs");
+    // ① 出口：负数才是未采样。
+    assert!(
+        out.contains("if queue >= 0 { Some(queue) } else { None }"),
+        "NetHint 出口不再把 0 当作确凿样本 —— 对端的帧龄槽又会只升不降"
+    );
+    assert!(
+        !out.contains("if queue > 0"),
+        "NetHint 出口复活了 `> 0` —— 0（已排空）会被压成 None"
+    );
+    // ② 入口：只拒负数。
+    let set = cfg
+        .find("fn set_peer_queue_ms")
+        .expect("帧龄入口被删 —— 对端上报无处落地");
+    let set_end = cfg[set..]
+        .find("fn note_peer_frame_loss")
+        .expect("下一个函数不见了 —— 无法界定帧龄入口的范围");
+    let body = &cfg[set..set + set_end];
+    assert!(
+        body.contains("if queue_ms < 0"),
+        "帧龄入口不再只拒负数 —— 0 样本会被丢掉"
+    );
+    assert!(
+        !body.contains("if queue_ms <= 0"),
+        "帧龄入口复活了 `<= 0` —— 排空样本被当成没数据"
+    );
+    // ③ EMA 顺序：先读旧值，再写新值；写完之后读 = 末样本翻倍。
+    let read = body
+        .find("self.peer_queue_ms.load")
+        .expect("EMA 不再读旧值");
+    let write = body
+        .find(".store(next")
+        .expect("EMA 不再写回平滑值");
+    assert!(read < write, "帧龄 EMA 先写后读 —— 同一个样本会被算两次");
+    // ④ 播种看 `peer_queue_seen`，不看槽值（0 现在是合法值，用 `prev > 0` 判会把
+    //    第一个真实样本 0 直接播成 0、随后再也区分不了「没见过」与「见过 0」）。
+    assert!(
+        body.contains("self.peer_queue_seen.load") && body.contains("(prev + queue_ms) / 2"),
+        "帧龄 EMA 的播种不再看 peer_queue_seen —— 0 无法既是合法值又是初始值"
+    );
+    // ⑤ 判据侧同样不许再用「0 = 未采样」：未采样改由 peer_queue_seen 表达，
+    //    否则「确凿排空」和「老对端从不上报」会被压成同一个结论。
+    let auto = include_str!("../auto_quality.rs");
+    assert!(
+        auto.contains("queue_measured.then_some(queue_ms)"),
+        "丢包判据的「有无排队」不再看 queue_measured —— 0 又一次被当成未采样"
+    );
+    assert!(
+        !auto.contains("(queue_ms > 0).then_some"),
+        "auto_quality 里复活了 `queue_ms > 0` 哨兵"
+    );
+    // ⑥ 采样口（auto_note_frame）里三个 `*_measured` 语义槽必须由真实信号喂：
+    //    写死 true = 「永远有数据」，老对端的保护与未采样判据一起失效。
+    //    切片到 auto_enabled 为止，别把后面无关函数的字面量算进来。
+    let note = cfg
+        .find("fn auto_note_frame")
+        .expect("自动档的采样入口被删");
+    let note_end = cfg[note..]
+        .find("fn auto_enabled")
+        .expect("下一个函数不见了 —— 无法界定采样入口的范围");
+    let note_body = &cfg[note..note + note_end];
+    for (lit, why) in [
+        (
+            "let queue_seen = self.peer_queue_seen.load(Ordering::Relaxed);",
+            "采样入口不再读 peer_queue_seen —— 帧龄的「未上报」语义丢失",
+        ),
+        (
+            "queue_measured: queue_seen,",
+            "LinkSample 的 queue_measured 没接到 peer_queue_seen —— 恒为真",
+        ),
+        (
+            "rtt_measured: rtt > 0,",
+            "LinkSample 的 rtt_measured 不是从**绝对** RTT 推的 —— 见下条",
+        ),
+        (
+            "rtt_ms: excess,",
+            "采样入口不再送超额延迟 —— 升档判据又在看绝对 RTT",
+        ),
+    ] {
+        assert!(note_body.contains(lit), "{why}（缺失字面量：{lit}）");
+    }
+    // ⑦ 第四处哨兵（2026-10-06 真机抓到的那个）：`rtt_ms` 换成**超额**口径后，
+    //    升档闸里的 `rtt_ms > 0` 从「有读数」变成了「必须比本场安静时刻更慢」，
+    //    于是稳定链路上 12s 保持窗永远攒不满 ⇒ 自动挡永远不给最好画质。
+    //    未采样这件事只许由 `rtt_measured` 表达。
+    let decide = auto
+        .find("fn auto_decide")
+        .expect("自动换档判据被删");
+    let decide_end = auto[decide..]
+        .find("pub(super) struct AutoTier")
+        .expect("AutoTier 结构体不见了 —— 无法界定判据函数的范围");
+    let body = &auto[decide..decide + decide_end];
+    assert!(
+        body.contains("if rtt_measured"),
+        "升档闸不再看 rtt_measured —— 「超额=0」又要被当成没测到，自动挡升不上去"
+    );
+    // 注释里允许出现「原本写 `rtt_ms > 0`」这句历史，所以只查去掉注释后的代码。
+    let code: String = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !code.contains("rtt_ms > 0"),
+        "auto_decide 里复活了 `rtt_ms > 0` —— 超额口径下这是第四处哨兵混淆"
+    );
+    // ⑧ 判档快照必须一路走到 5s 汇总行：任何一环断掉，「为什么不升档」就又开始
+    //    靠反推（这一批的根因正是反推不出来的那种）。
+    let stream = include_str!("../service/streaming.rs");
+    let video = include_str!("../inbound/video.rs");
+    assert!(
+        cfg.contains("a.diag = format!(")
+            && cfg.contains("pub(super) fn auto_diag(&self) -> String")
+            && stream.contains("pub fn auto_diag(&self) -> String")
+            && video.contains("format!(\"{name}（{diag}）\")"),
+        "自动档的判档快照没接到汇总行 —— 升档为什么被按住又要靠日志反推"
+    );
+    assert_eq!(
+        cfg.matches("a.diag.clear();").count(),
+        2,
+        "判档快照的复位点不是两处（会话复位 / 会话中打开自动）—— 新会话会读到上一场的快照"
+    );
+}
+
+/// 守卫：排队定罪必须与传输层口径同源，且「单拍定罪」这条老毛病不许复发
+/// （2026-10-06 A-乙 + G2 + G3 + discard 豁免）。
+///
+/// 三个共用同一个错误前提的判据（自动挡 `peer_queue_ms`、`Flow::backlog_ms`、
+/// RESET 减档第三条）都混入了本机开销/对面绘制深度，只有网络自己的 RTT 与丢包
+/// 是否认得起的。所以：判据函数只允许 `media_flow::transport_clear` 一份实现，
+/// 自动画质与 `discard` 都必须经它；绝对水位要连续两拍才拿到定罪权；一刀之后要
+/// 等新证据。钉不住就会退回「锁屏卡 8.7s → 连砍三刀 → 画质钉地板」。
+#[test]
+fn 守卫_排队定罪必须与传输层口径同源() {
+    let flow = include_str!("../media_flow.rs");
+    let auto = include_str!("../auto_quality.rs");
+    let cfg = include_str!("../stream_cfg.rs");
+    // ① 单一实现：只有 media_flow 里有一份阈值判据，别处不许抄。
+    assert_eq!(
+        flow.matches("fn transport_clear(rtt_ms: i64, loss_pm: i64) -> bool").count(),
+        1,
+        "传输层清白判据的定义点不止一处"
+    );
+    for (name, src) in [("auto_quality", auto), ("stream_cfg", cfg)] {
+        assert!(
+            !src.contains("loss_permille == 0") && !src.contains("loss_pm == 0"),
+            "{name} 里出现了自制的丢包清白判据 —— 应改调 media_flow::transport_clear"
+        );
+    }
+    // ② 自动挡两处（降档豁免 + 升档豁免）必须用同一个字段，且字段由调用点从
+    //    控制器口径算出：判据搬走一处 = 只豁免了一半。
+    let decide = auto
+        .find("fn auto_decide")
+        .expect("自动换档判据被删");
+    let decide_end = auto[decide..]
+        .find("pub(super) struct AutoTier")
+        .expect("AutoTier 结构体不见了 —— 无法界定判据函数的范围");
+    let body = &auto[decide..decide + decide_end];
+    assert_eq!(
+        body.matches("transport_clear").count(),
+        3,
+        "auto_decide 里 transport_clear 不再是三处（解构 + 降档豁免 + 升档豁免）—— 豁免被搬走了一半"
+    );
+    assert!(
+        body.contains("(queue_ms >= AUTO_DOWN_QUEUE_MS && !transport_clear)"),
+        "帧龄定罪不再受传输层否决 —— 对面渲染深度又能单独把档位踩死"
+    );
+    assert!(
+        body.contains("(queue_ms < 150 || transport_clear)"),
+        "升档闸不再认传输层清白 —— 换到好链路后画质回不来"
+    );
+    // 采样入口把控制器的口径**原样**搬进 LinkSample：clear 由 media_flow 算、
+    // RTT 取 peer∨path 的当前读数（写死 true/false 或漏掉 RTT 都是只豁免一半）。
+    let note = cfg
+        .find("fn auto_note_frame")
+        .expect("自动档的采样入口被删");
+    let note_end = cfg[note..]
+        .find("fn auto_enabled")
+        .expect("下一个函数不见了 —— 无法界定采样入口的范围");
+    let note_body = &cfg[note..note + note_end];
+    assert!(
+        note_body.contains("let clear = super::media_flow::transport_clear(rtt, loss_pm);")
+            && note_body.contains("transport_clear: clear,"),
+        "自动档不再从 media_flow 取传输层清白 —— 判据写两遍必漏一处"
+    );
+    assert!(
+        note_body.contains("let peer_rtt = self.peer_rtt_ms.load(Ordering::Relaxed);")
+            && note_body.contains("self.path_rtt_ms.load(Ordering::Relaxed)"),
+        "自动档的清白判据没接当前 RTT（peer∨path）—— 恒为假，豁免形同虚设"
+    );
+    // ③ G2：绝对水位连拍才定罪，趋势与丢包仍单拍。
+    assert!(
+        flow.contains("let deep = self.deep_streak >= DEEP_STREAK_TICKS;")
+            && flow.contains("let congested = loss_pressure || deep || rising;"),
+        "绝对水位不再连续两拍才定罪 —— 一圈的采样毛刺就能砍一刀"
+    );
+    assert!(
+        flow.contains("let deep_now = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;"),
+        "水位定罪丢掉了传输层否决"
+    );
+    let streak = flow
+        .find("let deep_now")
+        .expect("水位连拍的起算点不见了");
+    let bump = flow
+        .find("self.deep_streak = if deep_now")
+        .expect("水位连拍的计数点不见了");
+    let read = flow
+        .find("let deep = self.deep_streak >= DEEP_STREAK_TICKS;")
+        .expect("连拍判据的读取点不见了");
+    let congested = flow
+        .find("let congested = loss_pressure || deep || rising")
+        .expect("拥塞三判据的收口点不见了");
+    assert!(
+        streak < bump && bump < read && read < congested,
+        "水位定罪的读序不对（起算 {streak} → 计数 {bump} → 读取 {read} → 收口 {congested}）—— \
+         先读后计数会慢一拍，收口在读取之前则用的还是旧值"
+    );
+    // ④ G3：一刀之后留观察窗，且只挡「同一症状的重复定罪」，硬证据照样过。
+    assert_eq!(
+        flow.matches("self.post_cut_wait = POST_CUT_WAIT_TICKS;").count(),
+        3,
+        "减档后的观察窗赋值点不是三处（探测臂/常规减档臂/RESET 各一次）—— 有一刀不记账"
+    );
+    assert_eq!(
+        flow.matches("self.post_cut_wait -= 1;").count(),
+        1,
+        "观察窗的递减点不止一处"
+    );
+    assert!(
+        flow.contains("if self.post_cut_wait > 0 && !(rising || loss_pressure)"),
+        "观察窗不再放行硬证据 —— 真拥塞会被延迟一刀"
+    );
+    // ⑤ RESET（discard）第三条同样要过否决，且不许把 G2 的计数留给旧链。
+    let discard = flow
+        .find("fn discard(&mut self, now: u64, loss_pm: i64, rtt_ms: i64)")
+        .expect("discard 不再接收 rtt —— RESET 减档拿不到传输层口径");
+    let discard_end = flow[discard..]
+        .find("fn ack_deadline_ms")
+        .expect("ack_deadline_ms 不见了 —— 无法界定 discard 的范围");
+    let body = &flow[discard..discard + discard_end];
+    assert!(
+        body.contains("self.backlog_ms > BACKLOG_DOWN_MS && !transport_clear(rtt_ms, loss_pm)"),
+        "RESET 的第三条减档条件没有传输层否决 —— 旧链残留水位又能白砍 30%"
+    );
+    assert!(
+        body.contains("self.deep_streak = 0;"),
+        "RESET 后水位连拍计数跨链残留 —— 新链第一拍就凑满两拍"
+    );
+}

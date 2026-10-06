@@ -67,7 +67,8 @@ impl RcService {
 
     pub(in crate::rc) fn media_discarded(&self, id: &str) {
         let loss = self.stream.loss_permille().max(0);
-        self.with_media(id, |s| s.flow.discard(crate::rc::mono::mono_ms() as u64, loss));
+        let rtt = self.video_rtt_ms();
+        self.with_media(id, |s| s.flow.discard(crate::rc::mono::mono_ms() as u64, loss, rtt));
     }
 
     /// P0：这一帧被预算挡下（不阻塞、不改节拍），只把需求证据记进控制器。
