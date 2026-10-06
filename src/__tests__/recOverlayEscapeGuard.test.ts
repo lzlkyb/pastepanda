@@ -24,7 +24,7 @@ describe("录屏选区覆盖层 Esc 处理器不得丢失", () => {
   });
 
   it("preview 态兑现提示条「Esc 退出」，countdown 态兑现「Esc 取消」", () => {
-    expect(overlaySrc).toContain('phase === "preview" || phase === "failed"');
+    expect(overlaySrc).toContain("phase === \"preview\"");
     expect(overlaySrc).toContain('phase === "countdown"');
   });
 });

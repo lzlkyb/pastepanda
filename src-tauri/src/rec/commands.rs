@@ -36,14 +36,23 @@ pub fn rec_toggle(app: AppHandle) -> Result<(), String> {
 }
 
 /// 选区窗前端挂载后调：撤销存活探针（rec/mod.rs 的世代判定）。
+/// 同时恢复交互——建窗时是整窗穿透（create_selector），就绪即放开并抢焦点。
 #[tauri::command]
-pub fn rec_ready() {
+pub fn rec_ready(app: AppHandle) {
     super::mark_ready();
+    if let Some(w) = app.get_webview_window(super::SELECT_LABEL) {
+        let _ = w.set_ignore_cursor_events(false);
+        let _ = w.set_focus();
+    }
 }
 
 /// 真正开始录制（选区窗倒计时结束 → 前端调用）。成功后开控制条窗。
+/// 🔴 必须是 async：同步命令跑在**主线程**，而 open_control_window 的
+/// builder.build() 要派发到事件循环并阻塞等结果——主线程自己等自己 = 死锁，
+/// 症状是倒计时永远停在 1（recStart 永不返回）、随后一切关窗命令全部失灵
+/// （2026-10-06 实录踩坑）。async 命令跑在运行时线程，build 派发回主线程安全等待。
 #[tauri::command]
-pub fn rec_start(
+pub async fn rec_start(
     app: AppHandle,
     store: State<'_, DataStore>,
     req: RecStartReq,
@@ -77,6 +86,12 @@ pub fn rec_stop(discard: bool) -> Result<(), String> {
     session::stop(discard)
 }
 
+/// 暂停/继续（控制条按钮；幂等，收尾中拒绝）。时间轴提交驱动，暂停段不进产物。
+#[tauri::command]
+pub fn rec_pause(app: AppHandle, paused: bool) -> Result<(), String> {
+    session::set_paused(&app, paused)
+}
+
 /// 虚拟屏物理几何（选区窗坐标换算基点；与截图 ScreenInfo 同口径 camelCase）。
 #[tauri::command]
 pub fn rec_virtual_screen() -> serde_json::Value {
@@ -95,6 +110,7 @@ pub fn rec_status() -> serde_json::Value {
     serde_json::json!({
         "recording": s.recording,
         "finalizing": s.finalizing,
+        "paused": s.paused,
         "path": s.path,
         "elapsedMs": s.elapsed_ms,
         "quality": s.quality,

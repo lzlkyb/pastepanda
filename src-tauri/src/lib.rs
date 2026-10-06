@@ -1315,6 +1315,8 @@ pub fn run() {
             #[cfg(windows)]
             rec::commands::rec_stop,
             #[cfg(windows)]
+            rec::commands::rec_pause,
+            #[cfg(windows)]
             rec::commands::rec_status,
             #[cfg(windows)]
             rec::commands::rec_virtual_screen,

@@ -101,9 +101,9 @@ export function ConfirmBar(props: {
   );
 }
 
-/** 预览态提示条（底部居中；方案 A 文案 + 「整屏 →」兜底按钮）。 */
-export function PreviewHintBar({ screenCssH, screenW, screenH, onFullscreen }: {
-  screenCssH: number; screenW: number; screenH: number; onFullscreen: () => void;
+/** 预览态提示条（底部居中；方案 A 文案 + 「整屏 →」兜底 + 「✕ 退出」鼠标出口）。 */
+export function PreviewHintBar({ screenCssH, screenW, screenH, onFullscreen, onCancel }: {
+  screenCssH: number; screenW: number; screenH: number; onFullscreen: () => void; onCancel: () => void;
 }) {
   return (
     <div
@@ -124,39 +124,36 @@ export function PreviewHintBar({ screenCssH, screenW, screenH, onFullscreen }: {
         整屏 →
       </button>
       <span className="muted">·</span>
+      <button
+        type="button"
+        className="rec-glass-lnk"
+        title="关闭选区，什么都不录"
+        onClick={onCancel}
+      >
+        ✕ 退出
+      </button>
+      <span className="muted">·</span>
       <kbd>Esc</kbd>
-      <span className="muted">退出</span>
     </div>
   );
 }
 
-/** 倒计时（只盖选区）。 */
-export function CountdownOverlay({ rect, count }: { rect: Rect; count: number }) {
+/** 倒计时（只盖选区）；「取消」是鼠标出口（§17：键盘只是加速器）。 */
+export function CountdownOverlay({ rect, count, onCancel }: {
+  rect: Rect; count: number; onCancel: () => void;
+}) {
   return (
     <div
       className="rec-countdown"
       style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}
     >
       <span className="num">{Math.max(1, count)}</span>
+      <button type="button" className="rec-glass-lnk" onClick={onCancel}>
+        取消
+      </button>
       <span className="esc">
-        <kbd>Esc</kbd> 取消，回到选区
+        <kbd>Esc</kbd> 回到选区
       </span>
-    </div>
-  );
-}
-
-/** 失败卡（规则 15.3：失败必须可见可关）。 */
-export function FatalCard({ msg, onClose }: { msg: string | null; onClose: () => void }) {
-  return (
-    <div className="rec-fatal">
-      <div className="card">
-        {msg ?? "录制失败"}
-        <div>
-          <button type="button" onClick={onClose}>
-            关闭（Esc）
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

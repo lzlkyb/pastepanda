@@ -2,11 +2,15 @@
 //!
 //! 输入都是**已编码**数据（Annex-B 视频 / 裸 AAC 帧），SinkWriter 只做 mux：
 //! MP4 sink 内置 Annex-B → 长度前缀（avcC/hvcC）转换，参数集（SPS/PPS/VPS）
-//! 经 `MF_MT_MPEG_SEQUENCE_HEADER` 显式喂给它，不依赖从流里猜。
+//! 由 sink 从流内自取。🔴 不要喂 `MF_MT_MPEG_SEQUENCE_HEADER`——pass-through
+//! 输入类型带它必被拒（0xC00D36B4，2026-10-06 探针实证：start code / 裸 NAL /
+//! 长度前缀三种格式、配任意属性集都一样）。
 //!
 //! 流的建立用 **AddStream（输出类型）→ SetInputMediaType（输入类型）** 的经典
 //! 两步——windows 0.58 的 `IMFSinkWriter` 绑定没有 `SetOutputMediaType`（那是
 //! Win8+ 的后加方法，绑定元数据没跟上），`AddStream` 全版本可用且语义一致。
+//! 🔴 输出类型必须带全尺寸/帧率/码率（音轨加码率+每块采样数）：缺了的话
+//! SetInputMediaType 也报 0xC00D36B4——错误浮现在输入侧，缺的属性在输出侧。
 //!
 //! MF 时间单位 100ns；`at_ms * 10_000`。全部 COM 调用收敛在本文件，
 //! 释放顺序同 `encode_h264.rs::release_com`：先放对象引用再 CoUninitialize。
@@ -16,11 +20,11 @@
 use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::Media::MediaFoundation::{
     IMFSample, IMFSinkWriter, MFCreateMediaType, MFCreateMemoryBuffer,
-    MFCreateSample, MFCreateSinkWriterFromURL, MF_MT_AVG_BITRATE, MF_MT_AUDIO_BITS_PER_SAMPLE,
-    MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS, MF_MT_AUDIO_SAMPLES_PER_SECOND,
-    MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_MPEG_SEQUENCE_HEADER,
-    MF_MT_SUBTYPE, MF_MT_USER_DATA, MFMediaType_Audio, MFMediaType_Video, MFAudioFormat_AAC,
-    MFVideoFormat_H264, MFVideoFormat_HEVC,
+    MFCreateSample, MFCreateSinkWriterFromURL, MF_MT_AVG_BITRATE, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
+    MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
+    MF_MT_AUDIO_SAMPLES_PER_BLOCK, MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FRAME_RATE,
+    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_MT_USER_DATA, MFMediaType_Audio,
+    MFMediaType_Video, MFAudioFormat_AAC, MFVideoFormat_H264, MFVideoFormat_HEVC,
 };
 
 use super::quality;
@@ -102,15 +106,14 @@ pub struct RecSink {
 }
 
 impl RecSink {
-    /// 打开 MP4 封装。`video_seq_header` = 参数集（`extract_parameter_sets` 的产物，
-    /// 首帧里必须提得到）；音频轨可选（`None` = 纯画面）。
+    /// 打开 MP4 封装。音频轨可选（`None` = 纯画面）。
+    /// 视频参数集由 sink 从 Annex-B 流内自取（见模块头：SEQUENCE_HEADER 喂不得）。
     pub fn open(
         path: &std::path::Path,
         width: u32,
         height: u32,
         fps: u32,
         hevc: bool,
-        video_seq_header: &[u8],
         audio: Option<(u32, u32, &[u8])>, // (sample_rate, channels, asc)
         video_bitrate: u32,
     ) -> Result<Self, String> {
@@ -135,9 +138,16 @@ impl RecSink {
                 let video_subtype = if hevc { &MFVideoFormat_HEVC } else { &MFVideoFormat_H264 };
 
                 // ── 视频流：输出（容器侧）类型，AddStream 拿流号 ──
+                // 🔴 MP4 sink 的流处理器要求输出类型带全尺寸/帧率/码率，否则
+                // SetInputMediaType 一律拒之门外（报在输入侧的 0xC00D36B4，实际缺的
+                // 是**输出侧**属性——2026-10-06 探针实证：只补输出三件套即过）
                 let vout = MFCreateMediaType().map_err(mf_err)?;
                 vout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
                 vout.SetGUID(&MF_MT_SUBTYPE, video_subtype).map_err(mf_err)?;
+                vout.SetUINT64(&MF_MT_FRAME_SIZE, ((width as u64) << 32) | height as u64)
+                    .map_err(mf_err)?;
+                vout.SetUINT64(&MF_MT_FRAME_RATE, ((fps as u64) << 32) | 1).map_err(mf_err)?;
+                vout.SetUINT32(&MF_MT_AVG_BITRATE, video_bitrate).map_err(mf_err)?;
                 let video_stream = writer.AddStream(&vout).map_err(mf_err)?;
 
                 // ── 视频流：输入（已编码 Annex-B）类型 ──
@@ -148,13 +158,13 @@ impl RecSink {
                     .map_err(mf_err)?;
                 vin.SetUINT64(&MF_MT_FRAME_RATE, ((fps as u64) << 32) | 1).map_err(mf_err)?;
                 vin.SetUINT32(&MF_MT_AVG_BITRATE, video_bitrate).map_err(mf_err)?;
-                if !video_seq_header.is_empty() {
-                    vin.SetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, video_seq_header)
-                        .map_err(mf_err)?;
-                }
                 writer.SetInputMediaType(video_stream, &vin, None).map_err(mf_err)?;
 
                 // ── 音频流（可选）：裸 AAC 帧 + ASC ──
+                // 音频与视频同理：缺 AVG_BYTES_PER_SECOND / SAMPLES_PER_BLOCK 会吃同样的
+                // MF_E_INVALIDMEDIATYPE；ASC 放**输入侧**会被拒、双侧都放才过
+                //（码率与 rc/audio.rs 编码器同源，128kbps）
+                let aac_br = crate::rc::audio::BITRATE_BPS / 8;
                 let mut audio_stream = None;
                 let mut audio_frame_t100 = 0i64;
                 if let Some((sr, ch, asc)) = audio {
@@ -165,6 +175,9 @@ impl RecSink {
                     aout.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
                     aout.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
                     aout.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aac_br).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_BLOCK, 1024).map_err(mf_err)?;
+                    aout.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
                     let stream = writer.AddStream(&aout).map_err(mf_err)?;
                     let ain = MFCreateMediaType().map_err(mf_err)?;
                     ain.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
@@ -173,6 +186,8 @@ impl RecSink {
                     ain.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
                     ain.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
                     ain.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aac_br).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_BLOCK, 1024).map_err(mf_err)?;
                     ain.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
                     writer.SetInputMediaType(stream, &ain, None).map_err(mf_err)?;
                     audio_stream = Some(stream);
@@ -294,6 +309,81 @@ pub(crate) fn sink_params(q: quality::RecQuality, src_w: u32, src_h: u32) -> Sin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    // ── 回归（2026-10-06 首次实录 0xC00D36B4）：MP4 sink 的 pass-through 校验
+    // 三条铁律，靠逐属性探针实证——
+    //   ① 输出类型必须带全尺寸/帧率/码率（缺了报在 SetInputMediaType，极具迷惑性）；
+    //   ② 输入类型带 MF_MT_MPEG_SEQUENCE_HEADER 必被拒（任何格式/属性组合），
+    //     参数集只能靠 sink 从 Annex-B 流内自取；
+    //   ③ 音频两侧要补 AVG_BYTES_PER_SECOND + SAMPLES_PER_BLOCK，ASC 双侧都放才过。
+    // 本测试走生产路径 RecSink::open 全真装配（含音轨），再用真编码器的帧走一次
+    // 写入 + finalize，断言 moov 里出现 avcC（参数集真的进了容器）。编码器
+    // 打不开的机器上端到端段优雅跳过。 ──
+    #[test]
+    fn 开封装_真实媒体类型含音轨() {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        crate::rc::encode_h264::ensure_mf_startup().unwrap();
+
+        let asc = [0x11u8, 0x90]; // AAC-LC 48kHz 立体声的 ASC（AOT=2, freqIdx=3, chCfg=2）
+        let (w, h, fps, br) = (320u32, 240u32, 30u32, 2_000_000u32);
+
+        // ── 段 1：生产路径开封装（视频 + 音轨全真类型）──
+        let path = std::env::temp_dir().join("rec_sink_regression.mp4");
+        let _ = std::fs::remove_file(&path);
+        let mut sink = RecSink::open(&path, w, h, fps, false, Some((48000, 2, &asc)), br)
+            .expect("生产同款媒体类型必须能开出 MP4 封装（视频+音轨）");
+
+        // ── 段 2：真编码器端到端——写帧、finalize、moov 必须出现 avcC ──
+        let mut enc = crate::rc::encode_h264::H264SessionEncoder::try_open(
+            crate::rc::encode_h264::VideoCodec::H264,
+            w,
+            h,
+            fps,
+        );
+        let frame = vec![96u8; (w * h * 4) as usize];
+        let mut packets = Vec::new();
+        for i in 0..12i64 {
+            match enc.encode_bgra(&frame, w, h) {
+                Ok(mut ps) => {
+                    for p in ps.iter_mut() {
+                        p.at_ms = i * 33; // 时间轴归一到 30fps 步进
+                    }
+                    packets.extend(ps);
+                }
+                Err(e) => {
+                    println!("（编码器本机不可用，端到端段跳过：{e}）");
+                    break;
+                }
+            }
+            if packets.len() >= 3 && packets.iter().any(|p| p.key) {
+                break;
+            }
+        }
+        if packets.iter().any(|p| p.key) {
+            // 生产同款门卫：首关键帧里必须提得到参数集
+            let key = packets.iter().find(|p| p.key).unwrap();
+            assert!(!extract_parameter_sets(false, &key.data).is_empty(), "关键帧必须含 SPS/PPS");
+            for p in &packets {
+                sink.write_video(p.at_ms, &p.data).expect("写帧必须成功");
+            }
+            sink.finalize().expect("finalize 必须成功");
+            drop(sink);
+            let bytes = std::fs::read(&path).unwrap();
+            assert!(
+                bytes.windows(4).any(|win| win == b"avcC"),
+                "moov 必须带 avcC——sink 没从流里收到参数集"
+            );
+        } else {
+            // 编码器缺席：类型装配（本回归的本体）已在 open 处验证过；
+            // 空 sink 不能 finalize（0xC00D4A44 = 未处理任何 sample），直接丢弃
+            drop(sink);
+        }
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn 提取参数集_h264() {

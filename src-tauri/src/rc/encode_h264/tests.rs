@@ -126,6 +126,7 @@ fn 码率基准的帧率因子只乘一次() {
         resolution_limit: 0,
         capture_times: std::collections::VecDeque::new(),
         next_capture_at: 0,
+        file_mode: false,
     };
     // 1080p120：8M × 2.6 = 20.8M——不是 ×2.6² 的 54M
     assert_eq!(enc.scaled_bitrate(), 20_800_000);

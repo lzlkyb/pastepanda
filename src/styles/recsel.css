@@ -235,39 +235,10 @@ body {
   color: rgba(255, 255, 255, 0.75); /* ui-rule-ok: 见文件头①（同在倒计时层内） */
 }
 
-/* ===== 失败/加载卡（同截图 .shot-fatal 的浮层令牌兜底） ===== */
-.rec-fatal {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-primary);
-}
-
-.rec-fatal .card {
-  max-width: 420px;
-  padding: 16px;
-  border-radius: 12px;
-  font-size: 12px;
-  line-height: 1.7;
-  text-align: center;
-  background: color-mix(in srgb, var(--danger-bg) 40%, var(--float-card-bg, var(--card-bg)));
-  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--float-card-border, var(--border-color)));
-  box-shadow: var(--float-card-shadow);
-  color: var(--danger);
-}
-
-.rec-fatal .card button {
-  margin-top: 8px;
-  padding: 4px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--shot-bar-border);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
+/* 倒计时层本体 pointer-events:none（不挡选区预览），取消按钮单独放开 */
+.rec-countdown button {
+  pointer-events: auto;
+  color: #fff; /* ui-rule-ok: 同在倒计时层内，不随主题反色 */
 }
 
 /* ===== 控制条窗（rec-control.html）===== */
@@ -322,6 +293,16 @@ body {
   50% {
     opacity: 0.25;
   }
+}
+
+/* 暂停态（三期 1.4）：红点停闪改琥珀，与「REC 录制中」一眼可辨 */
+.rec-recdot.rec-paused {
+  color: var(--warning);
+}
+
+.rec-recdot.rec-paused i {
+  background: var(--warning);
+  animation: none;
 }
 
 .rec-timer {

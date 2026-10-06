@@ -18,6 +18,7 @@ import {
   recListFiles,
   recOpenFile,
   recRerecord,
+  recSetPaused,
   recStart,
   recStop,
 } from "./rec";
@@ -54,6 +55,13 @@ describe("rec IPC 传参形状", () => {
   it("rec_stop 的形参就是标量 discard，平传不包裹", async () => {
     await recStop(true);
     expect(h.invoke).toHaveBeenCalledWith("rec_stop", { discard: true });
+  });
+
+  it("rec_pause 的形参就是标量 paused，平传不包裹（三期暂停续录）", async () => {
+    await recSetPaused(true);
+    expect(h.invoke).toHaveBeenCalledWith("rec_pause", { paused: true });
+    await recSetPaused(false);
+    expect(h.invoke).toHaveBeenCalledWith("rec_pause", { paused: false });
   });
 
   it("无参命令不夹带多余键", async () => {

@@ -30,6 +30,8 @@ export interface RecStartReq {
 export interface RecStatus {
   recording: boolean;
   finalizing: boolean;
+  /** true = 暂停中（不录内容、控制条计时冻结）。 */
+  paused: boolean;
   path: string | null;
   elapsedMs: number;
   quality: RecQualityKey | null;
@@ -90,6 +92,11 @@ export function recStart(req: RecStartReq): Promise<void> {
 
 export function recStop(discard = false): Promise<void> {
   return invokeVoid("rec_stop", { discard });
+}
+
+/** 暂停/继续（控制条按钮）。幂等；收尾中后端拒绝。 */
+export function recSetPaused(paused: boolean): Promise<void> {
+  return invokeVoid("rec_pause", { paused });
 }
 
 export function recStatus(): Promise<RecStatus> {

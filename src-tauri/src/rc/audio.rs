@@ -43,8 +43,9 @@ pub(super) const MAGIC: &[u8; 6] = b"PPAUD1";
 const AAC_SAMPLES_PER_FRAME: usize = 1024;
 /// 编码声道数（采集侧缩混到此）。
 const CHANNELS: u32 = 2;
-/// 目标码率：128kbps 立体声（桌面音频透明档）。
-const BITRATE_BPS: u32 = 128_000;
+/// 目标码率：128kbps 立体声（桌面音频透明档）。rec/ 的 MP4 音轨装配同用此值
+/// （MF_MT_AUDIO_AVG_BYTES_PER_SECOND = 此值/8），改这里两处同步。
+pub(crate) const BITRATE_BPS: u32 = 128_000;
 /// 发起端收包队列上限（≈40ms/包 → 2.5s）；满了丢最旧的——音频要新鲜。
 const QUEUE_CAP: usize = 64;
 

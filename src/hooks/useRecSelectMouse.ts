@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { inRect, normalizeEven, pickSnapCandidate, toLocalCssRect, type Rect } from "@/components/recsel/snap";
 import type { RecScreenInfo } from "@/lib/api/rec";
 
-export type Phase = "preview" | "dragging" | "confirm" | "countdown" | "recording" | "failed";
+export type Phase = "preview" | "dragging" | "confirm" | "countdown" | "recording";
 
 export function useRecSelectMouse(
   phase: Phase,

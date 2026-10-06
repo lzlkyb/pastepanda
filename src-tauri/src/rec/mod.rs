@@ -10,6 +10,7 @@
 #![cfg(target_os = "windows")]
 
 pub mod commands;
+pub mod pointer;
 pub mod quality;
 pub mod scan;
 pub mod session;
@@ -31,7 +32,10 @@ static CREATING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// 窗口世代号：每次新建 +1，探针据此不误杀新一轮窗口。
 static GEN: AtomicU64 = AtomicU64::new(0);
 static READY_GEN: AtomicU64 = AtomicU64::new(0);
-const READY_TIMEOUT: Duration = Duration::from_secs(5);
+/// 10s（原 5s）：dev 下页面加载慢/被外部触发的整页 reload 打断时，5s 会把
+/// 好端端的选区窗误杀（2026-10-06 实录）。就绪前整窗穿透（见 create_selector），
+/// 没渲染好的窗口不吃点击，放宽超时不会变成陷阱。
+const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// 一次性交给 HUD 窗的数据（窗挂载后 rec_hud_take 取走；新事件覆盖旧值）。
 static HUD_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
@@ -216,6 +220,10 @@ fn create_selector(app: &AppHandle, url: &str) {
                 // 用物理量覆盖一次；此时窗还 invisible，用户看不到中间帧。
                 let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
                 let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                // 🔴 就绪前整窗穿透：页面加载慢/被整页 reload 打断期间，一个没渲染
+                // 出来的全屏窗绝不能吃用户的点击（卡死陷阱的延伸教训）。
+                // rec_ready 到达时恢复交互并抢焦点（见 commands::rec_ready）。
+                let _ = window.set_ignore_cursor_events(true);
                 let _ = window.show();
                 let _ = window.set_focus();
                 let probe = app.clone();
@@ -296,12 +304,16 @@ fn monitor_scale_at(app: &AppHandle, x: i32, y: i32) -> f64 {
     1.0
 }
 
-/// 关闭录屏相关窗口（选区 + 控制条）。会话收尾事件到达后由前端触发，
-/// 也可在后端启动失败路径直接调用。
+/// 关闭录屏相关窗口（选区 + 控制条）。会话收尾由后端权威调用（见 session::start），
+/// 前端 rec_close_windows 只是冗余保险。
+/// 🔴 用 destroy() 强拆而非 close()：destroy 绕过 CloseRequested 流程，
+/// 不给任何 handler「拦一下」的机会——2026-10-06 实录踩坑后收尾只许成功不许失败。
 pub fn close_windows(app: &AppHandle) {
     for label in [SELECT_LABEL, CONTROL_LABEL] {
         if let Some(w) = app.get_webview_window(label) {
-            let _ = w.close();
+            if let Err(e) = w.destroy() {
+                log::warn!("[Rec] 强拆窗口 {label} 失败: {e}");
+            }
         }
     }
 }

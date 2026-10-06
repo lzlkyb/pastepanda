@@ -26,6 +26,11 @@ window.addEventListener("unhandledrejection", (event) => {
 
 // 主题跟随（同 screenshot-main：先默认防裸样式，再读用户主题，并监听广播）
 applyTheme(DEFAULT_THEME);
+// 🔴 入口脚本执行 = 模块图加载完成——此刻立即报就绪，不等 React 渲染：
+// dev 下外部工具写文件会触发 vite 全量 reload 反复打断页面加载，挂载级的
+// recReady 可能永远轮不到执行，选区窗会被后端存活探针误杀（2026-10-06 实录）。
+// React 崩溃仍有 ErrorBoundary/CrashPanel + 后端权威收尾兜底，探针语义不变。
+invoke("rec_ready").catch(() => {});
 invoke<{ theme?: string }>("get_config")
   .then((cfg) => {
     applyTheme(normalizeTheme(cfg?.theme));

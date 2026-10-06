@@ -169,10 +169,34 @@ impl FfEncoder {
         fps: u32,
         bitrate: u32,
     ) -> Result<Self, String> {
+        Self::open_mode(codec, width, height, fps, bitrate, false)
+    }
+
+    /// 本地录制档（rec/）：峰值受限 VBR——峰值 2×均值、qsv 不再强落 CBR
+    ///（rc_max_rate > bit_rate 时 qsvenc 按 VBR 推导）、码率缓冲放宽到 1s
+    /// （实时 200ms VBV 会掐掉文件录制的突发画质）。
+    pub(in crate::rc) fn open_file(
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<Self, String> {
+        Self::open_mode(codec, width, height, fps, bitrate, true)
+    }
+
+    fn open_mode(
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+        vbr: bool,
+    ) -> Result<Self, String> {
         let ff = ff()?;
         let mut errs = Vec::new();
         for cand in candidates(codec) {
-            match Self::open_one(ff, cand, codec, width, height, fps, bitrate) {
+            match Self::open_one(ff, cand, codec, width, height, fps, bitrate, vbr) {
                 Ok(me) => {
                     log::info!(
                         "[RC] FFmpeg 后端选定 {}（{}x{} {}fps {}kbps，候选链其余候选：{}）",
@@ -198,6 +222,7 @@ impl FfEncoder {
         height: u32,
         fps: u32,
         bitrate: u32,
+        vbr: bool,
     ) -> Result<Self, String> {
         let (codec_name, _, cbr_align) = *cand;
         let cname = CString::new(codec_name).map_err(|_| "编码器名含 NUL")?;
@@ -231,15 +256,22 @@ impl FfEncoder {
             c.time_base = AVRational::new(1, fp);
             c.framerate = AVRational::new(fp, 1);
             c.bit_rate = bitrate as i64;
+            // 峰值：实时档 = 均值（CBR 口径）；录制档 = 2×均值（突发不糊、静态下沉）。
+            let peak = if vbr { bitrate.saturating_mul(2) as i64 } else { bitrate as i64 };
             if cand.0.ends_with("_nvenc") {
                 // 默认 VBV 可积攒数秒；桌面实时媒体只给 200ms 码率缓冲。
-                c.rc_max_rate = bitrate as i64;
-                c.rc_buffer_size = (bitrate / 5).max(16_000) as i32;
+                c.rc_max_rate = peak;
+                c.rc_buffer_size = if vbr {
+                    bitrate.max(16_000) as i32
+                } else {
+                    (bitrate / 5).max(16_000) as i32
+                };
             }
             if cbr_align {
                 // 🔴 qsv 落 CBR 的唯一入口：rc_max_rate == bit_rate
-                //（qsvenc.c:570 select_rc_mode 由公共字段推导，无 rc_mode 私有选项）
-                c.rc_max_rate = bitrate as i64;
+                //（qsvenc.c:570 select_rc_mode 由公共字段推导，无 rc_mode 私有选项）。
+                // 录制档刻意 max > mean ⇒ qsv 按公共字段推导出 VBR。
+                c.rc_max_rate = peak;
             }
             // 🔴 再审计 P3-12（2026-09-25）：GOP = fps×1（1s），与 MF 侧
             // `GoPSize=1s`（mf.rs）同口径。曾是 ×2（2s）：解码断链又没等到
@@ -510,7 +542,7 @@ mod tests {
     #[ignore = "需要本机 NVENC，验证输出等待而非仅核对参数"]
     fn nvenc_outputs_each_input_without_waiting_for_the_next_capture() {
         for codec in [VideoCodec::H264, VideoCodec::Hevc] {
-            let mut enc = FfEncoder::open_one(ff().unwrap(), &candidates(codec)[0], codec, 960, 540, 10, 400_000).unwrap();
+            let mut enc = FfEncoder::open_one(ff().unwrap(), &candidates(codec)[0], codec, 960, 540, 10, 400_000, false).unwrap();
             let mut pixels = vec![128; 960 * 540 * 3 / 2];
             for n in 0..12 {
                 pixels[..128].fill((32 + n * 12) as u8);

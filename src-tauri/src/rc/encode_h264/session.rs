@@ -83,6 +83,8 @@ pub struct H264SessionEncoder {
     pub(in crate::rc) resolution_limit: u32,
     pub(in crate::rc) capture_times: std::collections::VecDeque<i64>,
     pub(in crate::rc) next_capture_at: i64,
+    /// 本地录制档（`try_open_for_file`）：失败重开也走质量导向码控。
+    pub(in crate::rc) file_mode: bool,
 }
 
 // windows-rs COM 指针非 Send；本进程 MTA + 会话任务串行访问。
@@ -145,28 +147,52 @@ impl Backend {
 /// FF 兜底，DLL 已编入 hevc_nvenc/hevc_qsv/hevc_amf）。
 /// HEVC→H264 的会话级回落语义在调用方（`try_open_with_scale` / `on_open_fail`），
 /// 那里把目标标准改成 H264 后重走本函数。
+/// `file=true` = 本地录制档（质量导向码控，见 [`MfH264Encoder::open_for_file`]）。
 fn open_chain(
     codec: VideoCodec,
     width: u32,
     height: u32,
     fps: u32,
     bitrate: u32,
+    file: bool,
 ) -> Result<Backend, String> {
     // P2.3：MF 无 AV1——直接走 FF 候选链（av1_nvenc/qsv/amf）。
     if codec == VideoCodec::Av1 {
-        return FfEncoder::open(codec, width, height, fps, bitrate).map(Backend::Ff);
+        return if file {
+            FfEncoder::open_file(codec, width, height, fps, bitrate)
+        } else {
+            FfEncoder::open(codec, width, height, fps, bitrate)
+        }
+        .map(Backend::Ff);
     }
-    match MfH264Encoder::open(codec, width, height, fps, bitrate) {
+    let mf = if file {
+        MfH264Encoder::open_for_file(codec, width, height, fps, bitrate)
+    } else {
+        MfH264Encoder::open(codec, width, height, fps, bitrate)
+    };
+    match mf {
         Ok(e) => Ok(Backend::Mf(e)),
-        Err(mf_err) => match FfEncoder::open(codec, width, height, fps, bitrate) {
-            Ok(e) => Ok(Backend::Ff(e)),
-            Err(ff_err) => Err(format!("MF：{mf_err}；FF：{ff_err}")),
-        },
+        Err(mf_err) => {
+            let ff = if file {
+                FfEncoder::open_file(codec, width, height, fps, bitrate)
+            } else {
+                FfEncoder::open(codec, width, height, fps, bitrate)
+            };
+            match ff {
+                Ok(e) => Ok(Backend::Ff(e)),
+                Err(ff_err) => Err(format!("MF：{mf_err}；FF：{ff_err}")),
+            }
+        }
     }
 }
 
 impl H264SessionEncoder {
-    pub(in crate::rc) fn set_capture_at(&mut self, at_ms: i64) { self.next_capture_at = at_ms; }
+    /// 设定下一帧的时间戳（ms，编码器内部单调时间轴）。推流侧由 media_flow 按
+    /// 帧龄驱动；**录屏（rec/）按提交帧号驱动**（`已提交帧数 × 1000 / fps`）——
+    /// 不驱动它 at_ms 恒 0，整条视频时间轴塌在 0 上（2026-10-06 三期 P0）。
+    pub fn set_capture_at(&mut self, at_ms: i64) {
+        self.next_capture_at = at_ms;
+    }
 
     fn stamp_packets(&mut self, result: Result<Vec<H264Packet>, String>) -> Result<Vec<H264Packet>, String> {
         match result {
@@ -216,6 +242,7 @@ impl H264SessionEncoder {
             resolution_limit: 0,
             capture_times: std::collections::VecDeque::new(),
             next_capture_at: 0,
+            file_mode: false,
         }
     }
 
@@ -245,13 +272,13 @@ impl H264SessionEncoder {
         let base_bitrate = bitrate_for_width(width);
         // 初始打开的实际码率 = 基准 × 帧率因子 × 缩放，与 scaled_bitrate 同口径
         let initial = ((base_bitrate as u64 * fps_bitrate_factor(fps) * scale as u64) / 10_000) as u32;
-        match open_chain(codec, width, height, fps, initial) {
+        match open_chain(codec, width, height, fps, initial, false) {
             Ok(enc) => Self::shell(codec, Some(enc), base_bitrate, fps, scale, false),
             Err(e) => {
                 if codec == VideoCodec::Hevc {
                     // HEVC 目标回落 H.264 时走同一条 open_chain：MF H264 也不行
                     // 还会试 FF（2026-09-19 P2 修复的延续，FF 是链上新增的下一级）。
-                    if let Ok(enc) = open_chain(VideoCodec::H264, width, height, fps, initial) {
+                    if let Ok(enc) = open_chain(VideoCodec::H264, width, height, fps, initial, false) {
                         log::warn!("[RC] HEVC 初始打开失败，按回落链改用 H.264：{e}");
                         return Self::shell(
                             VideoCodec::H264,
@@ -278,16 +305,30 @@ impl H264SessionEncoder {
     /// 原为远控「发送预算」专用（pub(in crate::rc)）；录屏（rec/）同样按
     /// 固定码率开本地编码会话——budget 路径下重开时码率恒定，语义正合适。
     pub fn try_open_with_budget(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32) -> Self {
+        Self::try_open_fixed(codec, w, h, fps, bps, false)
+    }
+
+    /// 本地录制（rec/）专用：固定码率 + **质量导向码控**（MF=PeakConstrainedVBR、
+    /// FF=峰值受限），失败重开同档。与 `try_open_with_budget` 唯一差别是打开
+    /// 链走 file 档。
+    pub fn try_open_for_file(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32) -> Self {
+        Self::try_open_fixed(codec, w, h, fps, bps, true)
+    }
+
+    /// 结构体装配收口（规则 11.1 同款）：budget 与 file 两个出口只差 `file`，
+    /// 装配逻辑只许有一份。
+    fn try_open_fixed(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32, file: bool) -> Self {
         let bps = bps.max(400_000);
-        let enc = open_chain(codec, w, h, fps, bps);
+        let enc = open_chain(codec, w, h, fps, bps, file);
         let mut result = match enc {
             Ok(enc) => Self::shell(codec, Some(enc), bitrate_for_width(w), fps, 100, false),
             Err(_) if codec == VideoCodec::Hevc => Self::shell(VideoCodec::H264,
-                open_chain(VideoCodec::H264, w, h, fps, bps).ok(), bitrate_for_width(w), fps, 100, true),
+                open_chain(VideoCodec::H264, w, h, fps, bps, file).ok(), bitrate_for_width(w), fps, 100, true),
             Err(e) => { log::warn!("[RC] 编码器起播失败：{e}");
                 Self::shell(codec, None, bitrate_for_width(w), fps, 100, false) }
         };
         result.budget_bps = Some(bps);
+        result.file_mode = file;
         result
     }
 
@@ -429,11 +470,18 @@ impl H264SessionEncoder {
             crate::rc::perf::bump(&crate::rc::perf::counters::ENC_REOPEN);
             // 本会话已经用 FF 正常出包时，重开先复用已验证的后端；不能每次
             // 换 fps/尺寸都花约 1 秒重试刚失败的 MF。FF 再失败仍走完整回落链。
+            // file 档（rec/）重开同样保持质量导向码控，不许悄悄退回 CBR。
             let opened = if matches!(self.enc.as_ref(), Some(Backend::Ff(_))) {
-                FfEncoder::open(self.codec, ew, eh, self.fps, self.scaled_bitrate())
+                let open_ff: fn(VideoCodec, u32, u32, u32, u32) -> Result<FfEncoder, String> =
+                    if self.file_mode { FfEncoder::open_file } else { FfEncoder::open };
+                open_ff(self.codec, ew, eh, self.fps, self.scaled_bitrate())
                     .map(Backend::Ff)
-                    .or_else(|_| open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate()))
-            } else { open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate()) };
+                    .or_else(|_| {
+                        open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode)
+                    })
+            } else {
+                open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode)
+            };
             match opened {
                 Ok(e) => {
                     self.enc = Some(e);

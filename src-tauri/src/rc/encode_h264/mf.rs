@@ -82,7 +82,20 @@ impl MfH264Encoder {
         true
     }
     pub fn open(codec: VideoCodec, width: u32, height: u32, fps: u32, bitrate: u32) -> Result<Self, String> {
-        Self::open_inner(codec, width, height, fps, bitrate, None)
+        Self::open_inner(codec, width, height, fps, bitrate, None, false)
+    }
+
+    /// 本地录制（rec/）专用：质量导向码控。峰值受限 VBR（均值 = 档位码率当目标、
+    /// 峰值 2×），静态桌面画面码率自然下沉、突发画面不糊；跳过滚动帧内刷新与
+    /// 参考帧限制（弱网恢复手段，文件录制用不上还压画质）。
+    pub fn open_for_file(
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+    ) -> Result<Self, String> {
+        Self::open_inner(codec, width, height, fps, bitrate, None, true)
     }
 
     /// P1：D3D11 零拷贝模式。编码器绑定 D3D 设备（MF_SA_D3D11_AWARE 的
@@ -96,7 +109,7 @@ impl MfH264Encoder {
         fps: u32,
         bitrate: u32,
     ) -> Result<Self, String> {
-        Self::open_inner(codec, width, height, fps, bitrate, Some((device, ctx)))
+        Self::open_inner(codec, width, height, fps, bitrate, Some((device, ctx)), false)
     }
 
     fn open_inner(
@@ -106,6 +119,7 @@ impl MfH264Encoder {
         fps: u32,
         bitrate: u32,
         gpu: Option<(&ID3D11Device, &ID3D11DeviceContext)>,
+        vbr: bool,
     ) -> Result<Self, String> {
         unsafe {
             // 🔴 这里就是真机「硬编全败」的第一现场（2026-09-23）：本函数由 async 的
@@ -208,9 +222,12 @@ impl MfH264Encoder {
                 None => None,
             };
             // 🔴 低延迟三件套（2026-09-19）：MFT 默认带流水线缓冲（实测吃掉数帧、
-            // 20~60ms），远程画面必须逐帧进出。
+            // 20~60ms），远程画面必须逐帧进出。**录制档（vbr=true）也必须保留**：
+            // `submit_and_collect` 的异步收包循环依赖「一进一出」（collected==0
+            // 即报错），去掉低延迟 MFT 会流水线缓冲数帧，提交循环直接超时报错。
+            // 质量收益来自下面的码控，不来自延迟标志（2026-10-06 录屏三期）。
             // ① MF_LOW_LATENCY（IMFAttributes，Win8+）；② AVLowLatencyMode（ICodecAPI）；
-            // ③ 显式码控 CBR + GOP，替换「只设 MF_MT_AVG_BITRATE」的默认行为。
+            // ③ 显式码控 + GOP，替换「只设 MF_MT_AVG_BITRATE」的默认行为。
             // 任何一项不被支持都只 warn——编码器按默认行为继续工作。
             if let Ok(attrs) = transform.cast::<IMFAttributes>() {
                 if let Err(e) = attrs.SetUINT32(&MF_LOW_LATENCY, 1) {
@@ -220,25 +237,58 @@ impl MfH264Encoder {
             let codec_api: Option<ICodecAPI> = transform.cast::<ICodecAPI>().ok();
             if let Some(api) = &codec_api {
                 codecapi_set_u32(api, &CODECAPI_AVLowLatencyMode, 1, "AVLowLatencyMode");
-                codecapi_set_u32(
-                    api,
-                    &CODECAPI_AVEncCommonRateControlMode,
-                    eAVEncCommonRateControlMode_CBR.0 as u32,
-                    "RateControlMode=CBR",
-                );
-                codecapi_set_u32(api, &CODECAPI_AVEncCommonMeanBitRate, bitrate, "MeanBitRate");
+                if vbr {
+                    // 本地录制档：峰值受限 VBR——均值给档位码率当目标、峰值 2×
+                    // （突发画面不糊、静态画面省体积）。
+                    codecapi_set_u32(
+                        api,
+                        &CODECAPI_AVEncCommonRateControlMode,
+                        eAVEncCommonRateControlMode_PeakConstrainedVBR.0 as u32,
+                        "RateControlMode=PeakVBR(rec)",
+                    );
+                    codecapi_set_u32(api, &CODECAPI_AVEncCommonMeanBitRate, bitrate, "MeanBitRate");
+                    codecapi_set_u32(
+                        api,
+                        // windows-rs 的 IDL 名：codecapi.h 的 CODECAPI_AVEncCommonMaxBitRate
+                        //（峰值受限 VBR 的峰值；HEVC/H.264 MFT 文档同此键）
+                        &CODECAPI_AVEncCommonMaxBitRate,
+                        bitrate.saturating_mul(2),
+                        "PeakBitRate=2xMean(rec)",
+                    );
+                } else {
+                    codecapi_set_u32(
+                        api,
+                        &CODECAPI_AVEncCommonRateControlMode,
+                        eAVEncCommonRateControlMode_CBR.0 as u32,
+                        "RateControlMode=CBR",
+                    );
+                    codecapi_set_u32(api, &CODECAPI_AVEncCommonMeanBitRate, bitrate, "MeanBitRate");
+                }
                 // P0-3：GOP = fps×1（1s）。之前是 ×2（2s）：解码断链又没等到
                 // ForceKeyFrame 时要花 2s 等自然 GOP。request_key 自愈兜底 + 1s GOP。
                 codecapi_set_u32(api, &CODECAPI_AVEncMPVGOPSize, fps.max(1), "GoPSize=1s");
-                // P2-2：滚动帧内刷新（Gradual Intra Refresh）——用「每帧刷一列宏块」
-                // 代替整帧 IDR：码率不突刺、丢包局部愈合。厂商 MFT 支持度参差
-                //（NVENC/新 Intel 支持），不支持只 warn，编码器按默认行为继续。
-                codecapi_set_u32(
-                    api,
-                    &CODECAPI_AVEncVideoGradualIntraRefresh,
-                    fps.max(1),
-                    "GradualIntraRefresh(1s周期)",
-                );
+                if !vbr {
+                    // 这两项是**弱网恢复**手段（码率不突刺、丢包局部愈合、出错
+                    // 恢复范围小），文件录制没有网络代价，还压画质——录制档跳过。
+                    // P2-2：滚动帧内刷新（Gradual Intra Refresh）——用「每帧刷一列宏块」
+                    // 代替整帧 IDR。厂商 MFT 支持度参差（NVENC/新 Intel 支持），
+                    // 不支持只 warn，编码器按默认行为继续。
+                    codecapi_set_u32(
+                        api,
+                        &CODECAPI_AVEncVideoGradualIntraRefresh,
+                        fps.max(1),
+                        "GradualIntraRefresh(1s周期)",
+                    );
+                    // ② **参考帧压到 1**：解码端内存与出错恢复范围都变小，编码器
+                    //    也不需要维护长参考列表。代价是多帧参考带来的压缩收益，
+                    //    对「静止为主 + 局部运动」的桌面画面影响很小。
+                    codecapi_set_u32(
+                        api,
+                        &CODECAPI_AVEncVideoMaxNumRefFrame,
+                        1,
+                        "MaxNumRefFrame=1",
+                    );
+                }
                 // Q1：标注 limited range（尽力而为）。色彩矩阵没有 ICodecAPI 键——
                 // 编码侧已统一 BT.709（dxgi/gpu），未标注 VUI 的 HD 流浏览器按
                 // 709 解读，两侧口径一致。
@@ -254,20 +304,13 @@ impl MfH264Encoder {
                 // ① **禁 B 帧**：B 帧需要等后续参考帧才能编码/输出，直接多出
                 //    一帧以上的编码延迟与重排序缓冲。屏幕内容（大量静止块 +
                 //    突变区域）本来就不吃 B 帧的码率收益，远程画面更没有理由用。
+                //    🔴 录制档也必须禁：一进一出的收包假设依赖无 B 帧（有 B 帧
+                //    时输出会滞后输入数帧，`collected == 0` 判死）。
                 codecapi_set_u32(
                     api,
                     &CODECAPI_AVEncMPVDefaultBPictureCount,
                     0,
                     "DefaultBPictureCount=0(禁B帧)",
-                );
-                // ② **参考帧压到 1**：解码端内存与出错恢复范围都变小，编码器
-                //    也不需要维护长参考列表。代价是多帧参考带来的压缩收益，
-                //    对「静止为主 + 局部运动」的桌面画面影响很小。
-                codecapi_set_u32(
-                    api,
-                    &CODECAPI_AVEncVideoMaxNumRefFrame,
-                    1,
-                    "MaxNumRefFrame=1",
                 );
                 // ❗ 刻意**不设** `CODECAPI_AVEncCommonQualityVsSpeed`：它是
                 //    「画质 ↔ 编码耗时」的权衡旋钮，设成偏速度会直接糊画面。

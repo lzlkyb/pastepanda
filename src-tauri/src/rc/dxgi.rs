@@ -31,6 +31,26 @@ use windows::Win32::System::Com::CoUninitialize;
 /// （type 别名只为过 clippy::type_complexity，语义仍是三元组，调用方可直接解构。）
 pub type GrabbedFrame<'a> = (u32, u32, &'a [u8]);
 
+/// [`DxgiPool::grab_rec`] 的成功返回：`(帧, 指针快照)`。指针 None = 光标
+/// 不在任何可复制输出上（或形状取不到），调用方按「无指针」画。
+pub type GrabbedRec<'a> = (GrabbedFrame<'a>, Option<PtrSnapshot>);
+
+/// 随帧交出的指针快照（形状数据为拷贝，跨 grab 有效）。
+/// 坐标为**桌面/虚拟屏**物理像素；`x/y` 是热点（尖端）位置。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PtrSnapshot {
+    pub x: i32,
+    pub y: i32,
+    pub hot_x: u32,
+    pub hot_y: u32,
+    /// DXGI_OUTDUPL_POINTER_SHAPE_TYPE 原始值（1=MONOCHROME 2=COLOR 3=MASKED_COLOR）。
+    pub kind: u32,
+    pub w: u32,
+    pub h: u32,
+    pub pitch: u32,
+    pub data: Vec<u8>,
+}
+
 /// 单个输出的 duplicator + 复用的读回缓冲。
 struct OutputDup {
     dup: IDXGIOutputDuplication,
@@ -44,6 +64,26 @@ struct OutputDup {
     gpu_staging: Option<ID3D11Texture2D>,
     /// 最近一次读回的 BGRA（跨圈保留：虚拟屏拼接时，没更新的输出沿用旧内容）。
     buf: Vec<u8>,
+    /// 指针形状缓冲（GetFramePointerShape 的目标，跨帧复用；256KB 起步，
+    /// 不够时按驱动要求的尺寸扩一次）。成功取到后 truncate 到有效长度。
+    ptr_shape: Vec<u8>,
+    /// 最近一次取到的指针状态（None = 光标不在这块输出上 / 取形状失败）。
+    ptr: Option<PtrMeta>,
+}
+
+/// 指针元数据（不含形状字节——字节在 `OutputDup::ptr_shape` 里，快照时拷贝）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PtrMeta {
+    /// 热点（尖端）位置：**桌面坐标**（输出相对 + 本输出的桌面原点）。
+    x: i32,
+    y: i32,
+    hot_x: u32,
+    hot_y: u32,
+    /// DXGI_OUTDUPL_POINTER_SHAPE_TYPE 原始值（1=MONOCHROME 2=COLOR 3=MASKED_COLOR）。
+    kind: u32,
+    w: u32,
+    h: u32,
+    pitch: u32,
 }
 
 /// P1 零拷贝抓帧结果：BGRA 纹理仍在显存里（自有纹理，DD 的 ReleaseFrame 后仍有效）。
@@ -73,6 +113,10 @@ impl OutputDup {
                 Err(e) => return Err(format!("AcquireNextFrame：{e}")),
             }
             let inner = (|| -> Result<bool, String> {
+                // 指针元数据（rec 三期 P0，2026-10-06）：AcquireNextFrame 返回即
+                // 代表指针状态已刷新，与「桌面图有没有更新」（res 是否为 None）
+                // 无关——静屏上只动鼠标也要能录出光标，必须在 ReleaseFrame 前取走。
+                self.fetch_pointer(&info);
                 let Some(res) = res else {
                     return Ok(false);
                 };
@@ -130,6 +174,54 @@ impl OutputDup {
             })();
             let _ = self.dup.ReleaseFrame();
             inner
+        }
+    }
+
+    /// 取指针元数据 + 形状（AcquireNextFrame 与 ReleaseFrame 之间调用）。
+    /// 不可见 / 取形状失败 → 清状态（调用方按「无指针」画）。
+    /// 形状数据拷进自有缓冲——API 只保证到下一次 AcquireNextFrame 有效。
+    fn fetch_pointer(&mut self, info: &windows::Win32::Graphics::Dxgi::DXGI_OUTDUPL_FRAME_INFO) {
+        if !info.PointerPosition.Visible.as_bool() {
+            self.ptr = None;
+            return;
+        }
+        use windows::Win32::Graphics::Dxgi::DXGI_OUTDUPL_POINTER_SHAPE_INFO;
+        unsafe {
+            let mut shape = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
+            let mut required = 0u32;
+            let mut got = self.dup.GetFramePointerShape(
+                self.ptr_shape.len() as u32,
+                self.ptr_shape.as_mut_ptr().cast(),
+                &mut required,
+                &mut shape,
+            );
+            // 缓冲不够：按驱动要求扩一次再取（256KB 起步一般到不了这里）。
+            if got.is_err() && required as usize > self.ptr_shape.len() {
+                self.ptr_shape.resize(required as usize, 0);
+                required = 0;
+                got = self.dup.GetFramePointerShape(
+                    self.ptr_shape.len() as u32,
+                    self.ptr_shape.as_mut_ptr().cast(),
+                    &mut required,
+                    &mut shape,
+                );
+            }
+            if got.is_err() || required == 0 {
+                self.ptr = None;
+                return;
+            }
+            self.ptr_shape.truncate(required as usize);
+            let pos = &info.PointerPosition.Position;
+            self.ptr = Some(PtrMeta {
+                x: self.left + pos.x,
+                y: self.top + pos.y,
+                hot_x: shape.HotSpot.x.max(0) as u32,
+                hot_y: shape.HotSpot.y.max(0) as u32,
+                kind: shape.Type,
+                w: shape.Width,
+                h: shape.Height,
+                pitch: shape.Pitch,
+            });
         }
     }
 
@@ -248,6 +340,12 @@ pub struct DxgiPool {
     /// 那次修的是同一条病）。旧注释里「多试无益」是错的：访问丢失的根因
     /// （桌面态）自己会过去，只是过去没人再去试。
     transient_fail_streak: u32,
+    /// rec 专用：上次合成画布时的指针指纹（meta + 形状 FNV）。移动/换形/显隐
+    /// 都算变化 → 就算桌面图没更新也算「有帧」，静屏上只动鼠标也要能录出光标。
+    /// 指纹而不是整个快照：变化判定每帧都做，256KB 的形状数据只在真正合成时拷。
+    ptr_cache_fp: Option<(PtrMeta, u64)>,
+    /// rec 专用：本次合成随帧交出的快照（grab_rec 在返回借用前 take 走）。
+    last_ptr_snapshot: Option<PtrSnapshot>,
 }
 
 // MTA COM；async 要求 Send。会话任务串行访问。
@@ -275,6 +373,8 @@ impl DxgiPool {
             retry_backoff_secs: DISABLE_RETRY_START_SECS,
             disabled_reason: String::new(),
             transient_fail_streak: 0,
+            ptr_cache_fp: None,
+            last_ptr_snapshot: None,
         }
     }
 
@@ -353,6 +453,25 @@ impl DxgiPool {
         virtual_screen: bool,
         monitor: i32,
     ) -> Result<Option<GrabbedFrame<'_>>, String> {
+        Ok(self.grab_common(virtual_screen, monitor, false)?.map(|(f, _)| f))
+    }
+
+    /// rec 专用：虚拟屏抓帧 + 指针快照。与 [`Self::grab`] 的差别只有两条：
+    /// ① **指针状态变化也算「有帧」**——静屏上只动鼠标（或换光标形/显隐）也
+    ///   会合成画布并随帧交出快照；② 随帧返回 [`PtrSnapshot`]（拷贝，跨 grab 有效）。
+    /// 仅支持虚拟屏口径（rec 只用这个）；推流走 `grab`，行为一字未动。
+    pub fn grab_rec(&mut self) -> Result<Option<GrabbedRec<'_>>, String> {
+        self.grab_common(true, -1, true)
+    }
+
+    /// [`Self::grab`] / [`Self::grab_rec`] 的公共体：熔断簿记 + grab_inner +
+    /// 按位置取借用（P3-10 借用困境的完整注释在那边，不重复）。
+    fn grab_common(
+        &mut self,
+        virtual_screen: bool,
+        monitor: i32,
+        want_ptr: bool,
+    ) -> Result<Option<GrabbedRec<'_>>, String> {
         if self.disabled {
             self.maybe_revive();
             if self.disabled {
@@ -373,12 +492,7 @@ impl DxgiPool {
                 }
             }
         }
-        // 🔴 再审计 P3-10：grab_inner 先回「命中位置」描述符（不带借用），
-        // 本方法在拿到结果后先做熔断簿记（rebuild / 连续失败计数），最后才按
-        // 位置取出池内缓冲的借用。若让 Ok 直接携带借用，NLL 会把这笔借用的
-        // 区域拉长到整个函数体（返回值生命周期绑定 `&mut self` 的自由区），
-        // 上面的簿记 `&mut self` 全部冲突（经典的 get-or-insert 借用困境）。
-        match self.grab_inner(virtual_screen, monitor) {
+        match self.grab_inner(virtual_screen, monitor, want_ptr) {
             Err(e) => {
                 if e.contains("访问丢失") {
                     match self.rebuild() {
@@ -412,9 +526,13 @@ impl DxgiPool {
                     GrabHit::None => Ok(None),
                     GrabHit::Output(idx, w, h) => {
                         let o = &self.outs[idx];
-                        Ok(Some((w, h, &o.buf[..])))
+                        Ok(Some(((w, h, &o.buf[..]), None)))
                     }
-                    GrabHit::Canvas(w, h) => Ok(Some((w, h, &self.canvas[..]))),
+                    GrabHit::Canvas(w, h) => {
+                        // take 必须在借用画布之前完成（同 P3-10 借用顺序约束）
+                        let ptr = if want_ptr { self.last_ptr_snapshot.take() } else { None };
+                        Ok(Some(((w, h, &self.canvas[..]), ptr)))
+                    }
                 }
             }
         }
@@ -527,7 +645,7 @@ impl DxgiPool {
     /// `&mut self` 操作全部冲突（经典的 get-or-insert 借用困境）。所以先回
     /// 位置，由 `grab()` 在簿记结束后按位置取出借用——借用只在 return
     /// 表达式里诞生，不再与其后的任何 `&mut self` 操作共存。
-    fn grab_inner(&mut self, virtual_screen: bool, monitor: i32) -> Result<GrabHit, String> {
+    fn grab_inner(&mut self, virtual_screen: bool, monitor: i32, want_ptr: bool) -> Result<GrabHit, String> {
         let device = self
             .device
             .as_ref()
@@ -607,11 +725,55 @@ impl DxgiPool {
                 self.canvas[dst..dst + copy_w * 4].copy_from_slice(src);
             }
         }
-        if !any_fresh {
+        // rec（want_ptr）：指针变化（移动/换形/显隐）也算「有帧」。判定用指纹
+        // （meta + 形状 FNV，不拷数据）；真正合成画布时才取快照随帧交出。
+        // 指纹必须在**合成后**缓存——合成中途指针又动一次，下一帧还要再出。
+        let ptr_fp = if want_ptr { self.ptr_fingerprint() } else { None };
+        let ptr_changed = want_ptr && self.ptr_cache_fp != ptr_fp;
+        if !any_fresh && !ptr_changed {
             return Ok(GrabHit::None);
+        }
+        if want_ptr {
+            self.ptr_cache_fp = ptr_fp;
+            self.last_ptr_snapshot = self.ptr_snapshot();
         }
         Ok(GrabHit::Canvas(cw, ch))
     }
+
+    /// 指针状态指纹：第一个报告「指针可见」的输出的 meta + 形状数据 FNV-1a
+    ///（多屏时指针只在所在输出的 duplicator 上可见）。None = 无指针。
+    fn ptr_fingerprint(&self) -> Option<(PtrMeta, u64)> {
+        self.outs.iter().find_map(|o| {
+            o.ptr.as_ref().map(|m| (m.clone(), fnv1a(&o.ptr_shape)))
+        })
+    }
+
+    /// 指针快照（含形状数据拷贝）。只在合成画布的帧上调用。
+    fn ptr_snapshot(&self) -> Option<PtrSnapshot> {
+        self.outs.iter().find_map(|o| {
+            o.ptr.as_ref().map(|m| PtrSnapshot {
+                x: m.x,
+                y: m.y,
+                hot_x: m.hot_x,
+                hot_y: m.hot_y,
+                kind: m.kind,
+                w: m.w,
+                h: m.h,
+                pitch: m.pitch,
+                data: o.ptr_shape.clone(),
+            })
+        })
+    }
+}
+
+/// FNV-1a 64（指针形状数据的变化判定；碰撞概率对 256KB 图标数据可忽略）。
+fn fnv1a(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }
 
 /// [`DxgiPool::grab_inner`] 的成功产物（P3-10）：命中位置的描述符，不含任何
@@ -690,6 +852,9 @@ fn open_outputs()
                             staging: None,
                             gpu_staging: None,
                             buf: Vec::new(),
+                            // 256KB 起步（光标形状上限内），不够时按驱动要求扩
+                            ptr_shape: vec![0u8; 256 * 1024],
+                            ptr: None,
                         });
                     }
                     // 个别输出复制不了（休眠 / 受保护内容）不能拖垮整池，

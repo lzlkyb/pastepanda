@@ -32,7 +32,17 @@ export default defineConfig(async () => ({
         }
       : { overlay: false },
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/src-tauri/**",
+        // 🔴 非应用页面的产物/文档目录必须排除：vite 对任意被监听的 .html 变更
+        // 会向**所有**连接的页面广播整页 reload——别的工具往 docs/、dist-mobile/
+        // 写文件时，刚打开的录屏覆盖层等窗口会被反复打断加载、永远到不了就绪
+        // （2026-10-06「选区窗 5s 未就绪自动关窗」实录的根因）。src-mobile/ 源码
+        // 照常监听，这里只排构建产物与文档。
+        "**/docs/**",
+        "**/dist-mobile/**",
+        "**/.cache/**",
+      ],
     },
   },
 
