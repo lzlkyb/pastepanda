@@ -24,11 +24,19 @@ export function RecControlBar({
   finalizing: boolean;
 }) {
   const [sec, setSec] = useState(0);
+  // 丢弃是「一点即毁且不可恢复」的动作，与停止紧邻——两段确认挡误触：
+  // 第一次点进入待确认态（红色实底 + 文案变化），3 秒不点自动回退。
+  const [armDiscard, setArmDiscard] = useState(false);
   useEffect(() => {
     if (finalizing) return;
     const t = setInterval(() => setSec((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [finalizing]);
+  useEffect(() => {
+    if (!armDiscard) return;
+    const t = setTimeout(() => setArmDiscard(false), 3000);
+    return () => clearTimeout(t);
+  }, [armDiscard]);
 
   if (finalizing) {
     return (
@@ -54,9 +62,25 @@ export function RecControlBar({
       </span>
       <span className="rec-qual-badge">{qualityLabel}</span>
       <span style={{ flex: 1 }} />
-      <button type="button" className="rec-btn-ghost" onClick={() => onStop(true)} title="停止并丢弃，不保存文件">
-        丢弃
-      </button>
+      {armDiscard ? (
+        <button
+          type="button"
+          className="rec-btn-stop"
+          onClick={() => onStop(true)}
+          title="再点一次确认丢弃，不保存文件"
+        >
+          确认丢弃？
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="rec-btn-ghost"
+          onClick={() => setArmDiscard(true)}
+          title="停止并丢弃，不保存文件"
+        >
+          丢弃
+        </button>
+      )}
       <button type="button" className="rec-btn-stop" onClick={() => onStop(false)} title="停止并保存">
         <i />
         停止

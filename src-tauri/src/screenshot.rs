@@ -2108,16 +2108,20 @@ pub async fn snap_window_at(
 /// DWM 隐身窗（cloaked：挂起 UWP / 其他虚拟桌面）、最小化窗。
 /// 窗口在截图会话内不会移动，前端进会话时取一次即可，不必每帧枚举。
 #[tauri::command]
-pub async fn enum_window_rects(app: tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
+pub async fn enum_window_rects(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<SnapRect>, String> {
     // EnumWindows 遍历全部顶层窗是重活，放 blocking 线程，避免阻塞主线程。
     tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            unsafe { enum_window_rects_impl(&app) }
+            unsafe { enum_window_rects_impl(&app, &window) }
         }
         #[cfg(not(target_os = "windows"))]
         {
             let _ = &app;
+            let _ = &window;
             Ok(Vec::new())
         }
     })
@@ -2126,15 +2130,23 @@ pub async fn enum_window_rects(app: tauri::AppHandle) -> Result<Vec<SnapRect>, S
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn enum_window_rects_impl(app: &tauri::AppHandle) -> Result<Vec<SnapRect>, String> {
+unsafe fn enum_window_rects_impl(
+    app: &tauri::AppHandle,
+    window: &tauri::WebviewWindow,
+) -> Result<Vec<SnapRect>, String> {
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetDesktopWindow, WNDENUMPROC};
 
-    let self_hwnd = app
-        .get_webview_window(WINDOW_LABEL)
-        .and_then(|w| w.hwnd().ok())
+    // 🔴 排除**调用者自己**（P0，2026-10-05 二期审查）：录屏选区窗也调这个命令，
+    // 它是全屏可见窗——不排除自己就会成为吸附候选，光标永远落在它的邻域里，
+    // 每次拖拽都被吸附成整屏，自由框选直接废掉。此前只查截图窗的 WINDOW_LABEL，
+    // 录屏窗接入后改为排除调用者本身（Tauri 自动注入 window 参数，JS 侧零改动）。
+    let self_hwnd = window
+        .hwnd()
+        .ok()
         .map(|h| HWND(h.0 as *mut _))
         .unwrap_or_default();
+    let _ = app;
     let desktop = GetDesktopWindow();
 
     let mut ctx = (self_hwnd, desktop, Vec::<(i32, i32, i32, i32)>::new());

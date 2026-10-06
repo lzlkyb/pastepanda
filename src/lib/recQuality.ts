@@ -15,7 +15,7 @@ export interface RecQualityItem {
 }
 
 export const REC_QUALITIES: readonly RecQualityItem[] = [
-  { key: "original", label: "原画", desc: "原分辨率 · 60fps · HEVC，体积最小的极致画质" },
+  { key: "original", label: "原画", desc: "原分辨率 · 60fps · HEVC，画质天花板（体积也最大）" },
   { key: "high", label: "高清", desc: "原分辨率 · 30fps · H.264，兼容性最好" },
   { key: "standard", label: "标准", desc: "1080p · 30fps，均衡" },
   { key: "smooth", label: "流畅", desc: "720p · 30fps，小体积" },

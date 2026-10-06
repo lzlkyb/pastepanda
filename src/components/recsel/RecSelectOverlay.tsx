@@ -2,15 +2,15 @@
  * RecSelectOverlay — 录屏选区覆盖层（全屏透明窗，rec.html 入口）。
  *
  * 状态机（§18 轻预览优先，两级取消）：
- *   preview（整屏预览即默认，单击采纳 / 拖拽自定义）
- *   → confirm（选区确立，确认条可改档位与音源；Esc 回预览）
- *   → countdown（3s，Esc 回确认条）
- *   → recording（整窗鼠标穿透，只剩红框脉动；出口只有停止条）
- *   → 完成/失败事件 → 关窗（失败先恢复交互显示错误卡，规则 15.3 不静默）。
+ *   preview（悬停高亮窗口，单击=录窗口 / 桌面空白=录整屏 / 拖拽=自定义）
+ *   → confirm（确认条可改档位与音源；Esc 回预览）→ countdown（3s，Esc 回确认条）
+ *   → recording（整窗鼠标穿透；出口只有停止条）→ 完成/失败事件 → 关窗。
  *
- * 坐标：窗口盖整个虚拟屏，CSS 坐标 × dpr + 虚拟屏原点 = 物理坐标（与截图同口径）。
+ * 选屏交互 = 方案 A（2026-10-05 设计稿）：悬停哪个窗口哪个亮，单击就录它；
+ * 窗口矩形是采纳瞬间的静态区域，录制中窗口移动不跟随（尺寸标签已写明）。
+ * 鼠标状态机在 hooks/useRecSelectMouse，纯展示部件在 RecOverlayParts，矩形工具在 snap。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -18,40 +18,51 @@ import {
   recGetScreen,
   recReady,
   recStart,
+  recTakeRerecord,
   type RecQualityKey,
   type RecScreenInfo,
 } from "@/lib/api/rec";
-import { REC_QUALITIES, recQualityOf, type RecQualityItem } from "@/lib/recQuality";
-
-const REC_QUALITY_KEYS = REC_QUALITIES;
-
-type Phase = "preview" | "dragging" | "confirm" | "countdown" | "recording" | "failed";
-
-/** 预览态提示文案（写清两条路与两级取消）。 */
-const PREVIEW_HINT = "单击 录整屏 · 拖拽 框选区域";
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+import { recQualityOf, type RecQualityItem } from "@/lib/recQuality";
+import type { Rect } from "./snap";
+import { ConfirmBar, CountdownOverlay, FatalCard, PreviewHintBar, Shades } from "./RecOverlayParts";
+import { useRecSelectMouse, type Phase } from "@/hooks/useRecSelectMouse";
 
 export function RecSelectOverlay({ config }: { config: Record<string, unknown> | null }) {
   const [phase, setPhase] = useState<Phase>("preview");
   const [screen, setScreen] = useState<RecScreenInfo | null>(null);
-  const [rect, setRect] = useState<Rect | null>(null); // CSS 坐标（窗口内）
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [failMsg, setFailMsg] = useState<string | null>(null);
   const [quality, setQuality] = useState<RecQualityItem>(() => recQualityOf(null));
   const [sysAudio, setSysAudio] = useState(true);
   const [micAudio, setMicAudio] = useState(false);
-  const dragMoved = useRef(false);
 
-  // 挂载：读几何 + 配置默认值 + 撤销存活探针
+  // 鼠标状态机（预览悬停 / 拖拽吸附 / 单击采纳 / 两级取消）与可吸附窗口列表
+  const mouse = useRecSelectMouse(phase, setPhase, screen);
+  const { setRect, backToPreview } = mouse;
+
+  // 挂载：读几何 + 配置默认值 + 撤销存活探针。
+  // URL 带 mode=rerecord（重录上次区域）：取回上次计划后跳过预览/确认直入倒计时。
   useEffect(() => {
-    recGetScreen().then(setScreen).catch((e) => {
+    recGetScreen().then((s) => {
+      setScreen(s);
+      if (new URLSearchParams(window.location.search).get("mode") === "rerecord") {
+        void recTakeRerecord().then((plan) => {
+          if (!plan) return;
+          const dpr = window.devicePixelRatio || 1;
+          setQuality(recQualityOf(plan.quality));
+          setSysAudio(plan.sysAudio);
+          setMicAudio(plan.micAudio);
+          setRect({
+            x: (plan.x - s.originX) / dpr,
+            y: (plan.y - s.originY) / dpr,
+            w: plan.w / dpr,
+            h: plan.h / dpr,
+          });
+          setCountdown(3);
+          setPhase("countdown");
+        });
+      }
+    }).catch((e) => {
       setFailMsg(String(e instanceof Error ? e.message : e));
       setPhase("failed");
     });
@@ -59,84 +70,41 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     setSysAudio(config?.rec_sys_audio !== false);
     setMicAudio(config?.rec_mic_audio === true);
     void recReady();
-  }, [config]);
+    // setRect 来自 useRecSelectMouse（useState setter，恒定）——eslint 认不出自定义
+    // hook 返回值的稳定性，须显式列出
+  }, [config, setRect]);
 
-  /** 当前生效的选区（CSS 坐标）。preview / 单击采纳 = 整屏；screen 是物理像素，÷dpr 转 CSS。 */
+  /** 当前生效的选区（CSS 坐标）。preview / 整屏采纳 = 整屏；screen 是物理像素，÷dpr 转 CSS。 */
   const dpr = window.devicePixelRatio || 1;
   const activeRect: Rect | null =
-    phase === "preview" || !rect
+    phase === "preview" || !mouse.rect
       ? screen
         ? { x: 0, y: 0, w: screen.width / dpr, h: screen.height / dpr }
         : null
-      : rect;
+      : mouse.rect;
 
-  const toCss = useCallback(
-    (e: { clientX: number; clientY: number }) => ({ x: e.clientX, y: e.clientY }),
-    [],
-  );
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (phase !== "preview" && phase !== "confirm") return;
-    if (phase === "confirm") {
-      // 点选区外 = 重画（轻预览范式：一键可推翻）；点在确认条/选区内不触发
-      const t = e.target as HTMLElement;
-      if (t.closest(".rec-glass") || (rect && inRect(toCss(e), rect))) return;
-    }
-    dragMoved.current = false;
-    setDragStart(toCss(e));
-    setRect(null);
-    setPhase("dragging");
-  };
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (phase !== "dragging" || !dragStart) return;
-    const p = toCss(e);
-    if (Math.abs(p.x - dragStart.x) + Math.abs(p.y - dragStart.y) > 3) {
-      dragMoved.current = true;
-    }
-    setRect({
-      x: Math.min(dragStart.x, p.x),
-      y: Math.min(dragStart.y, p.y),
-      w: Math.abs(p.x - dragStart.x),
-      h: Math.abs(p.y - dragStart.y),
-    });
-  };
-
-  const onMouseUp = () => {
-    if (phase !== "dragging") return;
-    setDragStart(null);
-    if (!dragMoved.current || !rect || rect.w < 16 || rect.h < 16) {
-      // 单击（或太小的框）= 采纳整屏（§18 P2：高频动作一步到位）
-      setRect(null);
-      setPhase("confirm");
-      return;
-    }
-    setRect(normalizeEven(rect));
-    setPhase("confirm");
-  };
-
-  /** Esc 两级取消：拖拽/确认 → 预览；倒计时 → 确认；失败卡 → 关窗。 */
+  // Esc 两级取消（§18）：预览/失败卡 = 退出选屏；拖拽/确认 = 回预览；倒计时 = 回确认条。
+  // recording 态没有 Esc 出口（设计稿：出口只有停止条）。
+  // 🔴 方案 A 重写时这段曾被整段弄丢——界面上所有「Esc ××」文案变成空头支票，
+  // 倒计时态更是完全无法取消（该态忽略鼠标事件）。守卫见 recOverlayEscapeGuard.test.ts。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
-      if (phase === "dragging" || phase === "confirm") {
-        setRect(null);
-        setPhase("preview");
+      if (phase === "preview" || phase === "failed") {
+        void recCloseWindows();
+      } else if (phase === "dragging" || phase === "confirm") {
+        backToPreview();
       } else if (phase === "countdown") {
         setPhase("confirm");
-      } else if (phase === "failed") {
-        void recCloseWindows();
       }
-      // recording 态没有 Esc 出口（设计稿：出口只有停止条）
     };
-    // 冒泡期挂（同截图覆盖层）：本覆盖层就是顶层窗口的全部内容，没有
-    // 「别的捕获期监听要协调」；捕获期会让 dialogEscapeLayering 守卫多一份要登记的副本。
+    // 冒泡期挂（同旧实现）：捕获期会触发 dialogEscapeLayering 守卫的手挂登记要求
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase]);
+  }, [phase, backToPreview]);
 
-  // 倒计时
+  // 倒计时归零 → 真正开录
   useEffect(() => {
     if (phase !== "countdown") return;
     if (countdown <= 0) {
@@ -188,32 +156,23 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
   }, []);
 
   if (phase === "failed") {
-    return (
-      <div className="rec-fatal">
-        <div className="card">
-          {failMsg ?? "录制失败"}
-          <div>
-            <button type="button" onClick={() => void recCloseWindows()}>
-              关闭（Esc）
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return <FatalCard msg={failMsg} onClose={() => void recCloseWindows()} />;
   }
   if (!screen || !activeRect) return null;
 
   const recording = phase === "recording";
+  const { hoverRect, snapRect, rectFromWindow } = mouse;
+  const hovering = phase === "preview" && hoverRect !== null;
 
   return (
     <div
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
+      onMouseDown={mouse.onMouseDown}
+      onMouseMove={mouse.onMouseMove}
+      onMouseUp={mouse.onMouseUp}
       style={{ width: "100%", height: "100%", position: "relative" }}
     >
       {/* 暗遮罩：预览/拖拽/确认态才有；录制中零遮挡 */}
-      {!recording && <Shades rect={activeRect} screenCss={{ w: screen.width, h: screen.height }} />}
+      {!recording && <Shades rect={activeRect} screenCss={{ w: screen.width / dpr, h: screen.height / dpr }} />}
       {/* 全屏预览态的四边暗带（同截图 .edge-band 的全屏辨识） */}
       {phase === "preview" && (
         <>
@@ -224,18 +183,44 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
         </>
       )}
 
-      {/* 选区框 */}
-      <div
-        className={`rec-rect${phase === "preview" ? " full" : ""}${recording ? " recording" : ""}`}
-        style={{
-          left: activeRect.x - 1.5,
-          top: activeRect.y - 1.5,
-          width: activeRect.w,
-          height: activeRect.h,
-        }}
-      />
+      {/* 选区框：悬停高亮时整屏框让位（蓝窗亮 = 当前目标，两个框并存会打架） */}
+      {!hovering && (
+        <div
+          className={`rec-rect${phase === "preview" ? " full" : ""}${recording ? " recording" : ""}`}
+          style={{
+            left: activeRect.x - 1.5,
+            top: activeRect.y - 1.5,
+            width: activeRect.w,
+            height: activeRect.h,
+          }}
+        />
+      )}
+      {hovering && (
+        <div
+          className="rec-snap"
+          style={{
+            left: hoverRect.x - 1.5,
+            top: hoverRect.y - 1.5,
+            width: hoverRect.w,
+            height: hoverRect.h,
+          }}
+        />
+      )}
 
-      {/* 尺寸标签（非预览态） */}
+      {/* 拖拽吸附高亮：与悬停同一枚样式，场景不重叠 */}
+      {phase === "dragging" && snapRect && (
+        <div
+          className="rec-snap"
+          style={{
+            left: snapRect.x - 1.5,
+            top: snapRect.y - 1.5,
+            width: snapRect.w,
+            height: snapRect.h,
+          }}
+        />
+      )}
+
+      {/* 尺寸标签（非预览态；吸附/窗口来源各有提示，L5 不靠猜） */}
       {(phase === "dragging" || phase === "confirm") && (
         <div
           className="rec-glass"
@@ -244,27 +229,31 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
           <span>
             {Math.round(activeRect.w * dpr)}×{Math.round(activeRect.h * dpr)}
           </span>
-          <span className="muted">拖边缘可调整（重画）· Esc 回整屏</span>
+          <span className="muted">
+            {phase === "dragging" && mouse.snapRect
+              ? "松手录制该窗口 · 拖离自由框选"
+              : phase === "confirm" && rectFromWindow
+                ? "按窗口位置录制，窗口移动不跟随 · Esc 重选"
+                : "拖边缘可调整（重画）· Esc 重选"}
+          </span>
         </div>
       )}
 
-      {/* 预览态提示条（底部居中） */}
+      {/* 预览态提示条（底部居中；方案 A 文案 + 整屏兜底按钮） */}
       {phase === "preview" && (
-        <div className="rec-glass" style={{ left: "50%", transform: "translateX(-50%)", bottom: screen.height / dpr * 0.08 }}>
-          <span>
-            {Math.round(screen.width)}×{Math.round(screen.height)}
-          </span>
-          <span className="muted">|</span>
-          <span>
-            {PREVIEW_HINT} · <kbd>Esc</kbd> 退出
-          </span>
-        </div>
+        <PreviewHintBar
+          screenCssH={screen.height / dpr}
+          screenW={Math.round(screen.width)}
+          screenH={Math.round(screen.height)}
+          onFullscreen={mouse.adoptFullscreen}
+        />
       )}
 
       {/* 确认条（选区确立后） */}
       {phase === "confirm" && (
         <ConfirmBar
           rect={activeRect}
+          screenCssW={screen.width / dpr}
           screenCssH={screen.height / dpr}
           quality={quality}
           onQuality={setQuality}
@@ -272,10 +261,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
           micAudio={micAudio}
           onSys={() => setSysAudio((v) => !v)}
           onMic={() => setMicAudio((v) => !v)}
-          onRedraw={() => {
-            setRect(null);
-            setPhase("preview");
-          }}
+          onRedraw={mouse.backToPreview}
           onStart={() => {
             setCountdown(3);
             setPhase("countdown");
@@ -284,121 +270,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
       )}
 
       {/* 倒计时（只盖选区） */}
-      {phase === "countdown" && (
-        <div
-          className="rec-countdown"
-          style={{
-            left: activeRect.x,
-            top: activeRect.y,
-            width: activeRect.w,
-            height: activeRect.h,
-          }}
-        >
-          <span className="num">{Math.max(1, countdown)}</span>
-          <span className="esc">
-            <kbd>Esc</kbd> 取消，回到选区
-          </span>
-        </div>
-      )}
+      {phase === "countdown" && <CountdownOverlay rect={activeRect} count={countdown} />}
     </div>
   );
-}
-
-/** 四块暗遮罩（框外区域；坐标与截图同法）。 */
-function Shades({ rect, screenCss }: { rect: Rect; screenCss: { w: number; h: number } }) {
-  const top = { left: 0, top: 0, width: screenCss.w, height: Math.max(0, rect.y) };
-  const bottom = {
-    left: 0,
-    top: rect.y + rect.h,
-    width: screenCss.w,
-    height: Math.max(0, screenCss.h - rect.y - rect.h),
-  };
-  const left = { left: 0, top: rect.y, width: Math.max(0, rect.x), height: rect.h };
-  const right = {
-    left: rect.x + rect.w,
-    top: rect.y,
-    width: Math.max(0, screenCss.w - rect.x - rect.w),
-    height: rect.h,
-  };
-  return (
-    <>
-      {[top, bottom, left, right].map((s, i) => (
-        <div
-          key={i}
-          className="rec-shade"
-          style={{ left: s.left, top: s.top, width: s.width, height: s.height }}
-        />
-      ))}
-    </>
-  );
-}
-
-function ConfirmBar(props: {
-  rect: Rect;
-  screenCssH: number;
-  quality: RecQualityItem;
-  onQuality: (q: RecQualityItem) => void;
-  sysAudio: boolean;
-  micAudio: boolean;
-  onSys: () => void;
-  onMic: () => void;
-  onRedraw: () => void;
-  onStart: () => void;
-}) {
-  const { rect, screenCssH, quality, onQuality, sysAudio, micAudio, onSys, onMic, onRedraw, onStart } = props;
-  const barW = 520;
-  const x = Math.max(8, rect.x + rect.w / 2 - barW / 2);
-  const below = rect.y + rect.h + 14;
-  const top = below + 56 > screenCssH ? Math.max(8, rect.y - 70) : below;
-  return (
-    <div className="rec-glass" style={{ left: x, top, gap: 8 }}>
-      <button type="button" className="rec-btn-start" onClick={onStart}>
-        <span className="dot" />
-        开始录制
-      </button>
-      <button type="button" className="rec-btn-ghost" onClick={onRedraw}>
-        重画
-      </button>
-      <span className="rec-seg" role="group" aria-label="画质档位">
-        {REC_QUALITY_KEYS.map((q) => (
-          <button
-            key={q.key}
-            type="button"
-            className={quality.key === q.key ? "on" : ""}
-            onClick={() => onQuality(q)}
-            title={q.desc}
-          >
-            {q.label}
-          </button>
-        ))}
-      </span>
-      <button
-        type="button"
-        className={`rec-snd${sysAudio ? " on" : " off"}`}
-        onClick={onSys}
-        title="录进电脑正在播放的声音"
-        aria-pressed={sysAudio}
-      >
-        🔊 系统声音
-      </button>
-      <button
-        type="button"
-        className={`rec-snd${micAudio ? " on" : " off"}`}
-        onClick={onMic}
-        title="录进解说人声"
-        aria-pressed={micAudio}
-      >
-        🎙 麦克风
-      </button>
-    </div>
-  );
-}
-
-function inRect(p: { x: number; y: number }, r: Rect): boolean {
-  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
-}
-
-/** 宽高对齐偶数（编码器要求）；不足 16px 的维度由调用方拒绝。 */
-function normalizeEven(r: Rect): Rect {
-  return { x: r.x, y: r.y, w: Math.max(16, r.w & ~1), h: Math.max(16, r.h & ~1) };
 }

@@ -387,3 +387,176 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ===== HUD 通知浮窗（rec-hud 窗；主窗隐藏时的完成/失败通路，设计稿二期 §1） ===== */
+.rec-hud-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  cursor: default; /* 覆盖 body 的 crosshair（那是指框选场景的） */
+}
+
+.rec-hud {
+  width: 100%;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  border: 1px solid var(--shot-bar-border);
+  box-shadow: var(--float-card-shadow);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.rec-hud-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rec-hud-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--success);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.rec-hud-badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.rec-hud-badge.bad {
+  color: var(--danger);
+}
+
+.rec-hud-badge.bad .dot {
+  background: var(--danger);
+}
+
+.rec-hud-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rec-hud-x {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--shot-bar-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  padding: 0;
+  flex: none;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rec-hud-x:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  color: var(--shot-bar-text);
+}
+
+.rec-hud-meta {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rec-hud-err {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--danger);
+  line-height: 1.6;
+}
+
+.rec-hud-btns {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.rec-hud-btn {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
+  background: transparent;
+  color: var(--shot-bar-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 150ms ease, filter 150ms ease;
+}
+
+.rec-hud-btn:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.rec-hud-btn.primary {
+  background: var(--accent-solid);
+  color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，全站主按钮惯例（同 rec-btn-start） */
+  border: none;
+  font-weight: 600;
+}
+
+.rec-hud-btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+/* 生命周期进度条：宽度由前端按剩余时间写 --hud-life（同 Toast --toast-duration 模式），
+ * 时长即通知生命周期本身，不是转场动效，不走 U2 时长档。 */
+.rec-hud-life {
+  margin-top: 8px;
+  height: 2px;
+  border-radius: 999px; /* 2px 高条的胶囊语义（半高即圆头） */
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  overflow: hidden;
+}
+
+.rec-hud-life i {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  width: var(--hud-life, 100%);
+}
+
+/* ===== 拖拽吸附高亮（与截图 .sel-rect 同规格；蓝色识别「这是窗口矩形」） ===== */
+.rec-snap {
+  position: absolute;
+  outline: 3px solid var(--accent);
+  box-shadow: /* ui-rule-ok: 选区 1px 黑影，见文件头② */
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 10px color-mix(in srgb, var(--accent) 45%, transparent);
+  pointer-events: none;
+}
+
+/* 提示条内的动作链接（「整屏 →」兜底按钮，方案 A） */
+.rec-glass-lnk {
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-family: inherit;
+  transition: color 150ms ease;
+}
+
+.rec-glass-lnk:hover {
+  color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
+}

@@ -1322,6 +1322,20 @@ pub fn run() {
             rec::commands::rec_ready,
             #[cfg(windows)]
             rec::commands::rec_close_windows,
+            #[cfg(windows)]
+            rec::commands::rec_rerecord,
+            #[cfg(windows)]
+            rec::commands::rec_take_rerecord,
+            #[cfg(windows)]
+            rec::commands::rec_hud_take,
+            #[cfg(windows)]
+            rec::commands::rec_list_files,
+            #[cfg(windows)]
+            rec::commands::rec_delete_file,
+            #[cfg(windows)]
+            rec::commands::rec_open_file,
+            #[cfg(windows)]
+            rec::commands::rec_reveal,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
             screenshot::enum_controls,

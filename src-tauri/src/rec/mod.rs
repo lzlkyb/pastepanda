@@ -11,16 +11,19 @@
 
 pub mod commands;
 pub mod quality;
+pub mod scan;
 pub mod session;
 pub mod sink;
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 pub const SELECT_LABEL: &str = "rec-select";
 pub const CONTROL_LABEL: &str = "rec-control";
+pub const HUD_LABEL: &str = "rec-hud";
 
 /// 防止快速连按热键并发创建同名窗口（同 screenshot::CREATING）。
 static CREATING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -30,9 +33,113 @@ static GEN: AtomicU64 = AtomicU64::new(0);
 static READY_GEN: AtomicU64 = AtomicU64::new(0);
 const READY_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// 一次性交给 HUD 窗的数据（窗挂载后 rec_hud_take 取走；新事件覆盖旧值）。
+static HUD_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+/// HUD 安全网世代号：15s 强制关窗只关自己那一代（前端 8/10s 自关是主路径）。
+static HUD_GEN: AtomicU64 = AtomicU64::new(0);
+/// 「重录上次区域」计划：open_rerecord 存入，选区窗挂载经 URL 参数确认后取走。
+/// URL 带模式标记，普通开窗绝不消费——建窗失败残留的旧计划不会劫持下一次开窗。
+static RERECORD: Mutex<Option<session::RecOpts>> = Mutex::new(None);
+
 /// 前端覆盖层挂载后调：撤销存活探针（commands.rs 的 `rec_ready` 写这里）。
 pub(crate) fn mark_ready() {
     READY_GEN.store(GEN.load(Ordering::SeqCst), Ordering::SeqCst);
+}
+
+/// 「重录上次区域」入口（HUD 按钮 / 托盘共用）：沿用上次的区域与参数，
+/// 跳过框选直入倒计时。无上次记录 / 收尾中直接报错，不静默。
+pub fn open_rerecord(app: &AppHandle) -> Result<(), String> {
+    let st = session::status();
+    if st.recording || st.finalizing {
+        return Err("已有录制在进行".into());
+    }
+    let Some(opts) = session::last_opts() else {
+        return Err("还没有上次录制".into());
+    };
+    *RERECORD.lock().unwrap_or_else(|p| p.into_inner()) = Some(opts);
+    if let Some(w) = app.get_webview_window(SELECT_LABEL) {
+        let _ = w.close();
+    }
+    create_selector(app, "rec.html?mode=rerecord");
+    Ok(())
+}
+
+/// 选区窗挂载后按 URL 模式取重录计划（普通开窗传的 URL 没有标记，取不到）。
+pub fn take_rerecord() -> Option<session::RecOpts> {
+    RERECORD.lock().unwrap_or_else(|p| p.into_inner()).take()
+}
+
+/// 一次性交给 HUD 窗的数据（窗挂载后经 rec_hud_take 取走）。
+pub fn take_hud_data() -> Option<serde_json::Value> {
+    HUD_DATA.lock().unwrap_or_else(|p| p.into_inner()).take()
+}
+
+/// 打开 HUD 轻浮窗（主窗隐藏时的完成/失败通知，规则 15.1）。
+/// 右下角贴主屏工作区；前端 8/10s 自关，这里留 15s 安全网（只关自己那一代）。
+pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
+    if let Some(w) = app.get_webview_window(HUD_LABEL) {
+        let _ = w.close();
+    }
+    *HUD_DATA.lock().unwrap_or_else(|p| p.into_inner()) = Some(data.clone());
+    let gen = HUD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let (mx, my, mw, mh, scale) = primary_screen_metrics(app);
+    // 内容按逻辑 320×118 设计；物理尺寸 = 逻辑 × scale——🔴 不乘的话 125% 缩放下
+    // CSS 视口只有 256×94，按钮和进度条会被裁掉（P1，2026-10-05 二期审查）
+    let win_w = (320.0 * scale).round() as i32;
+    let win_h = (118.0 * scale).round() as i32;
+    let margin_x = (14.0 * scale).round() as i32;
+    let margin_y = (52.0 * scale).round() as i32;
+    let x = mx + mw - win_w - margin_x;
+    let y = my + mh - win_h - margin_y;
+    let built = WebviewWindowBuilder::new(app, HUD_LABEL, WebviewUrl::App("rec-hud.html".into()))
+        .title("")
+        .inner_size(320.0, 118.0) // 逻辑值占位；下方按物理覆盖
+        .position(x as f64, y as f64)
+        .resizable(false);
+    let built = built
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .shadow(false)
+        .transparent(true)
+        .build();
+    match built {
+        Ok(window) => {
+            // builder 收逻辑像素，物理覆盖一次（同选区窗的坑）
+            let _ = window.set_size(tauri::PhysicalSize::new(win_w as u32, win_h as u32));
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            let _ = window.show();
+            let probe = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                if HUD_GEN.load(Ordering::SeqCst) == gen {
+                    if let Some(w) = probe.get_webview_window(HUD_LABEL) {
+                        let _ = w.close();
+                    }
+                }
+            });
+        }
+        Err(e) => log::warn!("[Rec] 创建 HUD 窗失败: {e}"),
+    }
+}
+
+/// 主屏几何（物理像素 + 缩放系数；primary_monitor 不可用时退回 SM_CXSCREEN，scale=1）。
+fn primary_screen_metrics(app: &AppHandle) -> (i32, i32, i32, i32, f64) {
+    if let Ok(Some(m)) = app.primary_monitor() {
+        let p = m.position();
+        let s = m.size();
+        return (p.x, p.y, s.width as i32, s.height as i32, m.scale_factor());
+    }
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    unsafe {
+        (
+            0,
+            0,
+            GetSystemMetrics(SM_CXSCREEN).max(1),
+            GetSystemMetrics(SM_CYSCREEN).max(1),
+            1.0,
+        )
+    }
 }
 
 /// 虚拟屏几何（物理像素）——与 rc/dxgi.rs、screenshot.rs 同源口径。
@@ -53,9 +160,15 @@ pub(crate) fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
 
 /// 打开（或聚焦）录屏选区窗。热键 / 工具箱 / 托盘共用入口。
 pub fn open_selector_window(app: &AppHandle) {
+    let st = session::status();
     // 已有会话在录：热键语义 = 停止（见 commands::rec_toggle）
-    if session::status().recording {
+    if st.recording {
         let _ = session::stop(false);
+        return;
+    }
+    // 收尾中（亚秒窗口）：不开窗也不报错——开了也会在 rec_start 处吃到
+    // 「已有录制在进行」的错误卡，白白给用户一次假失败
+    if st.finalizing {
         return;
     }
     if let Some(w) = app.get_webview_window(SELECT_LABEL) {
@@ -64,14 +177,15 @@ pub fn open_selector_window(app: &AppHandle) {
         let _ = app.emit("rec-refresh", ());
         return;
     }
-    create_selector(app);
+    create_selector(app, "rec.html");
 }
 
-fn create_selector(app: &AppHandle) {
+fn create_selector(app: &AppHandle, url: &str) {
     if CREATING.swap(true, Ordering::SeqCst) {
         return;
     }
     let app = app.clone();
+    let url = url.to_string();
     std::thread::spawn(move || {
         struct Reset;
         impl Drop for Reset {
@@ -83,7 +197,7 @@ fn create_selector(app: &AppHandle) {
         let (x, y, w, h) = virtual_screen_metrics();
         // 世代号在 build() 之前递增（同截图窗：build 一返回前端就可能 ready）
         let generation = GEN.fetch_add(1, Ordering::SeqCst) + 1;
-        let builder = WebviewWindowBuilder::new(&app, SELECT_LABEL, WebviewUrl::App("rec.html".into()))
+        let builder = WebviewWindowBuilder::new(&app, SELECT_LABEL, WebviewUrl::App(url.into()))
             .title("")
             .inner_size(w.max(1) as f64, h.max(1) as f64)
             .position(x as f64, y as f64)
@@ -126,14 +240,19 @@ fn create_selector(app: &AppHandle) {
 /// 打开录制控制条窗（rec_start 成功后调用）。位置：选区上缘外 12px，越界回弹到屏内。
 pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
     let (sx, sy, sw, sh) = virtual_screen_metrics();
-    let (rx, ry, rw, _) = region;
-    // 物理坐标先定，build 后按物理覆盖（同选区窗）
-    let bar_w = 340i32;
-    let bar_h = 48i32;
+    let (rx, ry, rw, rh) = region;
+    // 物理尺寸 = 逻辑设计 340×48 × 条所在屏的 scale —— 🔴 不乘的话 125% 缩放下
+    // CSS 视口只有 272×38，内容 ~300+ CSS px，「停止」按钮被裁出窗外
+    // （P1，2026-10-05 审查；同 HUD 窗已修的坑，见 open_hud_window）
+    let probe_x = (rx + rw as i32 / 2).clamp(sx, sx + sw - 1);
+    let scale = monitor_scale_at(app, probe_x, ry.clamp(sy, sy + sh - 1));
+    let gap = (12.0 * scale).round() as i32;
+    let bar_w = (340.0 * scale).round() as i32;
+    let bar_h = (48.0 * scale).round() as i32;
     let mut bx = rx + (rw as i32 - bar_w) / 2;
-    let mut by = ry - bar_h - 12;
+    let mut by = ry - bar_h - gap;
     if by < sy {
-        by = (ry + region.3 as i32) + 12; // 上方放不下翻到选区下方
+        by = (ry + rh as i32) + gap; // 上方放不下翻到选区下方
     }
     bx = bx.clamp(sx, sx + sw - bar_w);
     by = by.clamp(sy, sy + sh - bar_h);
@@ -142,7 +261,7 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
     }
     let builder = WebviewWindowBuilder::new(app, CONTROL_LABEL, WebviewUrl::App("rec-control.html".into()))
         .title("")
-        .inner_size(bar_w as f64, bar_h as f64)
+        .inner_size(340.0, 48.0) // 逻辑值占位；下方按物理覆盖
         .position(bx as f64, by as f64)
         .resizable(false);
     let built = builder
@@ -160,6 +279,21 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
         }
         Err(e) => log::warn!("[Rec] 创建控制条窗失败: {e}"),
     }
+}
+
+/// 物理坐标所在显示器的缩放系数（跨屏 DPI 各异：控制条贴着选区落在哪块屏，
+/// 就按谁的 scale 换算物理尺寸）；坐标不在任何屏上（边缘情况）退 1.0。
+fn monitor_scale_at(app: &AppHandle, x: i32, y: i32) -> f64 {
+    if let Ok(monitors) = app.available_monitors() {
+        for m in monitors {
+            let p = m.position();
+            let s = m.size();
+            if x >= p.x && x < p.x + s.width as i32 && y >= p.y && y < p.y + s.height as i32 {
+                return m.scale_factor();
+            }
+        }
+    }
+    1.0
 }
 
 /// 关闭录屏相关窗口（选区 + 控制条）。会话收尾事件到达后由前端触发，

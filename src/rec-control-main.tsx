@@ -9,6 +9,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecControlBar } from "./components/recsel/RecControlBar";
 import { recStatus } from "./lib/api/rec";
@@ -32,7 +33,9 @@ invoke<{ theme?: string }>("get_config")
   .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
   .catch(() => { /* 读取失败保持默认主题 */ });
 
-// 会话收尾 → 后端事件；控制条收到「正在写入」→ rec-done 后随选区窗一起关。
+// 会话收尾 → 后端事件。rec-done / rec-discarded = 收尾完成，关掉全部录屏窗；
+// rec-failed = 会话已不存在且不会有后续事件——控制条只关**自己**（用 getCurrentWindow
+// 关本窗，不动选区窗的错误卡），否则「正在写入」永远挂在那里等一个不会来的事件。
 function Root() {
   const [finalizing, setFinalizing] = useState(false);
   const [qualityLabel, setQualityLabel] = useState("");
@@ -48,7 +51,12 @@ function Root() {
     const close = () => invoke("rec_close_windows").catch(() => { /* 保底出口 */ });
     const un1 = listen("rec-done", close);
     const un2 = listen("rec-discarded", close);
-    const un3 = listen("rec-failed", () => setFinalizing(true));
+    const un3 = listen("rec-failed", () => {
+      void getCurrentWindow().close().catch(() => {
+        // 自关失败（权限异常）才退回写入态兜底展示
+        setFinalizing(true);
+      });
+    });
     return () => {
       void un1.then((f) => f());
       void un2.then((f) => f());

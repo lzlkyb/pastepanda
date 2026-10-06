@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>屏幕录制 - 悬停选窗口 - 设计稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #0b0f1a; color: #e7ecf5;
+    padding: 40px 24px 80px; -webkit-user-select: none; user-select: none;
+  }
+  .doc { max-width: 1080px; margin: 0 auto; }
+  .doc-head h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .doc-head h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, #6366f1, #22d3ee);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .doc-head .sub { margin-top: 10px; font-size: 13px; line-height: 1.9; color: #94a3b8; max-width: 880px; }
+  .doc-head .meta { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); color: #a5b4cf; background: rgba(255,255,255,.04); }
+  .tag.hl { border-color: rgba(99,102,241,.5); color: #a5b4fc; background: rgba(99,102,241,.12); }
+  .sec { margin-top: 52px; }
+  .sec-title { display: flex; align-items: baseline; gap: 12px; }
+  .sec-title .no {
+    font-size: 12px; font-weight: 700; color: #6366f1;
+    border: 1px solid rgba(99,102,241,.45); border-radius: 6px; padding: 2px 8px;
+    background: rgba(99,102,241,.1);
+  }
+  .sec-title h2 { font-size: 18px; font-weight: 650; }
+  .sec-desc { margin-top: 8px; font-size: 12.5px; line-height: 1.9; color: #94a3b8; max-width: 900px; }
+  .sec-desc b { color: #cbd5e1; font-weight: 600; }
+  .sec-desc code {
+    font-size: 11.5px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 4px; padding: 1px 6px; color: #a5b4fc;
+  }
+  .duo { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .panel { border: 1px solid rgba(255,255,255,.09); border-radius: 14px; overflow: hidden; background: #0e1320; }
+  .panel-cap {
+    padding: 9px 14px; font-size: 11.5px; color: #8b96ad;
+    border-bottom: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.02);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-cap b { color: #c6d0e2; font-weight: 600; }
+  .panel-cap .new { color: #34d399; font-weight: 700; font-size: 10.5px; letter-spacing: .5px; }
+
+  .desk { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1a2238 0%, #10213a 45%, #0d2c46 100%); overflow: hidden; }
+  .desk .faux-win {
+    position: absolute; border-radius: 8px 8px 0 0; background: #16202f;
+    border: 1px solid rgba(255,255,255,.08); border-bottom: none;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  .faux-win .bar { height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .faux-win .bar i { width: 8px; height: 8px; border-radius: 50%; background: #33415c; }
+  .faux-win .body { padding: 12px; display: grid; gap: 7px; }
+  .faux-win .body i { display: block; height: 8px; border-radius: 4px; background: rgba(255,255,255,.07); }
+  .faux-win .body i:nth-child(2) { width: 70%; }
+  .faux-win .body i:nth-child(3) { width: 45%; }
+  .win-a { left: 7%; top: 14%; width: 40%; height: 58%; }
+  .win-b { left: 54%; top: 22%; width: 38%; height: 50%; }
+
+  /* 录屏覆盖层视觉（recsel.css 真值） */
+  .shade { position: absolute; background: rgba(10,14,24,.6); pointer-events: none; }
+  .glass {
+    background: rgba(16,20,30,.92);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; font-size: 12px; white-space: nowrap;
+  }
+  .glass .muted { color: #8b96ad; font-size: 11px; }
+  .glass kbd {
+    font-size: 11px; padding: 0 8px; border-radius: 4px;
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22);
+    border-bottom-width: 2px; color: #e7ecf5; font-family: inherit;
+  }
+  .glass .lnk { color: #a5b4fc; cursor: pointer; padding: 0 2px; }
+  .glass .lnk:hover { color: #c7d2fe; }
+  .snap { position: absolute; outline: 3px solid #3B9EFF; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 10px rgba(59,155,255,.45); pointer-events: none; }
+  .rect { position: absolute; outline: 3px solid #6366f1; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 10px rgba(99,102,241,.4); pointer-events: none; }
+  .cursor { position: absolute; width: 14px; height: 14px; pointer-events: none; }
+  .cursor::before { content: ""; position: absolute; inset: 0; background: #fff; clip-path: polygon(0 0, 100% 62%, 58% 62%, 78% 100%, 62% 100%, 44% 68%, 0 88%); filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  .note { position: absolute; font-size: 10.5px; color: #7dd3fc; background: rgba(8,14,26,.85); border: 1px solid rgba(56,189,248,.35); border-radius: 6px; padding: 3px 8px; pointer-events: none; }
+
+  .spec { margin-top: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; overflow: hidden; }
+  .spec table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .spec th { text-align: left; padding: 8px 12px; color: #8b96ad; font-weight: 600; background: rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.07); font-size: 11px; }
+  .spec td { padding: 8px 12px; color: #c6d0e2; border-bottom: 1px solid rgba(255,255,255,.05); line-height: 1.7; }
+  .spec tr:last-child td { border-bottom: none; }
+  .spec td b { color: #e7ecf5; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="doc-head">
+    <h1>屏幕录制 <em>悬停选窗口</em> 设计稿（方案 A）</h1>
+    <p class="sub">
+      对齐主流交互（微信/QQ 截图系 · Screen Studio 的 picker-first）：预览态<b>光标悬停哪个窗口，哪个窗口就亮</b>；
+      <b>单击 = 录高亮的窗口</b>；拖拽 = 自定义区域（二期吸附保留）；悬停在桌面空白处 = 无高亮、单击录整虚拟屏；
+      提示条尾部加<b>「整屏」显式按钮</b>兜底——想录整屏不再要求把鼠标挪到空白处。
+      改动集中在选区覆盖层（RecSelectOverlay 预览态状态机），后端零改动：窗口枚举、邻域命中、高亮样式全是二期已落地的积木。
+    </p>
+    <div class="meta">
+      <span class="tag hl">2026-10-05</span>
+      <span class="tag">方案 A 已拍板</span>
+      <span class="tag">规则 17/18 对照通过</span>
+      <span class="tag">待确认后实施</span>
+    </div>
+  </div>
+
+  <!-- ══════════ §1 ══════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">1</span><h2>预览态：悬停即高亮，单击录窗口</h2></div>
+    <p class="sec-desc">
+      进入预览（还未按下鼠标）时鼠标移动，光标下的窗口自动 3px 蓝描边高亮（截图吸附同规格）。
+      <b>单击 = 录高亮的窗口</b>（采纳瞬间的窗口矩形，静态区域）；拖出高亮窗口开始拖拽 = 回到自定义框选。
+      这是本次的核心变化：单击语义从「整屏」改为「悬停的目标」，与国民截图习惯一致。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>悬停在窗口 A 上 → 整窗高亮</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="shade" style="left:0;top:0;right:0;height:10%"></div>
+          <div class="shade" style="left:0;bottom:0;right:0;height:24%"></div>
+          <div class="shade" style="left:0;top:10%;width:7%;height:66%"></div>
+          <div class="shade" style="right:0;top:10%;width:8%;height:66%"></div>
+          <div class="snap" style="left:7%; top:14%; width:40%; height:58%;"></div>
+          <div class="faux-win win-a" style="background:transparent;border-color:transparent;box-shadow:none;pointer-events:none">
+            <div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="faux-win win-b" style="opacity:.45"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="cursor" style="left:24%; top:40%;"></div>
+          <div class="glass" style="position:absolute; left:50%; transform:translateX(-50%); bottom:7%;">
+            <span>2560×1440</span>
+            <span class="muted">|</span>
+            <span>悬停选窗口 · <b style="color:#dbe3f0">单击录制</b> · 拖拽自定义</span>
+            <span class="lnk">整屏 →</span>
+            <span class="muted">·</span>
+            <kbd>Esc</kbd> <span class="muted">退出</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>悬停在桌面空白 → 无高亮，单击 = 录整屏（现状语义兜底）</b></div>
+        <div class="desk">
+          <div class="shade" style="left:0;top:0;right:0;height:10%"></div>
+          <div class="shade" style="left:0;bottom:0;right:0;height:24%"></div>
+          <div class="shade" style="left:0;top:10%;width:7%;height:66%"></div>
+          <div class="shade" style="right:0;top:10%;width:8%;height:66%"></div>
+          <div class="rect" style="left:0;top:10%;width:100%;height:66%; outline-color:#3B9EFF;"></div>
+          <div class="faux-win win-a" style="opacity:.45"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b" style="opacity:.45"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="cursor" style="left:47%; top:66%;"></div>
+          <div class="note" style="left:50%; top:56%;">空白处 = 整个画面全亮，单击录整屏</div>
+          <div class="glass" style="position:absolute; left:50%; transform:translateX(-50%); bottom:7%;">
+            <span>2560×1440</span>
+            <span class="muted">|</span>
+            <span>悬停选窗口 · <b style="color:#dbe3f0">单击录制</b> · 拖拽自定义</span>
+            <span class="lnk">整屏 →</span>
+            <span class="muted">·</span>
+            <kbd>Esc</kbd> <span class="muted">退出</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ §2 ══════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">2</span><h2>单击后的确认条：与现状一致，尺寸标已换成窗口尺寸</h2></div>
+    <p class="sec-desc">
+      单击高亮窗口 → 确认条（档位 / 音源 / 重画 / 开始录制）全部照旧，只是选区变成了窗口矩形。
+      尺寸标签显示窗口的物理像素尺寸；录制中窗口移动<b>不跟随</b>——该提示在确认条旁保持可见（L5 不靠猜）。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>确认态：选区 = 窗口 A 的矩形</b><span class="new">行为复用</span></div>
+        <div class="desk">
+          <div class="shade" style="left:0;top:0;right:0;height:14%"></div>
+          <div class="shade" style="left:0;bottom:0;right:0;height:28%"></div>
+          <div class="shade" style="left:0;top:14%;width:7%;height:58%"></div>
+          <div class="shade" style="right:0;top:14%;width:8%;height:58%"></div>
+          <div class="rect" style="left:7%; top:14%; width:40%; height:58%;"></div>
+          <div class="faux-win win-a" style="background:transparent;border-color:transparent;box-shadow:none;pointer-events:none">
+            <div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="glass" style="position:absolute; left:7%; top:8%;">
+            <span>1024×768</span>
+            <span class="muted">按窗口位置录制，窗口移动不跟随 · Esc 回整屏</span>
+          </div>
+          <div class="glass" style="position:absolute; left:50%; transform:translateX(-50%); bottom:7%; gap:8px;">
+            <button class="btn-p" style="background:linear-gradient(135deg,#6366f1,#0ea5e9);border:none;color:#fff;font-weight:600;font-size:12px;padding:4px 12px;border-radius:8px;font-family:inherit;">● 开始录制</button>
+            <button class="btn-g" style="background:transparent;border:1px solid rgba(255,255,255,.22);color:#e7ecf5;font-size:12px;padding:4px 8px;border-radius:8px;font-family:inherit;">重画</button>
+            <span style="display:inline-flex;border:1px solid rgba(255,255,255,.18);border-radius:8px;overflow:hidden;font-size:12px;">
+              <span style="padding:4px 10px;background:rgba(99,102,241,.35);color:#fff;">高清</span>
+              <span style="padding:4px 10px;color:#8b96ad;">原画</span>
+              <span style="padding:4px 10px;color:#8b96ad;">标准</span>
+              <span style="padding:4px 10px;color:#8b96ad;">流畅</span>
+            </span>
+            <span style="font-size:12px;color:#34d399;">🔊 系统声音</span>
+            <span style="font-size:12px;color:#8b96ad;">🎙 麦克风</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>「整屏 →」按钮：想录整屏不必挪鼠标</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="shade" style="left:0;top:0;right:0;height:10%"></div>
+          <div class="shade" style="left:0;bottom:0;right:0;height:24%"></div>
+          <div class="shade" style="left:0;top:10%;width:7%;height:66%"></div>
+          <div class="shade" style="right:0;top:10%;width:8%;height:66%"></div>
+          <div class="snap" style="left:54%; top:22%; width:38%; height:50%;"></div>
+          <div class="faux-win win-a" style="opacity:.45"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b" style="background:transparent;border-color:transparent;box-shadow:none;pointer-events:none">
+            <div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div>
+          </div>
+          <div class="cursor" style="left:70%; top:40%;"></div>
+          <div class="note" style="left:38%; top:12%;">鼠标停在窗口 B 上，但我要录整屏 →<br>点提示条「整屏 →」，不用先挪开鼠标</div>
+          <div class="glass" style="position:absolute; left:50%; transform:translateX(-50%); bottom:7%;">
+            <span>2560×1440</span>
+            <span class="muted">|</span>
+            <span>悬停选窗口 · 单击录制 · 拖拽自定义</span>
+            <span class="lnk" style="background:rgba(99,102,241,.2);border-radius:4px;padding:1px 8px;">整屏 →</span>
+            <span class="muted">·</span>
+            <kbd>Esc</kbd> <span class="muted">退出</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ §3 ══════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">3</span><h2>交互规格与边界</h2></div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:150px">条目</th><th>判定</th></tr>
+        <tr><td><b>状态机变化</b></td><td>仅 <code>preview</code> 态增加 <code>hoverRect</code>（mousemove 时算，无拖拽）；<code>mouseup</code> 且非拖拽时：有 hoverRect → 采纳窗口矩形进确认；无 hoverRect → 采纳整屏（现状）。<code>dragging / confirm / countdown / recording</code> 各态零改动。</td></tr>
+        <tr><td><b>与吸附的关系</b></td><td>同一份窗口矩形、同一个命中函数（<code>pickSnapCandidate</code>）：预览态命中=悬停高亮；拖拽态命中=吸附高亮。样式同一枚（蓝 3px），场景不重叠。</td></tr>
+        <tr><td><b>提示条文案</b></td><td>预览态改为 <code>悬停选窗口 · 单击录制 · 拖拽自定义 · 整屏 → · Esc 退出</code>；「整屏 →」是玻璃按钮，点了直接以整虚拟屏进确认态。</td></tr>
+        <tr><td><b>两级取消</b></td><td>不变：确认态 Esc → 回预览（hoverRect 重新按当前光标位置计算）；预览态 Esc → 退出。</td></tr>
+        <tr><td><b>边界</b></td><td>①最大化窗口 ≈ 整屏：单击效果与整屏一致，无害；②窗口列表为空（刚开机）→ 永无高亮，行为退化为现状；③覆盖层自身已被 <code>enum_window_rects</code> 排除（二期 P0 修复），不会自吸；④「整屏 →」与悬停高亮并存：按钮语义显式，不依赖光标位置。</td></tr>
+        <tr><td><b>不做（防 scope）</b></td><td>多显示器单屏选择与逐屏 dpr（三期，需要显示器枚举命令）；录制中窗口跟随；窗口标题提示（enum 结果无标题，加标题要换 API，另案）。</td></tr>
+      </table>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

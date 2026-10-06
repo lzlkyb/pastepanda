@@ -114,74 +114,92 @@ impl RecSink {
         audio: Option<(u32, u32, &[u8])>, // (sample_rate, channels, asc)
         video_bitrate: u32,
     ) -> Result<Self, String> {
-        unsafe {
-            let com_owned = windows::Win32::System::Com::CoInitializeEx(
+        let com_owned = unsafe {
+            windows::Win32::System::Com::CoInitializeEx(
                 None,
                 windows::Win32::System::Com::COINIT_MULTITHREADED,
             )
-            .is_ok();
-            crate::rc::encode_h264::ensure_mf_startup()?;
+            .is_ok()
+        };
+        // 装配收进闭包：任何一步失败都先把 COM 配平再返回——🔴 不配平会让本线程
+        // 退出时引用计数失衡，干扰后续 MF/DXGI 初始化（同 Drop 的顺序纪律）
+        let mut built: Option<Self> = None;
+        let mut assemble = || -> Result<(), String> {
+            unsafe {
+                crate::rc::encode_h264::ensure_mf_startup()?;
 
-            let wide = HSTRING::from(path.as_os_str());
-            let writer = MFCreateSinkWriterFromURL(PCWSTR::from_raw(wide.as_ptr()), None, None)
-                .map_err(mf_err)?;
-
-            let video_subtype = if hevc { &MFVideoFormat_HEVC } else { &MFVideoFormat_H264 };
-
-            // ── 视频流：输出（容器侧）类型，AddStream 拿流号 ──
-            let vout = MFCreateMediaType().map_err(mf_err)?;
-            vout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
-            vout.SetGUID(&MF_MT_SUBTYPE, video_subtype).map_err(mf_err)?;
-            let video_stream = writer.AddStream(&vout).map_err(mf_err)?;
-
-            // ── 视频流：输入（已编码 Annex-B）类型 ──
-            let vin = MFCreateMediaType().map_err(mf_err)?;
-            vin.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
-            vin.SetGUID(&MF_MT_SUBTYPE, video_subtype).map_err(mf_err)?;
-            vin.SetUINT64(&MF_MT_FRAME_SIZE, ((width as u64) << 32) | height as u64)
-                .map_err(mf_err)?;
-            vin.SetUINT64(&MF_MT_FRAME_RATE, ((fps as u64) << 32) | 1).map_err(mf_err)?;
-            vin.SetUINT32(&MF_MT_AVG_BITRATE, video_bitrate).map_err(mf_err)?;
-            if !video_seq_header.is_empty() {
-                vin.SetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, video_seq_header)
+                let wide = HSTRING::from(path.as_os_str());
+                let writer = MFCreateSinkWriterFromURL(PCWSTR::from_raw(wide.as_ptr()), None, None)
                     .map_err(mf_err)?;
-            }
-            writer.SetInputMediaType(video_stream, &vin, None).map_err(mf_err)?;
 
-            // ── 音频流（可选）：裸 AAC 帧 + ASC ──
-            let mut audio_stream = None;
-            let mut audio_frame_t100 = 0i64;
-            if let Some((sr, ch, asc)) = audio {
-                let aout = MFCreateMediaType().map_err(mf_err)?;
-                aout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
-                aout.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC).map_err(mf_err)?;
-                aout.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sr).map_err(mf_err)?;
-                aout.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
-                aout.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
-                aout.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
-                let stream = writer.AddStream(&aout).map_err(mf_err)?;
-                let ain = MFCreateMediaType().map_err(mf_err)?;
-                ain.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
-                ain.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC).map_err(mf_err)?;
-                ain.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sr).map_err(mf_err)?;
-                ain.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
-                ain.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
-                ain.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
-                ain.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
-                writer.SetInputMediaType(stream, &ain, None).map_err(mf_err)?;
-                audio_stream = Some(stream);
-                // AAC-LC 每帧 1024 采样
-                audio_frame_t100 = 1024i64 * 10_000_000 / sr.max(1) as i64;
-            }
+                let video_subtype = if hevc { &MFVideoFormat_HEVC } else { &MFVideoFormat_H264 };
 
-            writer.BeginWriting().map_err(mf_err)?;
-            Ok(Self {
-                writer: Some(writer),
-                video_stream,
-                audio_stream,
-                audio_frame_t100,
-                com_owned,
-            })
+                // ── 视频流：输出（容器侧）类型，AddStream 拿流号 ──
+                let vout = MFCreateMediaType().map_err(mf_err)?;
+                vout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
+                vout.SetGUID(&MF_MT_SUBTYPE, video_subtype).map_err(mf_err)?;
+                let video_stream = writer.AddStream(&vout).map_err(mf_err)?;
+
+                // ── 视频流：输入（已编码 Annex-B）类型 ──
+                let vin = MFCreateMediaType().map_err(mf_err)?;
+                vin.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
+                vin.SetGUID(&MF_MT_SUBTYPE, video_subtype).map_err(mf_err)?;
+                vin.SetUINT64(&MF_MT_FRAME_SIZE, ((width as u64) << 32) | height as u64)
+                    .map_err(mf_err)?;
+                vin.SetUINT64(&MF_MT_FRAME_RATE, ((fps as u64) << 32) | 1).map_err(mf_err)?;
+                vin.SetUINT32(&MF_MT_AVG_BITRATE, video_bitrate).map_err(mf_err)?;
+                if !video_seq_header.is_empty() {
+                    vin.SetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, video_seq_header)
+                        .map_err(mf_err)?;
+                }
+                writer.SetInputMediaType(video_stream, &vin, None).map_err(mf_err)?;
+
+                // ── 音频流（可选）：裸 AAC 帧 + ASC ──
+                let mut audio_stream = None;
+                let mut audio_frame_t100 = 0i64;
+                if let Some((sr, ch, asc)) = audio {
+                    let aout = MFCreateMediaType().map_err(mf_err)?;
+                    aout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
+                    aout.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sr).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
+                    aout.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
+                    let stream = writer.AddStream(&aout).map_err(mf_err)?;
+                    let ain = MFCreateMediaType().map_err(mf_err)?;
+                    ain.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
+                    ain.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_SECOND, sr).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_NUM_CHANNELS, ch).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_BITS_PER_SAMPLE, 16).map_err(mf_err)?;
+                    ain.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
+                    ain.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
+                    writer.SetInputMediaType(stream, &ain, None).map_err(mf_err)?;
+                    audio_stream = Some(stream);
+                    // AAC-LC 每帧 1024 采样
+                    audio_frame_t100 = 1024i64 * 10_000_000 / sr.max(1) as i64;
+                }
+
+                writer.BeginWriting().map_err(mf_err)?;
+                built = Some(Self {
+                    writer: Some(writer),
+                    video_stream,
+                    audio_stream,
+                    audio_frame_t100,
+                    com_owned,
+                });
+            }
+            Ok(())
+        };
+        let result = assemble();
+        match result {
+            Ok(()) => Ok(built.expect("装配成功必有产物")),
+            Err(e) => {
+                if com_owned {
+                    unsafe { windows::Win32::System::Com::CoUninitialize() };
+                }
+                Err(e)
+            }
         }
     }
 

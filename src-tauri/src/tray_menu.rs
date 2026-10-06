@@ -53,6 +53,8 @@ pub struct MenuSnapshot {
     pub rc: Option<RcItem>,
     pub recents: Vec<RecentEntry>,
     pub show_hotkey: String,
+    /// 上次录屏会话的区域尺寸（无 = 没录过，「重录上次区域」整项不出现）。
+    pub rec_last: Option<(u32, u32)>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -76,6 +78,7 @@ pub const ID_EXIT: &str = "tray-native:exit";
 pub const ID_RC: &str = "tray-native:rc_connect";
 pub const ID_RECENT_BASE: &str = "tray-native:recent";
 pub const ID_SCREEN_REC: &str = "tray-native:screen_rec";
+pub const ID_RE_RECORD: &str = "tray-native:rec_rerecord";
 
 const RECENT_LIMIT: usize = 3;
 
@@ -119,6 +122,14 @@ pub fn plan_items(snap: &MenuSnapshot) -> Vec<EntrySpec> {
     }
     out.push(EntrySpec::Item { id: ID_SHOW, index: 0, title: "显示主窗口".into(), enabled: true });
     out.push(EntrySpec::Item { id: ID_SCREEN_REC, index: 0, title: "🎬 屏幕录制".into(), enabled: true });
+    if let Some((w, h)) = snap.rec_last {
+        out.push(EntrySpec::Item {
+            id: ID_RE_RECORD,
+            index: 0,
+            title: format!("↻ 重录上次区域 ({w}×{h})"),
+            enabled: true,
+        });
+    }
     out.push(EntrySpec::Item {
         id: ID_TOGGLE_MONITOR,
         index: 0,
@@ -182,7 +193,13 @@ mod imp {
         let hud_on = crate::stack_hud::is_enabled();
         let rc = RC_ITEM.lock().ok().and_then(|g| g.clone());
         let show_hotkey = SHOW_HOTKEY.lock().map(|s| s.clone()).unwrap_or_default();
-        MenuSnapshot { monitoring, hud_on, rc, recents, show_hotkey }
+        // 🔴 rec 模块是 windows-only，非 Windows 平台没有「重录上次区域」项
+        //（同 fdf2c55 修过的 CI 坑：windows-only 引用必须挂 cfg）
+        #[cfg(windows)]
+        let rec_last = crate::rec::session::last_opts().map(|o| (o.w, o.h));
+        #[cfg(not(windows))]
+        let rec_last = None;
+        MenuSnapshot { monitoring, hud_on, rc, recents, show_hotkey, rec_last }
     }
 
     fn snapshot_key(snap: &MenuSnapshot) -> String {
@@ -415,6 +432,17 @@ mod imp {
                     log::warn!("[TrayMenu] 切换监听失败: {}", e);
                 }
             });
+        } else if id == ID_RE_RECORD {
+            // 重录上次区域：沿用上次区域与参数直入倒计时（rec/mod.rs 的 open_rerecord）
+            let a = app.clone();
+            std::thread::spawn(move || {
+                #[cfg(windows)]
+                if let Err(e) = crate::rec::open_rerecord(&a) {
+                    log::warn!("[TrayMenu] 重录上次区域失败: {e}");
+                }
+                #[cfg(not(windows))]
+                let _ = a;
+            });
         } else if id == ID_SCREEN_REC {
             // 录屏统一入口：录制中=停止，否则开选区窗（rec/mod.rs 的 open_selector_window）
             let a = app.clone();
@@ -511,6 +539,7 @@ mod tests {
                 })
                 .collect(),
             show_hotkey: String::new(),
+            rec_last: None,
         }
     }
 

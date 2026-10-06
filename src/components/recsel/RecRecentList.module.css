@@ -1,0 +1,126 @@
+/* RecRecentList.module.css — 工具箱「最近录制」区块（设计稿二期 §2）。
+ * 视觉对齐 ToolboxView：卡片底 / 8px 行圆角 / 11–12px 字号 / 150ms hover。 */
+
+.list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.item:hover {
+  background: color-mix(in srgb, var(--card-bg) 88%, var(--accent));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+}
+
+.fic {
+  flex: none;
+  font-size: 13px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  transition: color 150ms ease;
+}
+
+.name:hover {
+  color: var(--accent);
+}
+
+.meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.ops {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.op {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.op:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+}
+
+/* 两段确认态：语义色警示底（删除是不可恢复动作，U4） */
+.opArm {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.opArm:hover {
+  background: color-mix(in srgb, var(--danger) 24%, transparent);
+  color: var(--danger);
+}
+
+/* 空态：教学位给可执行的下一步（L3） */
+.empty {
+  margin-top: 8px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1.9;
+}
+
+.empty kbd {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  background: var(--card-bg);
+  font-family: inherit;
+}
+
+.err {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--danger);
+  line-height: 1.6;
+}

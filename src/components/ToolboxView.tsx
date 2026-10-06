@@ -27,6 +27,7 @@ import {
   saveRecent,
   saveUsage,
 } from "@/lib/toolboxUsage";
+import { RecRecentList } from "@/components/recsel/RecRecentList";
 import styles from "./ToolboxView.module.css";
 
 function ToolCard({
@@ -259,6 +260,10 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
               <div className={styles.hero}>{heroes.map((t) => card(t, true))}</div>
             </>
           )}
+
+          {/* 最近录制：录屏的交付闭环（设计稿二期 §2）；只在全部分类与「捕获」下展示，
+              搜索时隐藏——与「最近用过」chips 同一心智，别跟命中结果抢注意力 */}
+          {(category === "全部" || category === "捕获") && !q && <RecRecentList />}
 
           {groups.map((group) => (
             <div key={group.label}>

@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
@@ -60,6 +60,18 @@ struct Active {
 
 static ACTIVE: Mutex<Option<Active>> = Mutex::new(None);
 
+/// 最近一次会话的参数——「重录上次区域」的数据源。与 ACTIVE 生命周期不同：
+/// 停止后仍在，只被下一次 start 覆盖。
+static LAST_SESSION: Mutex<Option<RecOpts>> = Mutex::new(None);
+
+/// 最近一次会话参数（托盘「重录上次区域」显示与 open_rerecord 用）。
+pub fn last_opts() -> Option<RecOpts> {
+    LAST_SESSION
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
 /// 开始录制。输出路径由命令层决定好传入；同名冲突已由命令层规避。
 pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), String> {
     let mut slot = ACTIVE.lock().unwrap_or_else(|p| p.into_inner());
@@ -77,6 +89,7 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
     let discard = active.discard.clone();
     *slot = Some(active);
     drop(slot);
+    *LAST_SESSION.lock().unwrap_or_else(|p| p.into_inner()) = Some(opts.clone());
     std::thread::Builder::new()
         .name("rec-session".into())
         .spawn(move || run_record(app, opts, out_path, stop, discard))
@@ -118,9 +131,30 @@ pub fn status() -> RecStatus {
     }
 }
 
+/// 主窗是否藏着（托盘/热键发起录屏时主窗往往不可见）。
+/// 可见 = 沿用主窗 toast；隐藏 = HUD 轻浮窗承接（规则 15.1 同一可见性域）。
+fn main_hidden(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .map(|w| {
+            // 最小化的窗 is_visible 仍为 true——但用户看不见，必须按隐藏算（P2，二期审查）
+            !w.is_visible().unwrap_or(false) || w.is_minimized().unwrap_or(false)
+        })
+        .unwrap_or(true)
+}
+
 fn emit_failed(app: &AppHandle, msg: &str) {
     log::warn!("[Rec] {msg}");
-    let _ = app.emit("rec-failed", serde_json::json!({ "message": msg }));
+    let hud = main_hidden(app);
+    let _ = app.emit("rec-failed", serde_json::json!({ "message": msg, "hud": hud }));
+    if hud {
+        super::open_hud_window(app, &serde_json::json!({ "ok": false, "message": msg }));
+    }
+}
+
+/// 清空会话槽。🔴 主循环之前任何 `return` 都必须先调它——槽泄漏 = 之后
+/// 永远「已有录制在进行」、状态永远 finalizing、控制条永远「正在写入」。
+fn clear_active() {
+    ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).take();
 }
 
 #[allow(clippy::too_many_lines)]
@@ -130,17 +164,26 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
     let mut pool = DxgiPool::new();
     let first = loop {
         if stop.load(Ordering::SeqCst) {
-            return; // 用户在首帧前就取消了：没写盘，直接退
+            // 用户在首帧前就取消了：没写盘、没文件，按「已丢弃」收场——
+            // 必须清槽 + 发事件，否则覆盖层（穿透中）和控制条都会卡死
+            clear_active();
+            let _ = app.emit(
+                "rec-discarded",
+                serde_json::json!({ "path": path.display().to_string() }),
+            );
+            return;
         }
         match pool.grab(true, -1) {
             Ok(Some((w, h, _))) => break (w, h),
             Ok(None) => std::thread::sleep(Duration::from_millis(40)),
             Err(e) => {
+                clear_active();
                 emit_failed(&app, &format!("屏幕捕获不可用：{e}"));
                 return;
             }
         }
         if started_at.elapsed() > Duration::from_secs(5) {
+            clear_active();
             emit_failed(&app, "5 秒内没有抓到首帧（屏幕未点亮或捕获被占用）");
             return;
         }
@@ -161,13 +204,17 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
         sp.bitrate,
     );
     if !enc.available() {
+        clear_active();
         emit_failed(&app, "没有可用的硬件编码器（录屏不提供软编兜底）");
         return;
     }
 
     // ── 4. 音频线程（先起，回报 cfg；主循环开 sink 时要 ASC）──
+    // 两线程共用的墙钟零点：音频内容的 0 点与视频首帧时刻都记在它上面，
+    // 差值就是 mux 时的位移（音画对齐，见 av_shift）。
+    let axis_t0 = Instant::now();
     let (aud_tx, aud_rx) = mpsc::sync_channel::<AudioMsg>(AUDIO_MSG_CAP);
-    let mut audio_cfg = spawn_audio(&opts, aud_tx);
+    let mut audio_cfg = spawn_audio(&opts, aud_tx, axis_t0);
 
     // ── 5. 主循环 ──
     let frame_dur = Duration::from_nanos(1_000_000_000 / sp.fps.max(1) as u64);
@@ -178,13 +225,22 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
     let mut enc_fail_streak = 0u32;
     let mut next_frame = Instant::now();
     let mut frames_written: u64 = 0;
+    // 中途故障不边走边报：记原因 → 收尾按结局发**一条**事件
+    // （旧实现故障点发 rec-failed、收尾再发 rec-done，主窗双 toast 自相矛盾）
+    let mut interrupted: Option<String> = None;
+    // 音画对齐：视频轴 0 = 首帧编码时刻，音频轴 0 = 采集 Start 时刻（音频线程
+    // 记在 axis_t0 相对轴上，开 sink 时取回）。0 点差决定位移哪条轨（只推迟不回拨）。
+    let mut video_encode0_set = false;
+    let mut video_encode0_ms: u64 = 0;
+    let mut video_shift_ms: i64 = 0;
+    let mut audio_shift_ms: i64 = 0;
 
     loop {
         if stop.load(Ordering::SeqCst) {
             break;
         }
         // 音频 mux（无音频轨时立刻返回）
-        drain_audio(&mut sink, &aud_rx);
+        drain_audio(&mut sink, &aud_rx, audio_shift_ms);
         // 节奏：静止时 DXGI 30ms 超时自然降频，画面一动立即出帧
         if next_frame > Instant::now() {
             std::thread::sleep(Duration::from_millis(2));
@@ -195,15 +251,17 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
             Err(e) => {
                 grab_fail_streak += 1;
                 if grab_fail_streak >= 45 {
-                    // 锁屏 / 显示器全黑 / 驱动异常：落盘已录部分，明确上报
-                    emit_failed(&app, &format!("屏幕捕获连续失败，已保存已录部分：{e}"));
+                    // 锁屏 / 显示器全黑 / 驱动异常：落盘已录部分，收尾统一上报
+                    interrupted = Some(format!(
+                        "屏幕捕获中断（锁屏或显示器关闭），已保留已录部分：{e}"
+                    ));
                     break;
                 }
             }
             Ok(None) => { /* 静止：跳帧，时间轴由编码器步进，时长连续 */ }
             Ok(Some((vw2, vh2, bgra))) => {
                 if (vw2, vh2) != (vw, vh) {
-                    emit_failed(&app, "录制中分辨率变了（接显示器/改缩放），已保存已录部分");
+                    interrupted = Some("录制中分辨率变化（接显示器/改缩放），已保留已录部分".into());
                     break;
                 }
                 crop_into(bgra, vw, rx, ry, rw, rh, &mut crop_buf);
@@ -211,19 +269,24 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
                     match scaler.resize(&crop_buf, rw, rh, sp.width, sp.height) {
                         Ok(s) => s.to_vec(),
                         Err(e) => {
-                            emit_failed(&app, &format!("缩放失败：{e}"));
+                            interrupted = Some(format!("画面缩放失败：{e}"));
                             break;
                         }
                     }
                 } else {
                     std::mem::take(&mut crop_buf)
                 };
+                if !video_encode0_set {
+                    video_encode0_set = true;
+                    video_encode0_ms =
+                        Instant::now().saturating_duration_since(axis_t0).as_millis() as u64;
+                }
                 match enc.encode_bgra(&src, sp.width, sp.height) {
                     Err(e) => {
                         enc_fail_streak += 1;
                         log::warn!("[Rec] 编码失败（{enc_fail_streak}/5）：{e}");
                         if enc_fail_streak >= 5 {
-                            emit_failed(&app, &format!("视频编码连续失败：{e}"));
+                            interrupted = Some(format!("视频编码连续失败，已保留已录部分：{e}"));
                             break;
                         }
                     }
@@ -240,9 +303,22 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
                                 continue; // 参数集还没出（首包可能只有 IDR 前导），下一帧再试
                             }
                             match open_sink(&path, &sp, &seq, audio_cfg.take()) {
-                                Ok(s) => sink = Some(s),
+                                Ok((s, audio_start_ms)) => {
+                                    sink = Some(s);
+                                    // 两轴 0 点差 → 晚开的那条轨整体推迟差值（不回拨）；
+                                    // 无音频轨（0 = 无锚点）时视频轴保持原样
+                                    let (vs, ash) = if audio_start_ms == 0 {
+                                        (0, 0)
+                                    } else if audio_start_ms > video_encode0_ms {
+                                        (0, (audio_start_ms - video_encode0_ms) as i64)
+                                    } else {
+                                        ((video_encode0_ms - audio_start_ms) as i64, 0)
+                                    };
+                                    video_shift_ms = vs;
+                                    audio_shift_ms = ash;
+                                }
                                 Err(e) => {
-                                    emit_failed(&app, &e);
+                                    interrupted = Some(format!("创建 MP4 封装失败：{e}"));
                                     break;
                                 }
                             }
@@ -250,14 +326,14 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
                         if let Some(s) = sink.as_mut() {
                             let mut write_err = None;
                             for p in &packets {
-                                if let Err(e) = s.write_video(p.at_ms, &p.data) {
+                                if let Err(e) = s.write_video(p.at_ms + video_shift_ms, &p.data) {
                                     write_err = Some(e);
                                     break;
                                 }
                                 frames_written += 1;
                             }
                             if let Some(e) = write_err {
-                                emit_failed(&app, &format!("写视频帧失败：{e}"));
+                                interrupted = Some(format!("写入视频帧失败，已保留已录部分：{e}"));
                                 break;
                             }
                         }
@@ -268,15 +344,14 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
         }
     }
 
-    // ── 6. 收尾：drain 音频余量 → Finalize → 事件 ──
-    let elapsed_ms = started_at.elapsed().as_millis() as u64;
+    // ── 6. 收尾：drain 音频余量 → Finalize → 按结局发**一条**事件 ──
     drop(scaler);
     let mut sink = sink;
-    drain_audio(&mut sink, &aud_rx);
+    drain_audio(&mut sink, &aud_rx, audio_shift_ms);
     // 音频线程可能还有最后一段：给它一点时间自然排空
     let deadline = Instant::now() + Duration::from_millis(300);
     while Instant::now() < deadline {
-        if matches!(drain_audio(&mut sink, &aud_rx), DrainResult::Idle) {
+        if matches!(drain_audio(&mut sink, &aud_rx, audio_shift_ms), DrainResult::Idle) {
             break;
         }
     }
@@ -285,44 +360,85 @@ fn run_record(app: AppHandle, opts: RecOpts, path: PathBuf, stop: Arc<AtomicBool
     drop(sink);
 
     // 会话槽先清：完成事件到达前 status() 已不再报「录制中」
-    ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).take();
+    clear_active();
 
     if discard.load(Ordering::SeqCst) {
         let _ = std::fs::remove_file(&path);
         let _ = app.emit("rec-discarded", serde_json::json!({ "path": path.display().to_string() }));
         return;
     }
+    // 时长按编码器时间轴（帧数×帧长）：不含首帧等待，与播放器显示的时长一致
+    let duration_ms = frames_written * 1000 / sp.fps.max(1) as u64;
     match finalize_result {
         Some(Ok(())) => {
             let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let hud = main_hidden(&app);
             let _ = app.emit(
                 "rec-done",
-                serde_json::json!({ "path": path.display().to_string(), "bytes": bytes, "duration_ms": elapsed_ms, "frames": frames_written }),
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "bytes": bytes,
+                    "duration_ms": duration_ms,
+                    "frames": frames_written,
+                    // 中途故障落盘的部分保存：主窗 toast 附注一句说明，不另发 rec-failed
+                    "note": interrupted,
+                    // 主窗藏着时消息由 HUD 轻浮窗承接，主窗 toast 据此闭嘴（双通路互斥）
+                    "hud": hud,
+                }),
             );
+            if hud {
+                super::open_hud_window(
+                    &app,
+                    &serde_json::json!({
+                        "ok": true,
+                        "path": path.display().to_string(),
+                        "bytes": bytes,
+                        "duration_ms": duration_ms,
+                        "quality": opts.quality.as_str(),
+                        "note": interrupted,
+                    }),
+                );
+            }
         }
-        Some(Err(e)) => emit_failed(&app, &format!("写文件收尾失败：{e}")),
-        None => { /* 一帧都没写（选区确立后立刻停止）：文件可能不存在，按失败报 */ }
+        Some(Err(e)) => {
+            let msg = match interrupted {
+                Some(m) => format!("{m}；写文件收尾失败：{e}"),
+                None => format!("写文件收尾失败：{e}"),
+            };
+            emit_failed(&app, &msg);
+        }
+        None => {
+            // sink 没开成 / 一帧没写：MF 可能已建出半截文件，一并清掉；
+            // 用户主动停止的按「已丢弃」报（没保存任何东西，不算失败）
+            let _ = std::fs::remove_file(&path);
+            if stop.load(Ordering::SeqCst) {
+                let _ = app.emit(
+                    "rec-discarded",
+                    serde_json::json!({ "path": path.display().to_string() }),
+                );
+            } else {
+                emit_failed(&app, &interrupted.unwrap_or_else(|| "没有写入任何画面".into()));
+            }
+        }
     }
 }
 
 // ── 音频 ────────────────────────────────────────────────────────────────
 
 /// 音频线程 → 主循环的消息：编好的 AAC 帧（cfg 走独立的 ready 通道）。
+/// 空包是心跳：没人收 = 主循环已退，音频线程据此退出。
 enum AudioMsg {
     Packets(Vec<crate::rc::audio::AacPacket>),
 }
 
+/// 音频 cfg 就绪消息。`start_ms` = 音频**内容** 0 点（采集 Start 完成）在
+/// `axis_t0` 相对轴上的位置，供主循环对齐视频轴（无锚点/无音源时为 0）。
 #[derive(Clone)]
 struct AudioReady {
     sr: u32,
     ch: u32,
     asc: Vec<u8>,
-}
-
-impl From<crate::rc::audio::AudioCfg> for AudioReady {
-    fn from(c: crate::rc::audio::AudioCfg) -> Self {
-        Self { sr: c.sr, ch: c.ch, asc: c.asc }
-    }
+    start_ms: u64,
 }
 
 /// 起音频线程：泵系统环回（可选）与麦克风（可选），重采样对齐后混音，AAC 编码。
@@ -330,6 +446,7 @@ impl From<crate::rc::audio::AudioCfg> for AudioReady {
 fn spawn_audio(
     opts: &RecOpts,
     tx: mpsc::SyncSender<AudioMsg>,
+    axis_t0: Instant,
 ) -> Option<std::sync::mpsc::Receiver<AudioReady>> {
     if !opts.sys_audio && !opts.mic_audio {
         return None;
@@ -339,7 +456,7 @@ fn spawn_audio(
     let mic = opts.mic_audio;
     std::thread::Builder::new()
         .name("rec-audio".into())
-        .spawn(move || run_audio(sys, mic, tx, ready_tx))
+        .spawn(move || run_audio(sys, mic, tx, ready_tx, axis_t0))
         .ok()?;
     Some(ready_rx)
 }
@@ -350,6 +467,7 @@ fn run_audio(
     mic: bool,
     tx: mpsc::SyncSender<AudioMsg>,
     ready_tx: mpsc::Sender<AudioReady>,
+    axis_t0: Instant,
 ) {
     // 本线程自持 COM（采集与编码都要求）
     let com_owned = unsafe {
@@ -361,6 +479,10 @@ fn run_audio(
     };
     let mut loopback = if sys { LoopbackCapture::new().ok() } else { None };
     let mut microphone = if mic { MicCapture::new().ok() } else { None };
+    // 音频内容 0 点 = 采集 Start 完成（在 ::new 内）。记在 spawn 相对轴上，
+    // 与视频首帧编码时刻同轴相减就是 mux 位移。
+    let audio_start_ms =
+        Instant::now().saturating_duration_since(axis_t0).as_millis() as u64;
     if sys && loopback.is_none() {
         log::warn!("[Rec] 系统声音采集不可用（无播放设备），本次录制无系统声");
     }
@@ -369,7 +491,7 @@ fn run_audio(
     }
     if loopback.is_none() && microphone.is_none() {
         // 两个音源都没起来：音轨放弃（画面照录，asc 空 = sink 不开音频轨）
-        let _ = ready_tx.send(AudioReady { sr: 0, ch: 0, asc: Vec::new() });
+        let _ = ready_tx.send(AudioReady { sr: 0, ch: 0, asc: Vec::new(), start_ms: 0 });
         if com_owned {
             unsafe { windows::Win32::System::Com::CoUninitialize() };
         }
@@ -386,14 +508,20 @@ fn run_audio(
         Ok(e) => Some(e),
         Err(e) => {
             log::warn!("[Rec] AAC 编码器不可用，本次无音轨：{e}");
-            let _ = ready_tx.send(AudioReady { sr: 0, ch: 0, asc: Vec::new() });
+            let _ = ready_tx.send(AudioReady { sr: 0, ch: 0, asc: Vec::new(), start_ms: 0 });
             if com_owned {
                 unsafe { windows::Win32::System::Com::CoUninitialize() };
             }
             return;
         }
     };
-    let cfg = AudioReady::from(encoder.as_ref().map(|e| e.cfg()).unwrap_or(crate::rc::audio::AudioCfg { sr: base_sr, ch: 2, asc: Vec::new(), br: 128 }));
+    let enc_cfg = encoder
+        .as_ref()
+        .map_or_else(
+            || crate::rc::audio::AudioCfg { sr: base_sr, ch: 2, asc: Vec::new(), br: 128 },
+            |e| e.cfg(),
+        );
+    let cfg = AudioReady { sr: enc_cfg.sr, ch: enc_cfg.ch, asc: enc_cfg.asc, start_ms: audio_start_ms };
     let _ = ready_tx.send(cfg);
 
     loop {
@@ -460,9 +588,12 @@ enum DrainResult {
     Idle,
 }
 
-/// 收干音频通道：Ready 记下 cfg（若 sink 未开，下一帧首帧路径会用），
-/// Packets 逐帧 write_audio。返回是否本次真的处理到了数据。
-fn drain_audio(sink: &mut Option<RecSink>, rx: &mpsc::Receiver<AudioMsg>) -> DrainResult {
+/// 收干音频通道：逐帧 write_audio（带音画位移）。返回是否本次真的处理到了数据。
+fn drain_audio(
+    sink: &mut Option<RecSink>,
+    rx: &mpsc::Receiver<AudioMsg>,
+    audio_shift_ms: i64,
+) -> DrainResult {
     // ready 通道在 open_sink 时一次性取走，这里只收 packets
     let mut any = false;
     loop {
@@ -475,7 +606,7 @@ fn drain_audio(sink: &mut Option<RecSink>, rx: &mpsc::Receiver<AudioMsg>) -> Dra
                 if let Some(s) = sink.as_mut() {
                     let mut err = None;
                     for p in &pkts {
-                        if let Err(e) = s.write_audio(p.pts_ms as i64, &p.data) {
+                        if let Err(e) = s.write_audio(p.pts_ms as i64 + audio_shift_ms, &p.data) {
                             err = Some(e);
                             break;
                         }
@@ -492,25 +623,28 @@ fn drain_audio(sink: &mut Option<RecSink>, rx: &mpsc::Receiver<AudioMsg>) -> Dra
     if any { DrainResult::Drained } else { DrainResult::Idle }
 }
 
+/// 打开 MP4 封装并取回音频轴 0 点（无音频轨为 0 = 主循环不做位移）。
+/// 等音频 cfg（线程里 AacEncoder::open 一般几十 ms 内完成）。
 fn open_sink(
     path: &Path,
     sp: &SinkParams,
     seq_header: &[u8],
     audio: Option<mpsc::Receiver<AudioReady>>,
-) -> Result<RecSink, String> {
-    // 等音频 cfg（线程里 AacEncoder::open 一般几十 ms 内完成）
-    let audio_tuple: Option<(u32, u32, Vec<u8>)> = match audio {
+) -> Result<(RecSink, u64), String> {
+    let (audio_tuple, audio_start_ms) = match audio {
         Some(rx) => match rx.recv_timeout(Duration::from_millis(800)) {
-            Ok(c) if c.sr > 0 && !c.asc.is_empty() => Some((c.sr, c.ch, c.asc)),
+            Ok(c) if c.sr > 0 && !c.asc.is_empty() => {
+                (Some((c.sr, c.ch, c.asc)), c.start_ms)
+            }
             _ => {
                 log::warn!("[Rec] 音频轨未就绪，本次只录画面");
-                None
+                (None, 0)
             }
         },
-        None => None,
+        None => (None, 0),
     };
     let audio_ref = audio_tuple.as_ref().map(|(sr, ch, asc)| (*sr, *ch, asc.as_slice()));
-    RecSink::open(
+    let sink = RecSink::open(
         path,
         sp.width,
         sp.height,
@@ -519,7 +653,8 @@ fn open_sink(
         seq_header,
         audio_ref,
         sp.bitrate,
-    )
+    )?;
+    Ok((sink, audio_start_ms))
 }
 
 // ── 纯函数（可单测）────────────────────────────────────────────────────

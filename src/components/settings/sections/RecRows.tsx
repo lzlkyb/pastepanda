@@ -12,6 +12,7 @@ import { ToggleRow, SettingTile } from "../ToggleRow";
 import type { AppConfig } from "@/stores/appStore";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import { REC_QUALITIES, recQualityOf, type RecQualityKey } from "@/lib/recQuality";
+import { globalHotkeysTaken } from "@/lib/globalHotkeys";
 import { toastActionFailed } from "@/lib/utils";
 import styles from "../../Settings.module.css";
 
@@ -20,17 +21,6 @@ interface RecRowsProps {
   updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
   chains: SettingsData["chains"];
 }
-
-const ALL_HOTKEYS_TAKEN = (config: AppConfig): string[] => [
-  config.hotkey,
-  config.sequential_hotkey ?? "",
-  config.stack_toggle_hotkey ?? "",
-  config.stack_paste_hotkey ?? "",
-  config.quick_paste_hotkey ?? "",
-  config.screenshot_hotkey ?? "",
-  config.daily_note_hotkey ?? "",
-  config.todo_island_hotkey ?? "",
-];
 
 async function reregisterQuiet(): Promise<void> {
   await invoke("reregister_hotkeys");
@@ -86,7 +76,7 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
         <HotkeyRecorder
           value={config.rec_hotkey}
           allowClear
-          taken={ALL_HOTKEYS_TAKEN(config)}
+          taken={globalHotkeysTaken(config, "rec_hotkey")}
           onChange={(v) => {
             const oldVal = config.rec_hotkey;
             void (async () => {

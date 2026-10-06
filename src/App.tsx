@@ -296,7 +296,8 @@ function App() {
   useEffect(() => {
     const toastHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.message) toast(detail.message, detail.type || "info", undefined, undefined, undefined, detail.copyText, detail.action);
+      if (detail?.message)
+        toast(detail.message, detail.type || "info", detail.duration, undefined, detail.actionLabel, detail.copyText, detail.action, detail.onAction);
     };
     const moveToGroupHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -712,16 +713,29 @@ function App() {
         });
         // 录屏完成：主窗 toast（选区/控制条窗收到同一事件是自行关窗）。
         // 失败同样必须由主窗承接：录制窗可能已在收尾中销毁（规则 15.3 不静默）。
-        const fnRecDone = await listen<{ path: string; bytes: number }>("rec-done", (e) => {
+        // note = 中途故障落盘的部分保存（锁屏/分辨率变化），附注在 toast 里说清。
+        const fnRecDone = await listen<{ path: string; bytes: number; note?: string | null; hud?: boolean }>("rec-done", (e) => {
+          if (e.payload.hud) return; // 主窗隐藏：HUD 轻浮窗已承接（双通路互斥，设计稿二期 §1）
           const mb = (e.payload.bytes / 1024 / 1024).toFixed(1);
           const name = e.payload.path.split(/[/]/).pop() ?? e.payload.path;
+          const suffix = e.payload.note ? `（${e.payload.note}）` : "";
+          const path = e.payload.path;
           window.dispatchEvent(
             new CustomEvent("app-toast", {
-              detail: { message: `🎬 录屏已保存 ${name} · ${mb} MB`, type: "success" },
+              detail: {
+                message: `🎬 录屏已保存 ${name} · ${mb} MB${suffix}`,
+                type: "success",
+                duration: 6000,
+                actionLabel: "打开文件夹",
+                onAction: () => {
+                  void invoke("rec_reveal", { path }).catch(() => { /* 定位失败不打断 */ });
+                },
+              },
             }),
           );
         });
-        const fnRecFail = await listen<{ message?: string }>("rec-failed", (ev) => {
+        const fnRecFail = await listen<{ message?: string; hud?: boolean }>("rec-failed", (ev) => {
+          if (ev.payload?.hud) return; // 同上：主窗隐藏时由 HUD 承接
           window.dispatchEvent(
             new CustomEvent("app-toast", {
               detail: { message: `录制失败：${ev.payload?.message ?? "未知原因"}`, type: "error" },

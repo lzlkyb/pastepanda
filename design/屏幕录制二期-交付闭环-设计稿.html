@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>屏幕录制二期 - 交付闭环 - 设计稿</title>
+<style>
+  /* ============ 设计稿页面底(非应用),与一期稿同一套框架 ============ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #0b0f1a;
+    color: #e7ecf5;
+    padding: 40px 24px 80px;
+    -webkit-user-select: none; user-select: none;
+  }
+  .doc { max-width: 1080px; margin: 0 auto; }
+  .doc-head h1 { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .doc-head h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, #6366f1, #22d3ee);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .doc-head .sub { margin-top: 10px; font-size: 13px; line-height: 1.9; color: #94a3b8; max-width: 880px; }
+  .doc-head .meta { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.14); color: #a5b4cf; background: rgba(255,255,255,.04);
+  }
+  .tag.hl { border-color: rgba(99,102,241,.5); color: #a5b4fc; background: rgba(99,102,241,.12); }
+
+  .sec { margin-top: 52px; }
+  .sec-title { display: flex; align-items: baseline; gap: 12px; }
+  .sec-title .no {
+    font-size: 12px; font-weight: 700; color: #6366f1;
+    border: 1px solid rgba(99,102,241,.45); border-radius: 6px; padding: 2px 8px;
+    background: rgba(99,102,241,.1);
+  }
+  .sec-title h2 { font-size: 18px; font-weight: 650; }
+  .sec-desc { margin-top: 8px; font-size: 12.5px; line-height: 1.9; color: #94a3b8; max-width: 900px; }
+  .sec-desc b { color: #cbd5e1; font-weight: 600; }
+  .sec-desc code {
+    font-size: 11.5px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 4px; padding: 1px 6px; color: #a5b4fc;
+  }
+  .duo { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .panel { border: 1px solid rgba(255,255,255,.09); border-radius: 14px; overflow: hidden; background: #0e1320; }
+  .panel-cap {
+    padding: 9px 14px; font-size: 11.5px; color: #8b96ad;
+    border-bottom: 1px solid rgba(255,255,255,.07); background: rgba(255,255,255,.02);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel-cap b { color: #c6d0e2; font-weight: 600; }
+  .panel-cap .new { color: #34d399; font-weight: 700; font-size: 10.5px; letter-spacing: .5px; }
+
+  /* ============ 模拟桌面(16:9 场景画布) ============ */
+  .desk { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1a2238 0%, #10213a 45%, #0d2c46 100%); overflow: hidden; }
+  .desk .faux-win {
+    position: absolute; border-radius: 8px 8px 0 0; background: #16202f;
+    border: 1px solid rgba(255,255,255,.08); border-bottom: none;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+  }
+  .faux-win .bar { height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .faux-win .bar i { width: 8px; height: 8px; border-radius: 50%; background: #33415c; }
+  .faux-win .body { padding: 12px; display: grid; gap: 7px; }
+  .faux-win .body i { display: block; height: 8px; border-radius: 4px; background: rgba(255,255,255,.07); }
+  .faux-win .body i:nth-child(2) { width: 70%; }
+  .faux-win .body i:nth-child(3) { width: 45%; }
+  .win-a { left: 6%; top: 10%; width: 44%; height: 60%; }
+  .win-b { left: 54%; top: 18%; width: 38%; height: 52%; }
+  .desk .taskbar {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+    background: rgba(8,11,18,.85); border-top: 1px solid rgba(255,255,255,.06);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  }
+  .taskbar i { width: 12px; height: 12px; border-radius: 3px; background: #2c3a55; }
+  .taskbar .tray { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .taskbar .tray s { width: 14px; height: 12px; border-radius: 3px; background: #2c3a55; display: block; }
+  .taskbar .panda { width: 16px; height: 16px; border-radius: 4px; background: linear-gradient(135deg,#6366f1,#22d3ee); }
+
+  /* ============ 应用视觉语言(取自 recsel.css / ToolboxView.module.css 真值) ============ */
+  .glass {
+    background: rgba(16,20,30,.92);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .btn {
+    font-size: 12px; padding: 4px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.22); background: transparent; color: #e7ecf5;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn.primary { background: linear-gradient(135deg, #6366f1, #0ea5e9); border: none; color: #fff; font-weight: 600; }
+  .btn:hover { filter: brightness(1.12); }
+  .x { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; color: #8b96ad; cursor: pointer; font-size: 11px; }
+  .x:hover { background: rgba(255,255,255,.1); color: #e7ecf5; }
+
+  /* ── §1 主窗 toast(右上)——在现有 Toast 视觉上新增动作按钮 ── */
+  .toast {
+    position: absolute; right: 12px; top: 12px;
+    display: flex; align-items: center; gap: 8px;
+    background: #121826; border: 1px solid rgba(255,255,255,.1); border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.5);
+    padding: 8px 10px; font-size: 12px; max-width: 340px;
+  }
+  .toast .ic { width: 22px; height: 22px; border-radius: 6px; background: rgba(52,211,153,.15); color: #34d399; display: grid; place-items: center; font-size: 12px; flex: none; }
+  .toast .msg { line-height: 1.5; color: #dbe3f0; }
+  .toast .act { color: #a5b4fc; font-weight: 600; cursor: pointer; flex: none; padding: 2px 4px; border-radius: 4px; }
+  .toast .act:hover { background: rgba(99,102,241,.15); }
+
+  /* ── §1 录屏 HUD(右下)——主窗隐藏时的完成/失败通知 ── */
+  .hud {
+    position: absolute; right: 14px; bottom: 38px; width: 308px;
+    padding: 10px 12px;
+  }
+  .hud .row1 { display: flex; align-items: center; gap: 8px; }
+  .hud .badge { font-size: 11px; font-weight: 700; color: #f87171; display: inline-flex; align-items: center; gap: 5px; flex: none; }
+  .hud .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #f87171; }
+  .hud .badge.ok { color: #34d399; } .hud .badge.ok .dot { background: #34d399; }
+  .hud .t { font-size: 12px; color: #e7ecf5; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hud .row2 { margin-top: 4px; font-size: 11px; color: #8b96ad; display: flex; gap: 8px; }
+  .hud .row3 { margin-top: 9px; display: flex; gap: 8px; align-items: center; }
+  .hud.err .row2 { color: #fda4af; line-height: 1.6; }
+  .hud .life { position: absolute; left: 12px; right: 12px; bottom: 4px; height: 2px; border-radius: 1px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .hud .life i { position: absolute; inset: 0; background: rgba(99,102,241,.55); transform-origin: left; }
+  .hud .life i.run { animation: hudlife 8s linear forwards; }
+  @keyframes hudlife { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+  /* ── §2 工具箱 hero 卡 + 最近录制 ── */
+  .toolbox { position: absolute; inset: 7% 8%; background: #0d1420; border: 1px solid rgba(255,255,255,.08); border-radius: 12px 12px 0 0; box-shadow: 0 12px 40px rgba(0,0,0,.45); padding: 14px 16px; overflow: hidden; }
+  .tb-search { height: 30px; border-radius: 8px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); display: flex; align-items: center; padding: 0 10px; font-size: 11.5px; color: #66718a; }
+  .tb-sec { margin-top: 12px; font-size: 11px; color: #8b96ad; display: flex; align-items: center; gap: 6px; }
+  .tb-sec .cnt { font-size: 10px; background: rgba(99,102,241,.15); color: #a5b4fc; border-radius: 999px; padding: 1px 7px; }
+  .hero-cards { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hcard { border-radius: 12px; background: #121a29; border: 1px solid rgba(255,255,255,.08); padding: 10px 12px; display: flex; gap: 10px; align-items: center; }
+  .hcard .tile { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, rgba(14,165,233,.25), rgba(99,102,241,.2)); display: grid; place-items: center; font-size: 16px; flex: none; }
+  .hcard .nm { font-size: 12.5px; font-weight: 600; color: #e7ecf5; display: flex; gap: 6px; align-items: center; }
+  .hcard .nm kbd { font-size: 9.5px; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,.16); color: #a5b4cf; font-family: inherit; }
+  .hcard .ds { font-size: 11px; color: #8b96ad; margin-top: 2px; }
+  .rec-list { margin-top: 8px; display: grid; gap: 6px; }
+  .rec-item {
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    border-radius: 8px; background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06);
+    font-size: 11.5px;
+  }
+  .rec-item:hover { background: rgba(255,255,255,.06); }
+  .rec-item .fic { flex: none; font-size: 13px; }
+  .rec-item .fn { color: #dbe3f0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rec-item .meta { color: #66718a; flex: none; font-size: 10.5px; }
+  .rec-item .ops { margin-left: auto; display: flex; gap: 4px; flex: none; }
+  .rec-item .op { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: #8b96ad; cursor: pointer; font-size: 11px; }
+  .rec-item .op:hover { background: rgba(255,255,255,.1); color: #e7ecf5; }
+  .rec-empty { margin-top: 8px; padding: 14px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.12); text-align: center; font-size: 11.5px; color: #8b96ad; line-height: 1.8; }
+  .rec-empty kbd { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,.2); color: #a5b4cf; }
+
+  /* ── §3 托盘菜单 ── */
+  .tray-menu { position: absolute; left: 38%; bottom: 34px; width: 190px; padding: 6px; }
+  .tray-menu div { font-size: 12px; color: #dbe3f0; padding: 7px 10px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+  .tray-menu div:hover { background: rgba(255,255,255,.08); }
+  .tray-menu div.hl { background: rgba(99,102,241,.18); color: #c7d2fe; }
+  .tray-menu .sep { height: 1px; padding: 0; margin: 5px 6px; background: rgba(255,255,255,.08); border-radius: 0; }
+
+  /* ── §4 窗口吸附 ── */
+  .snap-rect {
+    position: absolute; outline: 3px solid #3B9EFF;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 10px rgba(59,155,255,.45);
+    pointer-events: none;
+  }
+  .snap-tip {
+    position: absolute; padding: 5px 10px; font-size: 11px; color: #dbe3f0;
+  }
+  .snap-tip b { color: #7cc0ff; }
+  .free-rect { position: absolute; outline: 2px dashed rgba(163,148,240,.9); pointer-events: none; }
+  .cursor { position: absolute; width: 14px; height: 14px; pointer-events: none; }
+  .cursor::before { content: ""; position: absolute; inset: 0; background: #fff; clip-path: polygon(0 0, 100% 62%, 58% 62%, 78% 100%, 62% 100%, 44% 68%, 0 88%); filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+
+  /* 标注 */
+  .note { position: absolute; font-size: 10.5px; color: #7dd3fc; background: rgba(8,14,26,.85); border: 1px solid rgba(56,189,248,.35); border-radius: 6px; padding: 3px 8px; pointer-events: none; }
+  .note::before { content: ""; position: absolute; width: 7px; height: 7px; border-left: 1px solid rgba(56,189,248,.6); border-bottom: 1px solid rgba(56,189,248,.6); }
+  .spec { margin-top: 14px; border: 1px solid rgba(255,255,255,.08); border-radius: 10px; overflow: hidden; }
+  .spec table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .spec th { text-align: left; padding: 8px 12px; color: #8b96ad; font-weight: 600; background: rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.07); font-size: 11px; }
+  .spec td { padding: 8px 12px; color: #c6d0e2; border-bottom: 1px solid rgba(255,255,255,.05); line-height: 1.7; }
+  .spec tr:last-child td { border-bottom: none; }
+  .spec td b { color: #e7ecf5; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="doc-head">
+    <h1>屏幕录制 <em>二期 · 交付闭环</em> 设计稿</h1>
+    <p class="sub">
+      一期立住了「能录、画质可选、双音轨」；二期回答<b>录完之后的事</b>和<b>高频操作的手感</b>。
+      本稿覆盖五个改动：①完成通知双通路（主窗 toast 加动作 / 主窗隐藏时的 HUD 轻浮窗）
+      ②工具箱「最近录制」列表 ③重录上次区域（HUD + 托盘两个入口）④窗口吸附框选 ⑤顺手小修。
+      视觉全部取自现有组件真值（recsel.css 深色玻璃 / ToolboxView 卡片 / Toast 动作按钮），
+      未涉及的部分与一期稿保持一致。
+    </p>
+    <div class="meta">
+      <span class="tag hl">2026-10-05</span>
+      <span class="tag">基于一期已落地代码</span>
+      <span class="tag">规则 17/18 对照通过</span>
+      <span class="tag">待确认后实施</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════ §1 ══════════════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">1</span><h2>完成通知双通路：主窗可见走 toast，主窗隐藏走 HUD</h2></div>
+    <p class="sec-desc">
+      一期的完成/失败消息只发在<b>主窗口的 toast</b>——而录屏大多从托盘/热键发起，主窗往往是藏着的，
+      用户眼里就是「点完停止什么都没发生」（规则 15.1）。二期补一条独立通路：
+      新增 <code>rec-hud</code> 轻浮窗（右下角，栈浮窗同款置顶小窗机制，不引系统通知依赖），
+      主窗<b>可见时维持现状走 toast</b>（toast 自带动作按钮能力，只扩展 app-toast 事件字段），
+      <b>隐藏时走 HUD</b>。两条通路互斥，避免双份打扰。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>主窗可见：toast + 「打开文件夹」动作</b><span>现有通路 · 扩展 detail</span></div>
+        <div class="desk">
+          <div class="faux-win win-a"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="taskbar"><i></i><i></i><i></i><div class="tray"><s></s><s></s><div class="panda"></div></div></div>
+          <div class="toast">
+            <span class="ic">✓</span>
+            <span class="msg">🎬 录屏已保存 屏幕录制_2026-10-05_2015.mp4 · 12.3 MB</span>
+            <span class="act">打开文件夹</span>
+            <span class="x">✕</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>主窗隐藏：HUD 轻浮窗（新增 rec-hud 窗）</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="faux-win win-a"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="taskbar"><i></i><i></i><i></i><div class="tray"><s></s><s></s><div class="panda"></div></div></div>
+          <div class="glass hud">
+            <div style="width:100%">
+              <div class="row1">
+                <span class="badge ok"><span class="dot"></span>已保存</span>
+                <span class="t">屏幕录制_2026-10-05_2015.mp4</span>
+                <span class="x">✕</span>
+              </div>
+              <div class="row2"><span>12.3 MB</span><span>01:42</span><span>高清 · 30fps</span></div>
+              <div class="row3">
+                <button class="btn primary">📁 打开文件夹</button>
+                <button class="btn">↻ 重录</button>
+              </div>
+              <div class="life"><i class="run"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:130px">规格</th><th>判定</th></tr>
+        <tr><td><b>通路选择</b></td><td>后端发事件时带 <code>main_visible</code> 标志（读主窗 <code>is_visible()</code>）；前端据此二选一。两条都可见时只出 toast。</td></tr>
+        <tr><td><b>HUD 生命周期</b></td><td>事件到达创建，<b>8s 自动销毁</b>（同 UNDO_WINDOW 量级）；hover 暂停倒计时（同 Toast U4.2 心智，底部 2px 进度条同步）；点击 ✕ 立即销毁。失败态 10s（多一行原因，给读的时间）。</td></tr>
+        <tr><td><b>HUD 位置</b></td><td>工作区右下角（托盘上方 12px），物理像素定位，多屏贴主屏。置顶 + 无边框 + 深色玻璃（recsel.css 同款变量）。</td></tr>
+        <tr><td><b>失败态</b></td><td>同一张 HUD，徽标变红色「失败」，第二行显示原因（如「屏幕捕获中断，已保留已录部分」），按钮只剩「打开文件夹」（文件在时）与 ✕。</td></tr>
+        <tr><td><b>为什么不用系统通知</b></td><td>不加新插件依赖；不受系统免打扰/通知权限影响；视觉与应用一致。三期若要「点击通知跳转」再评估。</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════ §2 ══════════════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">2</span><h2>工具箱「最近录制」列表：录完找得着</h2></div>
+    <p class="sec-desc">
+      「捕获」分组的 hero 卡下方新增<b>最近录制</b>区块（仅当该分区可见时显示）：
+      列出保存目录里最近 5 个 <code>屏幕录制_*.mp4</code>（后端新命令 <code>rec_list_files</code> 扫目录按修改时间取，
+      不入库、无新表）。行点击 = 用系统播放器打开；行尾两个操作：📁 打开所在文件夹、✕ 删除（两段确认，同控制条「丢弃」的心智）。
+      文案遵守 L2：操作全部有常驻文字含义（title + 图标语义），不给裸图标。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>有录制：hero 卡 + 最近录制 5 条</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="toolbox">
+            <div class="tb-search">筛选工具…  Ctrl+F</div>
+            <div class="tb-sec">高频 <span class="cnt">3</span></div>
+            <div class="hero-cards">
+              <div class="hcard"><span class="tile">📋</span><span><span class="nm">依次粘贴 <kbd>Ctrl+Alt+Q</kbd></span><div class="ds">按顺序逐条粘贴文本</div></span></div>
+              <div class="hcard"><span class="tile">🎬</span><span><span class="nm">屏幕录制 <kbd>Ctrl+Alt+R</kbd></span><div class="ds">录全屏或框选区域，存为高清 MP4</div></span></div>
+            </div>
+            <div class="tb-sec">最近录制 <span class="cnt">5</span></div>
+            <div class="rec-list">
+              <div class="rec-item"><span class="fic">🎬</span><span class="fn">屏幕录制_2026-10-05_2015.mp4</span><span class="meta">12.3 MB · 01:42</span><span class="ops"><span class="op" title="打开所在文件夹">📁</span><span class="op" title="删除（需再点一次确认）">✕</span></span></div>
+              <div class="rec-item"><span class="fic">🎬</span><span class="fn">屏幕录制_2026-10-05_1902.mp4</span><span class="meta">48.1 MB · 06:10</span><span class="ops"><span class="op" title="打开所在文件夹">📁</span><span class="op" title="删除（需再点一次确认）">✕</span></span></div>
+              <div class="rec-item"><span class="fic">🎬</span><span class="fn">屏幕录制_2026-10-04_1130.mp4</span><span class="meta">9.8 MB · 00:45</span><span class="ops"><span class="op" title="打开所在文件夹">📁</span><span class="op" title="删除（需再点一次确认）">✕</span></span></div>
+            </div>
+          </div>
+          <div class="taskbar"><i></i><i></i><i></i><div class="tray"><s></s><s></s><div class="panda"></div></div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>空态：教学位给可执行的下一步（L3）</b></div>
+        <div class="desk">
+          <div class="toolbox">
+            <div class="tb-search">筛选工具…  Ctrl+F</div>
+            <div class="tb-sec">高频 <span class="cnt">3</span></div>
+            <div class="hero-cards">
+              <div class="hcard"><span class="tile">📋</span><span><span class="nm">依次粘贴 <kbd>Ctrl+Alt+Q</kbd></span><div class="ds">按顺序逐条粘贴文本</div></span></div>
+              <div class="hcard"><span class="tile">🎬</span><span><span class="nm">屏幕录制 <kbd>Ctrl+Alt+R</kbd></span><div class="ds">录全屏或框选区域，存为高清 MP4</div></span></div>
+            </div>
+            <div class="tb-sec">最近录制</div>
+            <div class="rec-empty">还没有录制。<br>按 <kbd>Ctrl+Alt+R</kbd> 或点上方「屏幕录制」开始第一段。</div>
+          </div>
+          <div class="taskbar"><i></i><i></i><i></i><div class="tray"><s></s><s></s><div class="panda"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:130px">规格</th><th>判定</th></tr>
+        <tr><td><b>数据</b></td><td><code>rec_list_files</code> 扫 <code>rec_save_dir</code>（默认 视频\PastePanda\）下 <code>屏幕录制_*.mp4</code>，按修改时间倒序取 5，返回 名/路径/字节/时长（时长从文件解析可选，解析不了就不显示，不阻塞列表）。</td></tr>
+        <tr><td><b>行操作</b></td><td>行点击 → <code>reveal/open</code> 播放；📁 → 资源管理器定位文件；✕ → 行内变「确认删除？」两段确认（3s 回退），删除走回收站语义若可行，否则直删并 toast 可撤销？——<b>二期先做直删 + toast 告知</b>，撤销链路涉及回收站 API 另案。</td></tr>
+        <tr><td><b>刷新时机</b></td><td>进工具模式时拉一次；收到 rec-done 追加。不做轮询。</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════ §3 ══════════════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">3</span><h2>重录上次区域：完成即「再来一条」</h2></div>
+    <p class="sec-desc">
+      教程/演示常要连录几段同区域。入口放两个，都是<b>高频路径一步到位</b>（规则 17.2）：
+      ①HUD 通知上加 <code>↻ 重录</code>——刚录完的瞬间就是最想重录的时刻，按钮语义自然；
+      ②托盘菜单加「重录上次区域」。行为：跳过框选，直接用上次的区域与档位进 3 秒倒计时
+      （区域 + 档位 + 音源开关整体沿用上次会话）；没有上次记录时两个入口都不出现（规则 11.1 条件项口径）。
+      工具箱卡保持「开选区窗」语义不变，不塞第二个动作。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>HUD 上的重录（与 §1 同一浮窗）</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="glass hud" style="position:absolute; right:14px; bottom:38px;">
+            <div style="width:100%">
+              <div class="row1">
+                <span class="badge ok"><span class="dot"></span>已保存</span>
+                <span class="t">屏幕录制_2026-10-05_2015.mp4</span>
+                <span class="x">✕</span>
+              </div>
+              <div class="row2"><span>12.3 MB</span><span>01:42</span><span>高清 · 30fps</span></div>
+              <div class="row3">
+                <button class="btn primary">📁 打开文件夹</button>
+                <button class="btn">↻ 重录</button>
+              </div>
+              <div class="life"><i class="run"></i></div>
+            </div>
+          </div>
+          <div class="note" style="right:180px; bottom:120px;">↻ 重录 = 同区域同档位<br>直接进 3 秒倒计时</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>托盘菜单新增一项（条件项）</b><span class="new">NEW</span></div>
+        <div class="desk">
+          <div class="taskbar"><i></i><i></i><i></i><div class="tray"><s></s><s></s><div class="panda" style="outline:2px solid #6366f1;"></div></div></div>
+          <div class="glass tray-menu">
+            <div>📋 显示主窗口</div>
+            <div class="sep"></div>
+            <div>🎬 屏幕录制</div>
+            <div class="hl">↻ 重录上次区域 <span style="margin-left:auto;font-size:10px;color:#8b96ad">上次 960×540</span></div>
+            <div class="sep"></div>
+            <div>⏻ 退出</div>
+          </div>
+          <div class="note" style="left:40%; bottom:150px;">无上次记录 → 本项不出现</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ §4 ══════════════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">4</span><h2>窗口吸附框选：与截图同一套吸附语言</h2></div>
+    <p class="sec-desc">
+      拖拽框选时复用截图的 <code>snap_window_at</code> / <code>enum_window_rects</code>（坐标口径一致）：
+      光标附近的可吸附窗口以 3px 蓝描边高亮预览（截图同款），松手即采纳该窗口矩形；离开吸附半径回自由框选。
+      注意与截图的差异：<b>录屏采纳的是采纳瞬间的窗口矩形（静态区域）</b>——录制期间窗口移动/缩放不跟随，
+      预览提示条里写明「按窗口位置录制，窗口移动不跟随」，不靠猜（L5）。
+    </p>
+    <div class="duo">
+      <div class="panel">
+        <div class="panel-cap"><b>拖拽中：接近窗口 → 吸附高亮</b></div>
+        <div class="desk">
+          <div class="faux-win win-a" style="outline: 3px solid #3B9EFF; outline-offset: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 0 10px rgba(59,155,255,.45);"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="free-rect" style="left: 30%; top: 40%; width: 26%; height: 34%;"></div>
+          <div class="cursor" style="left: 44%; top: 56%;"></div>
+          <div class="glass snap-tip" style="left: 30%; top: 76.5%;"><b>吸附「窗口 A」</b> · 松手录制该窗口 · 拖离则自由框选</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-cap"><b>拖离：回自由框选（虚线紫框，一期语言）</b></div>
+        <div class="desk">
+          <div class="faux-win win-a"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i><i></i></div></div>
+          <div class="faux-win win-b"><div class="bar"><i></i><i></i><i></i></div><div class="body"><i></i><i></i><i></i></div></div>
+          <div class="free-rect" style="left: 55%; top: 30%; width: 30%; height: 45%; outline-color: rgba(124,58,237,.9);"></div>
+          <div class="cursor" style="left: 82%; top: 70%;"></div>
+          <div class="glass snap-tip" style="left: 55%; top: 77.5%;"><span style="color:#c4b5fd">960×540</span> · 松手确认 · <b>Esc</b> 回整屏</div>
+        </div>
+      </div>
+    </div>
+    <div class="spec">
+      <table>
+        <tr><th style="width:130px">规格</th><th>判定</th></tr>
+        <tr><td><b>吸附时机</b></td><td>与截图一致：光标进入候选窗口矩形 8px 邻域 → 高亮；<code>dragMoved</code> 判定不变（&gt;3px 为拖拽）。</td></tr>
+        <tr><td><b>预览不污染</b></td><td>吸附高亮只出现在覆盖层（18.3 红线）：录制画面里没有描边——录制开始前覆盖层已在，无额外处理。</td></tr>
+        <tr><td><b>混合 DPI</b></td><td>吸附矩形来自物理像素枚举，换算走一期已修的 dpr 口径；<b>跨不同缩放的多屏仍在已知限制内</b>（三期项）。</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ══════════════════ §5 ══════════════════ -->
+  <div class="sec">
+    <div class="sec-title"><span class="no">5</span><h2>顺手小修与明确不做</h2></div>
+    <p class="sec-desc">
+      <b>小修（无 UI）</b>：<code>rec_save_dir</code> 目录不存在时启动会话前自动创建（创建失败才报错），
+      避免「目录被清理后开录直接失败」。<br>
+      <b>二期不做</b>（一期审查已记录，防 scope 膨胀）：暂停/继续（时间轴全链路平移，单独立项）、
+      摄像头画中画与鼠标特效（逐帧合成成本需实测）、GIF 导出与「发到手机」（三期）、
+      混合 DPI 多屏换算（三期）、删除的回收站/可撤销链路。
+    </p>
+  </div>
+
+</div>
+</body>
+</html>
