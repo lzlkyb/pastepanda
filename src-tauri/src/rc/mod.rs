@@ -39,6 +39,7 @@ pub mod probe_out;
 pub mod protocol;
 pub mod rs_fec;
 pub mod service;
+pub mod settings;
 pub mod short_pair;
 pub mod session;
 pub mod stream_cfg;
@@ -50,6 +51,8 @@ pub mod video;
 /// **跨平台声明**：非 Windows 由内部 stub 返回 Err，跨平台的 `video/encode.rs`
 /// 调用点因此不必写 cfg（见该文件头注释）。
 pub mod wic_jpeg;
+/// 锁屏感知（S1）：WTS 会话通知 + 初始桌名探测，纯逻辑跨平台可测（见文件头）。
+pub mod wts_watch;
 
 #[cfg(target_os = "windows")]
 pub mod audio;

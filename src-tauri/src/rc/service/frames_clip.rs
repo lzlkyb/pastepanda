@@ -52,11 +52,6 @@ impl RcService {
         matches!(inner.session.as_ref(), Some(s) if s.phase == phase && s.peer == peer)
     }
 
-    pub(in crate::rc) fn session_capability(&self) -> Option<Capability> {
-        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        inner.session.as_ref().map(|s| s.capability)
-    }
-
     /// 一次加锁取出「这个 peer 的当前会话」快照（P1-2）。
     ///
     /// 🔴 入口判定与能力校验必须用**同一快照**，不要再拆成
@@ -94,6 +89,12 @@ impl RcService {
     /// - **SetCaptureScope 要求 Control**：改采集范围会切到对方其它屏，属于
     ///   改主机可观测内容，只看不得改（与 SetHostMute 同级）。
     pub async fn send_input(&self, ev: &crate::rc::input::InputEvent) -> Result<(), String> {
+        self.send_input_with_request(ev, None).await
+    }
+
+    pub(in crate::rc) async fn send_input_with_request(
+        &self, ev: &crate::rc::input::InputEvent, request: Option<(&str, &str)>,
+    ) -> Result<(), String> {
         use crate::rc::input::InputEvent;
         if let InputEvent::FramePresented { session_id, at_ms } = ev {
             return self.note_media_presented(session_id, *at_ms);
@@ -110,17 +111,14 @@ impl RcService {
                 | InputEvent::BgResume
                 | InputEvent::RequestKey
         );
-        if needs_control {
-            let cap = self.session_capability().ok_or("没有进行中的会话")?;
-            crate::rc::input::assert_control_allowed(cap)?;
-        }
-        {
+        let session_id = {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
             let s = inner.session.as_ref().ok_or("没有进行中的会话")?;
-            if s.phase != SessionPhase::OutboundActive {
-                return Err("会话尚未建立".into());
-            }
-        }
+            if s.phase != SessionPhase::OutboundActive { return Err("会话尚未建立".into()); }
+            if request.is_some_and(|(session, _)| session != s.id) { return Err("会话已改变".into()); }
+            if needs_control { crate::rc::input::assert_control_allowed(s.capability)?; }
+            s.id.clone()
+        };
         // P0-3：鼠标移动走 QUIC 数据报——不可靠但免队头阻塞，视频大帧堵住
         // 可靠流时鼠标照样每拍都到。绝对坐标 latest-wins：丢一帧被下一帧校正。
         // 数据报不支持/发送失败 → 回退可靠流（原路）。
@@ -139,13 +137,26 @@ impl RcService {
         let Some(send) = guard.as_mut() else {
             return Err("发送通道不可用".into());
         };
-        let json = serde_json::to_vec(ev).map_err(|e| e.to_string())?;
+        {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            let s = inner.session.as_ref().ok_or("会话已结束")?;
+            if s.id != session_id || s.phase != SessionPhase::OutboundActive { return Err("会话已改变".into()); }
+            if needs_control { crate::rc::input::assert_control_allowed(s.capability)?; }
+        }
+        let json = if let Some((_, id)) = request {
+            let mut json = serde_json::to_value(ev).map_err(|e| e.to_string())?;
+            json["request_id"] = id.into();
+            serde_json::to_vec(&json).map_err(|e| e.to_string())?
+        } else {
+            serde_json::to_vec(ev).map_err(|e| e.to_string())?
+        };
         crate::sync::transport::write_frame(send, &json).await
     }
 
     /// 发起端会话链路统一收口：发送半流 + 连接句柄一起清。
     /// 🔴 连接句柄不清，下一场会话的鼠标数据报会发进旧连接（黑洞）。
     pub(in crate::rc) async fn clear_outbound_link(&self) {
+        self.settings.clear();
         *self.outbound_send.lock().await = None;
         *self.outbound_conn.lock().await = None;
         self.remote_loss_permille

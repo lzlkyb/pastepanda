@@ -4,6 +4,8 @@ import { MOD_KEYS } from "./useModifierKeys";
 import type { MobileKeyMode } from "./SessionToolbar";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileNotice, type MobileNoticeTone } from "../ui/MobileNotice";
+import { SessionSettingFeedback } from "./SessionSettingFeedback";
+import type { SessionSettingState } from "./useSessionSettings";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcMobileSession.module.css";
 
@@ -16,6 +18,7 @@ export function ModifierKeyBar({
   onFunctionKey,
   keyMode,
   onPickKeyMode,
+  setting, onRetryMode,
 }: {
   open: boolean;
   onHide: () => void;
@@ -25,6 +28,8 @@ export function ModifierKeyBar({
   onFunctionKey: (vk: number) => void;
   keyMode: MobileKeyMode;
   onPickKeyMode: (mode: MobileKeyMode) => void;
+  setting?: SessionSettingState;
+  onRetryMode?: () => void;
 }) {
   const [more, setMore] = useState(false);
   const [draft, setDraft] = useState("");
@@ -130,8 +135,10 @@ export function ModifierKeyBar({
         {hint && (
           <MobileNotice compact tone={hintTone} title={hint} />
         )}
+        {!more && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} />}
       </section>
-      <MobileSheet open={more && open} title="扩展按键" onClose={() => setMore(false)}>
+      <MobileSheet open={more && open} title="扩展按键" onClose={() => setMore(false)}
+        footer={setting && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} />}>
         <div className={styles.panelActions}>
           <div className={styles.modeRow}>
             <button
@@ -140,7 +147,6 @@ export function ModifierKeyBar({
               aria-pressed={keyMode === "type"}
               onClick={() => {
                 onPickKeyMode("type");
-                setMore(false);
               }}
             >
               文字输入
@@ -151,7 +157,6 @@ export function ModifierKeyBar({
               aria-pressed={keyMode === "direct"}
               onClick={() => {
                 onPickKeyMode("direct");
-                setMore(false);
               }}
             >
               逐键直传

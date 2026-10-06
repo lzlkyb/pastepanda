@@ -1238,6 +1238,8 @@ pub fn run() {
             commands::rc_input_lock_grant,
             commands::rc_video_pause_set,
             commands::rc_send_input,
+            commands::rc_apply_setting,
+            commands::rc_session_display,
             commands::rc_keepalive_set,
             commands::rc_open_workbench,
             commands::rc_push_clipboard,

@@ -1,79 +1,70 @@
-/**
- * useOrientationLock — 「横屏」按钮的机械臂（2026-10-01 真机联调补）。
- *
- * 设计稿（触摸语义与坐标系 §6）定的是「尊重系统旋转锁」——用户系统锁了竖屏
- * 时旋转手势够不着，所以入口改成显式按钮（用户拍板：连上画面后自己点）：
- * 点「横屏」= 请求全屏 + 锁 landscape；点「竖屏」= 解锁 + 退全屏。朝向真正
- * 变化后，共用的 useMobileLayout 自动接管会话布局——本 hook
- * 只负责旋转，不碰工具条状态（单一数据源：按钮文案也由 capsule.landscape 决定）。
- *
- * Android WebView 的 screen.orientation.lock 要求文档先进全屏（wry 的
- * RustWebChromeClient 已实现 onShowCustomView 全屏链）。失败必须诚实报话
- * （规则 15.3）：返回 hint 给工具条同域展示，绝不静默。
- */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { rcSessionDisplay } from "@/lib/api/rcCommands";
+import { useMobileLayout } from "../ui/useMobileLayout";
 
-export function useOrientationLock() {
-  /** Failure stays until recovered or dismissed; it must not expire mid-reading. */
+type Orientation = ScreenOrientation & { lock: (value: string) => Promise<void>; unlock: () => void };
+
+/** Android owns system bars; browser fullscreen is a fallback for the web preview. */
+export function useOrientationLock(sessionId?: string) {
   const [hint, setHint] = useState("");
-  const lockedRef = useRef(false);
-  const say = useCallback((msg: string) => setHint(msg), []);
+  const landscape = useMobileLayout();
+  const native = isTauri() && /Android/i.test(navigator.userAgent);
+  const orientation = useRef<"system" | "portrait" | "landscape">("system");
+  const locked = useRef(false);
+  const ownsFullscreen = useRef(false);
+  const alive = useRef(true);
   const clearHint = useCallback(() => setHint(""), []);
-
-  const enterLandscape = useCallback(async () => {
-    // 全屏与旋转锁是两道闸，失败原因不同、修法不同，提示必须分开说（规则 15.3）。
-    let fullscreenBlocked = false;
-    try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
-    } catch {
-      fullscreenBlocked = true; // 全屏被拒时锁横屏多半也会失败，但仍先试：有的 ROM 只拦全屏
-    }
-    try {
-      // TS 的 ScreenOrientation 暂无 lock/unlock（即将进 lib.dom）——运行时
-      // Android Chrome/WebView 稳定支持，先断言再调（失败走 catch 提示）。
-      const orient = screen.orientation as ScreenOrientation & {
-        lock: (o: string) => Promise<void>;
-        unlock: () => void;
-      };
-      await orient.lock("landscape");
-      lockedRef.current = true;
-      say("");
-    } catch {
-      say(fullscreenBlocked
-        ? "这台手机不允许进入全屏，横屏锁定被跳过；试试打开系统的自动旋转"
-        : "系统没有让锁定横屏，试试打开系统的自动旋转");
-    }
-  }, [say]);
-
-  const exitLandscape = useCallback(() => {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (native && sessionId) void rcSessionDisplay(sessionId, false, false).catch(() => {});
+      if (locked.current) try { (screen.orientation as Orientation).unlock(); } catch { /* Already released. */ }
+      // Fullscreen can succeed while orientation locking fails. Track ownership separately.
+      if (ownsFullscreen.current && document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
+  }, [native, sessionId]);
+  useEffect(() => {
+    if (!native || !sessionId) return;
+    void rcSessionDisplay(sessionId, true, landscape, orientation.current).catch(() => {
+      if (alive.current) setHint("无法应用全屏显示设置，请重试切换方向。");
+    });
+  }, [native, sessionId, landscape]);
+  const apply = useCallback(async (next: "portrait" | "landscape") => {
     setHint("");
-    try {
-      const orient = screen.orientation as ScreenOrientation & {
-        lock: (o: string) => Promise<void>;
-        unlock: () => void;
-      };
-      orient.unlock();
-    } catch {
-      /* 已是自由旋转，不用管 */
-    }
-    lockedRef.current = false;
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-  }, []);
-
-  // 会话卸载（断开/换页）必须还原：锁着横屏离开，下个页面会横着开场。
-  // 卸载后 setState 无意义，所以只做还原不做提示。
-  useEffect(
-    () => () => {
-      if (!lockedRef.current) return;
+    if (native && sessionId) {
+      const previous = orientation.current;
+      orientation.current = next;
       try {
-        (screen.orientation as ScreenOrientation & { unlock: () => void }).unlock();
+        await rcSessionDisplay(sessionId, true, next === "landscape", next);
       } catch {
-        /* 同上 */
+        if (orientation.current === next) orientation.current = previous;
+        if (alive.current) setHint("无法切换显示方向，请重试。");
       }
-      if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-    },
-    [],
-  );
-
+      return;
+    }
+    let fullscreenBlocked = false;
+    if (next === "landscape") {
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+          ownsFullscreen.current = true;
+        }
+      } catch { fullscreenBlocked = true; }
+    }
+    try {
+      await (screen.orientation as Orientation).lock(next);
+      locked.current = true;
+    } catch {
+      if (alive.current) setHint(fullscreenBlocked ? "浏览器未允许全屏，请打开手机自动旋转后转动手机。" : "未能锁定显示方向，请打开自动旋转后转动手机。");
+    }
+    if (next === "portrait" && ownsFullscreen.current && document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      ownsFullscreen.current = false;
+    }
+  }, [native, sessionId]);
+  const enterLandscape = useCallback(() => apply("landscape"), [apply]);
+  const exitLandscape = useCallback(() => apply("portrait"), [apply]);
   return { hint, clearHint, enterLandscape, exitLandscape };
 }

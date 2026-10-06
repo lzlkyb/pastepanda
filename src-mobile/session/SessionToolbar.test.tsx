@@ -70,6 +70,21 @@ it("画质选项发送所选档位而不是盲目循环", () => {
   expect(screen.getByRole("radio", { name: "均衡" })).toHaveAttribute("aria-checked", "true");
 });
 
+it("画质面板先讲清锁档语义，锁档/自动/未确认各有可见状态", () => {
+  const p = props();
+  const view = render(<SessionToolbar {...p} />);
+  fireEvent.click(screen.getByRole("button", { name: "更多" }));
+  fireEvent.click(screen.getByRole("button", { name: "画面与画质" }));
+  // 语义必须先于第一次点击可见：点实名档会整场关掉电脑自动档（复测 B 的误触陷阱）。
+  expect(screen.getByText(/锁档并关闭电脑自动档/)).toBeInTheDocument();
+  expect(screen.getByText(/已锁档「均衡」：电脑自动档已关闭/)).toBeInTheDocument();
+  view.rerender(<SessionToolbar {...p} quality="auto" />);
+  expect(screen.getByText(/电脑正按网络状况自动换档/)).toBeInTheDocument();
+  expect(screen.queryByText(/已锁档「均衡」/)).toBeNull();
+  view.rerender(<SessionToolbar {...p} quality={null} />);
+  expect(screen.getByText(/尚未确认/)).toBeInTheDocument();
+});
+
 it("横屏收起仍有可见工具入口，键盘展开替换工具栏", () => {
   const reveal = vi.fn();
   const p = props();

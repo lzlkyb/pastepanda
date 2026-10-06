@@ -14,7 +14,7 @@ it("关闭期间保留最后内容，滑出后才卸载；重开取消旧卸载"
   const clock = setupMotionClock(),
     close = vi.fn();
   const view = render(
-    <MobileSheet open title="配对" onClose={close}>
+    <MobileSheet open title="配对" onClose={close} footer={<p>确认结果</p>}>
       <p>配对码 1234</p>
     </MobileSheet>,
   );
@@ -25,6 +25,7 @@ it("关闭期间保留最后内容，滑出后才卸载；重开取消旧卸载"
     </MobileSheet>,
   );
   expect(screen.getByText("配对码 1234")).toBeTruthy();
+  expect(screen.getByText("确认结果").parentElement?.className).toContain("sheetFooter");
   expect(document.body.dataset.mobileSheets).toBe("1");
   act(() => clock.advance(80));
   view.rerender(

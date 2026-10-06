@@ -3,7 +3,8 @@ import { useRcFrames } from "@/hooks/useRcFrames";
 import { useRcAudio } from "@/hooks/useRcAudio";
 import { useRcBackgroundPause } from "@/hooks/useRcBackgroundPause";
 import { useRcSessionKeepalive } from "./useRcSessionKeepalive";
-import { normalizeMobileQuality, type MobileQuality } from "./qualityCycle";
+import type { MobileQuality } from "./qualityCycle";
+import { useSessionSettings } from "./useSessionSettings";
 import type { PinchViewportHandle } from "../video/PinchViewport";
 import { useSessionPointer } from "./useSessionPointer";
 import { MouseAssist } from "./MouseAssist";
@@ -63,21 +64,22 @@ export function RcMobileSession({
   const chargeRef = useRef<HTMLDivElement>(null);
   const remoteCursorRef = useRef<HTMLDivElement>(null);
 
-  const [keyMode, setKeyMode] = useState<MobileKeyMode>("type");
+  const settings = useSessionSettings(sessionId);
+  const keyChoice = settings.items.key_mode;
+  const keyMode = (keyChoice?.status === "unconfirmed" ? keyChoice.value : settings.confirmed.key_mode) as MobileKeyMode;
   const keyModeRef = useRef(keyMode);
   keyModeRef.current = keyMode;
-  // 画质：手机就是编码端，档位决定它发什么。hint 可能迟到（状态轮询）或中途被
-  // 电脑端改档，变了就跟着对齐；用户本地已选的档在 hint 不变时不被覆盖。
-  const [quality, setQuality] = useState<MobileQuality>(() => normalizeMobileQuality(qualityHint));
-  useEffect(() => {
-    setQuality(normalizeMobileQuality(qualityHint));
-  }, [qualityHint]);
+  // The local stream preference is not a receipt from the computer's encoder.
+  const quality = settings.confirmed.quality as MobileQuality | null;
   const [panelOpen, setPanelOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [requestEnd, setRequestEnd] = useState(0);
   const [requestScreen, setRequestScreen] = useState(0);
-  const [audioOn, setAudioOn] = useState(false);
+  const [requestMore, setRequestMore] = useState(0);
+  const audioChoice = settings.items.audio;
+  const audioOn = (audioChoice?.status === "unconfirmed" ? audioChoice.value : settings.confirmed.audio) === "on";
   const internalClip = useSessionClipboard();
   const clip = clipboard ?? internalClip;
   const pumpActive = !!sessionId;
@@ -98,7 +100,7 @@ export function RcMobileSession({
   const hasFrame = pumpActive ? frames.hasFrame : true;
   const modsComboRef = useRef<(() => void) | null>(null);
   const input = useRcMobileInput({
-    canControl: canControl && !fileOpen && !connectionOpen && !panelOpen,
+    canControl: canControl && !fileOpen && !connectionOpen && !panelOpen && !feedbackOpen,
     hasFrame: hasFrame && (!pumpActive || !frames.statusText),
     canvasRef,
     contentRef,
@@ -124,7 +126,7 @@ export function RcMobileSession({
     if (keyboardOpen && (!canControl || !hasFrame || (pumpActive && !!frames.statusText))) toggleKeyboard();
   }, [keyboardOpen, canControl, hasFrame, pumpActive, frames.statusText, toggleKeyboard]);
 
-  const capsule = useImmersiveCapsule({ keyboardOpen: keyboardOpen || panelOpen || fileOpen || connectionOpen });
+  const capsule = useImmersiveCapsule({ keyboardOpen: keyboardOpen || panelOpen || fileOpen || connectionOpen || feedbackOpen });
   const feedback = useMemo(
     () =>
       createTouchFeedback({
@@ -151,7 +153,7 @@ export function RcMobileSession({
     contentRef,
     surfaceRef,
     viewportRef,
-    enabled: hasFrame && (!pumpActive || !frames.statusText) && !panelOpen && !fileOpen && !connectionOpen,
+    enabled: hasFrame && (!pumpActive || !frames.statusText) && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen,
     canControl,
     releaseKeys: mods.releaseAll,
     feedback,
@@ -177,15 +179,13 @@ export function RcMobileSession({
     (mode: MobileKeyMode) => {
       releaseAll();
       releaseModifiers();
-      setKeyMode(mode);
-      input.sendRaw({ kind: "set_key_mode", mode });
+      void settings.pick("key_mode", mode);
     },
-    [releaseAll, releaseModifiers, input.sendRaw],
+    [releaseAll, releaseModifiers, settings.pick],
   );
   const pickQuality = useCallback((next: MobileQuality) => {
-    setQuality(next);
-    input.sendRaw({ kind: "set_quality", quality: next });
-  }, [input.sendRaw]);
+    void settings.pick("quality", next);
+  }, [settings.pick]);
   // 后台保活（2026-10-02）：进/出后台通知被控端挂起/恢复推流。
   // 🔴 心跳不在这里发——已下沉到发起端 Rust（outbound.rs `HEARTBEAT_PING_MS`），
   // WebView 随 Activity 暂停不再误断前台会话；后台场景由 BgPause 的 TTL 兜底。
@@ -201,17 +201,17 @@ export function RcMobileSession({
     surfaceRef,
     onPosition: pointer.syncPosition,
   });
-  const orient = useOrientationLock();
+  const orient = useOrientationLock(sessionId);
   const toggleOrientation = useCallback(() => {
     resetPointer();
-    if (capsule.landscape) orient.exitLandscape();
+    if (capsule.landscape) void orient.exitLandscape();
     else void orient.enterLandscape();
   }, [capsule.landscape, orient, resetPointer]);
   useRcAudio(sessionId ?? "", pumpActive && audioOn);
   useEffect(() => {
     if (!pumpActive) return;
-    input.sendRaw({ kind: "audio_on", on: audioOn });
-  }, [pumpActive, audioOn, input.sendRaw]);
+    void settings.pick("audio", "off");
+  }, [pumpActive, sessionId, settings.pick]);
 
   const mouseAssist = <MouseAssist visible={pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
     padOpen={pointer.padOpen} padRef={pointer.padRef} dragging={pointer.dragging} scrolling={pointer.scrolling}
@@ -223,21 +223,22 @@ export function RcMobileSession({
 
       <div className={styles.feedbackSlot}>
         <SessionFeedback pointer={pointer} orient={orient} clipboard={clip}
+          blocked={panelOpen || fileOpen || connectionOpen} onOpenChange={setFeedbackOpen}
+          settings={settings.notices} onSettingDismiss={settings.dismiss}
+          onSettingOpen={(key) => {
+            if (key === "key_mode") { if (!keyboardOpen) toggleTyping(); return; }
+            if (keyboardOpen) toggleTyping();
+            if (key === "audio") setRequestMore(n => n + 1);
+            else setRequestScreen(n => n + 1);
+          }}
           sendFailed={pumpActive && input.sendFailed && !sendFailAck}
           onSendFailDismiss={() => setSendFailAck(true)}
-          teach={capsule.phase === "teaching"
-            ? { secondsLeft: capsule.secondsLeft, onEnd: capsule.endTeaching }
-            : undefined} />
-        {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} onOpen={() => {
-          pointer.reset();
-          if (keyboardOpen) toggleKeyboard();
-          setFileOpen(true);
-        }} />}
+          />
       </div>
       <div className={styles.controlArea} onPointerDownCapture={capsule.dismissHint}>
         <SessionScreen pointer={pointer} canControl={canControl} hasFrame={hasFrame}
           statusText={pumpActive ? frames.statusText : undefined} waitHint={frames.waitHint} onReturn={() => setRequestEnd(n => n + 1)}
-          blocked={keyboardOpen || panelOpen || fileOpen || connectionOpen} canvasRef={canvasRef} surfaceRef={surfaceRef}
+          blocked={keyboardOpen || panelOpen || fileOpen || connectionOpen || feedbackOpen} canvasRef={canvasRef} surfaceRef={surfaceRef}
           viewportRef={viewportRef} cursorRef={cursorRef} chargeRef={chargeRef} remoteCursorRef={remoteCursorRef}
           remoteShape={remoteCursor.shape} sandboxSize={pumpActive ? undefined : contentSize} />
         {(!capsule.landscape || pointer.padOpen) && mouseAssist}
@@ -253,6 +254,7 @@ export function RcMobileSession({
           onFunctionKey={(vk) => input.sendKeyPair(vk)}
           keyMode={keyMode}
           onPickKeyMode={pickKeyMode}
+          setting={settings.items.key_mode} onRetryMode={() => void settings.retry("key_mode")}
         />
       }
 
@@ -263,9 +265,12 @@ export function RcMobileSession({
         onToggleKeyboard={toggleTyping}
         onResetZoom={() => viewportRef.current?.reset()}
         quality={quality}
+        settings={settings}
+        orientationHint={orient.hint}
+        onOrientationHintDismiss={orient.clearHint}
         onPickQuality={pickQuality}
         audioOn={audioOn}
-        onToggleAudio={() => setAudioOn((on) => !on)}
+        onToggleAudio={() => void settings.pick("audio", audioOn ? "off" : "on")}
         onToggleOrientation={toggleOrientation}
         clipboard={clip}
         onEnd={onEnd}
@@ -283,11 +288,16 @@ export function RcMobileSession({
         onRevealPointer={pointer.reveal}
         requestEnd={requestEnd}
         requestScreen={requestScreen}
+        requestMore={requestMore}
         onConnectionDetails={openConnection}
         connectionEntry={<RcConnectionBadge info={connection} onOpen={openConnection} />}
         mouseAssist={capsule.landscape && !pointer.padOpen ? mouseAssist : undefined}
+        fileEntry={file && (file.asks.length > 0 || file.error) ? <button type="button" className={styles.tbBtn} onClick={() => {
+          pointer.reset(); if (keyboardOpen) toggleKeyboard(); setFileOpen(true);
+        }}>文件{file.error ? " · 异常" : ` · ${file.asks.length}`}</button> : undefined}
       />
-      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality} onClose={closeConnection} onQuality={connectionQuality} />
+      {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} />}
+      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onQuality={connectionQuality} />
     </div>
   );
 }

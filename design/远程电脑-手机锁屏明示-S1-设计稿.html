@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>远程电脑 · 手机锁屏明示 S1 · 设计稿（2026-10-06）</title>
+<style>
+/* ============ 真令牌：src/styles/theme.css 原值（ocean 默认 + midnight），只摘本稿用到的 ============ */
+:root {
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
+    linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+  --card-bg: #fff;
+  --card-border: #e0e4eb;
+  --text-primary: #0f172a;
+  --text-secondary: #495565;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-light: #e0f2fe;
+  --accent-solid: #027cbb;
+  --text-on-accent: #fff;
+  --accent-strong: #0273ad;
+  --section-bg: #f0f4f8;
+  --input-bg: #f1f5f9;
+  --orange: #f97316;           /* theme.css :root --orange（441 行引用链） */
+  --orange-bg: #fff7ed;
+  --orange-border: #fdba74;
+  --warning: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
+  --danger: #d82525;
+  --danger-bg: #fef2f2;
+  --success: #15803d;
+  --mobile-glass: color-mix(in srgb, var(--card-bg) 76%, transparent);
+  --mobile-glass-blur: 20px;
+  --mobile-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --overlay-bg: rgba(0, 0, 0, 0.35);
+}
+[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7;
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
+  --accent-solid: #666fc4;
+  --accent-strong: var(--accent);
+  --section-bg: #0f0f11;
+  --input-bg: #27272a;
+  --orange: #fb923c;
+  --orange-bg: #431407;
+  --orange-border: #9a3412;
+  --warning: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
+  --danger: #f87171;
+  --danger-bg: #450a0a;
+  --success: #4ade80;
+  --mobile-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+
+/* ============ 页面壳（稿子自己的排版，不进工程） ============ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--app-bg); color: var(--text-primary); transition: background .25s; }
+body {
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 28px clamp(12px, 4vw, 48px) 80px;
+}
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.02em; }
+h2 { font-size: 16px; margin: 32px 0 10px; }
+.meta { color: var(--text-secondary); font-size: 13px; margin: 0 0 20px; }
+.meta a { color: var(--accent-strong); }
+.deck { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.panel { flex: 0 0 auto; }
+.spec { flex: 1 1 420px; min-width: 320px; max-width: 760px; }
+.card {
+  background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px;
+  padding: 16px 18px; margin: 0 0 14px;
+}
+.card h3 { margin: 0 0 8px; font-size: 14px; }
+.card p, .card li { font-size: 13.5px; color: var(--text-primary); margin: 6px 0; }
+.card ul { margin: 6px 0; padding-left: 20px; }
+.card code { background: var(--section-bg); border-radius: 6px; padding: 1px 6px; font-size: 12.5px; }
+.src { color: var(--text-secondary); font-size: 12px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.chip {
+  min-height: 40px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--card-border);
+  background: var(--card-bg); color: var(--text-primary); font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+table.geo { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table.geo th, table.geo td { border: 1px solid var(--border-color); padding: 6px 8px; text-align: left; vertical-align: top; }
+table.geo th { color: var(--text-secondary); font-weight: 600; background: var(--section-bg); }
+table.geo td.num { font-variant-numeric: tabular-nums; }
+
+/* ============ 手机真容器：src-mobile/session/RcMobileSession.module.css 逐值复刻 ============ */
+.phone {
+  width: 390px; height: 780px; border-radius: 28px; border: 10px solid #0a0a0c;
+  background: var(--app-bg); color: var(--text-primary); overflow: hidden; position: relative;
+  box-shadow: var(--mobile-shadow); transition: background .25s;
+}
+.root { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* .statusRow —— 真值（RcMobileSession.module.css:33-42） */
+.statusRow {
+  background: var(--mobile-glass); backdrop-filter: blur(var(--mobile-glass-blur));
+  display: flex; align-items: center; min-height: 48px; gap: 4px; padding: 0 8px;
+  font-size: 15px; color: var(--text-secondary); flex: none;
+}
+.statusTitle { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.headerIdentity { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.headerSubtitle { color: var(--text-secondary); font-size: 12px; }
+.headerButton { /* 真值 :269-279 附近 */
+  display: flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; padding: 8px; border: 0; border-radius: 12px;
+  color: var(--text-primary); background: transparent; cursor: pointer;
+}
+.badge { /* 真值 RcConnectionDetails.module.css:1-11 */
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px; border: 0; border-radius: 12px;
+  padding: 4px 8px; background: var(--section-bg); flex: none; color: var(--text-secondary); cursor: pointer;
+  font: inherit;
+}
+.badge > span { display: flex; flex-direction: column; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.badge small { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.badge.warn { color: var(--text-primary); background: var(--warning-bg); }
+
+/* 远端画面区（演示占位：真实实现里是 SessionScreen 的 canvas） */
+.controlArea { flex: 1; min-height: 0; position: relative; }
+.screen {
+  position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  background: linear-gradient(160deg, #12305e 0%, #0b1e3f 55%, #081228 100%); color: #dbe7ff;
+}
+.screen .clock { font-size: 64px; font-weight: 200; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.screen .date { font-size: 15px; opacity: .75; margin-top: 6px; }
+.screen .tag { position: absolute; left: 12px; bottom: 12px; font-size: 11.5px; opacity: .7; max-width: 70%; text-align: left; }
+.unlockNote { position: absolute; left: 12px; bottom: 12px; font-size: 11.5px; color: var(--text-secondary); max-width: 70%; text-align: left; }
+.deskHint { font-size: 13px; opacity: .85; margin-top: 18px; }
+
+/* .modePill —— 真值 RcMobileSession.module.css:278-291；本稿新增 .modePillWarn 变体（§申报①） */
+.modePill {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+  max-width: calc(100% - 24px); white-space: normal; overflow-wrap: anywhere;
+  padding: 8px 12px; border-radius: 999px; background: var(--card-bg); color: var(--text-primary);
+  font-size: 13px; pointer-events: none;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.modePillWarn {
+  background: var(--warning-bg); color: var(--text-primary);
+  border: 1px solid var(--warning-border);
+}
+.modePillWarn svg { color: var(--warning); flex: none; }
+.pillPulse { animation: pillPulse .5s cubic-bezier(.2,0,0,1) 1; }
+@keyframes pillPulse { 0% { transform: translateX(-50%) scale(1); } 40% { transform: translateX(-50%) scale(1.06); } 100% { transform: translateX(-50%) scale(1); } }
+
+/* .toolbar / .tbBtn —— 真值 RcMobileSession.module.css:190-232 */
+.toolbar {
+  display: flex; justify-content: space-around; gap: 4px; border-radius: 0;
+  background: var(--mobile-glass); backdrop-filter: blur(var(--mobile-glass-blur));
+  padding: 4px; margin: 0; position: relative; z-index: 100; flex: none;
+}
+.tbBtn {
+  display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-width: 44px; min-height: 54px; padding: 5px 8px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--text-secondary); font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.tbBtn:active { background: var(--accent-light); }
+.tbOn { color: var(--accent-strong); background: var(--accent-light); }
+/* 本稿新增一条（§申报②）：键盘钮在锁屏时 disabled 的可视状态——
+   现工程 .tbBtn 没有 :disabled 样式（点了没反应的反模式），S1 补这一行 */
+.tbBtn:disabled { opacity: .4; cursor: not-allowed; }
+.tbBtn:disabled:active { background: transparent; }
+
+/* .modifierBar / .quickKeys / .mkKey / .textEntry —— 真值（RcMobileSession.module.css:150-167、433-460） */
+.modifierBar {
+  border-top: 1px solid var(--border-color); background: var(--card-bg);
+  padding: 8px; display: flex; flex-direction: column; gap: 8px; max-height: 40%; overflow-y: auto; flex: none;
+}
+.keyboardTop { display: flex; align-items: center; gap: 8px; }
+.quickKeys { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 8px; flex: 1; min-width: 0; }
+.quickKeys button { flex: none; }
+.mkKey {
+  min-width: 44px; min-height: 44px; padding: 8px 10px; border-radius: 8px;
+  background: var(--section-bg); border: 1px solid var(--border-color);
+  color: var(--text-primary); font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+  flex: none;
+}
+.textEntry { display: flex; gap: 8px; }
+.textEntry input {
+  flex: 1; min-width: 0; min-height: 44px; border: 1px solid var(--border-color); border-radius: 12px;
+  padding: 8px 12px; background: var(--section-bg); color: var(--text-primary);
+  font-size: 16px; font-family: inherit; outline: none;
+}
+.textEntry input::placeholder { color: var(--text-secondary); }
+.textEntry input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panelHint { font-size: 12.5px; color: var(--text-secondary); margin: 0; }
+.root button { transition: background-color 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1), transform 150ms cubic-bezier(.2,0,0,1); }
+
+.readout { font-size: 12.5px; color: var(--text-secondary); }
+.readout strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.legend { display: inline-flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--card-border); display: inline-block; }
+</style>
+</head>
+<body>
+<h1>远程电脑 · 手机锁屏明示 S1 · 设计稿</h1>
+<p class="meta">2026-10-06 · 依据 <a href="../docs/远程电脑-锁屏明示-S1-设计与契约-2026-10-06.md">S1 设计与契约文档</a> ·
+样式逐值复刻自 <code>src-mobile/session/RcMobileSession.module.css</code> / <code>RcConnectionDetails.module.css</code>，
+令牌逐值复刻自 <code>src/styles/theme.css</code>（ocean 默认 + midnight）。未涉及的界面保持现状，稿中不出现。</p>
+
+<div class="controls" role="group" aria-label="演示控制">
+  <button type="button" class="chip" id="lockToggle" aria-pressed="false">状态：未锁定（点我模拟被控端 Win+L）</button>
+  <button type="button" class="chip" id="kbToggle" aria-pressed="false">键盘条：收起</button>
+  <button type="button" class="chip" id="themeToggle" aria-pressed="true">主题：midnight（点切 ocean）</button>
+</div>
+
+<div class="deck">
+  <div class="panel">
+    <div class="phone" id="phone">
+      <div class="root">
+        <header class="statusRow">
+          <button type="button" class="headerButton" aria-label="返回设备">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          </button>
+          <span class="headerIdentity"><span class="statusTitle">办公室电脑</span><span class="headerSubtitle">远程控制中</span></span>
+          <button type="button" class="badge" aria-label="连接详情">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span><small>延时</small>26 ms</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <button type="button" class="headerButton" aria-label="画面与画质">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+          </button>
+        </header>
+
+        <div class="controlArea">
+          <!-- 远端画面占位：真实实现里这是 SessionScreen 的 canvas；锁屏时 DXGI 照常出帧（用户实测） -->
+          <div class="screen" id="screen">
+            <div>
+              <div class="clock" id="clock">21:48</div>
+              <div class="date">10月6日 星期二</div>
+              <div class="deskHint" id="deskHint">电脑锁屏画面（占位示意）</div>
+            </div>
+            <p class="tag" id="screenTag">被控端真实画面由 DXGI 桌面复制照常推送，本功能不改采集。</p>
+          </div>
+
+          <!-- 改动①：锁屏常驻 pill（modePill + warning 变体），locked=false 时整颗不渲染 -->
+          <div class="modePill modePillWarn" id="lockPill" role="status" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            远端已锁屏 · 打字暂停
+          </div>
+        </div>
+
+        <!-- 改动③：locked 时键盘条被自动收起（等价既有 canControl=false 的 effect，演示里可见滑出/收起） -->
+        <section class="modifierBar" id="kbBar" hidden aria-label="电脑键盘">
+          <div class="keyboardTop">
+            <div class="quickKeys">
+              <button type="button" class="mkKey">Ctrl</button>
+              <button type="button" class="mkKey">Win</button>
+              <button type="button" class="mkKey">Tab</button>
+              <button type="button" class="mkKey">Esc</button>
+              <button type="button" class="mkKey">Enter</button>
+              <button type="button" class="mkKey">扩展</button>
+            </div>
+            <button type="button" class="mkKey" id="kbHide">收起</button>
+          </div>
+          <form class="textEntry" onsubmit="return false">
+            <input aria-label="输入到电脑的文字" placeholder="输入文字，发送到电脑" />
+            <button type="submit" class="mkKey">发送</button>
+          </form>
+          <p class="panelHint">文字输入 · 逐键直传</p>
+        </section>
+
+        <nav class="toolbar" aria-label="会话工具">
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="3"/><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+            <span>触控板</span>
+          </button>
+          <button type="button" class="tbBtn" id="kbBtn" aria-label="键盘">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"/></svg>
+            <span>键盘</span>
+          </button>
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+            <span>画面</span>
+          </button>
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            <span>更多</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <div class="spec">
+    <div class="card">
+      <h3>改动点申报（共 4 处，除此之外与线上完全一致）</h3>
+      <ul>
+        <li><strong>① 锁屏 pill</strong>：复用 <code>SessionModeNotice</code>（<code>modePill</code> 几何原样），新增 <code>modePillWarn</code> 变体——底换 <code>var(--warning-bg)</code>、描边 <code>--warning-border</code>、图标 <code>--warning</code>。理由：锁屏是<strong>持续状态</strong>，<code>card-bg</code> 的现有 modePill 视觉权重不够；语义色用法与连接徽章 <code>.warn</code>（<code>RcConnectionDetails.module.css:16</code>）同源。locked=false 时整颗不渲染（现组件本就条件渲染）。</li>
+        <li><strong>② 键盘钮禁用态</strong>：locked 时工具条「键盘」钮 <code>disabled</code>，并新增一条 <code>.tbBtn:disabled { opacity: .4 }</code>——现工程 <code>.tbBtn</code> <strong>没有</strong> disabled 样式，直接用会复发「点了没反应」。</li>
+        <li><strong>③ 键盘条自动收起</strong>：locked 时等价于既有「只看模式收键盘」effect（<code>RcMobileSession.tsx:125-127</code>），演示里点「锁定」可见键盘条滑走；收起原因由 pill 常驻承载（规则 15.3）。</li>
+        <li><strong>④ 门在入口，不「开了再关」</strong>：locked 时点键盘钮不打开键盘，pill 脉冲一下提示原因（上条 ②的 disabled 已挡住入口，脉冲仅为兜底反馈）。</li>
+      </ul>
+      <p class="src">鼠标不在禁用范围：触控板钮、画面手势照常——锁屏界面上的点击在 S4 落地后是真的可用，今天「点不动」是现状如实。</p>
+    </div>
+
+    <div class="card">
+      <h3>几何申报（全部抄自真源码，非本稿发明）</h3>
+      <table class="geo">
+        <tr><th>元素</th><th>值</th><th>出处</th></tr>
+        <tr><td>pill 定位</td><td class="num">top 12px · 水平居中 · z-index 5 · max-width calc(100% − 24px)</td><td>modePill :278-291</td></tr>
+        <tr><td>pill 内距/圆角/字号</td><td class="num">padding 8px 12px · radius 999px · 13px</td><td>modePill :285-289</td></tr>
+        <tr><td>pill 新增</td><td class="num">border 1px --warning-border + 图标 14px</td><td class="src">本稿新增（申报①）</td></tr>
+        <tr><td>状态栏高</td><td class="num">min-height 48px · padding 0 8px</td><td>statusRow :33-42</td></tr>
+        <tr><td>工具条钮</td><td class="num">min 44×54px · radius 999px · 12px 字号</td><td>tbBtn :217-231</td></tr>
+        <tr><td>键盘条</td><td class="num">max-height 40% · mkKey min 44×44</td><td>modifierBar :150-167 / mkKey :419-425</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>首屏读数（rAF 后实测本稿 DOM，主题切换即重算）</h3>
+      <p class="readout" id="readouts">计算中…</p>
+      <ul>
+        <li>对比度判据：pill 文字 <code>--text-primary</code> 压 <code>--warning-bg</code>，两主题都要 ≥4.5:1（AA 正文）。</li>
+        <li>触达判据：工具条钮与 mkKey ≥44×44px（U 规则）。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>四个交互状态怎么演（点上方 chips）</h3>
+      <ul>
+        <li><strong>未锁定 → 锁定</strong>：pill 出现；键盘条若开着自动收起（改动③）；键盘钮变 disabled（②）；画面区不变（照常出帧）。</li>
+        <li><strong>锁定 → 未锁定</strong>：pill 消失、键盘钮恢复——用户不需要做任何事，这就是 S1 的恢复语义。</li>
+        <li><strong>锁定时点「键盘」</strong>：按钮 disabled 点不动（入口门，改动②④），pill 已解释原因。</li>
+        <li><strong>未锁定时点「键盘」</strong>：键盘条展开，与线上现状完全一致（真 mkKey/textEntry 几何）。</li>
+      </ul>
+      <p class="src">契约提醒：pill 的出现/消失由被控端 <code>{"t":"wts"}</code> 帧 → <code>rc-lock-changed</code> 事件驱动（文档 §2），本稿用按钮模拟该事件。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var locked = false, kbOpen = false;
+  var lockToggle = document.getElementById("lockToggle");
+  var kbToggle = document.getElementById("kbToggle");
+  var themeToggle = document.getElementById("themeToggle");
+  var pill = document.getElementById("lockPill");
+  var kbBar = document.getElementById("kbBar");
+  var kbBtn = document.getElementById("kbBtn");
+  var screenEl = document.getElementById("screen");
+  var deskHint = document.getElementById("deskHint");
+
+  function render(pulse) {
+    pill.hidden = !locked;
+    if (locked && pulse) { pill.classList.remove("pillPulse"); void pill.offsetWidth; pill.classList.add("pillPulse"); }
+    kbBar.hidden = !kbOpen;
+    kbBtn.disabled = locked;
+    lockToggle.textContent = locked ? "状态：已锁定（点我模拟远端解锁）" : "状态：未锁定（点我模拟被控端 Win+L）";
+    lockToggle.setAttribute("aria-pressed", String(locked));
+    kbToggle.textContent = "键盘条：" + (kbOpen ? "展开" : "收起");
+    kbToggle.setAttribute("aria-pressed", String(kbOpen));
+    screenEl.style.filter = locked ? "brightness(.92)" : "";
+    deskHint.textContent = locked ? "电脑锁屏画面（占位示意）" : "电脑桌面画面（占位示意）";
+    measure();
+  }
+  lockToggle.addEventListener("click", function () {
+    locked = !locked;
+    if (locked && kbOpen) kbOpen = false; // 改动③：锁定即收键盘
+    render(true);
+  });
+  kbToggle.addEventListener("click", function () { kbOpen = !kbOpen; render(false); });
+  kbBtn.addEventListener("click", function () { if (!locked) { kbOpen = !kbOpen; render(false); } });
+  document.getElementById("kbHide").addEventListener("click", function () { kbOpen = false; render(false); });
+  themeToggle.addEventListener("click", function () {
+    var dark = document.documentElement.getAttribute("data-theme") === "midnight";
+    document.documentElement.setAttribute("data-theme", dark ? "" : "midnight");
+    themeToggle.textContent = dark ? "主题：ocean（点切 midnight）" : "主题：midnight（点切 ocean）";
+    themeToggle.setAttribute("aria-pressed", String(!dark));
+    requestAnimationFrame(function () { requestAnimationFrame(measure); });
+  });
+
+  function lum(rgb) {
+    var c = rgb.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function parse(css) {
+    css = css.trim();
+    var m = css.match(/^#([0-9a-f]{6})$/i);
+    if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+    m = css.match(/^#([0-9a-f]{3})$/i);
+    if (m) return m[1].split("").map(function (h) { return parseInt(h + h, 16); });
+    m = css.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/);
+    return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0];
+  }
+  function contrast(fg, bg) {
+    var a = lum(parse(fg)), b = lum(parse(bg));
+    var hi = Math.max(a, b), lo = Math.min(a, b);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+  function measure() {
+    var cs = getComputedStyle(document.documentElement);
+    var pillEl = pill.hidden ? null : pill;
+    var rect = pillEl ? pillEl.getBoundingClientRect() : null;
+    var ratio = contrast(cs.getPropertyValue("--text-primary"), cs.getPropertyValue("--warning-bg"));
+    var warnBg = cs.getPropertyValue("--warning-bg").trim();
+    document.getElementById("readouts").innerHTML =
+      "pill（warning 变体）文字对比度：<strong>" + ratio.toFixed(2) + ":1</strong>（AA 正文需 ≥4.5）· " +
+      "warning-bg = <span class='legend'><span class='swatch' style='background:" + warnBg + "'></span><code>" + warnBg + "</code></span><br>" +
+      (pillEl
+        ? "pill 实测几何：宽 <strong>" + Math.round(rect.width) + "px</strong> · 高 <strong>" + Math.round(rect.height) + "px</strong> · top <strong>" + Math.round(rect.top - document.getElementById("phone").getBoundingClientRect().top) + "px</strong>"
+        : "pill 当前未渲染（未锁定态，与线上 modePill 条件渲染一致）") + "<br>" +
+      "键盘钮触达：" + (kbBtn.disabled ? "disabled（opacity .4）" : "可用") + " · min <strong>44×54px</strong> · mkKey min <strong>44×44px</strong>";
+  }
+  requestAnimationFrame(function () { requestAnimationFrame(measure); });
+  render(false);
+})();
+</script>
+</body>
+</html>

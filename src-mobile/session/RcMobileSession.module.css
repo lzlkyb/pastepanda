@@ -476,6 +476,7 @@
   outline-offset: 2px;
 }
 .root[data-landscape="true"] {
+  padding-block: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 68px;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -503,14 +504,12 @@
     opacity: 0.7;
   }
 }
-.feedbackSlot { position: absolute; z-index: var(--mobile-layer-notice); bottom: calc(72px + env(safe-area-inset-bottom, 0px)); left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); min-width: 0; max-height: min(40%, 240px); overflow-y: auto; }
+.feedbackSlot { position: static; grid-column: 1 / -1; grid-row: 3; flex: none; min-width: 0; max-height: min(20%, 96px); overflow-y: auto; }
 .feedbackSlot:empty { display: none; }
-.root[data-landscape="true"] .feedbackSlot { bottom: max(8px, env(safe-area-inset-bottom, 0px)); right: calc(76px + env(safe-area-inset-right, 0px)); }
-.root[data-keyboard="true"] .feedbackSlot { bottom: auto; top: max(8px, env(safe-area-inset-top, 0px)); max-height: 30%; }
 /* 横屏首次引导（2026-10-05）：收起后把手的一次性脉冲与气泡。
    脉冲随用户首次打开工具栏/点画面停止（teaching→hint→done），非常驻；
    后台时 WebView 随 Activity 暂停，不空转。 */
-.toolHandlePulse { animation: toolPulse 1.8s ease-out infinite; }
+.toolHandlePulse { animation: toolPulse 400ms cubic-bezier(0.2, 0, 0, 1) 2; }
 @keyframes toolPulse {
   from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
   to { box-shadow: 0 0 0 8px transparent; }

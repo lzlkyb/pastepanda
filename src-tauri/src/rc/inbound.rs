@@ -32,7 +32,7 @@ use super::input::{
     assert_control_allowed, converge_key_vk, get_clipboard_text_async, inject,
     set_clipboard_text_async,
 };
-use super::input::{InputEvent, KeyMode, capture_region};
+use super::input::{InputEvent, capture_region};
 // VideoCodec 仅 Windows 宿主编码路径使用（mobile 无推流管线）
 #[cfg(target_os = "windows")]
 use super::encode_h264::VideoCodec;
@@ -323,8 +323,25 @@ pub(super) async fn handle_inbound_input(
     svc: &Arc<RcService>,
     peer: &str,
     ev: InputEvent,
+    session_id: &str,
+    request_id: Option<&str>,
     send: &Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
 ) {
+    if !svc.session_id_is(session_id) { return; }
+    if let Some((key, _)) = super::settings::event_setting(&ev) {
+        let result = svc.apply_inbound_setting(session_id, peer, &ev, request_id.is_some());
+        if let Some(id) = request_id {
+            let frame = match result {
+                Ok(value) => serde_json::json!({"t":"setting_ack","request_id":id,"key":key,"status":"accepted","value":value}),
+                Err(error) => serde_json::json!({"t":"setting_ack","request_id":id,"key":key,"status":"rejected","error":error}),
+            };
+            if let Ok(bytes) = serde_json::to_vec(&frame) {
+                let mut guard = send.lock().await;
+                if let Err(error) = write_frame(&mut guard, &bytes).await { log::debug!("[RC] 设置回执发送失败：{error}"); }
+            }
+        } else if let Err(error) = result { log::warn!("[RC] 设置失败：{error}"); }
+        return;
+    }
     // C-2 / P1-2：会话切换竞态窗口内，旧连接迟到的输入不得挂在新会话能力上执行。
     // 🔴 一次加锁取快照，入口与能力校验**同源**——旧写法
     // `session_is` + `session_capability` 两次加锁，中间可换会话。
@@ -432,17 +449,6 @@ pub(super) async fn handle_inbound_input(
         // 所以最坏结果是「被控端码率被顶到 300% 或压到 10%」——是**资源影响**，
         // 不是越权动作。取舍是刻意保留的：View 得能调自己正看着的画质。
         // 改这一段之前先问：新加的东西有没有主机侧副作用？有就别放在这里。
-        InputEvent::SetQuality { quality } => {
-            if let Err(e) = svc.set_stream_quality(quality) {
-                log::warn!("[RC] {e}");
-            } else {
-                log::info!("[RC] 对端要求画质档：{quality}");
-                // Q10：与 SetCaptureScope 同理——对端（含只看会话）改了本机推流
-                // 档位，被控者不能只有 log；画质被调低画面变糊要能看见原因。
-                svc.emit_stream_note("quality", quality);
-            }
-            return;
-        }
         InputEvent::NetHint {
             rtt_ms,
             queue_ms,
@@ -509,20 +515,6 @@ pub(super) async fn handle_inbound_input(
             }
             return;
         }
-        // G3：发起端开关系统声音。不注入输入；被控端必须看得见——
-        // 「我的声音正在被对方听」和「画面被切走」是同一级别的可见性。
-        InputEvent::AudioOn { on } => {
-            // C-1 拍板：只看可收系统声音。AudioOn 只切换发起端收听开关，
-            // 不改主机环境，故 inbound 侧不要求 Control（与 send_input 白名单一致）。
-            // 音频镜像位是 Windows 宿主专属字段（mobile 无音频链路）。
-            #[cfg(target_os = "windows")]
-            svc.set_audio_muted(!*on);
-            // 与 quality/codec 同款分工：note 里传**原值**（on/off），中文文案归前端。
-            // 传句子会让被控横幅的「不是 codec 就是画质」分支把它读成画质。
-            svc.emit_stream_note("audio", if *on { "on" } else { "off" });
-            log::info!("[RC] 对端{}系统声音", if *on { "开启" } else { "关闭" });
-            return;
-        }
         // G3-C：发起端要求静音 / 恢复**本机（被控端）主机扬声器**。
         //
         // 🔴 要求 Control —— 这动的是本机的**物理输出环境**（屋里人听不听得到），
@@ -554,27 +546,6 @@ pub(super) async fn handle_inbound_input(
             };
             // 回帧带**读回的真实值**（可能与我们请求的不同），发起端的按钮态以它为准。
             svc.emit_host_audio(err.as_deref()).await;
-            return;
-        }
-        // 乙-①：控端声明它的按键口径（打字档 / 直传档）。
-        //
-        // 🔴 **要求 Control**——判据与 `SetCaptureScope` 的 D-2 同源：这改的是
-        // **本机怎么被按键**（注入用 `wVk` 还是扫描码），不是「我自己看什么」。
-        // 「只看」会话的键鼠本来就进不来，档位对它没有意义，静默拒绝即可
-        //（发起端的开关在 UI 上本就随可控性置灰）。
-        //
-        // 未知 `mode` 不报错：`KeyMode::from_wire` 回落打字档 = 历史行为。
-        // 失败形态必须是「直传没生效」，而不是「键打不出去」。
-        InputEvent::SetKeyMode { mode } => {
-            if assert_control_allowed(cap).is_err() {
-                log::info!("[RC] 只看会话试图改按键口径，已拒绝：{mode}");
-                return;
-            }
-            let m = KeyMode::from_wire(mode);
-            let prev = svc.set_peer_key_mode(m);
-            if prev != m {
-                log::info!("[RC] 按键口径：{} → {}", prev.wire(), m.wire());
-            }
             return;
         }
         // 乙-③：控端要求锁住**被控者本人的物理键鼠**（RustDesk block-input 语义）。

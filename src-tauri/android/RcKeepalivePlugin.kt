@@ -16,6 +16,14 @@ class KeepaliveArgs {
     var title: String = ""
 }
 
+@InvokeArg
+class SessionDisplayArgs {
+    var sessionId: String = ""
+    var on: Boolean = false
+    var landscape: Boolean = false
+    var orientation: String = "system"
+}
+
 /**
  * RC 保活的 Tauri 移动插件（方案 B，2026-10-02）——Rust 侧
  * `rc::keepalive` 经 `register_android_plugin` 装载本类，
@@ -33,6 +41,21 @@ class KeepaliveArgs {
 @TauriPlugin
 class RcKeepalivePlugin(private val activity: Activity) : Plugin(activity) {
     private var wifiLock: WifiManager.WifiLock? = null
+
+    @Command
+    fun setSessionDisplay(invoke: Invoke) {
+        val args = invoke.parseArgs(SessionDisplayArgs::class.java)
+        activity.runOnUiThread {
+            try {
+                val main = activity as? MainActivity ?: throw IllegalStateException("远程显示活动未就绪")
+                // landscape is the shell's hint; actual Configuration remains authoritative across IME resizing.
+                main.sessionDisplay.set(args.sessionId, args.on, args.orientation)
+                invoke.resolve()
+            } catch (e: Exception) {
+                invoke.reject(e.message ?: "远程显示设置失败")
+            }
+        }
+    }
 
     @Command
     fun setKeepalive(invoke: Invoke) {

@@ -59,7 +59,7 @@ export async function prepareAndroid(root) {
   const patched = patchAndroidManifest(manifest);
   const java = path.join(main, "java/com/pastepanda/app");
   await mkdir(java, { recursive: true });
-  for (const name of ["RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt"]) {
+  for (const name of ["MainActivity.kt", "RcSessionDisplay.kt", "RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt"]) {
     await copyFile(path.join(root, "src-tauri/android", name), path.join(java, name));
   }
   if (patched !== manifest) await writeFile(manifestPath, patched, "utf8");

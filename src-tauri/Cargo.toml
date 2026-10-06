@@ -211,6 +211,10 @@ windows = { version = "0.58", features = [
     "Win32_System_Com_StructuredStorage",
     # 会话防休眠（SetThreadExecutionState）：绑在调用线程上的执行状态请求。
     "Win32_System_Power",
+    # S1 锁屏感知：WTSRegisterSessionNotification / WM_WTSSESSION_CHANGE（RemoteDesktop）+
+    # 初始态探测 OpenInputDesktop / GetUserObjectInformationW（StationsAndDesktops）。
+    "Win32_System_RemoteDesktop",
+    "Win32_System_StationsAndDesktops",
 ] }
 winreg = "0.52"
 

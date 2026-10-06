@@ -289,6 +289,7 @@ pub struct RcService {
     peer_dgram_input: std::sync::atomic::AtomicBool,
     /// 剪贴板同步的状态与「跨会话串扰」不变量（见 `clipboard.rs`）。
     clip: ClipboardState,
+    pub(in crate::rc) settings: super::settings::SettingTracker,
     /// G6 文件传输的状态（待响应请求 + 任务列表，见 `file_state.rs`）。
     ///
     /// 与 `clip` 同一种收法：**字段 / 判据 / 作废入口三者同文件**。文件通道
@@ -629,6 +630,7 @@ impl RcService {
             peer_av1: std::sync::atomic::AtomicBool::new(false),
             peer_dgram_input: std::sync::atomic::AtomicBool::new(false),
             clip: ClipboardState::new(),
+            settings: super::settings::SettingTracker::default(),
             file: super::file_state::FileState::new(),
             inbound_send: tokio::sync::Mutex::new(None),
             notify: NotifyState::new(),

@@ -20,7 +20,7 @@ it("真实会话组件打开文件面板暂停远程输入，关闭后恢复且�
   const end = vi.fn();
   render(<RcMobileSession title="工作电脑" canvasRef={{ current: null }} contentSize={{ w: 1440, h: 900 }} file={file} onEnd={end} />);
   expect(inputState.allowed).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "查看" }));
+  fireEvent.click(screen.getByRole("button", { name: "文件 · 1" }));
   expect(inputState.allowed).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "返回远程画面" }));
   await waitFor(() => expect(inputState.allowed).toBe(true));

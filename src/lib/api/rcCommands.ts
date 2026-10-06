@@ -344,6 +344,17 @@ export function rcSendInput(event: RcInputEvent): Promise<void> {
   return invoke("rc_send_input", { event });
 }
 
+export type RcSettingKey = "quality" | "audio" | "key_mode";
+export type RcSettingResult = { status: "accepted" | "unconfirmed"; value: string };
+/** Only a correlated peer receipt establishes acceptance; transport success alone does not. */
+export function rcApplySetting(sessionId: string, key: RcSettingKey, value: string): Promise<RcSettingResult> {
+  return invoke("rc_apply_setting", { sessionId, key, value });
+}
+
+export function rcSessionDisplay(sessionId: string, on: boolean, landscape: boolean, orientation: "system" | "portrait" | "landscape" = "system"): Promise<void> {
+  return invoke("rc_session_display", { sessionId, on, landscape, orientation });
+}
+
 /**
  * RC 会话前台服务保活开关（B 方案方案叠加，2026-10-02）：Android 上会话
  * 期间持前台服务 + WifiLock，进程不被冻结/杀掉，后台想挂多久挂多久；

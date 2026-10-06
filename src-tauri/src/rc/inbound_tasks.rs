@@ -102,7 +102,7 @@ impl InboundVideo {
                     // 数据报只承载鼠标移动；提帧与可靠流同款语义（见
                     // `boost_frame` 的注释：必须用 notify_one 存许可）
                     boost_frame(&boost);
-                    handle_inbound_input(&svc, &peer, ev, &send).await;
+                    handle_inbound_input(&svc, &peer, ev, &my_id, None, &send).await;
                 }
             }
             // 数据报通道断开不单独收口会话：输入半流的断开兜底（连接级）
@@ -352,6 +352,7 @@ impl InboundVideo {
                     Ok(b) => b,
                     Err(_) => break,
                 };
+                if !svc.session_id_is(&my_id) { break; }
                 // 发起端结束会话：End 帧与 InputEvent 同半流
                 if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
                     log::info!("[RC] 对端结束会话：{reason}");
@@ -398,7 +399,10 @@ impl InboundVideo {
                         // 输入提帧：注入前就唤醒（DXGI 的 AcquireNextFrame
                         // 等待窗口正好覆盖注入生效所需的几毫秒）
                         boost_frame(&boost);
-                        handle_inbound_input(&svc, &peer, ev, &send).await;
+                        let metadata = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
+                        let request_id = metadata.as_ref().and_then(|v| v["request_id"].as_str())
+                            .filter(|id| !id.is_empty() && id.len() <= 64);
+                        handle_inbound_input(&svc, &peer, ev, &my_id, request_id, &send).await;
                     }
                 }
             }

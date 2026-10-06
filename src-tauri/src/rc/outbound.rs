@@ -447,6 +447,9 @@ impl OutboundVideo {
                             };
                             self.svc.set_remote_cursor(cur);
                         }
+                        Some("setting_ack") => {
+                            self.svc.receive_setting_ack(&self.my_id, &v);
+                        }
                         Some("clip") => {
                             if let Some(t) = v.get("text").and_then(|x| x.as_str()) {
                                 self.svc.set_remote_clipboard(t.to_string());

@@ -64,7 +64,8 @@ it("从纳入版本控制的源码恢复插件，覆盖生成目录的过期副�
       path.join(root, "src-tauri/gen/android/app/build.gradle.kts"),
       'dependencies {\n    implementation("androidx.appcompat:appcompat:1.7.0")\n}\n'
     );
-    for (const name of ["RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt"]) {
+    const kotlinSources = (await readdir(path.resolve("src-tauri/android"))).filter(name => name.endsWith(".kt"));
+    for (const name of kotlinSources) {
       await copyFile(path.resolve("src-tauri/android", name), path.join(sources, name));
     }
     await prepareAndroid(root);
@@ -73,12 +74,23 @@ it("从纳入版本控制的源码恢复插件，覆盖生成目录的过期副�
     expect(await readFile(plugin, "utf8")).toContain("FLAG_KEEP_SCREEN_ON");
     const networkPlugin = path.join(main, "java/com/pastepanda/app/IrohNetworkPlugin.kt");
     expect(await readFile(networkPlugin, "utf8")).toContain("class IrohNetworkPlugin");
+    const activity = path.join(main, "java/com/pastepanda/app/MainActivity.kt");
+    expect(await readFile(activity, "utf8")).toContain("enableEdgeToEdge()");
+    expect(await readFile(activity, "utf8")).toContain("override fun onConfigurationChanged");
+    for (const name of kotlinSources) {
+      const generated = path.join(main, "java/com/pastepanda/app", name);
+      expect(await readFile(generated, "utf8"), `${name} 没从唯一源码恢复`).toBe(await readFile(path.join(sources, name), "utf8"));
+      await writeFile(generated, "stale");
+    }
     await writeFile(networkPlugin, "stale");
     await writeFile(plugin, "stale");
     await prepareAndroid(root);
     expect(await readFile(plugin, "utf8")).toContain("class RcKeepalivePlugin");
     expect(await readFile(plugin, "utf8")).toContain("FLAG_KEEP_SCREEN_ON");
     expect(await readFile(networkPlugin, "utf8")).toContain("registerDefaultNetworkCallback");
+    for (const name of kotlinSources) {
+      expect(await readFile(path.join(main, "java/com/pastepanda/app", name), "utf8")).toBe(await readFile(path.join(sources, name), "utf8"));
+    }
     expect(await readFile(path.join(main, "AndroidManifest.xml"), "utf8")).toContain("RcSessionForegroundService");
   } finally {
     // Only remove this test's freshly allocated directory under the system temp root.

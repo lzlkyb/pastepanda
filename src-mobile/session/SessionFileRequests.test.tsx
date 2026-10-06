@@ -13,11 +13,10 @@ function fileView() {
 it("接收和拒绝反馈留在会话面板，拒绝不会让接受显示处理中", async () => {
   dir.mockResolvedValue("/receive");
   const file = fileView();
-  const open = vi.fn();
-  const view = render(<SessionFileRequests file={file} open={false} onOpen={open} onClose={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "查看" }));
-  expect(open).toHaveBeenCalledOnce();
-  view.rerender(<SessionFileRequests file={file} open onOpen={open} onClose={vi.fn()} />);
+  const view = render(<SessionFileRequests file={file} open={false} onClose={vi.fn()} />);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("button")).toBeNull();
+  view.rerender(<SessionFileRequests file={file} open onClose={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "接受" })).not.toBeDisabled());
   fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
   expect(file.respond).toHaveBeenCalledWith("ask", null);
@@ -28,7 +27,7 @@ it("接收位置失败在会话中可重试，已过期的请求禁止响应", a
   dir.mockRejectedValueOnce("无法获取接收位置").mockResolvedValue("/receive");
   const file = fileView();
   file.asks[0].first_seen_ms = Date.now() - 61_000;
-  render(<SessionFileRequests file={file} open onOpen={vi.fn()} onClose={vi.fn()} />);
+  render(<SessionFileRequests file={file} open onClose={vi.fn()} />);
   expect(await screen.findByText("无法获取接收位置")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "重试" }));
   await waitFor(() => expect(dir).toHaveBeenCalledTimes(2));
@@ -42,7 +41,7 @@ it("最后一条请求成功后返回画面，响应失败仍留在面板", asyn
   const file = fileView();
   vi.mocked(file.respond).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const close = vi.fn();
-  render(<SessionFileRequests file={file} open onOpen={vi.fn()} onClose={close} />);
+  render(<SessionFileRequests file={file} open onClose={close} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "接受" })).not.toBeDisabled());
   fireEvent.click(screen.getByRole("button", { name: "接受" }));
   await waitFor(() => expect(file.respond).toHaveBeenCalledTimes(1));

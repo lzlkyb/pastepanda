@@ -1,44 +1,66 @@
-import { MobileNotice } from "../ui/MobileNotice";
-import { MobileToast } from "../ui/MobileToast";
+import { useEffect, useState, type ReactNode } from "react";
+import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
+import { MobileSheet } from "../ui/MobileSheet";
 import type { useSessionClipboard } from "./useSessionClipboard";
 import type { useSessionPointer } from "./useSessionPointer";
 import type { useOrientationLock } from "./useOrientationLock";
+import type { RcSettingKey } from "@/lib/api/rcCommands";
 import ui from "../ui/MobileUi.module.css";
+import styles from "./SessionFeedback.module.css";
+import { useMobileNoticeTimer } from "../ui/useMobileNoticeTimer";
 
-/**
- * 会话反馈槽的聚合出口（feedbackSlot 内）：错误互相不掩埋（规则 15.3），
- * 横屏失败与剪贴板错误同时存在时两条都看得见；只有指针提示（success/warning
- * 级的低价值信息）让位给任何真实结果。发送失败横幅与横屏首次引导的教学倒计时
- * 也在这里出——触发与反馈同可见性域。
- */
-export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSendFailDismiss, teach }: {
+type Issue = { feedback: MobileFeedback; dismiss: () => void; action?: ReactNode };
+/** One compact summary outside the video; details never stack over remote targets. */
+export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSendFailDismiss,
+  blocked = false, onOpenChange, setting, settings, onSettingDismiss, onSettingOpen,
+}: {
   pointer: Pick<ReturnType<typeof useSessionPointer>, "hint" | "hintTone" | "clearHint">;
   orient: Pick<ReturnType<typeof useOrientationLock>, "hint" | "clearHint">;
   clipboard: ReturnType<typeof useSessionClipboard>;
-  /** 最近一次输入/设置事件发送失败（恢复后由 hook 自动翻回 false）。 */
   sendFailed?: boolean;
   onSendFailDismiss: () => void;
-  /** 横屏首次引导的教学倒计时（useImmersiveCapsule phase=teaching）。 */
-  teach?: { secondsLeft: number; onEnd: () => void };
+  blocked?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  setting?: MobileFeedback;
+  settings?: { key: RcSettingKey; feedback: MobileFeedback }[];
+  onSettingDismiss?: (key?: RcSettingKey) => void;
+  onSettingOpen?: (key?: RcSettingKey) => void;
 }) {
-  const clip = !clipboard.clipOpen ? clipboard.feedback : null;
-  return (
-    <>
-      {sendFailed && (
-        <MobileToast placement="flow" tone="error" title="操作未送达电脑"
-          detail="最近的输入发送失败，请检查连接；恢复后此提示自动消失。"
-          onDismiss={onSendFailDismiss} />
-      )}
-      {teach && (
-        <MobileNotice variant="banner" tone="info" title="工具栏在这里"
-          detail={`画面、画质、剪贴板、断开都在这列。${teach.secondsLeft} 秒后自动收起，之后点「工具」随时唤出。`}
-          onDismiss={teach.onEnd} />
-      )}
-      {orient.hint && <MobileToast placement="flow" tone="error" title="未能锁定横屏" detail={orient.hint} onDismiss={orient.clearHint} />}
-      {clip && <MobileToast placement="flow" {...clip} onDismiss={clipboard.dismiss}
-        action={<button type="button" className={ui.textButton} onClick={clipboard.openClip}>打开剪贴板</button>} />}
-      {!orient.hint && !clip && pointer.hint &&
-        <MobileToast placement="flow" tone={pointer.hintTone} title={pointer.hint} onDismiss={pointer.clearHint} />}
-    </>
-  );
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const issues: Issue[] = [];
+  if (sendFailed) issues.push({ feedback: { tone: "error", title: "输入发送失败", detail: "请检查连接；恢复后继续操作。" }, dismiss: onSendFailDismiss });
+  if (orient.hint) issues.push({ feedback: { tone: "error", title: "显示方向未能切换", detail: orient.hint }, dismiss: orient.clearHint });
+  if (!clipboard.clipOpen && clipboard.feedback) issues.push({ feedback: clipboard.feedback, dismiss: clipboard.dismiss,
+    action: <button type="button" className={ui.textButton} onClick={() => { setOpen(false); clipboard.openClip(); }}>打开剪贴板</button> });
+  for (const item of settings ?? (setting ? [{ key: undefined, feedback: setting }] : [])) {
+    issues.push({ feedback: item.feedback, dismiss: () => onSettingDismiss?.(item.key),
+      action: <button type="button" className={ui.textButton} onClick={() => { setOpen(false); onSettingOpen?.(item.key); }}>查看设置</button> });
+  }
+  if (pointer.hint) issues.push({ feedback: { tone: pointer.hintTone, title: pointer.hint }, dismiss: pointer.clearHint });
+  const first = issues.find(issue => issue.feedback.tone === "error") ?? issues.find(issue => issue.feedback.tone === "warning") ?? issues[0];
+  const hasIssues = !!first;
+  useEffect(() => { if (!hasIssues) setOpen(false); }, [hasIssues]);
+  const detailsOpen = open && !!first && !blocked;
+  useEffect(() => { onOpenChange?.(detailsOpen); return () => onOpenChange?.(false); }, [detailsOpen, onOpenChange]);
+  const dismiss = first?.dismiss;
+  const title = first?.feedback.title;
+  const ordinary = first?.feedback.tone === "info" || first?.feedback.tone === "success";
+  useMobileNoticeTimer(ordinary, title, dismiss ?? (() => {}), blocked || open || focused);
+  if (!first) return null;
+  return <>
+    {!blocked && <div className={styles.summary} role={first.feedback.tone === "error" ? "alert" : "status"} aria-atomic="true"
+      onFocusCapture={() => setFocused(true)} onBlurCapture={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}>
+      <span>{first.feedback.title}</span>
+      <button type="button" onClick={() => setOpen(true)}>{issues.length > 1 ? `${issues.length} 条提示` : "详情"}</button>
+      <button type="button" onClick={first.dismiss} aria-label="关闭提示">关闭</button>
+    </div>}
+    <MobileSheet open={detailsOpen} title="会话提示" onClose={() => setOpen(false)}>
+      {issues.map((issue, index) => <MobileNotice key={`${index}:${issue.feedback.title}`} {...issue.feedback}
+        onDismiss={issue.dismiss} action={issue.action} />)}
+      <button type="button" className={ui.secondary} onClick={() => setOpen(false)}>返回远程画面</button>
+    </MobileSheet>
+  </>;
 }

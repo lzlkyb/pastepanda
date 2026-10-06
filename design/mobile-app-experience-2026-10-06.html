@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>手机端体验升级 · B 方案交互预览</title>
+  <link rel="stylesheet" href="mobile-app-experience-2026-10-06.css">
+  <script src="mobile-app-experience-2026-10-06.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="monitor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M8 21h8M12 16v5"/></symbol>
+    <symbol id="keyboard" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M7 16h10"/></symbol>
+    <symbol id="pointer" viewBox="0 0 24 24"><path d="m4 3 7.07 17 2.51-6.42L20 11.07 4 3Z"/></symbol>
+    <symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="back" viewBox="0 0 24 24"><path d="M19 12H5m7-7-7 7 7 7"/></symbol>
+    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></symbol>
+  </defs></svg>
+  <main>
+    <header class="intro">
+      <h1>手机端体验升级</h1>
+      <p>推荐 B：保留已确认的画面优先和四种操作方式，补齐原生全屏、真实操作反馈与统一提示。</p>
+      <p class="secondary">这是交互设计稿；连接、画质应用和电脑画面均为模拟。隐藏 Android 系统栏需要原生实现与真机验收。</p>
+    </header>
+    <section class="preview-controls" aria-label="预览条件">
+      <div role="group" aria-label="屏幕方向"><button id="landscape" aria-pressed="true">横屏</button><button id="portrait" aria-pressed="false">竖屏</button><button id="small" aria-pressed="false">小屏竖屏</button></div>
+      <button id="theme" aria-pressed="false">深色界面</button>
+      <button id="large-text" aria-pressed="false">大字号 130%</button>
+      <label><input id="fail-next" type="checkbox">模拟画质切换失败</label>
+      <button id="connection-test">模拟连接异常</button>
+      <button id="file-test">模拟文件请求</button>
+    </section>
+    <div class="preview-scroll">
+      <section id="device" class="device" data-layout="landscape" aria-label="B 方案会话预览">
+        <header class="session-head"><button data-panel="end" aria-label="退出远程会话"><svg><use href="#back"/></svg></button><div><strong>LAPTOP-LZL</strong><span>控制中</span></div><button class="head-status" data-panel="connection">8 ms · 流畅</button></header>
+        <div class="remote" aria-label="模拟电脑画面">
+          <div class="desktop-window"><div class="desktop-title"><svg><use href="#folder"/></svg><span>文件资源管理器 · 工作文件</span><span class="window-actions">最小化　最大化　关闭</span></div><div class="desktop-body"><aside>主页<br>桌面<br>文档<br>下载</aside><div class="desktop-files"><h2>工作文件</h2><div class="file-row"><strong>项目资料</strong><span>文件夹</span></div><div class="file-row"><strong>设计参考</strong><span>文件夹</span></div><div class="file-row"><strong>会议记录.docx</strong><span>文档</span></div><div class="file-row"><strong>季度计划.xlsx</strong><span>表格</span></div></div></div></div>
+          <div class="desktop-taskbar"><svg><use href="#monitor"/></svg><span>工作电脑画面示意</span><span>14:30</span></div>
+        </div>
+        <aside class="rail" aria-label="会话工具">
+          <button id="tools-toggle" aria-expanded="true">收起</button>
+          <button id="connection-entry" data-panel="connection"><span class="connection-dot"></span><span id="latency">8 ms</span><span id="connection-label">流畅</span></button>
+          <nav id="tools" aria-label="远程操作"><button data-panel="mode"><svg><use href="#pointer"/></svg><span id="mode-label">触控板</span></button><button data-panel="keyboard"><svg><use href="#keyboard"/></svg><span>键盘</span></button><button data-panel="screen"><svg><use href="#monitor"/></svg><span>画面</span></button><button data-panel="more"><svg><use href="#more"/></svg><span>更多</span></button></nav>
+          <button id="file-entry" data-panel="file" hidden><svg><use href="#folder"/></svg><span>文件 · 1</span></button>
+        </aside>
+        <div id="status-strip" class="status-strip" hidden><span id="status-text" role="status"></span><button id="status-action" hidden></button><button id="status-close" aria-label="关闭操作提示"><svg><use href="#close"/></svg></button></div>
+        <div id="backdrop" class="backdrop" hidden></div>
+        <section id="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title" hidden tabindex="-1">
+          <header class="panel-head"><h2 id="panel-title">画面</h2><button id="close-panel"><svg><use href="#close"/></svg><span>关闭</span></button></header>
+          <div class="panel-body">
+            <div data-content="screen">
+              <h3>显示</h3><button id="fit" class="row-button">适应屏幕<span>恢复完整画面</span></button><button id="rotate" class="row-button">切换到竖屏<span>示意：切换布局</span></button>
+              <h3>画质</h3><p class="secondary">自动根据网络调整；清晰适合看文字，流畅适合较慢网络。</p>
+              <div class="quality-options" role="radiogroup" aria-label="画质"><button role="radio" aria-checked="true" data-quality="自动">自动</button><button role="radio" aria-checked="false" data-quality="清晰">清晰</button><button role="radio" aria-checked="false" data-quality="均衡">均衡</button><button role="radio" aria-checked="false" data-quality="流畅">流畅</button></div>
+              <div id="quality-feedback" class="inline-feedback" data-tone="info" role="status" aria-live="polite"><strong id="quality-title">当前画质：自动</strong><p id="quality-detail">电脑已确认的档位显示在这里。</p><button id="retry-quality" hidden>重试</button></div>
+            </div>
+            <div data-content="mode" hidden><p class="secondary">沿用四种操作方式。触控板为默认，每种方式的手势含义保持一致。</p><div class="mode-options"><button data-mode="触控板" aria-pressed="true">触控板<span>划动移动，点按点击指针处</span></button><button data-mode="直接点击" aria-pressed="false">直接点击<span>点哪里，操作哪里</span></button><button data-mode="独立触控板" aria-pressed="false">独立触控板<span>上方看画面，下方移动指针</span></button><button data-mode="浮动鼠标" aria-pressed="false">浮动鼠标<span>拖动控制柄，指针在手指上方</span></button></div></div>
+            <div data-content="connection" hidden><h3 id="connection-title">连接流畅</h3><p id="connection-detail">操作延时 8 ms。电脑画面和会话工具各占独立区域。</p><button id="reconnect" class="primary" hidden>重试连接</button><button data-panel="screen" class="row-button">画面与画质<span>调整画质档位</span></button></div>
+            <div data-content="keyboard" hidden><p class="secondary">输入反馈放在输入区；失败保留草稿。系统返回先收键盘，再关闭面板。</p><label class="field">输入到电脑的文字<input id="draft" placeholder="输入要发送的文字"></label><button id="send-text" class="primary">发送到电脑</button><p id="text-result" role="status"></p><p class="secondary">这里只模拟输入区。真实输入法高度、中文上屏和返回顺序由真机验证。</p></div>
+            <div data-content="more" hidden><button data-panel="connection" class="row-button">连接详情<span>查看当前连接状态</span></button><button data-panel="file" class="row-button">文件请求<span>查看或处理，不打断远程会话</span></button><button data-panel="end" class="danger-button">断开连接</button></div>
+            <div data-content="file" hidden><h3 id="file-title">1 个文件请求待确认</h3><p class="secondary">接收和拒绝在此处理。请求保持在工具入口，不弹横幅挡住电脑画面。</p><button id="receive-file" class="primary">接收文件</button><button id="reject-file" class="row-button">拒绝</button></div>
+            <div data-content="end" hidden><h3>断开与 LAPTOP-LZL 的连接？</h3><p class="secondary">退出后恢复手机系统状态栏。此预览不会断开真实会话。</p><button id="cancel-end" class="primary">继续控制</button></div>
+          </div>
+        </section>
+      </section>
+    </div>
+    <p class="preview-caption">点“画面”试切换画质，再勾选模拟失败；关闭面板、重新打开，结果仍在。连接异常只保留一个可处理入口。横屏工具列可收起，画面内不增加唤出手势。</p>
+    <section class="proposal"><h2>三个实施范围</h2><div class="table-scroll"><table><thead><tr><th>方案</th><th>范围</th><th>取舍</th></tr></thead><tbody><tr><td>A · 基础修复</td><td>原生横屏全屏、画质反馈、提示避让</td><td>改动小；其余操作一致性仍需后续补齐</td></tr><tr class="recommended"><td>B · 统一体验（推荐）</td><td>A + 所有设置反馈、工具/键盘/返回、提示调度、动效和响应式验收</td><td>覆盖本次诉求；复用现有 React / Tauri 架构</td></tr><tr><td>C · 原生界面重建</td><td>Android 原生导航、工具面板、手势界面</td><td>投入最大；会产生两套界面维护，本轮不推荐</td></tr></tbody></table></div></section>
+    <section class="proposal"><h2>B 的验收重点</h2><ul><li>横屏进入、旋转、后台返回后系统栏正确；退出会话恢复，系统边缘滑动仍可唤出。</li><li>设置区分发送与电脑确认；失败保持旧生效值，可以重试；快速连点不会被迟到结果覆盖。</li><li>成功就地显示；持续异常只有一个状态入口；普通提示不盖操作目标，不抢焦点。</li><li>320/390/430 宽度、横屏短高度、130% 字号、深浅色和输入法均有独立验收。</li><li>按钮即时响应；面板 300ms，轻反馈 150ms；可中断，支持系统减少动态效果。</li></ul></section>
+  </main>
+</body>
+</html>

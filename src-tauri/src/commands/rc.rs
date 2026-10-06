@@ -1626,6 +1626,17 @@ pub async fn rc_send_input(
     svc.send_input(&event).await
 }
 
+/// The peer receipt confirms configuration acceptance; a timeout remains unconfirmed.
+#[tauri::command]
+pub async fn rc_apply_setting(
+    svc: State<'_, Arc<RcService>>,
+    session_id: String,
+    key: String,
+    value: String,
+) -> Result<crate::rc::settings::SettingResult, String> {
+    svc.apply_setting(&session_id, &key, &value).await
+}
+
 /// 打开「远程电脑」独立工作台窗口（2A 配套，2026-09-18）。
 ///
 /// 为什么是独立窗口：主窗口只有 550×700，会话视图 960px 在里面被压成 ~534px，
@@ -1852,6 +1863,30 @@ pub fn rc_keepalive_set(app: AppHandle, on: bool, title: String) -> Result<(), S
     #[cfg(not(target_os = "android"))]
     {
         let _ = (app, on, title);
+        Ok(())
+    }
+}
+
+/// Session-owned native display: rotation and immersive bars share the same lifecycle.
+#[tauri::command]
+pub async fn rc_session_display(
+    app: AppHandle,
+    session_id: String,
+    on: bool,
+    landscape: bool,
+    orientation: Option<String>,
+) -> Result<(), String> {
+    let orientation = orientation.as_deref().unwrap_or("system");
+    #[cfg(target_os = "android")]
+    {
+        match app.try_state::<crate::rc::keepalive::RcKeepalive<tauri::Wry>>() {
+            Some(plugin) => plugin.set_session_display(&session_id, on, landscape, orientation),
+            None => Err("远程显示插件未就绪".into()),
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, session_id, on, landscape, orientation);
         Ok(())
     }
 }

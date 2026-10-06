@@ -11,19 +11,22 @@ export function MobileSheet({
   description,
   onClose,
   children,
+  footer,
 }: {
   open: boolean;
   title: string;
   description?: string;
   onClose: () => void;
   children: ReactNode;
+  /** Operation results remain visible while the controls scroll on short screens. */
+  footer?: ReactNode;
 }) {
   const { present, sheetRef, ...dragEvents } = useSheetDrag(open, onClose);
-  const saved = useRef({ title, description, children });
+  const saved = useRef({ title, description, children, footer });
   const restoreFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (open) saved.current = { title, description, children };
-  }, [open, title, description, children]);
+    if (open) saved.current = { title, description, children, footer };
+  }, [open, title, description, children, footer]);
   useEffect(() => {
     if (!present) return;
     // Pause underlying glass while a sheet owns focus; content stays sharp.
@@ -36,7 +39,7 @@ export function MobileSheet({
       else delete body.dataset.mobileSheets;
     };
   }, [present]);
-  const content = open ? { title, description, children } : saved.current;
+  const content = open ? { title, description, children, footer } : saved.current;
   const descriptionId = useId();
   useMobileBack(open, onClose);
   return (
@@ -79,6 +82,7 @@ export function MobileSheet({
               </Dialog.Description>
             )}
             <div className={styles.sheetBody}>{content.children}</div>
+            {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
           </Dialog.Content>
         </Dialog.Portal>
       )}

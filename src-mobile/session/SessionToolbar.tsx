@@ -11,6 +11,8 @@ import { useMobileBack } from "../ui/useMobileBack";
 import { rcErrorText } from "../devices/rcErrorText";
 import { MOBILE_QUALITY_CYCLE, type MobileQuality } from "./qualityCycle";
 import { qualityLabel } from "@/lib/rcQuality";
+import type { useSessionSettings } from "./useSessionSettings";
+import { SessionSettingFeedback } from "./SessionSettingFeedback";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcMobileSession.module.css";
 
@@ -41,18 +43,20 @@ export function SessionToolbar({
   onRevealPointer,
   requestEnd = 0,
   requestScreen = 0,
+  requestMore = 0,
   inputReady = true,
   onConnectionDetails,
   connectionEntry,
   mouseAssist,
   toolHint = false,
+  settings, orientationHint, onOrientationHintDismiss, fileEntry,
 }: {
   landscape: boolean;
   visible: boolean;
   keyboardOn: boolean;
   onToggleKeyboard: () => void;
   onResetZoom: () => void;
-  quality: MobileQuality;
+  quality: MobileQuality | null;
   onPickQuality: (quality: MobileQuality) => void;
   audioOn: boolean;
   onToggleAudio: () => void;
@@ -71,12 +75,17 @@ export function SessionToolbar({
   onRevealPointer?: () => void;
   requestEnd?: number;
   requestScreen?: number;
+  requestMore?: number;
   inputReady?: boolean;
   onConnectionDetails?: () => void;
   connectionEntry?: ReactNode;
   mouseAssist?: ReactNode;
   /** 横屏首次引导（useImmersiveCapsule phase=hint）：把手脉冲 + 一次性气泡。 */
   toolHint?: boolean;
+  settings?: ReturnType<typeof useSessionSettings>;
+  orientationHint?: string;
+  onOrientationHintDismiss?: () => void;
+  fileEntry?: ReactNode;
 }) {
   const [panel, setPanel] = useState<"screen" | "more" | "end" | "mode" | null>(null);
   useEffect(() => {
@@ -85,6 +94,7 @@ export function SessionToolbar({
   useEffect(() => {
     if (requestScreen) setPanel("screen");
   }, [requestScreen]);
+  useEffect(() => { if (requestMore) setPanel("more"); }, [requestMore]);
   const back = () => {
     if (keyboardOn) onToggleKeyboard();
     else setPanel("end");
@@ -149,8 +159,10 @@ export function SessionToolbar({
           <Ellipsis size={22} aria-hidden="true" />
           <span>更多</span>
         </button>
+        {!landscape && fileEntry}
       </nav>
       {landscape && mouseAssist}
+      {landscape && fileEntry}
       </div>
       {/* 气泡挂在 rail 外层：toolRail overflow 裁剪会吃掉伸出画面的部分。 */}
       {landscape && toolHint && !visible && !keyboardOn && (
@@ -165,7 +177,10 @@ export function SessionToolbar({
         onMouse={onToggleMouse ?? (() => {})}
         enabled={canControl && inputReady}
       />
-      <MobileSheet open={panel === "screen"} title="画面" onClose={closePanel}>
+      <MobileSheet open={panel === "screen"} title="画面" onClose={closePanel} footer={(settings?.items.quality || orientationHint) && <>
+        <SessionSettingFeedback state={settings?.items.quality} onRetry={() => void settings?.retry("quality")} />
+        {orientationHint && <MobileNotice compact tone="error" title="显示方向未能切换" detail={orientationHint} onDismiss={onOrientationHintDismiss} />}
+      </>}>
         <div className={styles.panelActions}>
           <button
             type="button"
@@ -192,6 +207,14 @@ export function SessionToolbar({
             回到指针
           </button>
           <h3 className={ui.sectionHeading}>画质</h3>
+          {/* 语义必须先于第一次点击可见：点实名档会整场关掉电脑的自动档
+              （2026-10-06 复测 B 的误触陷阱——点了「清晰」，自动档静默阵亡）。 */}
+          <p className={styles.panelHint}>选「清晰 / 均衡 / 流畅」会锁档并关闭电脑自动档；点「自动」恢复。</p>
+          {!quality && <p className={styles.panelHint}>当前电脑画质尚未确认，选择档位后等待电脑确认。</p>}
+          {quality === "auto" && <p className={styles.panelHint}>电脑正按网络状况自动换档。</p>}
+          {quality && quality !== "auto" && (
+            <p className={styles.panelHint}>已锁档「{qualityLabel(quality)}」：电脑自动档已关闭，点「自动」恢复。</p>
+          )}
           <div className={styles.qualityChoices} role="radiogroup" aria-label="画质">
             {MOBILE_QUALITY_CYCLE.map((value) => (
               <button
@@ -212,7 +235,8 @@ export function SessionToolbar({
         </div>
       </MobileSheet>
       <SessionClipboardPanel clipboard={clipboard} canControl={canControl && inputReady} />
-      <MobileSheet open={panel === "more"} title="更多" onClose={closePanel}>
+      <MobileSheet open={panel === "more"} title="更多" onClose={closePanel}
+        footer={settings?.items.audio && <SessionSettingFeedback state={settings.items.audio} onRetry={() => void settings.retry("audio")} />}>
         <div className={styles.panelActions}>
           {onConnectionDetails && <button type="button" className={ui.secondary} onClick={() => {
             setPanel(null);

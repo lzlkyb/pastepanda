@@ -36,12 +36,42 @@ struct KeepaliveArgs {
     title: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg(target_os = "android")]
+struct SessionDisplayArgs {
+    session_id: String,
+    on: bool,
+    landscape: bool,
+    orientation: String,
+}
+
 /// 已装载的 Kotlin 插件句柄（仅 Android 存在）。
 #[cfg(target_os = "android")]
 pub struct RcKeepalive<R: Runtime>(PluginHandle<R>);
 
 #[cfg(target_os = "android")]
 impl<R: Runtime> RcKeepalive<R> {
+    pub fn set_session_display(
+        &self,
+        session_id: &str,
+        on: bool,
+        landscape: bool,
+        orientation: &str,
+    ) -> Result<(), String> {
+        self.0
+            .run_mobile_plugin::<()>(
+                "setSessionDisplay",
+                SessionDisplayArgs {
+                    session_id: session_id.to_string(),
+                    on,
+                    landscape,
+                    orientation: orientation.to_string(),
+                },
+            )
+            .map_err(|e| e.to_string())
+    }
+
     /// 开（on=true）/ 停（on=false）前台服务。title 进常驻通知，让用户知道
     /// 「现在有会话在后台活着」。
     pub fn set(&self, on: bool, title: &str) -> Result<(), String> {

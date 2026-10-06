@@ -11,31 +11,16 @@ import ui from "../ui/MobileUi.module.css";
 export function SessionFileRequests({
   file,
   open,
-  onOpen,
   onClose,
 }: {
   file: RcFileView;
   open: boolean;
-  onOpen: () => void;
   onClose: () => void;
 }) {
   const directory = useMobileReceiveDir(open);
   const dir = directory.busy ? null : directory.dir;
   return (
     <>
-      {!open && (file.asks.length > 0 || file.error) && (
-          <MobileNotice
-            variant="banner"
-            error={!!file.error}
-            action={
-              <button type="button" className={ui.textButton} onClick={onOpen}>
-                查看
-              </button>
-            }
-          >
-            {file.error ? rcErrorText(file.error) : `${file.asks.length} 个文件请求待确认`}
-          </MobileNotice>
-      )}
       <MobileSheet
         open={open}
         title="文件请求"

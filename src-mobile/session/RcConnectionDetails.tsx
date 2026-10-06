@@ -51,7 +51,7 @@ export const RcConnectionDetails = memo(function RcConnectionDetails({ open, tit
         ["连接状态", linkStateLabel(info.state)], ["连接方式", info.path || "识别中"],
         ["画面分辨率", frame && frame.size.w > 0 && frame.size.h > 0 ? `${frame.size.w} × ${frame.size.h}` : NO_SAMPLE],
         ["画面编码", codec], ["估计码率", frame && frame.bitrateKbps > 0 ? frame.bitrateKbps >= 1000 ? `${(frame.bitrateKbps / 1000).toFixed(1)} Mbps` : `${Math.round(frame.bitrateKbps)} kbps` : NO_SAMPLE],
-        ["画质设置", qualityHudLabel(quality, undefined, true)],
+        ["画质设置", quality === "unknown" ? "电脑尚未确认" : qualityHudLabel(quality, undefined, true)],
       ]} />
       <details className={styles.advanced}><summary>高级参数<span>延时分段与丢包</span></summary><Parameters rows={[
         ["画面延时（近似）", number(frame?.latencyMs, "ms", true)], ["采集", number(frame?.segCapMs)], ["编码", number(frame?.segEncMs)],
