@@ -69,7 +69,8 @@ const AUTO_FRAME_WINDOW: usize = 8;
 ///   却因帧龄 1100ms 被钉在 balanced）。
 /// ② 真拥塞并不因此失去降档通道：真排队时 `excess_rtt ≥ 200` 或 `loss ≥ 20‰∧有交付
 ///   压力` 照样触发；而**码率这一路的降档完全不经这个判据**——`Flow` 用自己的
-///   send→ack `backlog` 砍 `kbps`，`fps_limit`/`resolution_limit` 跟着 `kbps` 走。
+///   send→ack `backlog` 砍 `kbps`，`fps_limit` 跟着 `kbps` 走（分辨率自
+///   2026-10-06 文字优先拍板后不再跟预算走，见 `Flow::resolution_limit`）。
 ///   所以豁免只摘掉「自家生产节拍慢被记成网络拥塞」这一类误伤。
 const AUTO_DOWN_QUEUE_MS: i64 = 300;
 

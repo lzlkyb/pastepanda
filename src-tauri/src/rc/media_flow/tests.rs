@@ -94,20 +94,16 @@ fn idle_desktop_is_not_measured_as_a_bandwidth_ceiling() {
 }
 
 #[test]
-fn active_direct_stream_recovers_resolution_with_moderate_wire_backlog() {
+fn active_direct_stream_recovers_budget_with_moderate_wire_backlog() {
     let mut flow = Flow::default();
     flow.budget(false, 8_000);
     flow.kbps = 400;
-    assert_eq!(flow.resolution_limit(0), 1280);
-    assert_eq!(flow.resolution_limit(5_000), 960);
     for n in 6..66u64 {
         // 满足当前预算的活动画面，本端实测 send→ack 超额稳定在真机观测的 63..98ms。
         let bytes = flow.kbps as u64 * 25;
         wire(&mut flow, n * 1_000, 80, bytes);
-        flow.resolution_limit(n * 1_000);
     }
     assert!(flow.kbps >= 1_100, "稳定直连不应永久卡在低码率");
-    assert_ne!(flow.max_width, 960, "满足恢复预算后须允许恢复文字分辨率（升档须站满 7 秒）");
     let before = flow.kbps;
     wire(&mut flow, 66_000, 160, before as u64 * 25);
     assert!(flow.kbps < before, "本端口径的真实积压超过降速线仍必须减速");
@@ -274,10 +270,17 @@ fn relay_ack_jitter_allowance_does_not_override_real_queue_or_byte_limits() {
     f.received_at_ms = 2;
     f.receive_queue_ms = Some(400);
     flow.feedback(1_950, &f, 8_000, 0, 0);
-    assert_eq!(flow.admission(1_951, 548), Admission::Reset);
-    flow.discard(1_951, 0, 0);
-    flow.sent(1_952, 1_952, 4, MAX_PENDING + 1);
-    assert_eq!(flow.admission(3_001, 548), Admission::Reset);
+    // 方案乙（2026-10-06）：backlog ~260ms 在 ack_mean ~773ms 的中继上是抖动带内的
+    // 正常值——旧口径在这里 RESET，真机 10 秒 4 次、每次弃 7..10 帧（一次可见卡顿）。
+    assert_eq!(flow.admission(1_951, 548), Admission::Ready,
+        "抖动带内的 backlog 不再触发 RESET（乙）");
+    // 「真队列」仍旧抓得住：过期链按 base 收紧的 deadline 照旧废弃。
+    flow.sent(2_000, 2_000, 4, 5_000);
+    assert_eq!(flow.admission(5_001, 548), Admission::Reset,
+        "ACK 停更后链龄超 deadline，抖动豁免不许让它无限存活");
+    flow.discard(5_001, 0, 0);
+    flow.sent(5_002, 5_002, 5, MAX_PENDING + 1);
+    assert_eq!(flow.admission(6_101, 548), Admission::Reset, "字节上限照旧");
 }
 
 #[test]
@@ -459,17 +462,16 @@ fn fast_direct_path_preserves_explicit_high_fps_profiles() {
 }
 
 #[test]
-fn constrained_resolution_keeps_aspect_ratio_and_does_not_flap() {
+fn budget_never_downscales_resolution_text_priority() {
     assert_eq!(scaled_dimensions(1920, 1080, 1280), (1280, 720));
     assert_eq!(scaled_dimensions(1024, 768, 1280), (1024, 768));
     assert_eq!(scaled_dimensions(1920, 1080, 0), (1920, 1080));
+    // 文字优先（2026-10-06 复测 B 拍板）：预算再低也不降采样，省码率走 fps 阶梯。
     let mut flow = Flow::default();
-    flow.kbps = 1_000;
-    assert_eq!(flow.resolution_limit(0), 1280);
-    flow.kbps = 3_000;
-    assert_eq!(flow.resolution_limit(0), 1280, "升档要先过时间门槛");
-    assert_eq!(flow.resolution_limit(5_000), 1280, "门槛未满不弹回原分辨率");
-    assert_eq!(flow.resolution_limit(7_000), 0, "满 7s 门槛后才升档");
+    flow.kbps = 400;
+    assert_eq!(flow.resolution_limit(), 0, "低预算不许降采样，否则文字看不清");
+    flow.kbps = 100;
+    assert_eq!(flow.resolution_limit(), 0);
 }
 
 #[test]
@@ -549,12 +551,10 @@ fn bandwidth_step_bounds_backlog_and_resumes_after_recovery() {
 }
 
 #[test]
-fn healthy_delivery_with_loss_jitter_recovers_text_resolution() {
+fn healthy_delivery_with_loss_jitter_recovers_budget() {
     let mut flow = Flow::default();
     flow.budget(false, 8_000);
     flow.kbps = 400;
-    flow.resolution_limit(0);
-    assert_eq!(flow.resolution_limit(5_000), 960);
     for n in 6..66 {
         // Attempt 11: 3..45ms receive queue, bounded render delay, intermittent 4..6% loss.
         // Delivered video meets its budget; those losses do not imply queue growth.
@@ -564,10 +564,8 @@ fn healthy_delivery_with_loss_jitter_recovers_text_resolution() {
         f.display_delay_ms = Some(50);
         let loss = if n % 3 == 0 { 60 } else { 10 };
         flow.feedback(n * 1_000, &f, 8_000, loss, 0);
-        flow.resolution_limit(n * 1_000);
     }
     assert!(flow.kbps >= 2_800, "healthy lossy delivery remained at {}kbps", flow.kbps);
-    assert_eq!(flow.max_width, 0, "desktop text must regain its source resolution");
     let before = flow.kbps;
     let mut congested = feedback(66, before as u64 * 25, 100);
     congested.receive_queue_ms = Some(120);
@@ -1059,3 +1057,35 @@ fn the_field_shape_that_stayed_at_2800kbps_for_seven_minutes_now_recovers() {
     assert!(flow.demand_limited, "需求证据要留在诊断里");
 }
 
+
+#[test]
+fn full_hd_budget_floor_feeds_text_but_yields_to_measured_capacity() {
+    // 文字优先下半场（2026-10-06 真机中继复测）：1080p@400kbps 每帧 ~8KB，
+    // 用户判「文字清楚但卡/块太重」；地板抬到 1Mbps 且被实测容量钳制。
+    let mut flow = Flow::default();
+    flow.note_encode_width(1920);
+    assert_eq!(flow.floor_kbps(), 1_000, "无容量证据时按 1080p 保底");
+    flow.capacity_kbps = 1_100;
+    assert_eq!(flow.floor_kbps(), 990, "地板被实测容量钳到九成");
+    flow.capacity_kbps = 500;
+    assert_eq!(flow.floor_kbps(), 450, "链路真窄地板跟着包络降");
+    flow.capacity_kbps = 200;
+    assert_eq!(flow.floor_kbps(), 400, "包络再低也不下探过绝对地板");
+    flow.note_encode_width(1280);
+    assert_eq!(flow.floor_kbps(), 400, "低分辨率地板照旧");
+}
+
+/// 方案乙的红线（2026-10-06 真机中继第二轮）：健康中继 backlog 稳态 ~400ms、
+/// ack_mean ~1.1s——旧绝对降速线 150ms 坐在抖动带里，G2 两连拍连砍把实测
+/// capacity 2.3Mbps 的链路砍回 892kbps。归一后稳态不许砍，站住平台还要能扩窗。
+#[test]
+fn healthy_relay_steady_state_backlog_inside_jitter_band_never_cuts() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 2_000;
+    let o = WireOpts { ceiling: 8_000, rtt_ms: 600, ..Default::default() };
+    // wire 首拍基线为 0，s2 的 0→400 上升沿会被 rising 合法定罪一刀；此后稳态
+    // 不许再砍，站住平台还要能扩窗。净效果：25 拍后不许低于起点。
+    for n in 1..26u64 { wire_opts(&mut flow, n * 1_000, 400, 2_000 * 25, &o); }
+    assert!(flow.kbps >= 2_000, "抖动带内的稳态积压不许被连砍，实际 {}kbps", flow.kbps);
+}

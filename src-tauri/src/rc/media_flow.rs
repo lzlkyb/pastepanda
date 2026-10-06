@@ -4,6 +4,12 @@ use std::collections::VecDeque;
 
 pub(super) const FEEDBACK_MS: u64 = 200;
 const MIN_KBPS: u32 = 400;
+/// 文字优先的另一半（2026-10-06 真机中继复测）：分辨率不再缩之后，1080p 在
+/// 400kbps 地板上每帧只分到 ~8KB，用户判「文字清楚但卡/块太重」——同场实测
+/// 容量包络 1071..1184kbps 明明够。编码宽 ≥[`FULLHD_MIN_WIDTH`] 时把预算地板
+/// 抬到 1Mbps；仍受实测容量钳制（见 `Flow::floor_kbps`），链路真窄时地板跟着降。
+const FULLHD_FLOOR_KBPS: u32 = 1_000;
+const FULLHD_MIN_WIDTH: u32 = 1_600;
 const MAX_PENDING: usize = 2 * 1024 * 1024;
 /// 降速线：作用于 `backlog_ms`（本端 send→ack 超额，不含对端上报与客户端绘制延迟），同时
 /// 也是稳定平台探测带的上界、以及「传输层否认排队」的那条 RTT 线。中继会话的绘制延迟稳态
@@ -57,6 +63,29 @@ const DEEP_STREAK_TICKS: u8 = 2;
 /// 硬证据（`rising` / 丢包）不受此限：拥塞真的在恶化时响应仍要快。
 /// 1s 的 `last_adjust_ms` 冷却不够，因为它对 RESET 之前就已经排好的队不设防。
 const POST_CUT_WAIT_TICKS: u8 = 2;
+
+/// 积压线按路径归一（2026-10-06 真机中继第二轮，方案乙）：降速线 150ms 与扩窗线 60ms
+/// 定标在 20..30ms RTT 的直连上。中继固有 RTT ~600ms、ACK 抖动 ±400ms，健康链路的
+/// backlog 稳态就有 388..465ms——线坐在抖动**里面**，于是 G2 两连拍判深积压连砍（实测
+/// capacity 2.3Mbps 被砍回 892kbps）、deadline 放宽分支被关死（10 秒 4 次 RESET，
+/// 每次弃 7..10 帧就是一次可见卡顿）、排队压力 EMA 长期高位把编码码率再打 25..70% 折。
+/// 归一尺用 `ack_mean_ms`（send→ack 的平滑实测，含传播与采样）：降速线 = max(150,
+/// mean/2)、扩窗线 = max(60, mean/4)，探针带形状不变（扩窗线 < 降速线恒成立）。
+/// 🔴 rising 两线（`BACKLOG_RISE_*`）**有意保持绝对常数**：方差尺会被积压自己污染
+/// （爬升中的 backlog 灌大 `ack_variance`，信号吃掉噪声估计），mean 尺则会盖住直连
+/// 40ms/拍的真实趋势（`growing_queue_shrinks_the_budget_within_seconds` 的反例）。
+/// 真拥塞仍抓得住：rising 单拍趋势与丢包照旧定罪；ack_mean 被持续排队抬升时，
+/// 绝对水位先超 `max(150, mean/2)`。`transport_clear` 的 RTT 线**有意保持绝对 150ms**
+/// （甲-2 拍板：中继固有传播延迟不能由 RTT 自证清白），不随本尺缩放。
+impl Flow {
+    fn backlog_down_ms(&self) -> i64 {
+        BACKLOG_DOWN_MS.max((self.ack_mean_ms.unwrap_or(0) / 2) as i64)
+    }
+    fn backlog_probe_ms(&self) -> i64 {
+        BACKLOG_PROBE_MS.max((self.ack_mean_ms.unwrap_or(0) / 4) as i64)
+    }
+}
+
 
 /// 「传输层否认网络在排队」的唯一判据：RTT 已有样本、低于降速线、且零丢包。
 /// 🔴 单一数据源（AGENTS 规则 11.1）：控制器定罪（`feedback`）与采集圈的自适应降频
@@ -142,11 +171,10 @@ pub(super) struct Flow {
     ack_variance_ms: u64,
     relay: Option<bool>,
     fps: u32,
-    max_width: u32,
-    resolution_changed_ms: Option<u64>,
+    /// 预算地板档位：编码宽 ≥`FULLHD_MIN_WIDTH` 时为 `FULLHD_FLOOR_KBPS`，否则 `MIN_KBPS`。
+    min_kbps: u32,
     /// 升档条件的连续成立起点（墙钟）；条件一断或发生任何降档即清零。
     fps_up_since: Option<u64>,
-    width_up_since: Option<u64>,
 }
 
 impl Default for Flow {
@@ -159,8 +187,7 @@ impl Default for Flow {
             deep_streak: 0, post_cut_wait: 0,
             probe_at_ms: None, last_reset_ms: None, last_feedback_ms: None, baseline_age_ms: i64::MAX,
             baseline_ack_ms: u64::MAX, ack_delay_ms: None, ack_mean_ms: None,
-            ack_variance_ms: 0, relay: None, fps: 15,
-            max_width: 0, resolution_changed_ms: None, fps_up_since: None, width_up_since: None }
+            ack_variance_ms: 0, relay: None, fps: 15, min_kbps: MIN_KBPS, fps_up_since: None }
     }
 }
 
@@ -183,12 +210,26 @@ impl Flow {
             self.probe_floor = 0;
             // 换路是一次重新测量，不是同一根管道的续集：升档计时也从零开始。
             self.fps_up_since = None;
-            self.width_up_since = None;
             // 换路后重新测容量；直连升级不能继承慢中继的永久低档。
             self.kbps = if relay { 2_000 } else { 4_000 };
         }
-        self.kbps = self.kbps.min(ceiling_kbps.max(MIN_KBPS));
+        self.kbps = self.kbps.min(ceiling_kbps.max(self.floor_kbps()));
         self.kbps
+    }
+
+    /// 每圈编码时由调用点喂实际编码宽：宽 ≥[`FULLHD_MIN_WIDTH`] ⇒ 地板抬到
+    /// [`FULLHD_FLOOR_KBPS`]（1080p 喂不饱就是色块+积压 RESET，见常量注释）。
+    pub fn note_encode_width(&mut self, w: u32) {
+        self.min_kbps = if w >= FULLHD_MIN_WIDTH { FULLHD_FLOOR_KBPS } else { MIN_KBPS };
+    }
+
+    /// 预算下限。1080p 档抬到 [`FULLHD_FLOOR_KBPS`]，再被实测容量包络钳到九成：
+    /// 链路真窄时地板跟着包络降（不下探过 [`MIN_KBPS`]）；无容量证据时信档位地板。
+    fn floor_kbps(&self) -> u32 {
+        if self.min_kbps <= MIN_KBPS { return MIN_KBPS; }
+        if self.capacity_kbps > 0 {
+            MIN_KBPS.max(self.min_kbps.min(self.capacity_kbps * 9 / 10))
+        } else { self.min_kbps }
     }
 
     pub fn sent(&mut self, now: u64, started_ms: u64, at_ms: i64, bytes: usize) {
@@ -298,14 +339,14 @@ impl Flow {
                 && self.backlog_ms.saturating_sub(prev) >= BACKLOG_RISE_MS);
         self.prev_backlog_ms = Some(self.backlog_ms);
         // 探测带（扩窗线..降速线）内的水位站定 3 秒才算平台；一路上涨的真积压站不住。
-        if self.backlog_ms > BACKLOG_PROBE_MS && self.backlog_ms <= BACKLOG_DOWN_MS {
+        if self.backlog_ms > self.backlog_probe_ms() && self.backlog_ms <= self.backlog_down_ms() {
             if !self.plateau.is_some_and(|(base, _)| base.abs_diff(self.backlog_ms) <= BACKLOG_STABLE_MS) {
                 self.plateau = Some((self.backlog_ms, now));
             }
         } else {
             self.plateau = None;
         }
-        let deep_now = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;
+        let deep_now = !transport_clear && self.backlog_ms > self.backlog_down_ms();
         // G2：绝对水位要连续两拍才拿到定罪权（口径见 `DEEP_STREAK_TICKS`）；
         // `rising`/`loss_pressure` 仍是单拍硬证据，不等这一拍。
         self.deep_streak = if deep_now {
@@ -359,7 +400,7 @@ impl Flow {
             } else if probe_active {
                 // 探测期内的拥塞证据 = 探测失败：回到探测起点。对膨胀后的值再乘 0.8 等于
                 // 让一次试错挨两刀，代价是恢复期白白多糊一档。
-                self.kbps = self.probe_floor.max(MIN_KBPS);
+                self.kbps = self.probe_floor.max(self.floor_kbps());
                 self.post_cut_wait = POST_CUT_WAIT_TICKS;
             } else {
                 // 封顶用**本窗口**的实测交付：有拥塞证据时链路是满流的，这个速率就是管子宽度。
@@ -368,23 +409,23 @@ impl Flow {
                 let cap = if honest && delivered > 0 && (delivered as u64) < self.kbps as u64 {
                     (delivered as u64) * 9 / 10
                 } else { u64::MAX };
-                self.kbps = ((self.kbps as u64 * 8 / 10).min(cap) as u32).max(MIN_KBPS);
+                self.kbps = ((self.kbps as u64 * 8 / 10).min(cap) as u32).max(self.floor_kbps());
                 self.post_cut_wait = POST_CUT_WAIT_TICKS;
             }
             self.plateau = None;
         } else if had_drops && transport_clear && probe_cooled
-            && self.kbps < ceiling.max(MIN_KBPS) {
+            && self.kbps < ceiling.max(self.floor_kbps()) {
             // P3 主动探测（口径见 `PROBE_COOLDOWN_MS`）：本窗确有需求（被预算挡下过帧）、
             // 传输层又否认排队 ⇒ 挡住我们的很可能是**自家预算**而不是线路，一次翻倍去问。
             // 静止画面（`!had_drops`）绝不探：`tcp_bbr.c:788-799` 那条「app-limited 期间
             // 维持已知的最好速率、不拿它当管子还能装」就是这条线的出处。
             self.probe_floor = self.kbps;
             self.kbps = ((self.kbps as u64 * 2)
-                .min(ceiling.max(MIN_KBPS) as u64).max(MIN_KBPS as u64))
+                .min(ceiling.max(MIN_KBPS) as u64).max(self.floor_kbps() as u64))
                 .min(u32::MAX as u64) as u32;
             self.probe_at_ms = Some(now);
             self.plateau = None;
-        } else if (self.backlog_ms < BACKLOG_PROBE_MS || plateaued || transport_clear)
+        } else if (self.backlog_ms < self.backlog_probe_ms() || plateaued || transport_clear)
             && !probe_active
             && (self.capacity_kbps as u64) * 10 >= (self.kbps as u64) * 8 {
             // 包络门同时是**漂移封顶**：`capacity ≥ 0.8×kbps` ⇒ 预算最高停在已证明交付
@@ -464,7 +505,7 @@ impl Flow {
         // 常常是旧链残留 + 本机开销，网络否认排队时减它治不了病只会糊画面（§10 现场：
         // 锁屏把采集圈卡住 8.7s，本端积压 6813ms，而链路 rtt 一直是 20–40ms、零丢包）。
         let deep_backlog =
-            self.backlog_ms > BACKLOG_DOWN_MS && !transport_clear(rtt_ms, loss_pm);
+            self.backlog_ms > self.backlog_down_ms() && !transport_clear(rtt_ms, loss_pm);
         if ack_blind || loss_pm >= 10 || deep_backlog {
             self.kbps = ((self.kbps as u64 * 7 / 10) as u32).max(MIN_KBPS);
             // G3：刚减过，后面几拍必须拿到新证据才许再减。
@@ -482,7 +523,7 @@ impl Flow {
         let base = rtt + 500 + serial;
         // 实测积压已经增长时不能用慢 ACK 反过来放宽超时，否则控制器会
         // 随拥塞一起扩窗，继续显示旧画面。正常传播/采样耗时才有这份余量。
-        let deadline = if self.backlog_ms > BACKLOG_DOWN_MS { base } else {
+        let deadline = if self.backlog_ms > self.backlog_down_ms() { base } else {
             let jitter_budget = self.ack_mean_ms.unwrap_or(0)
                 .saturating_add(self.ack_variance_ms.saturating_mul(4))
                 .saturating_add(FEEDBACK_MS);
@@ -519,7 +560,6 @@ impl Flow {
     /// 任何一次降档都要把升档计时清零：刚掉下来的档不能靠「条件早就成立」立刻弹回去。
     fn clear_upgrade_anchors(&mut self) {
         self.fps_up_since = None;
-        self.width_up_since = None;
     }
 
     pub fn fps_limit(&mut self, relay: bool, now: u64) -> u32 {
@@ -554,29 +594,10 @@ impl Flow {
         self.last_feedback_ms.map(|_| self.backlog_ms)
     }
 
-    pub fn resolution_limit(&mut self, now: u64) -> u32 {
-        let candidate = match self.max_width {
-            0 if self.kbps < 1_800 => 1280,
-            1280 if self.kbps < 700 => 960,
-            960 if self.kbps >= 1_100 => 1280,
-            1280 if self.kbps >= 2_800 => 0,
-            current => current,
-        };
-        if candidate == self.max_width {
-            self.width_up_since = None;
-            return self.max_width;
-        }
-        // 0 = 不限宽（原分辨率）是最高一档，拿它排在 1280/960 之上判升还是降。
-        let rank = |w: u32| match w { 0 => 3, 1280 => 2, _ => 1 };
-        let up = rank(candidate) > rank(self.max_width);
-        if up && !Self::upgrade_held(&mut self.width_up_since, now) { return self.max_width; }
-        // 既有 5 秒冷却照旧生效（编码器重开本身的开销），与升档门槛是两道独立的闸。
-        if self.resolution_changed_ms.is_some_and(|t| now.saturating_sub(t) < 5_000) { return self.max_width; }
-        if up { self.width_up_since = None; } else { self.clear_upgrade_anchors(); }
-        self.max_width = candidate;
-        self.resolution_changed_ms = Some(now);
-        self.max_width
-    }
+    /// 文字优先（2026-10-06 复测 B 拍板）：中继/低预算**不降分辨率**，省码率
+    /// 只走 fps 阶梯与码率缩放。960/1280 降采样档已拆除——960×540 上 1080p 屏
+    /// 文字不可读，用户原话「不然文字看不清楚」；恒返 0（不限宽）。
+    pub fn resolution_limit(&self) -> u32 { 0 }
 }
 
 pub(super) fn scaled_dimensions(w: u32, h: u32, limit: u32) -> (u32, u32) {

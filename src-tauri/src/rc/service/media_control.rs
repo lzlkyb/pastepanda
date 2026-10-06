@@ -56,7 +56,12 @@ impl RcService {
     }
 
     pub(in crate::rc) fn media_resolution_limit(&self, id: &str) -> u32 {
-        self.with_media(id, |s| s.flow.resolution_limit(crate::rc::mono::mono_ms() as u64)).unwrap_or(1280)
+        // 无会话时同样不降分辨率：文字优先，降档判据只来自 fps/码率。
+        self.with_media(id, |s| s.flow.resolution_limit()).unwrap_or(0)
+    }
+
+    pub(in crate::rc) fn media_note_encode_width(&self, id: &str, w: u32) {
+        self.with_media(id, |s| s.flow.note_encode_width(w));
     }
 
     pub(in crate::rc) fn media_sent(&self, id: &str, started_ms: u64, at_ms: i64, bytes: usize) {

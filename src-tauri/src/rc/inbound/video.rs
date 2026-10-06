@@ -481,7 +481,13 @@ impl InboundVideo {
                 format!("{name}（{diag}）")
             }
         } else {
-            String::new()
+            // 锁档不许静默留空——复测 B（2026-10-06）里「快照整段消失」是自动档
+            // 被对端实名档关掉后的唯一痕迹，反推花了十分钟。档名与下方 profile
+            // 字段同源（同一份 opts）。
+            format!(
+                "锁档 {}（自动档已关闭：对端或本机设定）",
+                crate::rc::perf::profile_name(&opts.profile)
+            )
         };
         crate::rc::perf::ReportExtra {
             profile: crate::rc::perf::profile_name(&opts.profile),
@@ -649,6 +655,8 @@ impl InboundVideo {
                         {
                             let enc_t0 = std::time::Instant::now();
                             henc.set_capture_at(ts);
+                            // 预算地板跟实际编码宽走（1080p 不许饿死，见 Flow::note_encode_width）
+                            self.svc.media_note_encode_width(&self.my_id, g.width);
                             let encoded =
                                 henc.encode_gpu(&dev, &ctx, &g.tex, g.width, g.height);
                             let enc_ms =
@@ -687,6 +695,8 @@ impl InboundVideo {
                     henc.set_capture_at(ts);
                     // 🔴 再审计 P3-10：grab 现在返回池内缓冲的借用（不再转移所有权），
                     // 编码完即归还，缓冲跨圈复用
+                    // 预算地板跟实际编码宽走（1080p 不许饿死，见 Flow::note_encode_width）
+                    self.svc.media_note_encode_width(&self.my_id, w);
                     let encoded = henc.encode_bgra(bgra, w, h);
                     let enc_ms = enc_t0.elapsed().as_millis().min(u16::MAX as u128) as u16;
                     match encoded {

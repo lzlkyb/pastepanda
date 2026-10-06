@@ -118,7 +118,19 @@ impl RcService {
                 return Err("4K60 档仅支持 Windows".into());
             }
         }
-        self.stream.set_quality(quality)
+        self.stream.set_quality(quality)?;
+        // 🔴 复测 B（2026-10-06）的教训：这条路径是全仓唯一能在会话中关掉自动档的
+        //    入口（发起端推来实名档），而它过去一条日志都不打——自动档被关后
+        //    PERF 行的判档快照只是「消失」，根因只能靠反推。锁档/恢复必须留痕。
+        log::info!(
+            "[RC] 画质已切换为「{quality}」{}",
+            if quality == "auto" {
+                "（自动档恢复）"
+            } else {
+                "（锁档：自动档已关闭）"
+            }
+        );
+        Ok(())
     }
 
     /// 推流循环每帧喂一次画面字节数；自动档开启时据此换档（2A）。

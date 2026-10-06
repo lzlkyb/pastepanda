@@ -1255,8 +1255,26 @@ fn 守卫_排队定罪必须与传输层口径同源() {
         "绝对水位不再连续两拍才定罪 —— 一圈的采样毛刺就能砍一刀"
     );
     assert!(
-        flow.contains("let deep_now = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;"),
-        "水位定罪丢掉了传输层否决"
+        flow.contains("let deep_now = !transport_clear && self.backlog_ms > self.backlog_down_ms();"),
+        "水位定罪丢掉了传输层否决（或积压线被改回绝对常数——中继健康抖动会被连砍）"
+    );
+    // 🔴 2026-10-06 方案乙：降速/扩窗两条积压线必须走 ack_mean 归一的单一实现，
+    // 不许有人把绝对常数抄回去；rising 两线有意保持绝对（方差尺会被积压自污染）。
+    for (line, why) in [
+        ("fn backlog_down_ms", "降速线"),
+        ("fn backlog_probe_ms", "扩窗线"),
+    ] {
+        assert!(flow.contains(line), "积压线 {why} 的归一实现不见了 —— 又写回绝对常数？");
+    }
+    assert!(
+        flow.contains("BACKLOG_DOWN_MS.max((self.ack_mean_ms.unwrap_or(0) / 2) as i64)")
+            && flow.contains("BACKLOG_PROBE_MS.max((self.ack_mean_ms.unwrap_or(0) / 4) as i64)"),
+        "积压线归一尺的口径变了 —— ack_mean/2 与 /4 两档是中继实测定标，改动要过真机复测"
+    );
+    assert!(
+        flow.contains("self.backlog_ms > BACKLOG_RISE_MIN_MS")
+            && flow.contains(">= BACKLOG_RISE_MS"),
+        "rising 两线不许顺手归一 —— ack_mean/ack_variance 都会被积压自己污染（见方案乙注释）"
     );
     let streak = flow
         .find("let deep_now")
@@ -1299,11 +1317,53 @@ fn 守卫_排队定罪必须与传输层口径同源() {
         .expect("ack_deadline_ms 不见了 —— 无法界定 discard 的范围");
     let body = &flow[discard..discard + discard_end];
     assert!(
-        body.contains("self.backlog_ms > BACKLOG_DOWN_MS && !transport_clear(rtt_ms, loss_pm)"),
+        body.contains("self.backlog_ms > self.backlog_down_ms() && !transport_clear(rtt_ms, loss_pm)"),
         "RESET 的第三条减档条件没有传输层否决 —— 旧链残留水位又能白砍 30%"
     );
     assert!(
         body.contains("self.deep_streak = 0;"),
         "RESET 后水位连拍计数跨链残留 —— 新链第一拍就凑满两拍"
+    );
+}
+
+/// 守卫：锁档必须留痕，不许在 5s 汇总行里静默（2026-10-06 复测 B）。
+///
+/// 复测 B 的第五根因：发起端推来一条实名画质档 ⇒ `set_stream_quality` 把
+/// 自动档整场关掉，而被控端**一条日志都不打**——唯一痕迹是 PERF 行的
+/// 「实际生效 …（判档快照）」整段消失，靠它反推花了十分钟。两条通路都要钉：
+/// ① 切换入口必须打锁档/恢复日志；② 锁档时 `active_quality` 必须带显式
+/// 标签，不许退回空串。
+#[test]
+fn 守卫_锁档必须留痕_不许静默() {
+    let streaming = include_str!("../service/streaming.rs");
+    assert!(
+        streaming.contains("锁档：自动档已关闭"),
+        "set_stream_quality 的锁档日志被删 —— 自动档被关又将零痕迹"
+    );
+    assert!(
+        streaming.contains("自动档恢复"),
+        "set_stream_quality 的恢复日志被删 —— 切回 auto 无从对账"
+    );
+    let video = include_str!("../inbound/video.rs");
+    let start = video
+        .find("let active_quality")
+        .expect("active_quality 的组装点不见了");
+    let end = video[start..]
+        .find("crate::rc::perf::ReportExtra {")
+        .expect("ReportExtra 构造点不见了 —— 无法界定组装范围");
+    let body = &video[start..start + end];
+    assert!(
+        body.contains("锁档 {}（自动档已关闭"),
+        "锁档分支不再打显式标签 —— 汇总行里的静默消失形态复发"
+    );
+    // 注释里写着旧口径不算数：剥掉 `//` 整行再判（见 帧龄哨兵守卫 的同款教训）。
+    let code: String = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        !code.contains("String::new()"),
+        "锁档分支退回空串 —— 自动档被关在汇总行里隐形"
     );
 }
