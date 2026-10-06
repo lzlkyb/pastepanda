@@ -199,6 +199,21 @@ impl OutputDup {
     }
 }
 
+/// 抓屏熔断的自动重试节奏（2026-10-06，与硬编熔断 `enc_retry_backoff` 同口径）。
+///
+/// 桌面态瞬变（UAC 安全桌面 / 锁屏 / 分辨率切换 / 显示器休眠）期间
+/// `DuplicateOutput` 会返回 `E_ACCESSDENIED`，这是**瞬态**的。过去一次重建失败
+/// 就把整池永久判死、且没有任何复位点：实测一场会话里 nvenc 全程健康
+/// （`enc=8ms`），却从第 7 分钟起每帧走 GDI+JPEG（`cap=179ms`、1.2fps）直到收线，
+/// 日志里只有一条 `DuplicateOutput 失败：拒绝访问`，此后静默兜底 25 分钟。
+const DISABLE_RETRY_START_SECS: u64 = 5;
+const DISABLE_RETRY_MAX_SECS: u64 = 60;
+
+/// 退避递进（纯函数，便于无环境单测钉住「翻倍 + 上限」）。
+pub(in crate::rc) fn next_disable_retry_secs(cur: u64) -> u64 {
+    cur.saturating_mul(2).min(DISABLE_RETRY_MAX_SECS)
+}
+
 pub struct DxgiPool {
     device: Option<ID3D11Device>,
     ctx: Option<ID3D11DeviceContext>,
@@ -212,12 +227,26 @@ pub struct DxgiPool {
     /// 错减他人引用是实打实的破坏；同 `encode_h264/mf.rs` 的 P3-11）。
     com_init_thread: Option<std::thread::ThreadId>,
     disabled: bool,
+    /// 熔断起始时刻（只为恢复日志算「断了多久」，不参与判据）。
+    disabled_at: Option<std::time::Instant>,
+    /// 下一次自动重建的时刻（None = 未熔断）。到期由 `grab` / `grab_gpu` 入口
+    /// 的 [`Self::maybe_revive`] 处理——放在入口而不是失败分支里：失败分支每帧
+    /// 都进，而重建（`CoUninitialize` + 建设备 + `DuplicateOutput`）是百 ms 级。
+    retry_after: Option<std::time::Instant>,
+    /// 当前退避秒数（首次 5s，每次重建失败翻倍，上限 60s；恢复成功复位）。
+    retry_backoff_secs: u64,
+    /// 熔断原因，附在后续错误串里（过去这里只有「DXGI 已禁用」四个字，
+    /// 现场看不出是访问丢失、权限还是设备缺失）。
+    disabled_reason: String,
     /// 🔴 再审计 P3-9（2026-09-25）：非「访问丢失」类瞬时错误的连续失败计数。
     /// 过去一次瞬时错误（如单次 CreateTexture2D 失败）就一票永久禁用整池，
     /// 没有任何复位路径。现在：连续 ≥3 次才禁用；任何成功 grab（含 Ok(None)
     /// 空转——AcquireNextFrame 正常返回即证明设备活着）清零计数。
-    /// 「访问丢失」类保持原有语义：先重建一次，重建失败才禁用（访问丢失
-    /// 意味着 duplicator 整体失效，重建是唯一出路，多试无益）。
+    /// 「访问丢失」类：先重建一次，重建失败才熔断。
+    /// ⚠️ 2026-10-06：熔断**不再是整场判死**——三条禁用路径统一走
+    /// [`Self::note_disabled`]，按上面的退避自动重试（与硬编熔断 2026-09-21
+    /// 那次修的是同一条病）。旧注释里「多试无益」是错的：访问丢失的根因
+    /// （桌面态）自己会过去，只是过去没人再去试。
     transient_fail_streak: u32,
 }
 
@@ -241,12 +270,70 @@ impl DxgiPool {
             com_owned: false,
             com_init_thread: None,
             disabled: false,
+            disabled_at: None,
+            retry_after: None,
+            retry_backoff_secs: DISABLE_RETRY_START_SECS,
+            disabled_reason: String::new(),
             transient_fail_streak: 0,
         }
     }
 
     pub fn is_enabled(&self) -> bool {
         !self.disabled
+    }
+
+    /// 熔断的唯一入口：置位 + 排第一次重试 + **只在状态翻转那一次**打 WARN。
+    ///
+    /// 三条禁用路径（初始打开失败 / 访问丢失后重建失败 / 连续瞬时失败）都必须
+    /// 走这里，不允许再散落 `disabled = true`：那样写出来的「熔断」只是一次赋值，
+    /// 既没有复位时刻，也没有日志——2026-10-06 那场整场 JPEG 兜底就是这么静默
+    /// 发生的，`管线 H264` 一路谎报，只能靠拆手机 logcat 反推。
+    fn note_disabled(&mut self, why: &str) {
+        self.disabled_reason = why.to_string();
+        if self.disabled {
+            return;
+        }
+        self.disabled = true;
+        let now = std::time::Instant::now();
+        self.disabled_at = Some(now);
+        self.retry_after = Some(now + std::time::Duration::from_secs(self.retry_backoff_secs));
+        log::warn!(
+            "[RC] DXGI 抓屏熔断，本圈起走 JPEG 兜底；{}s 后自动重试：{why}",
+            self.retry_backoff_secs
+        );
+    }
+
+    /// 熔断期满自动重建一次；失败就按退避往后排。只在 `grab` / `grab_gpu` 入口调。
+    fn maybe_revive(&mut self) {
+        let Some(t) = self.retry_after else { return };
+        if std::time::Instant::now() < t {
+            return;
+        }
+        self.drop_com();
+        match self.open() {
+            Ok(()) => {
+                let out_ms = self
+                    .disabled_at
+                    .map_or(0, |s| s.elapsed().as_millis() as u64);
+                log::info!("[RC] DXGI 抓屏已恢复（熔断 {out_ms}ms 后重建成功）");
+                self.disabled = false;
+                self.disabled_at = None;
+                self.retry_after = None;
+                self.retry_backoff_secs = DISABLE_RETRY_START_SECS;
+                self.transient_fail_streak = 0;
+                self.disabled_reason.clear();
+            }
+            Err(e) => {
+                self.retry_backoff_secs = next_disable_retry_secs(self.retry_backoff_secs);
+                self.retry_after =
+                    Some(std::time::Instant::now()
+                        + std::time::Duration::from_secs(self.retry_backoff_secs));
+                log::warn!(
+                    "[RC] DXGI 熔断重试仍失败，{}s 后再试：{e}",
+                    self.retry_backoff_secs
+                );
+            }
+        }
     }
 
     /// 抓一帧。`monitor >= 0` 抓指定显示器；`virtual_screen` 抓整块虚拟屏；
@@ -267,7 +354,10 @@ impl DxgiPool {
         monitor: i32,
     ) -> Result<Option<GrabbedFrame<'_>>, String> {
         if self.disabled {
-            return Err("DXGI 已禁用".into());
+            self.maybe_revive();
+            if self.disabled {
+                return Err(format!("DXGI 已禁用：{}", self.disabled_reason));
+            }
         }
         if self.outs.is_empty() {
             match self.open() {
@@ -277,7 +367,7 @@ impl DxgiPool {
                     // 短暂不可用（驱动重置中）一票禁用等于整场放弃 DXGI。
                     self.transient_fail_streak += 1;
                     if self.transient_fail_streak >= 3 {
-                        self.disabled = true;
+                        self.note_disabled(&format!("初始打开失败：{e}"));
                     }
                     return Err(e);
                 }
@@ -297,7 +387,7 @@ impl DxgiPool {
                             Ok(None)
                         }
                         Err(re) => {
-                            self.disabled = true;
+                            self.note_disabled(&format!("重建失败：{re}"));
                             Err(format!("DXGI 重建失败：{re}"))
                         }
                     }
@@ -306,7 +396,10 @@ impl DxgiPool {
                 } else {
                     self.transient_fail_streak += 1;
                     if self.transient_fail_streak >= 3 {
-                        self.disabled = true;
+                        self.note_disabled(&format!(
+                            "连续 {} 次抓取失败：{e}",
+                            self.transient_fail_streak
+                        ));
                     }
                     Err(e)
                 }
@@ -341,7 +434,13 @@ impl DxgiPool {
             return Err("[gpu_unavailable] 多屏拼接没有零拷贝路径（调用方应回落 CPU 管线）".into());
         }
         if self.disabled {
-            return Err("[gpu_unavailable] DXGI 已禁用".into());
+            // 零拷贝路径同样要给它复活的窗口：GPU 抓取和 CPU 抓取共用这一池
+            // duplicator，熔断后只让 CPU 侧重试、GPU 侧永久报死，等于把
+            // 「谁先问」变成了「谁能恢复」。
+            self.maybe_revive();
+            if self.disabled {
+                return Err(format!("[gpu_unavailable] DXGI 已禁用：{}", self.disabled_reason));
+            }
         }
         if self.outs.is_empty() {
             match self.open() {

@@ -149,11 +149,6 @@ impl InboundVideo {
                 .await;
                 continue;
             }
-            #[cfg(target_os = "windows")]
-            if self.peer_video_plane || self.peer_media_plane {
-                if !self.wait_media_capacity().await { break; }
-                if self.svc.media_paused() { continue; }
-            }
             // 等待：到点（固定节奏）或 输入提帧（拖动跟手）。
             // 提帧走 `boost_frame`（notify_one，**存许可**）⇒ 本圈干活期间到达的
             // 输入不会落空。旧实现用 notify_waiters 不存许可，错过一次就要等
@@ -161,12 +156,37 @@ impl InboundVideo {
             // （2026-09-22 修）。
             // 本圈是「输入提帧」唤醒还是「节拍到点」唤醒——决定自适应降频要不要
             // 参与（见圈末 `pace_scale` 段）。
+            // 🔴 P0（2026-10-06）：问门挪到节拍**之后**。旧的阻塞式 `wait_media_capacity`
+            // 挡在这段等待前面，预算一低整圈就停在闸上——节拍、提帧、光标上报全停，
+            // 而控制器只看得到「交付变慢」，分不清线路窄还是我们自己断粮（自锁链的起点）。
             let mut boosted = false;
             {
                 let notified = self.input_boost.notified();
                 tokio::select! {
                     _ = tokio::time::sleep_until(next_tick) => {}
                     _ = notified => { boosted = true; }
+                }
+            }
+            // 暂停必须先于问门：暂停期没有「想发而发不下」的帧，一次空转都不许记成需求
+            // 证据（`note_drop` 会把 app-limited 判反，P3 会拿着假需求去翻倍预算）。
+            if self.svc.media_paused() { continue; }
+            // P1-6：每圈顺手比一次光标形状（GetCursorInfo 微秒级）。
+            // 🔴 必须排在媒体闸**之前**：光标走控制流，跟媒体预算毫无竞争，被闸饿掉的
+            // 那段时间里发起端看到的是**冻住的指针 + 旧形状**（拖动时尤其明显）。限频在
+            // `cursor_should_send`（位置 40ms、形状/可见性翻转即时），闸关着空转也不会灌流。
+            self.maybe_send_cursor().await;
+            #[cfg(target_os = "windows")]
+            if self.peer_video_plane || self.peer_media_plane {
+                match self.media_gate() {
+                    super::media_pipe::Gate::Open => {}
+                    super::media_pipe::Gate::Drop(retry_ms) => {
+                        // 本帧丢掉，但节拍照走：把锚点推到下一格。不推就等于让上面的
+                        // `sleep_until` 立刻返回，本圈变成忙等——比旧的阻塞实现更糟。
+                        next_tick = tokio::time::Instant::now()
+                            + std::time::Duration::from_millis(retry_ms);
+                        continue;
+                    }
+                    super::media_pipe::Gate::End => break,
                 }
             }
             // 提帧限速：档位间隔与提帧上限（`BOOST_GAP_MS`=16ms）取小 ——
@@ -215,13 +235,12 @@ impl InboundVideo {
                     }
                 }
             }
-            // P1-6：每圈顺手比一次光标形状（GetCursorInfo 微秒级）
-            self.maybe_send_cursor().await;
 
             let work_start = tokio::time::Instant::now();
             // 探针：本圈起点先清暂存——两条路径各自按需覆盖，
             // 没覆盖就说明本圈空转（`produced = false`）
             self.perf_last = crate::rc::perf::FrameTiming::idle();
+            self.tick_jpeg = false;
             let ended = match self.try_hardware_path(&opts).await {
                 // Sleep = 本圈已推完或屏幕无变化。jpeg_path 是一次全量 GDI 截屏 +
                 // 差分：H264 会话里跑它就是每圈白烧 CPU（8ms 预算装不下，直接把
@@ -231,6 +250,8 @@ impl InboundVideo {
                 Step::Sleep => false,
                 Step::End => true,
                 Step::FallThrough => {
+                    // 探针：本圈实际出的是 JPEG（下面 `管线` 标签按它说话）。
+                    self.tick_jpeg = true;
                     // 探针：走 JPEG 兜底说明硬编这条路这一圈没成。
                     // 只在「硬编本该可用却回退了」时才有诊断价值——
                     // 一开始就没开硬编（用户选 JPEG / 机器不支持）不算回退。
@@ -245,42 +266,30 @@ impl InboundVideo {
             if ended {
                 break;
             }
-            // P1-7 自适应降频：单圈工作量持续贴着当前间隔跑 → 放大间隔；
-            // 富余出来再缩回。EMA 平滑 + 2x/4x 判据，避免来回抖。
-            //
-            // 🔴 2026-09-22 修两个把好档位也拖死的记账错误：
-            // ① **空转圈不计工作量**：`grab` 在桌面无变化时是阻塞等待
-            //    （`AcquireNextFrame` timeout，主屏 30ms / 虚拟屏每输出 16ms），
-            //    整段白等被当成「工作量」⇒ 静止桌面就能把 EMA 顶到 30ms，
-            //    而高帧率档（fps60 档 scaled=16）必然被放大到 4x —— 名义
-            //    60fps 实际 15fps。没有产出帧的圈对 CPU 几乎没有占用，记 0 才诚实。
-            // ② **输入提帧的圈不参与判据**：拖动时单圈本来就重，而那正是用户要
-            //    的高动态场景——放大间隔等于「一拖就自己降频」。这类圈连 EMA
-            //    都不更新，否则拖动结束后残留的高 EMA 会立刻把节奏打到 4x。
-            //    ❗ 仍允许**缩小**（下面的 else 分支）：拖动时若 pace_scale
-            //    还停在放大值，要尽快回到 1x 才谈得上 60fps。
+            // P1-7 自适应降频 + P4 复位：判据收口在 `rc::pace::pace_step`
+            //（三条口径的来历与反例都在那儿，回归钉见 `rc/tests/pace.rs`）。
             // 圈末的「活跃」定义：本圈被输入提帧唤醒，或本圈真的产出了一帧
-            // （= 桌面画面**在动**）。它同时决定节拍与自适应降频是否参与。
+            // （= 桌面画面**在动**）。它只决定节拍，降频判据另说。
             let active = boosted || self.perf_last.produced;
             let loop_ms = (tokio::time::Instant::now() - work_start).as_millis() as u64;
-            if !boosted {
-                let work_ms = if self.perf_last.produced { loop_ms } else { 0 };
-                self.work_ema_ms = if self.work_ema_ms == 0 {
-                    work_ms
-                } else {
-                    (self.work_ema_ms * 7 + work_ms) / 8
-                };
+            let (ema_ms, scale) = crate::rc::pace::pace_step(crate::rc::pace::PaceBeat {
+                boosted,
+                produced: self.perf_last.produced,
+                work_ms: self.perf_last.cap_ms + self.perf_last.enc_ms,
+                ema_ms: self.work_ema_ms,
+                interval_ms: interval,
+                scale: self.pace_scale,
+                link_clear: crate::rc::media_flow::transport_clear(
+                    self.svc.video_rtt_ms(),
+                    self.svc.loss_permille(),
+                ),
+            });
+            if scale > self.pace_scale {
+                log::info!("[RC] 编码跑不满档位间隔（EMA {}/{}ms），放大到 {}x",
+                    ema_ms, interval * scale as u64, scale);
             }
-            let scaled = interval * self.pace_scale as u64;
-            if !boosted && scaled > 0 && self.work_ema_ms * 2 > scaled {
-                if self.pace_scale < 4 {
-                    self.pace_scale += 1;
-                    log::info!("[RC] 编码跑不满档位间隔（EMA {}/{}ms），放大到 {}x",
-                        self.work_ema_ms, scaled, self.pace_scale);
-                }
-            } else if self.pace_scale > 1 && self.work_ema_ms * 4 < scaled {
-                self.pace_scale -= 1;
-            }
+            self.work_ema_ms = ema_ms;
+            self.pace_scale = scale;
             // ── 诊断探针（2026-09-21）：喂本圈采样 + 到期输出汇总 ──
             // 只在**真的出了一帧**时计入分段均值：空转圈（屏幕未变化）的
             // cap/enc 几乎为 0，混进去会把「慢在编码」的真实信号稀释掉。

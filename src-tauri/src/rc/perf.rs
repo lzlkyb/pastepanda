@@ -92,13 +92,28 @@ pub struct FrameStats {
     loop_peak_ms: u64,
     /// 单区间最高帧率（fps）。
     peak_fps: f64,
+    /// JPEG 兜底 / 抓屏失败的**会话基线**：这两个计数器是进程级 `static`，
+    /// 跨会话累加不清零，所以本会话的量必须减去 `new()` 时刻的读数。
+    base_jpeg_fallback: u64,
+    base_capture_fail: u64,
+    /// 上次汇总时的读数（算区间增量用）。
+    last_jpeg_fallback: u64,
+    last_capture_fail: u64,
 }
 
 impl FrameStats {
     pub fn new() -> Self {
+        let (jf, cf) = (
+            counters::JPEG_FALLBACK.load(Ordering::Relaxed),
+            counters::CAPTURE_FAIL.load(Ordering::Relaxed),
+        );
         Self {
             start: Some(Instant::now()),
             last_report: Some(Instant::now()),
+            base_jpeg_fallback: jf,
+            base_capture_fail: cf,
+            last_jpeg_fallback: jf,
+            last_capture_fail: cf,
             ..Default::default()
         }
     }
@@ -156,10 +171,27 @@ impl FrameStats {
         let fps = interval_frames as f64 / interval_s;
 
         let n = self.frames.max(1);
+        // 兜底计数（2026-10-06）：`管线` 标签只说**最后一圈**，回答不了「是不是
+        // 整场都在兜」。区间增量非 0 才附这一段——正常会话一个字都不多，一旦兜底
+        // 就是每 5s 一条铁证（过去这两个计数只在收尾行出，会话不结束就完全隐形，
+        // 那场「画质清晰但编码是 JPEG」只能靠拆手机 logcat 反推）。
+        let jf = counters::JPEG_FALLBACK.load(Ordering::Relaxed);
+        let cf = counters::CAPTURE_FAIL.load(Ordering::Relaxed);
+        let djf = jf.saturating_sub(self.last_jpeg_fallback);
+        let dcf = cf.saturating_sub(self.last_capture_fail);
+        let fallback = if djf > 0 || dcf > 0 {
+            format!(
+                " | 兜底 +{djf}（本场 {}） 抓屏失败 +{dcf}（本场 {}）",
+                jf.saturating_sub(self.base_jpeg_fallback),
+                cf.saturating_sub(self.base_capture_fail)
+            )
+        } else {
+            String::new()
+        };
         let s = format!(
             "[RC-PERF] 会话 {elapsed_s:.1}s | 帧 {}（本区间 {fps:.1}fps） \
              | 分段均值 cap {} enc {} send {} ms | 峰值 cap {} enc {} send {} ms \
-             | 单圈均值 {} 峰值 {} ms | 丢 {} 帧{}",
+             | 单圈均值 {} 峰值 {} ms | 丢 {} 帧{}{}",
             self.frames,
             self.cap_sum_ms / n,
             self.enc_sum_ms / n,
@@ -170,12 +202,15 @@ impl FrameStats {
             self.loop_sum_ms / n,
             self.loop_max_ms,
             self.dropped,
+            fallback,
             extra.render(),
         );
 
         // 区间统计清零，但**总量保留**（会话级均值要稳）
         self.last_report = Some(now);
         self.last_frames = self.frames;
+        self.last_jpeg_fallback = jf;
+        self.last_capture_fail = cf;
         self.cap_max_ms = 0;
         self.enc_max_ms = 0;
         self.send_max_ms = 0;

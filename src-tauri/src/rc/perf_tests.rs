@@ -28,6 +28,11 @@ use crate::rc::perf::*;
 mod tests {
     use super::*;
 
+    /// 串行化闸：`counters::JPEG_FALLBACK` / `CAPTURE_FAIL` 是**进程级** static，
+    /// 而下面两个测试断言的是精确增量。cargo test 默认多线程，兄弟测试的 bump
+    /// 落进「取基线 → report」窗口就会把 `+2` 变成 `+3`——假红比没有测试更糟。
+    static FALLBACK_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn new_有起始时刻() {
         let s = FrameStats::new();
@@ -257,6 +262,55 @@ mod tests {
         let second = s.report(ReportExtra::default()).unwrap();
         // 累计帧数应是 2，而不是重新计数
         assert!(second.contains("帧 2"), "累计帧数应保留: {second}");
+    }
+
+    /// 2026-10-06：一场「画质清晰但每帧都是 JPEG」的会话里，兜底在日志中**完全隐形**
+    /// ——`管线` 标签恒打 H264，兜底计数只在收尾行打印，会话不结束就看不见。
+    /// 现在区间内只要兜过一次底，5s 汇总行必须自己说出来；没兜过则一个字都不多。
+    ///
+    /// 🔴 两个碰进程级计数器的测试必须串起来跑（`兜底累计…` 同理）：它们断言的是
+    /// 精确数字（`+2（本场 2）`），并行时兄弟测试的 bump 落进「取基线 → report」
+    /// 这个窗口就会变成 `+3`。残留计数无害——「本场」永远是基线相对值。
+    #[test]
+    fn 区间内兜过底_汇总行必须带增量与本场累计() {
+        let _guard = FALLBACK_COUNTER_LOCK.lock().ok();
+        let mut s = FrameStats::new();
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
+        bump(&counters::JPEG_FALLBACK);
+        bump(&counters::JPEG_FALLBACK);
+        bump(&counters::CAPTURE_FAIL);
+        s.note_frame(10, 10, None, 10);
+        let line = s.report(ReportExtra::default()).expect("应输出汇总");
+        assert!(line.contains("兜底 +2（本场 2）"), "区间增量与本场累计都要可见: {line}");
+        assert!(line.contains("抓屏失败 +1（本场 1）"), "{line}");
+        // 第二个区间没有新兜底 → 整段消失（正常会话的行宽不该被诊断撑大）。
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(5));
+        s.note_frame(10, 10, None, 10);
+        let second = s.report(ReportExtra::default()).expect("应输出汇总");
+        assert!(!second.contains("兜底"), "无新增兜底时不该再附这一段: {second}");
+        counters::JPEG_FALLBACK.fetch_sub(2, std::sync::atomic::Ordering::Relaxed);
+        counters::CAPTURE_FAIL.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// 本场累计的口径是**会话基线**：计数器跨会话累加不清零，直接印全局值会让
+    /// 第二个会话显示第一个会话的兜底数（看起来像「一直在兜」）。
+    #[test]
+    fn 兜底累计从本会话起点算不是进程累加() {
+        let _guard = FALLBACK_COUNTER_LOCK.lock().ok();
+        // 先记一次：模拟「上一场会话留下的账」——它被本会话的基线吃掉，不该出现在行里。
+        bump(&counters::JPEG_FALLBACK);
+        let mut s = FrameStats::new();
+        assert_eq!(s.base_jpeg_fallback, read(&counters::JPEG_FALLBACK));
+        // 基线之后本会话才兜的这一次，才是「本场 1」。
+        bump(&counters::JPEG_FALLBACK);
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
+        s.note_frame(10, 10, None, 10);
+        let line = s.report(ReportExtra::default()).expect("应输出汇总");
+        assert!(
+            line.contains("兜底 +1（本场 1）"),
+            "基线之前的历史兜底不许算进本场（印进程总数会得到「本场 2」）: {line}"
+        );
+        counters::JPEG_FALLBACK.fetch_sub(2, std::sync::atomic::Ordering::Relaxed);
     }
 
     #[test]

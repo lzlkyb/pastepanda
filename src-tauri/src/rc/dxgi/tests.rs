@@ -84,3 +84,60 @@ fn nv12_色彩矩阵是_bt709_limited() {
     assert!((yg as i32 - 173).abs() <= 1, "709 limited 绿的 Y，得到 {yg}");
     let _ = (ur, ub);
 }
+
+// ── 熔断复位（2026-10-06）──────────────────────────────────────────
+// 现场：15:53:40 一次 `DuplicateOutput 失败：拒绝访问`（桌面态瞬变，同窗口
+// `SetCursorPos` 也在报拒绝访问）→ 旧代码 `disabled = true` 一刀判死、全仓没有
+// 复位点 → 此后 25 分钟每帧 `Err("DXGI 已禁用")` → 静默 JPEG 兜底，而 nvenc
+// 全程健康。这三条测试钉的是「熔断必须会自己复活」这件事。
+
+#[test]
+fn 熔断退避翻倍到六十秒封顶() {
+    assert_eq!(next_disable_retry_secs(5), 10);
+    assert_eq!(next_disable_retry_secs(10), 20);
+    assert_eq!(next_disable_retry_secs(40), 60);
+    // 封顶：长期不可用（受保护内容 / 显示器真拔掉）不该越退越久，
+    // 否则一场长会话后半段等于永久放弃 DXGI。
+    assert_eq!(next_disable_retry_secs(60), 60);
+    assert_eq!(next_disable_retry_secs(1000), 60);
+}
+
+#[test]
+fn 熔断必须排上一次自动重试() {
+    let mut p = DxgiPool::default();
+    assert!(p.is_enabled());
+    p.note_disabled("测试：重建失败");
+    assert!(!p.is_enabled());
+    assert_eq!(p.retry_backoff_secs, DISABLE_RETRY_START_SECS);
+    assert!(
+        p.retry_after.is_some(),
+        "熔断不排重试 = 一次瞬态失败变成整场 JPEG（2026-10-06 的原病）"
+    );
+    assert_eq!(p.disabled_reason, "测试：重建失败", "熔断原因要能在错误串里读出来");
+}
+
+#[test]
+fn 重复熔断不得把冷却一直往后推() {
+    // 熔断后每一圈都会再进一次「抓屏失败」，若每次note_disabled 都重置
+    // retry_after，冷却永远走不完 ⇒ 又变成事实上的永久熔断。
+    let mut p = DxgiPool::default();
+    p.note_disabled("第一次");
+    let scheduled = p.retry_after;
+    assert!(scheduled.is_some());
+    p.note_disabled("第二次");
+    assert_eq!(p.retry_after, scheduled, "已熔断时不得重排重试时刻");
+    assert_eq!(p.retry_backoff_secs, DISABLE_RETRY_START_SECS, "退避只在重建失败时翻倍");
+}
+
+#[test]
+fn 未到冷却时刻时重试入口不动设备() {
+    // `maybe_revive` 会真去建 D3D 设备，测试环境里不能让它跑起来：
+    // 这里只钉两条早退（未熔断 / 冷却未到），它们必须在 `open()` 之前返回。
+    let mut p = DxgiPool::default();
+    p.maybe_revive();
+    assert!(p.is_enabled() && p.outs.is_empty());
+    p.note_disabled("测试");
+    p.retry_after = Some(std::time::Instant::now() + std::time::Duration::from_secs(3600));
+    p.maybe_revive();
+    assert!(!p.is_enabled(), "冷却未到就重开等于每圈白烧一次设备初始化");
+}

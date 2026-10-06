@@ -70,6 +70,19 @@ impl RcService {
         self.with_media(id, |s| s.flow.discard(crate::rc::mono::mono_ms() as u64, loss));
     }
 
+    /// P0：这一帧被预算挡下（不阻塞、不改节拍），只把需求证据记进控制器。
+    /// 与 `media_sent` 同样受 `feedback_supported` 约束：没有反馈闭环就没有控制器，
+    /// 记账只会留一个永远不被消费的计数。
+    pub(in crate::rc) fn media_frame_dropped(&self, id: &str) {
+        self.with_media(id, |s| if s.feedback_supported { s.flow.note_drop(); });
+    }
+
+    /// P0 的节拍锚：准入没放行时，采集圈下一次来问之前的等待毫秒数（替代旧的阻塞等待）。
+    pub(in crate::rc) fn media_gate_retry_ms(&self, id: &str) -> u64 {
+        self.with_media(id, |s| s.flow.gate_retry_ms(crate::rc::mono::mono_ms() as u64))
+            .unwrap_or(crate::rc::media_flow::FEEDBACK_MS)
+    }
+
     pub(in crate::rc) fn apply_media_feedback(&self, f: &MediaFeedback) {
         let id = {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
@@ -87,9 +100,10 @@ impl RcService {
             // 预算压到地板后也留有界健康采样，否则持续的码控压力会完全不见。
             if before != s.flow.kbps || now.saturating_sub(s.last_health_log_ms) >= 5_000 {
                 s.last_health_log_ms = now;
-                log::info!("[RC-MEDIA] budget={}kbps delivered={}kbps capacity={}kbps queue={}ms backlog={}ms receive_queue={:?}ms app_limited={} tx_work={}ms display_delay={:?}ms sample={}ms presented={} received={} rtt={}ms loss={}pm",
+                log::info!("[RC-MEDIA] budget={}kbps delivered={}kbps capacity={}kbps queue={}ms backlog={}ms receive_queue={:?}ms app_limited={} demand_limited={} tx_work={}ms display_delay={:?}ms sample={}ms presented={} received={} rtt={}ms loss={}pm",
                     s.flow.kbps, s.flow.delivered_kbps, s.flow.capacity_kbps, s.flow.queue_ms,
                     s.flow.backlog_ms, f.receive_queue_ms, s.flow.app_limited,
+                    s.flow.demand_limited,
                     s.flow.tx_work_ms, f.display_delay_ms, f.sample_ms,
                     f.presented_at_ms, f.received_at_ms, self.video_rtt_ms(), loss);
             }

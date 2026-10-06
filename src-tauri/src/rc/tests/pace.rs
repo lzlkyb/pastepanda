@@ -4,9 +4,16 @@
 // 所以每一条都要有回归钉。
 
 use crate::rc::pace::{
-    auto_key_due, boost_gap_ms, effective_interval_ms, next_period_ms, want_fps_for,
+    auto_key_due, boost_gap_ms, effective_interval_ms, next_period_ms, pace_step, want_fps_for,
+    PaceBeat,
 };
 use std::time::{Duration, Instant};
+
+/// `pace_step` 的入参基线：均衡档 16ms 节拍、倍率 1x、链路清白、满负荷出帧。
+/// 各测用结构更新语法只覆盖自己在意的那一格（六个位置参数会把 bool 读反）。
+fn base() -> PaceBeat {
+    PaceBeat { boosted: false, produced: true, work_ms: 8, ema_ms: 0, interval_ms: 16, scale: 1, link_clear: true }
+}
 
 /// 🔴 提帧上限从 33ms（30fps）降到 16ms（60fps）——原生桌面的窗口拖动与
 /// 开关动画是 60fps，30fps 采样下 200ms 的关闭动画只剩 6 帧，看上去是跳变。
@@ -146,5 +153,72 @@ fn 守卫_推流节拍必须过next_period_ms() {
     assert!(
         src.contains("next_period_ms("),
         "推流循环必须用 rc::pace::next_period_ms 决定节拍——写回恒定档位间隔会让运动场景退回 10fps"
+    );
+}
+
+/// ① 空转圈（桌面没变化）不计工作量。`grab` 无帧时是**阻塞等待**
+/// （`AcquireNextFrame` timeout，主屏 30ms），整段白等若被当成工作量，
+/// 静止桌面就能把高档位（16ms）顶到 4x —— 名义 60fps 实际 15fps。
+#[test]
+fn 空转圈不涨降频倍率() {
+    // 同一份 30ms 耗时：空转圈记 0，出帧圈才记进去。反例半边证明这条
+    // 断言不是「怎么改都绿」。
+    let (ema, scale) = pace_step(PaceBeat { produced: false, work_ms: 30, link_clear: false, ..base() });
+    assert_eq!((ema, scale), (0, 1), "空转圈必须记 0 工作量");
+    let (ema, scale) = pace_step(PaceBeat { work_ms: 30, link_clear: false, ..base() });
+    assert_eq!((ema, scale), (30, 2), "真出了 30ms 的帧就该放大——差别只在 produced");
+}
+
+/// ② 输入提帧的圈（正在拖动）冻结 EMA、更不许放大倍率——「一拖就自己降频」
+/// 是这一条的原始事故。但**允许缩回**：残留的 4x 若只能等 boosted=false
+/// 才退，拖动期间就一直是 4x。
+#[test]
+fn 提帧圈不放大但可以从4x缩回() {
+    let (ema, scale) = pace_step(PaceBeat { boosted: true, work_ms: 40, ema_ms: 20, link_clear: false, ..base() });
+    assert_eq!((ema, scale), (20, 1), "提帧圈既不吃工作量也不放大");
+
+    let (ema, scale) = pace_step(PaceBeat { boosted: true, work_ms: 40, ema_ms: 5, scale: 4, link_clear: false, ..base() });
+    assert_eq!(ema, 5, "boosted 圈绝不更新 EMA");
+    assert_eq!(scale, 3, "倍率仍要能退，否则 4x 会一路跟到拖动结束");
+}
+
+/// 🔴 ③ P4 的正面：链路清白 + 编码器富余 ⇒ 一步回 1x。
+/// 旧口径「每圈退一格」在实测里根本退不动：喂给棘轮的是整圈墙钟（含
+/// `tx.send()` 等单槽流水线的网络时间），线路慢就被记成「编码跑不满」，
+/// 顶到 4x 后释放判据永远够不着，名义 15fps 实际约 2fps。
+#[test]
+fn 链路清白且编码富余时倍率直接回1x() {
+    let (ema, scale) = pace_step(PaceBeat { ema_ms: 2, scale: 4, ..base() });
+    assert_eq!((ema, scale), (2, 1), "清白链路上的历史棘轮没有分步退的理由");
+}
+
+/// 🔴 ③ P4 的反面（这条比正面重要）：**不是**「链路好就无条件 1x」。
+/// 编码器真跑不动时 EMA 撑在档位间隔以上，CPU 刹车必须照旧生效，
+/// 否则弱机 60fps 档会每圈超时——把 P4 写成无条件复位就会在这里红。
+#[test]
+fn 链路清白也拦不住编码跑不动时的降频() {
+    // 起跑：EMA 20ms > 16ms 档位 ⇒ 仍要放大。
+    let (ema, scale) = pace_step(PaceBeat { work_ms: 40, ema_ms: 18, ..base() });
+    assert_eq!((ema, scale), (20, 2), "跑不满档位间隔就该放大，与链路清白无关");
+    // 已顶到 4x：既不复位也不缩（ema*4 不小于 scaled）。
+    let (ema, scale) = pace_step(PaceBeat { work_ms: 40, ema_ms: 20, scale: 4, ..base() });
+    assert_eq!((ema, scale), (22, 4), "真跑不动时 4x 必须站住");
+    // 链路脏（拥塞）时同样不许白送复位。
+    let (ema, scale) = pace_step(PaceBeat { ema_ms: 2, scale: 4, link_clear: false, ..base() });
+    assert_eq!((ema, scale), (2, 3), "链路不清白仍按每圈退一格");
+}
+
+/// 接线守卫：喂给棘轮的工作量只能是**编码器侧**耗时（cap+enc）。
+/// 写成整圈墙钟（`loop_ms`）就把网络时间记成了编码时间，是 P4 的病根。
+#[test]
+fn 守卫_降频棘轮的工作量口径是编码器侧() {
+    let src = include_str!("../inbound/video_run.rs");
+    assert!(
+        src.contains("work_ms: self.perf_last.cap_ms + self.perf_last.enc_ms"),
+        "pace_step 的 work_ms 必须是 cap+enc；喂 loop_ms 会让线路慢被记成编码跑不满"
+    );
+    assert!(
+        !src.contains("work_ms: loop_ms"),
+        "禁止用整圈墙钟当工作量（含 tx.send 的网络等待）"
     );
 }

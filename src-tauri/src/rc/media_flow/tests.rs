@@ -517,7 +517,9 @@ fn bandwidth_step_bounds_backlog_and_resumes_after_recovery() {
         if now < capture_due { continue; }
         match flow.admission(now, 80) {
             Admission::Reset => { flow.discard(now, 0); packets.clear(); wire_end = now; resets += 1; }
-            Admission::Wait => continue,
+            // P0 口径：拿不到额度就丢帧并记账，**不阻塞生产者**。旧写法只 `continue`，
+            // 于是这份仿真对 `note_drop` 那半判据天然瞎（丢帧证据从没被喂进去过）。
+            Admission::Wait => { flow.note_drop(); continue; }
             Admission::Ready => {
                 let interval = 1_000u64 / flow.fps_limit(false, now) as u64;
                 let bytes = (flow.kbps as u64 * interval / 8) as usize;
@@ -875,3 +877,185 @@ fn clean_transport_vetoes_absolute_depth_but_not_a_rising_trend() {
     for n in 3..11u64 { wire_opts(&mut deep, n * 1_000, 400, 4_000 * 25, &o); }
     assert!(deep.kbps >= after_ramp, "稳定深积压 + 传输层清白不该继续砍码率，实际 {} < {}", deep.kbps, after_ramp);
 }
+
+// ── P0–P4（2026-10-06 手术）───────────────────────────────────────────────
+// 这一组全部走 `note_drop`，也就是 P0 拆掉阻塞闸之后生产端真实会发出的证据；
+// 存量测试一律不丢帧，所以它们对这半条判据天然瞎（见记忆「守卫必须先喂反例」）。
+
+/// P1 的正反两面：反馈窗被拉长（低帧率时必然）仍须判成 app-limited，包络仍须冻结。
+/// 旧口径的第二半 `sample_ms ≤ 400` 恰好在这一形态上反噬成 false，于是 P2 之前的
+/// 「每拍 ×7/8」继续把包络抽干（实测 870→444→236），扩窗门与漂移帽双双关死。
+#[test]
+fn a_stretched_quiet_window_is_still_app_limited_and_still_freezes_the_envelope() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 4_000;
+    wire(&mut flow, 1_000, 0, 4_000 * 25);
+    assert_eq!(flow.capacity_kbps, 4_000, "满流窗先把管宽证明出来");
+    let long = WireOpts { ceiling: 8_000, sample_ms: 2_000, ..Default::default() };
+    for n in 2..6u64 { wire_opts(&mut flow, n * 3_000, 0, 2_000, &long); }
+    assert!(flow.app_limited, "窗口 2 秒 + 交付 8kbps：测的是画面不是管子");
+    assert_eq!(flow.capacity_kbps, 4_000, "P2：包络没有每拍衰减这回事，实际 {}kbps", flow.capacity_kbps);
+}
+
+/// P0 换回来的那条证据必须有用：本窗被预算挡下过帧 ⇒ 需求确凿，不是 app-limited，
+/// 而且这正是 P3 允许主动探测的唯一入场券。
+#[test]
+fn a_budget_dropped_frame_is_demand_not_app_limiting() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 4_000;
+    flow.note_drop();
+    wire(&mut flow, 1_000, 0, 2_000);
+    assert!(flow.demand_limited, "丢帧证据要留在诊断里可见");
+    assert!(!flow.app_limited, "被预算挡过帧的低交付窗不是 app-limited（需求没饱和）");
+
+    // 反例（同一拍、同样的低交付，只是没丢帧）必须判反：否则这条证据等于没接上。
+    let mut quiet = Flow::default();
+    quiet.budget(true, 8_000);
+    quiet.kbps = 4_000;
+    wire(&mut quiet, 1_000, 0, 2_000);
+    assert!(quiet.app_limited, "没丢过的帧不许冒充需求");
+}
+
+/// P3：确有需求（本窗丢过帧）+ 传输层清白 ⇒ 一次把预算翻倍去问线路。定标与出处见
+/// `PROBE_COOLDOWN_MS`（WebRTC `probe_controller.cc:94`/`:572-573`）。
+#[test]
+fn demand_with_clean_transport_probes_the_budget_up_double() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 1_000;
+    let o = WireOpts { ceiling: 8_000, rtt_ms: 29, ..Default::default() };
+    flow.note_drop();
+    wire_opts(&mut flow, 1_000, 0, 1_000 * 25, &o);
+    assert_eq!(flow.kbps, 2_000, "探测该翻倍而不是每秒 +25%，实际 {}kbps", flow.kbps);
+
+    // 冷却期内不许连续撞墙：同样的证据再来一拍，预算仍按探测走，但起点已经换过。
+    let before = flow.kbps;
+    flow.note_drop();
+    wire_opts(&mut flow, 2_000, 0, before as u64 * 25, &o);
+    assert_eq!(flow.kbps, before, "5 秒冷却内不重复探测，实际 {}kbps", flow.kbps);
+}
+
+/// 反方向红线（`tcp_bbr.c:788-799` 的 app-limited 语义）：静止画面 + 清白传输**不许**
+/// 买探测——那份低交付只说明没人画画。
+#[test]
+fn a_quiet_screen_never_buys_a_probe() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 1_000;
+    let o = WireOpts { ceiling: 8_000, rtt_ms: 29, ..Default::default() };
+    wire_opts(&mut flow, 1_000, 0, 1_000 * 25, &o);
+    assert!(flow.kbps < 2_000, "没丢帧时最多走 +25% 常规步进，实际 {}kbps", flow.kbps);
+}
+
+/// 探测失败只许挨一刀：保护窗内出现拥塞证据 ⇒ 回到探测起点。旧口径对膨胀后的值再乘
+/// 0.8，等于一次试错白丢一档。
+#[test]
+fn a_failed_probe_falls_back_to_its_starting_point() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 1_000;
+    let clean = WireOpts { ceiling: 8_000, rtt_ms: 29, ..Default::default() };
+    flow.note_drop();
+    wire_opts(&mut flow, 1_000, 0, 1_000 * 25, &clean);
+    assert_eq!(flow.kbps, 2_000, "先探上去");
+
+    // rtt 归零（传输层不再背书）+ 积压从 0 涨到 400ms ⇒ 这是探测撞墙的形状。
+    flow.note_drop();
+    wire(&mut flow, 2_000, 400, 2_000 * 25);
+    assert_eq!(flow.kbps, 1_000, "探测失败回到起点，实际 {}kbps", flow.kbps);
+}
+
+/// P2 的下调必须是慢速 EWMA（`link_capacity_estimator.cc:39-40` α=0.05），单拍不许把
+/// 包络一脚踩死；否则「一次抖动 + 一个低交付窗」就又造出一个自锁。
+#[test]
+fn one_congested_beat_does_not_crush_the_capacity_envelope() {
+    let mut flow = Flow::default();
+    flow.budget(true, 8_000);
+    flow.kbps = 4_000;
+    wire(&mut flow, 1_000, 0, 4_000 * 25);
+    assert_eq!(flow.capacity_kbps, 4_000);
+    // 拥塞定罪（rtt 盲区 + 积压 400ms）的同时交付只有 0kbps：预算照常砍，包络只挪 5%。
+    // 两侧都要钉：只写下界的话，「拥塞也算 app-limited ⇒ 包络冻结」这种变异照样过关。
+    wire(&mut flow, 2_000, 400, 0);
+    assert_eq!(flow.capacity_kbps, 3_800, "包络单拍恰好挪 α=0.05（4000−200），实际 {}kbps", flow.capacity_kbps);
+    assert!(flow.kbps < 4_000, "预算该降还是得降，实际 {}kbps", flow.kbps);
+}
+
+/// P2 的**残余地带**（P1 抓不到的那一半）：交付停在预算的六五到八成八之间时，这一窗
+/// 既不算 app-limited 也没有拥塞证据，旧口径仍每拍 ×7/8 抽包络（4000→3500→3062→…）。
+/// 只有这条守卫能杀掉「把衰减加回 else 分支」的变异——别的安静窗都走冻结分支。
+#[test]
+fn a_seventy_percent_window_does_not_dry_up_the_envelope() {
+    let mut flow = Flow::default();
+    flow.budget(true, 4_000);
+    flow.kbps = 4_000;
+    let o = WireOpts { ceiling: 4_000, ..Default::default() };
+    wire_opts(&mut flow, 1_000, 0, 4_000 * 25, &o);
+    assert_eq!(flow.capacity_kbps, 4_000, "满流窗先把管宽证明出来");
+    for n in 2..6u64 { wire_opts(&mut flow, n * 1_000, 0, 2_800 * 25, &o); }
+    assert!(!flow.app_limited, "交付是预算的 70%：这条走的是衰减分支，不是冻结分支");
+    assert_eq!(flow.capacity_kbps, 4_000, "包络没有「每拍衰减」这回事，实际 {}kbps", flow.capacity_kbps);
+    assert_eq!(flow.kbps, 4_000, "上限已经压住预算，本测只验包络");
+}
+
+/// P4 的判据与控制器同源（AGENTS 规则 11.1）：采集圈复位自适应降频用的必须是**同一个**
+/// `transport_clear`。写第二遍的代价就是本轮那条自锁链——两处「链路干净」口径不一致。
+#[test]
+fn the_shared_transport_clear_predicate_is_the_only_door() {
+    assert!(!transport_clear(0, 0), "没有 RTT 样本时传输层不背书（rtt=0 是哨兵值不是 0ms）");
+    assert!(transport_clear(29, 0), "有样本、低于降速线、零丢包");
+    assert!(!transport_clear(150, 0), "贴着降速线就不算清白");
+    assert!(!transport_clear(29, 1), "一个千分点的丢包就不清白");
+}
+
+/// P0 的节拍锚：问门不再阻塞，但下一次来问的等待必须有下界（防忙等）也有上界
+/// （字节窗满了没有时刻信号，只能按反馈周期回查）。
+#[test]
+fn the_gate_retry_is_bounded_by_one_feedback_cycle() {
+    let mut flow = Flow::default();
+    flow.kbps = 400;
+    assert_eq!(flow.gate_retry_ms(0), 8, "空闲时下界 8ms，不许变成忙等");
+    // 100KB / 400kbps = 2 秒发送债务：债务再长也只在 200ms 处回查。
+    flow.sent(0, 0, 1, 100_000);
+    assert_eq!(flow.gate_retry_ms(10), 200);
+}
+
+/// 🔴 真机第一轮复测抓到的那个形态的**复合**回放（`.cache/bench-20261006/switch-v2/`：
+/// v6 直连 rtt 22–63ms、`backlog=0`、`loss=0`，预算 2800kbps 七分钟一动不动，画面钉在
+/// 最低档）。这条不是单元判据，是把 P1+P2+P3 串起来问一句「同一份日志重放到今天的
+/// 控制器上，还会不会卡死」。旧口径在这份形状上必红：`sample_ms≤400` 让 app_limited
+/// 恒 false ⇒ 包络 870→444→236 一路抽干 ⇒ 扩窗门与漂移帽双双关死。
+#[test]
+fn the_field_shape_that_stayed_at_2800kbps_for_seven_minutes_now_recovers() {
+    let mut flow = Flow::default();
+    flow.budget(false, 8_000);
+    flow.kbps = 2_800;
+    // 先把管子证明出来：一个满流、窗口正常的拍 ⇒ 包络 = 2800。
+    wire(&mut flow, 1_000, 0, 2_800 * 25);
+    assert_eq!(flow.capacity_kbps, 2_800);
+
+    // 阶段一「安静型」：0.8fps 的反馈窗天然 1200ms，只交付 300kbps，传输层清白。
+    let quiet = WireOpts { ceiling: 8_000, sample_ms: 1_200, rtt_ms: 29, ..Default::default() };
+    let quiet_bytes = 300u64 * 1_200 / 8;
+    for n in 2..8u64 {
+        wire_opts(&mut flow, n * 1_000, 0, quiet_bytes, &quiet);
+    }
+    assert!(flow.app_limited, "长窗低交付必须判成 app-limited（P1 的正题）");
+    assert_eq!(flow.capacity_kbps, 2_800, "包络不许被安静期抽干（P2 的正题）");
+    assert!(flow.kbps > 2_800, "扩窗门要开着，实际 {}kbps", flow.kbps);
+    assert!(flow.kbps <= 3_500, "仍受漂移帽 1.25×包络约束，实际 {}kbps", flow.kbps);
+
+    // 阶段二「有需求型」：同样的低交付窗，但每窗都被预算挡下过一帧（P0 换回来的证据）
+    // ⇒ 这不是画面少，是我们自己发不出去 ⇒ 探测翻倍（P3）。真机那七分钟里鼠标一直在动，
+    // 属于这一型。
+    for n in 8..10u64 {
+        flow.note_drop();
+        wire_opts(&mut flow, n * 1_000, 0, quiet_bytes, &quiet);
+        assert!(!flow.app_limited, "有丢帧证据时不许再算 app-limited");
+    }
+    assert!(flow.kbps >= 5_000, "两次冷却到期的探测应把预算翻倍抬起来，实际 {}kbps", flow.kbps);
+    assert!(flow.demand_limited, "需求证据要留在诊断里");
+}
+

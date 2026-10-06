@@ -22,11 +22,34 @@ const REPRESENTATIVE_SAMPLE_MS: u64 = FEEDBACK_MS * 2;
 /// app-limited 判据：本窗投递速率低于预算的 65% ⇒ 我们测的是画面不是线路
 /// （WebRTC `alr_detector.cc:92-93` 的 0.65 口径；结论见
 /// `docs/链路切换画质回升-业界源码对照-2026-10-06.md` §3.1）。
+/// 🔴 P1（2026-10-06）：**不再要求窗口正常**。旧的第二半 `sample_ms ≤ 400` 恰好在
+/// 故障形态上反噬：低帧率时反馈窗天然被拉长，于是 `app_limited` 判成 false，包络继续
+/// 按拍衰减（实测 870→444→236）并同时关掉扩窗门与漂移帽——这就是那半条自锁链。
+/// 窗口长短现在只管一件事：能不能拿 `delivered` 封顶降档（`REPRESENTATIVE_SAMPLE_MS`）。
 const APP_LIMITED_PCT: u64 = 65;
+/// 主动探测（P3）：本窗**因预算丢过帧**（确凿需求，见 `note_drop`）且传输层清白时，
+/// 一次把预算翻倍。定标取自 WebRTC `probe_controller.cc:94`（ALR 期每 5s 探一次）与
+/// `:572-573`（探测上限按分配速率翻倍）。没有这份探测，P0 拆掉阻塞闸之后「预算不够」与
+/// 「线路不够」在纯交付速率上仍不可分——只能靠丢帧证据 + 主动试。
+const PROBE_COOLDOWN_MS: u64 = 5_000;
+/// 探测的保护窗：这段时间内的拥塞证据算「探测失败」，回落到探测起点而不是对膨胀后的
+/// 值再乘 0.8（一次失败探测挨两刀）。定标同源：`probe_controller.cc:53` 的
+/// `kAlrEndedTimeout` 也是 3 秒。
+const PROBE_HOLD_MS: u64 = 3_000;
+/// 拥塞证据下包络的移动步长：对齐 `link_capacity_estimator.cc:39-40` 的
+/// `OnOveruseDetected → Update(rate, 0.05)`（慢速 EWMA，不给单拍定罪权）。
+const CAPACITY_OVERUSE_ALPHA: u64 = 50;
 /// 升档持续门槛（墙钟）：fps/宽度的**升**档条件要连续成立满这么久才放行，降档永远即时。
 /// 定标来自 round4 中继段重放（同文档 §5乙）：门槛 7s 把切换 10→4、A→B→A 往返 5→2、
 /// 升档事件 4→1；≥15s 会把回升彻底杀光（0 次升档），已否决。
 const UPGRADE_HOLD_MS: u64 = 7_000;
+
+/// 「传输层否认网络在排队」的唯一判据：RTT 已有样本、低于降速线、且零丢包。
+/// 🔴 单一数据源（AGENTS 规则 11.1）：控制器定罪（`feedback`）与采集圈的自适应降频
+/// 复位（P4，`inbound::video_run`）必须看同一个数，判据写两遍必漏一处。
+pub(super) fn transport_clear(rtt_ms: i64, loss_pm: i64) -> bool {
+    rtt_ms > 0 && rtt_ms < BACKLOG_DOWN_MS && loss_pm == 0
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MediaFeedback {
@@ -55,15 +78,22 @@ pub(super) enum Admission { Ready, Wait, Reset }
 pub(super) struct Flow {
     pub kbps: u32,
     pub delivered_kbps: u32,
-    /// 近期交付包络（观测到的最大交付速率，每份反馈衰减 1/8；app-limited 窗不参与，
-    /// 见 `APP_LIMITED_PCT`）；扩窗判据看它，不看单窗。
+    /// 近期交付包络（观测到的最大交付速率）。🔴 P2（2026-10-06）：**只在证据下移动**，
+    /// 不再每份反馈 ×7/8 衰减——对齐 `link_capacity_estimator.cc`：只有
+    /// `OnOveruseDetected`（慢速下调）与 `OnProbeRate`/观测上界（上调）两个入口。
+    /// 衰减版把「画面静止」测出的低交付当成管子变窄，实测 870→444→236 一路沉到地板，
+    /// 同时关掉扩窗门（`capacity ≥ 0.8×kbps`）与漂移帽（`capacity×5/4`）。
     pub capacity_kbps: u32,
     pub queue_ms: i64,
     /// 线上传输/解码积压（本端 send→ack 超额口径，不含对端上报与客户端绘制延迟）；
     /// 拥塞判据与对端提示都看它。
     pub backlog_ms: i64,
-    /// 本窗投递速率明显低于预算（测的是画面不是线路）；诊断与扩窗门用。
+    /// 本窗投递速率明显低于预算，且既没被预算丢过帧也没有拥塞证据（测的是画面不是线路）。
     pub app_limited: bool,
+    /// 上一个反馈窗里**因预算（字节窗/发送债务）丢过帧** ⇒ 需求确凿大于供给。
+    /// 这是 P0 拆掉阻塞闸之后才拿得到的证据：旧实现生产者直接卡在闸上，控制器分不清
+    /// 「线路窄」和「我们自己没送」，实测把 400kbps 地板当成线路能力钉死。
+    pub demand_limited: bool,
     /// 对端上报的「采集→到达」超额（ms）。只作旁证打印，**不参与定罪**：它含发送端
     /// 采集+编码与接收端回调前排队，快路径上会虚高到 240..620ms（见 `feedback`）。
     pub peer_queue_ms: i64,
@@ -78,6 +108,13 @@ pub(super) struct Flow {
     prev_backlog_ms: Option<i64>,
     /// 探测带内的稳定平台：(平台水位, 站定起点)。
     plateau: Option<(i64, u64)>,
+    /// 本窗累计「想发而被预算挡下」的帧数；`feedback` 取走并清零（`note_drop` 递增）。
+    drops_in_window: u32,
+    /// 在飞探测的起点预算：探测期内出现拥塞证据就回落到这里（一次失败探测只挨一刀）。
+    probe_floor: u32,
+    /// 最近一次探测的起始时刻（既是保护窗 `PROBE_HOLD_MS`，也是冷却 `PROBE_COOLDOWN_MS`
+    /// 的锚点：同一份证据不重复撞墙）。
+    probe_at_ms: Option<u64>,
     last_reset_ms: Option<u64>,
     last_feedback_ms: Option<u64>,
     baseline_age_ms: i64,
@@ -97,10 +134,11 @@ pub(super) struct Flow {
 impl Default for Flow {
     fn default() -> Self {
         Self { kbps: 2_000, delivered_kbps: 0, capacity_kbps: 0, queue_ms: 0, backlog_ms: 0,
-            app_limited: false, peer_queue_ms: 0, tx_work_ms: 0,
+            app_limited: false, demand_limited: false, peer_queue_ms: 0, tx_work_ms: 0,
             pending: VecDeque::new(),
             pending_bytes: 0, next_ms: 0, ack_at_ms: 0, presented_at_ms: 0, last_adjust_ms: 0,
-            prev_backlog_ms: None, plateau: None, last_reset_ms: None, last_feedback_ms: None, baseline_age_ms: i64::MAX,
+            prev_backlog_ms: None, plateau: None, drops_in_window: 0, probe_floor: 0,
+            probe_at_ms: None, last_reset_ms: None, last_feedback_ms: None, baseline_age_ms: i64::MAX,
             baseline_ack_ms: u64::MAX, ack_delay_ms: None, ack_mean_ms: None,
             ack_variance_ms: 0, relay: None, fps: 15,
             max_width: 0, resolution_changed_ms: None, fps_up_since: None, width_up_since: None }
@@ -119,6 +157,11 @@ impl Flow {
             self.prev_backlog_ms = None;
             self.plateau = None;
             self.capacity_kbps = 0;
+            // 换路后探测与丢帧证据一起作废：旧路径上「被预算挡下」说明不了新路径的容量。
+            self.drops_in_window = 0;
+            self.demand_limited = false;
+            self.probe_at_ms = None;
+            self.probe_floor = 0;
             // 换路是一次重新测量，不是同一根管道的续集：升档计时也从零开始。
             self.fps_up_since = None;
             self.width_up_since = None;
@@ -142,6 +185,20 @@ impl Flow {
         // 异步写入及同圈多个编码包仍累加字节债务；空闲不积攒突发发送额度。
         self.next_ms = self.next_ms.max(started_ms.min(now))
             .saturating_add((bytes as u64 * 8).div_ceil(self.kbps as u64));
+    }
+
+    /// P0：生产端「这一帧想发但被预算挡下」（字节窗满、发送债务未到期、或单槽流水线被
+    /// 占用）。调用方**不阻塞、不重试**，只记这一笔账——它是 app-limited 判据与主动探测
+    /// 唯一的需求证据：没有它，「线路窄」和「我们自己没送」在交付速率上长得一模一样。
+    pub fn note_drop(&mut self) {
+        self.drops_in_window = self.drops_in_window.saturating_add(1);
+    }
+
+    /// 准入没放行时，下一次再来问的最早时刻（P0 的节拍锚，替代旧的阻塞式等待）：按发送
+    /// 债务 `next_ms` 算，夹在 8..`FEEDBACK_MS` 之间——字节窗满了没有时刻信号可查，只能按
+    /// 反馈周期回查；下界 8ms 防静止画面把采集圈变成忙等。
+    pub fn gate_retry_ms(&self, now: u64) -> u64 {
+        self.next_ms.saturating_sub(now).clamp(8, FEEDBACK_MS)
     }
 
     /// `rtt_ms` 是传输层当前 RTT（`video_rtt_ms()`，0 = 尚无样本）：它是「网络自己承认在
@@ -206,26 +263,11 @@ impl Flow {
         let loss_pressure = super::media::loss_pressure(
             f.receive_queue_ms.or_else(|| f.display_delay_ms.map(|ms| ms.min(10_000) as i64)),
             loss_pm.max(0) as u64, 31);
-        // app-limited：本窗投递速率明显低于预算 ⇒ delivered 测的是画面不是线路。
-        self.app_limited = f.sample_ms <= REPRESENTATIVE_SAMPLE_MS
-            && (delivered as u64).saturating_mul(100) < (self.kbps as u64) * APP_LIMITED_PCT;
         // 传输层否认「网络在排队」：RTT 已有样本、低于降速线、且零丢包。此时两个队列口径
         // 说的高积压都只剩本机开销或对端渲染管线——降码率治不了它，只会把画面做糊。
         // （实测：v6 直连 52 拍 backlog>150ms，其中传输层 rtt≥150ms 的有 **0** 拍；
-        //  中继段 20 拍里 20 拍一致。见 docs/链路切换画质回升-业界源码对照-2026-10-06.md §1）
-        let transport_clear = rtt_ms > 0 && rtt_ms < BACKLOG_DOWN_MS && loss_pm == 0;
-        // 容量包络：观测到的最大交付速率，每份反馈衰减 1/8（约每秒折半）。被背压截断的
-        // 窗口（刚 RESET、发送端断粮）给的是低值，拿那种低值当上限就是自我棘轮（实测交付
-        // 835kbps 的超长窗口把 4000 一次踩到 751，之后再没涨回去）；真降容量时包络 1–2 秒内
-        // 仍能跟上。**app-limited 样本不参与衰减**：对齐 `tcp_bbr.c:799`、本仓 vendor 的
-        // `bbr3/mod.rs:766-770`、WebRTC ALR `aimd_rate_control.cc:253-259` 三家同一条——
-        // 静止画面把包络沉向实际低交付率，会同时关掉扩窗门（`capacity ≥ 0.8×kbps`）和
-        // 漂移帽（`capacity×5/4`），于是钉在 400kbps 地板后没有任何证据能把它抬回去。
-        self.capacity_kbps = if self.app_limited {
-            self.capacity_kbps.max(delivered)
-        } else {
-            ((self.capacity_kbps as u64 * 7 / 8) as u32).max(delivered)
-        };
+        //  中继段 20 拍里 20 拍一致。判据收口成 `transport_clear()`，采集圈的 P4 复位共用）
+        let transport_clear = transport_clear(rtt_ms, loss_pm);
         // 拥塞证据只看 `backlog_ms`（本端 send→ack 超额），不看绘制延迟：中继会话的渲染管线
         // 稳态就有 100..160ms，旧口径拿它当积压，于是每 3 秒 RESET 一次就缩一次预算。
         // 真拥塞的积压每秒涨几百毫秒，稳态传播给的是一个不涨的平台。
@@ -244,24 +286,77 @@ impl Flow {
         } else {
             self.plateau = None;
         }
-        if now.saturating_sub(self.last_adjust_ms) < 1_000 { return; }
         let deep = !transport_clear && self.backlog_ms > BACKLOG_DOWN_MS;
+        let congested = loss_pressure || deep || rising;
+        // 🔴 P0 换回来的证据：本窗生产者有没有「想发而被预算挡下」的帧（`note_drop`）。
+        // 旧实现把采集圈整个阻塞在准入闸上，控制器只看得到「交付变慢」，分不清是线路窄
+        // 还是我们自己没送——那条自锁链的起点就在这里。
+        let had_drops = self.drops_in_window > 0;
+        self.drops_in_window = 0;
+        self.demand_limited = had_drops;
+        // app-limited（P1）三个条件缺一不可：没被预算挡过帧（否则需求确凿）、没有拥塞证据
+        // （否则这份低交付是线路给的）、速率明显低于预算（否则算打满）。**窗口长短不参与**
+        // （旧的第二半 `sample_ms ≤ 400` 在低帧率形态上恰好反噬成 false，见 `APP_LIMITED_PCT`）。
+        self.app_limited = !had_drops && !congested
+            && (delivered as u64).saturating_mul(100) < (self.kbps as u64) * APP_LIMITED_PCT;
+        let honest = f.sample_ms <= REPRESENTATIVE_SAMPLE_MS;
+        // 容量包络（P2）：**只在证据下移动，没有每拍 ×7/8 衰减**。三家源码同一条口径——
+        // `link_capacity_estimator.cc` 只有 `OnOveruseDetected`(α=0.05) 与 `OnProbeRate`
+        // (α=0.5) 两个入口、`tcp_bbr.c` 的 app-limited 采样不进 max-filter、本仓 vendor 的
+        // `bbr3/mod.rs:766-770` 同构。衰减版把「画面静止」测出的低交付当成管子变窄：
+        // 实测 870→444→236 一路沉到地板，同时关掉扩窗门（`capacity ≥ 0.8×kbps`）与漂移帽
+        // （`capacity×5/4`），钉死之后没有任何证据能把它抬回去。
+        if self.app_limited {
+            // 测的是画面不是管子：包络一动不动，也不参与任何方向的判断。
+        } else if congested && honest {
+            // 慢速 EWMA 下调，单拍不许一脚踩死（835kbps 的超长窗把 4000 一次踩到 751
+            // 就是旧口径的自锁现场；那种被拉长的窗口本来就 `!honest`，不参与）。
+            let cur = self.capacity_kbps as u64;
+            self.capacity_kbps = (cur - cur.saturating_mul(CAPACITY_OVERUSE_ALPHA) / 1_000
+                + (delivered as u64).saturating_mul(CAPACITY_OVERUSE_ALPHA) / 1_000) as u32;
+        } else {
+            // 上界取 max：包络是「已证明的管宽」，不因安静期遗忘（`budget()` 换路时才清零）。
+            self.capacity_kbps = self.capacity_kbps.max(delivered);
+        }
+        if now.saturating_sub(self.last_adjust_ms) < 1_000 { return; }
         let plateaued = self.plateau.is_some_and(|(_, since)| now.saturating_sub(since) >= 3_000);
-        if loss_pressure || deep || rising {
-            // 封顶用**本窗口**的实测交付：有拥塞证据时链路是满流的，这个速率就是管子宽度。
-            // 但窗口必须正常——被背压自己拉长的采样（实测 5..8s）和断粮窗口给出的是低值，
-            // 拿它封顶就是自锁（旧口径 min(4000×0.8, 835×0.9)→751 再没涨回去）。
-            let honest = f.sample_ms <= REPRESENTATIVE_SAMPLE_MS;
-            let cap = if honest && delivered > 0 && (delivered as u64) < self.kbps as u64 {
-                (delivered as u64) * 9 / 10
-            } else { u64::MAX };
-            self.kbps = ((self.kbps as u64 * 8 / 10).min(cap) as u32).max(MIN_KBPS);
+        let probe_active = self.probe_at_ms.is_some_and(|t| now.saturating_sub(t) < PROBE_HOLD_MS);
+        let probe_cooled = self.probe_at_ms.is_none_or(|t| now.saturating_sub(t) >= PROBE_COOLDOWN_MS);
+        if congested {
+            if probe_active {
+                // 探测期内的拥塞证据 = 探测失败：回到探测起点。对膨胀后的值再乘 0.8 等于
+                // 让一次试错挨两刀，代价是恢复期白白多糊一档。
+                self.kbps = self.probe_floor.max(MIN_KBPS);
+            } else {
+                // 封顶用**本窗口**的实测交付：有拥塞证据时链路是满流的，这个速率就是管子宽度。
+                // 但窗口必须正常——被背压自己拉长的采样（实测 5..8s）和断粮窗口给出的是低值，
+                // 拿它封顶就是自锁（旧口径 min(4000×0.8, 835×0.9)→751 再没涨回去）。
+                let cap = if honest && delivered > 0 && (delivered as u64) < self.kbps as u64 {
+                    (delivered as u64) * 9 / 10
+                } else { u64::MAX };
+                self.kbps = ((self.kbps as u64 * 8 / 10).min(cap) as u32).max(MIN_KBPS);
+            }
+            self.plateau = None;
+        } else if had_drops && transport_clear && probe_cooled
+            && self.kbps < ceiling.max(MIN_KBPS) {
+            // P3 主动探测（口径见 `PROBE_COOLDOWN_MS`）：本窗确有需求（被预算挡下过帧）、
+            // 传输层又否认排队 ⇒ 挡住我们的很可能是**自家预算**而不是线路，一次翻倍去问。
+            // 静止画面（`!had_drops`）绝不探：`tcp_bbr.c:788-799` 那条「app-limited 期间
+            // 维持已知的最好速率、不拿它当管子还能装」就是这条线的出处。
+            self.probe_floor = self.kbps;
+            self.kbps = ((self.kbps as u64 * 2)
+                .min(ceiling.max(MIN_KBPS) as u64).max(MIN_KBPS as u64))
+                .min(u32::MAX as u64) as u32;
+            self.probe_at_ms = Some(now);
             self.plateau = None;
         } else if (self.backlog_ms < BACKLOG_PROBE_MS || plateaued || transport_clear)
+            && !probe_active
             && (self.capacity_kbps as u64) * 10 >= (self.kbps as u64) * 8 {
             // 包络门同时是**漂移封顶**：`capacity ≥ 0.8×kbps` ⇒ 预算最高停在已证明交付
-            // 能力的 1.25 倍（BBR 的探测增益 5/4，`tcp_bbr.c:799` 的 app-limited 语义——
-            // 没打满预算的样本不算「管子还能装」的证据）。旧门 0.7 允许比值常年停在
+            // 能力的 1.25 倍（BBR 的探测增益 5/4 在 `tcp_bbr.c:164` 的 `bbr_pacing_gain[]`
+            // 与 `:180` 的 `bbr_full_bw_thresh`——旧注释误引 :799，:788-799 讲的是 app-limited
+            // 语义，本地核对记录见 `.cache/bench-20261006/industry-2/bbr-quic/findings.md` §A）。
+            // 旧门 0.7 允许比值常年停在
             // 1.43：真机中继 75 拍里 18 拍 `delivered < 0.5×budget`（最坏 3474/208、
             // 5085/752、2734/391），预算 6152 而实测交付只有 2562，且永远没有停下的理由。
             // 积压低于扩窗线=确凿余量，带内站够久的平台重新试探，传输层否认拥塞也算余量
@@ -273,6 +368,10 @@ impl Flow {
             // 门在步进**前**判，比值就会按步长过冲一格；这里把封顶做成硬上限，
             // 「不高于已证明交付能力的 1.25 倍」才是真话而不是倾向。
             let drift_cap = ((self.capacity_kbps as u64) * 5 / 4).max(MIN_KBPS as u64) as u32;
+            // 门（`capacity ≥ 0.8×kbps`）与这条帽（`kbps ≤ 1.25×capacity`）是同一个比的两侧，
+            // 所以进入本分支后 `min(drift_cap)` 永不可能低于现有预算——升档分支天然只升不降，
+            // 不需要额外的 `max(kbps)` 兜探测试值。（探测把 kbps 抬到包络之上也一样：能进
+            // 这门就必有 drift_cap ≥ kbps。）
             self.kbps = self.kbps.saturating_add(step).min(drift_cap).min(ceiling.max(MIN_KBPS));
             self.plateau = None;
         } else {
@@ -354,10 +453,10 @@ impl Flow {
     pub fn reset_diagnostics(&self, now: u64, rtt_ms: i64) -> String {
         let rtt = if rtt_ms <= 0 { 500 } else { rtt_ms.clamp(20, 5_000) as u64 };
         let age = self.pending.front().map_or(0, |p| now.saturating_sub(p.sent_ms));
-        format!("pending={} bytes={} oldest={}ms deadline={}ms rtt={}ms budget={}kbps delivered={}kbps ack={} feedback_age={:?} media_ack={:?}ms queue={}ms backlog={}ms peer_queue={}ms capacity={}kbps app_limited={} tx_work={}ms",
+        format!("pending={} bytes={} oldest={}ms deadline={}ms rtt={}ms budget={}kbps delivered={}kbps ack={} feedback_age={:?} media_ack={:?}ms queue={}ms backlog={}ms peer_queue={}ms capacity={}kbps app_limited={} demand_limited={} probe={:?} tx_work={}ms",
             self.pending.len(), self.pending_bytes, age, self.ack_deadline_ms(rtt, now), rtt, self.kbps,
             self.delivered_kbps,
-            self.ack_at_ms, self.last_feedback_ms.map(|t| now.saturating_sub(t)), self.ack_delay_ms, self.queue_ms, self.backlog_ms, self.peer_queue_ms, self.capacity_kbps, self.app_limited, self.tx_work_ms)
+            self.ack_at_ms, self.last_feedback_ms.map(|t| now.saturating_sub(t)), self.ack_delay_ms, self.queue_ms, self.backlog_ms, self.peer_queue_ms, self.capacity_kbps, self.app_limited, self.demand_limited, self.probe_at_ms, self.tx_work_ms)
     }
 
     /// 升档条件的连续成立门槛（墙钟）。条件一断就重新计时，返回「够不够久」。

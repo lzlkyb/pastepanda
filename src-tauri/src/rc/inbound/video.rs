@@ -356,6 +356,7 @@ impl InboundVideo {
             static_refined: false,
             perf: crate::rc::perf::FrameStats::new(),
             perf_last: crate::rc::perf::FrameTiming::idle(),
+            tick_jpeg: false,
             _keep_awake: keep_awake,
         })
     }
@@ -419,41 +420,55 @@ impl InboundVideo {
         });
     }
 
-    /// 探针（2026-09-21）：组装汇总行的运行时上下文——档位 / 节奏 / 实际管线。
+    /// 探针：本圈**实际**出的帧走了哪条管线（不是「本应走哪条」）。
     ///
-    /// `pipeline` 取「本圈实际走的路径」而不是「期望走的路径」：
-    /// `perf_last.produced` + `self.h264.is_some()` 才能区分
-    /// 「H.264 出了帧」和「硬编开着但这帧其实回退了 JPEG」——后者正是
-    /// 排查时要抓的（日志里 `管线 JPEG` 却挂着 `h264_gpu: true` 就是它）。
+    /// 🔴 2026-10-06：这里过去只看 `self.h264.is_some()`，于是抓屏熔断后整场
+    /// 每帧编 JPEG、标签却恒打 `管线 H264`——硬编对象一直在，只是再也喂不进去
+    /// （`grab` 直接报 `DXGI 已禁用`）。那条谎报让我反过来否掉了用户看到的实况，
+    /// 所以标签必须回答「这一圈编了什么」，并区分三种兜底原因：
+    /// - `无硬编` = 本会话就没开起来（用户配 jpeg / 编码器打不开）；
+    /// - `抓屏已熔断` = DXGI 整池判死，`grab` 直接报错（编码器其实活着）；
+    /// - `单帧回退` = 编码器在、抓屏在，这一帧没编出来（奇数尺寸 / 单帧编码失败）。
+    #[cfg(target_os = "windows")]
+    pub(in crate::rc) fn pipeline_label(&self) -> String {
+        if self.tick_jpeg {
+            let why = if self.h264.is_none() {
+                "无硬编"
+            } else if !self.dxgi.is_enabled() {
+                "抓屏已熔断"
+            } else {
+                "单帧回退"
+            };
+            return format!("JPEG（{why}）");
+        }
+        // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
+        match self.h264.as_ref().map(|e| e.codec().as_str().to_uppercase()) {
+            // GPU 模式不好从外面读（`gpu_mode` 私有），但 `gpu_disabled` 能区分
+            // 「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
+            Some(std) if self.gpu_disabled => format!("{std}-CPU（零拷贝已判死）"),
+            Some(std) => std,
+            None => "JPEG（无硬编）".to_string(),
+        }
+    }
+
+    /// mobile 宿主没有硬编管线，恒 JPEG（相关字段在这个 cfg 下根本不存在）。
+    #[cfg(not(target_os = "windows"))]
+    pub(in crate::rc) fn pipeline_label(&self) -> String {
+        "JPEG".to_string()
+    }
+
+    /// 探针（2026-09-21）：组装汇总行的运行时上下文——档位 / 节奏 / 实际管线。
     pub(in crate::rc) fn perf_extra(
         &self,
         opts: &crate::rc::stream_cfg::StreamOpts,
         interval: u64,
     ) -> crate::rc::perf::ReportExtra {
+        // 「空转」= 本圈根本没出帧（屏幕未变化 / 被闸丢掉），跟「出了帧但是 JPEG」
+        // 是两件事：把后者写成空转，兜底 25 分钟在日志里就是一片安静。
         let pipeline = if !self.perf_last.produced {
             "空转".to_string()
         } else {
-            // 编码器 / 零拷贝判死位是 Windows 宿主专属字段（mobile 无推流管线）
-            #[cfg(target_os = "windows")]
-            { if self.h264.is_some() {
-                // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
-                let std = self
-                    .h264
-                    .as_ref()
-                    .map(|e| e.codec().as_str().to_uppercase())
-                    .unwrap_or_else(|| "?".into());
-                // GPU 模式不好从外面读（`gpu_mode` 私有）——但 `gpu_disabled`
-                // 能区分「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
-                if self.gpu_disabled {
-                    format!("{std}-CPU（零拷贝已判死）")
-                } else {
-                    std
-                }
-            } else {
-                "JPEG".to_string()
-            } }
-            #[cfg(not(target_os = "windows"))]
-            { "JPEG".to_string() }
+            self.pipeline_label()
         };
         let active_quality = if self.svc.auto_enabled() {
             self.svc.auto_tier_name()
@@ -477,18 +492,7 @@ impl InboundVideo {
         // 收尾时 `perf_last` 可能停在最后一个空转圈 → 别让它把管线谎报成「空转」
         let mut extra = self.perf_extra(&opts, interval);
         if extra.pipeline == "空转" {
-            // 编码器字段 Windows 宿主专属（同 perf_extra）
-            #[cfg(target_os = "windows")]
-            { extra.pipeline = if self.h264.is_some() {
-                self.h264
-                    .as_ref()
-                    .map(|e| e.codec().as_str().to_uppercase())
-                    .unwrap_or_else(|| "H264".into())
-            } else {
-                "JPEG".to_string()
-            }; }
-            #[cfg(not(target_os = "windows"))]
-            { extra.pipeline = "JPEG".to_string(); }
+            extra.pipeline = self.pipeline_label();
         }
         extra
     }

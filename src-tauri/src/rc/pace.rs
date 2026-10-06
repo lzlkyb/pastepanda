@@ -132,3 +132,57 @@ pub(crate) fn effective_interval_ms(
         profile_interval
     }
 }
+
+/// P1-7 自适应降频（`pace_scale`）一圈的输入事实。
+pub(crate) struct PaceBeat {
+    /// 本圈由输入事件提帧唤醒（= 正在拖动）。
+    pub boosted: bool,
+    /// 本圈真的产出了一帧（= 桌面画面在动）。
+    pub produced: bool,
+    /// 编码器侧耗时（cap+enc）。**必须是这一段**，不能是整圈墙钟，见 [`pace_step`]。
+    pub work_ms: u64,
+    pub ema_ms: u64,
+    pub interval_ms: u64,
+    pub scale: u32,
+    /// 传输层清白：判据与拥塞控制器同源（`media_flow::transport_clear`）。
+    pub link_clear: bool,
+}
+
+/// 自适应降频的一圈判定：输入本圈事实，输出 `(新 EMA 工作量, 新倍率)`。
+///
+/// 从 `video_run` 循环体搬出来单测：这条棘轮写反了不会崩，只会静默降帧率
+/// （名义 60fps 实际 15fps 就是这么来的），肉眼读码都抓不出来。
+///
+/// 三条口径各对应一次真实事故，逐条钉在 `rc/tests/pace.rs`：
+/// ① 空转圈（`produced=false`）工作量记 0——否则无变化时 `grab` 的阻塞等待
+///    （主屏 30ms）会被当成工作量，静止桌面就能把高档位顶到 4x。
+/// ② 提帧圈冻结 EMA 且不放大——拖动正是用户要的高动态，「一拖就自己降频」
+///    是旧 bug；但仍允许缩回，否则残留的 4x 再也回不来。
+/// ③ 🔴 P4（2026-10-06）：工作量必须取**编码器侧**耗时。旧口径喂整圈墙钟，
+///    里面含 `tx.send()` 等单槽流水线的那段网络时间，于是「线路慢」被记成
+///    「编码跑不满档位间隔」，倍率顶到 4x 后释放判据再也够不着；链路清白
+///    且编码器确实富余时直接回 1x（每圈退一格要 3 圈才回得来）。
+///    ❗ 这条不是「链路好就无条件 1x」：真跑不动时 EMA 撑在档位间隔以上，
+///    判据不成立，CPU 刹车照旧生效。
+pub(crate) fn pace_step(b: PaceBeat) -> (u64, u32) {
+    let work = if b.produced { b.work_ms } else { 0 };
+    let ema = if b.boosted {
+        b.ema_ms
+    } else if b.ema_ms == 0 {
+        work
+    } else {
+        (b.ema_ms * 7 + work) / 8
+    };
+    if b.link_clear && ema * 2 < b.interval_ms {
+        return (ema, 1);
+    }
+    let scaled = b.interval_ms * b.scale as u64;
+    let scale = if !b.boosted && scaled > 0 && ema * 2 > scaled {
+        (b.scale + 1).min(4)
+    } else if b.scale > 1 && ema * 4 < scaled {
+        b.scale - 1
+    } else {
+        b.scale
+    };
+    (ema, scale)
+}

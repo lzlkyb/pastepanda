@@ -679,8 +679,36 @@ fn 守卫_暂停先废弃媒体再停止出帧() {
     assert!(reset < run.find("if self.svc.should_pause_stream() {").unwrap());
     let pipe = include_str!("../inbound/media_pipe.rs");
     let writer = include_str!("../inbound/media.rs");
-    assert!(pipe.contains("self.svc.media_paused()"));
+    // P0 重构后 worker 不再直接念 svc，而是走 writer 的 `paused()` 薄封装
+    // （判据仍必须是媒体暂停口径，见下一条断言）。
+    assert!(pipe.contains("if writer.paused() ||"));
     assert!(writer.contains("self.svc.media_paused()"));
+}
+
+/// 🔴 P0 的两条接线守卫（2026-10-06）：闸**不能阻塞生产者**，也**不能饿死控制面**。
+///
+/// 旧 `wait_media_capacity().await` 挡在采集圈前面，预算一低就「表现成帧率低」，
+/// 控制器只看得到交付变慢 ⇒ 把自家断粮当成线路能力（自锁链的起点，调研文档 §8）。
+/// 光标遥测走控制流、与媒体预算毫无竞争，排在闸后面就是「拥塞期间远端指针冻住」。
+/// 两条都是改错顺序不报错、只默默变卡，所以按源码文本钉。
+#[test]
+fn 守卫_媒体闸不阻塞生产者也不饿死控制面() {
+    let run = include_str!("../inbound/video_run.rs");
+    let pipe = include_str!("../inbound/media_pipe.rs");
+    assert!(
+        !pipe.contains("async fn wait_media_capacity") && !run.contains("wait_media_capacity().await"),
+        "媒体闸不许回到 await 阻塞式等待——生产者的节拍不能被发送侧预算停住"
+    );
+    // 取**最后一次**出现：第一次在 run() 开头（会话建立先报一次形状），
+    // 循环体内那一次才是被测对象。
+    let cursor = run.rfind("self.maybe_send_cursor().await")
+        .expect("推流循环里没有光标遥测上报");
+    let gate = run.find("match self.media_gate()").expect("推流循环没有问媒体闸");
+    assert!(cursor < gate, "光标上报必须排在媒体闸之前，否则闸关闭期间远端指针冻结");
+    assert!(
+        run.find("if self.svc.media_paused() { continue; }").unwrap() < cursor,
+        "隐私暂停必须先于光标上报（暂停期连指针形状都不算可看）"
+    );
 }
 
 /// 守卫：「传输分 plane」视频独立通道的**七处接线**（2026-10-03）。
@@ -860,5 +888,161 @@ fn 会话防休眠_非windows恒不保活() {
     assert!(
         crate::rc::keep_awake::KeepAwake::start().is_none(),
         "非 Windows 上不许产出守卫"
+    );
+}
+
+/// 🔴 守卫：DXGI 熔断**必须带自动重开入口**（2026-10-06，「乙」的接线钉）。
+///
+/// 病根：`disabled` 是个只进不出的 bool——三处赋值、全仓零复位点，于是一次
+/// `DuplicateOutput` 的瞬时 `E_ACCESSDENIED`（桌面态变化，自己会过去）就把整场
+/// 判成 JPEG 兜底，实测兜了 25 分钟。这条退化和 2026-09-21 硬编熔断那次是同一个
+/// 毛病，那次修完留下的教训是「熔断不许是一扇单向门」。
+/// 跑不了真机（要恰好撞上桌面态切换），所以按源码文本钉住三个不变量：
+/// ① 禁用赋值收口在 `note_disabled` 一处；② 两条 grab 入口在报「已禁用」之前
+/// 必须先试 `maybe_revive`；③ 退避递进走纯函数不是硬编码。
+#[test]
+fn 守卫_DXGI熔断必须有自动重开入口() {
+    let src = include_str!("../dxgi.rs");
+    // ① 收口：绕过 note_disabled 的裸赋值 = 没有冷却时刻的熔断，永远醒不过来。
+    assert_eq!(
+        src.matches("self.disabled = true").count(),
+        1,
+        "又出现裸的 `self.disabled = true` —— 必须走 note_disabled，否则这次熔断排不上自动重试"
+    );
+    assert!(
+        src.contains("fn note_disabled") && src.contains("fn maybe_revive"),
+        "熔断/重开两个入口被拆掉了一个 —— 熔断又变回整场判死"
+    );
+    assert!(
+        src.contains("self.retry_after = Some(now"),
+        "note_disabled 不再排重试时刻 —— 只有退避没有重试等于没有退避"
+    );
+    assert!(
+        src.contains("next_disable_retry_secs(self.retry_backoff_secs)"),
+        "maybe_revive 失败后不再递进退避 —— 会退回每 5s 重建一次设备的抖动"
+    );
+    // ② 每条「已禁用」报错点前面必须紧跟同函数内的 maybe_revive 调用。
+    // 用字节偏移判：仓库以 CRLF 检出，跨行字面量会假红。
+    let mut from = 0usize;
+    let mut sites = 0usize;
+    while let Some(rel) = src[from..].find("DXGI 已禁用：") {
+        let at = from + rel;
+        let revive = src[..at]
+            .rfind("self.maybe_revive()")
+            .unwrap_or_else(|| panic!("报「DXGI 已禁用」的入口（偏移 {at}）没有先调 maybe_revive"));
+        assert!(
+            at - revive < 300,
+            "maybe_revive 与禁用报错点相隔 {} 字节，多半已不在同一个入口函数里",
+            at - revive
+        );
+        sites += 1;
+        from = at + "DXGI 已禁用：".len();
+    }
+    assert_eq!(
+        sites, 2,
+        "CPU(grab) / GPU(grab_gpu) 两条入口的禁用报错点该有两处，实际 {sites} 处——少一条 = 那条路永不自动重开"
+    );
+}
+
+/// 🔴 守卫：`[RC-PERF]` 的 `管线` 标签必须说真话（2026-10-06）。
+///
+/// 这条不是洁癖，是**误诊源头**：旧标签只判 `self.h264.is_some()`，而硬编对象在
+/// 抓屏熔断后依然健在（只是再也喂不进去），于是整场 JPEG 的日志恒打
+/// `管线 H264`。我拿它否掉了用户看到的实况，白绕了一轮。验收标准（AGENTS.md
+/// §11.1）：新写一条兜底路径时若忘了置 `tick_jpeg`，标签还会说谎 ⇒ 所以钉住
+/// 「每圈清零 + FallThrough 置位 + 标签与两个报告入口都经 pipeline_label」。
+#[test]
+fn 守卫_管线标签必须说真话() {
+    let video = include_str!("../inbound/video.rs");
+    let run = include_str!("../inbound/video_run.rs");
+    // ① 标记生命周期：一圈一次，清在圈首、置在兜底臂。
+    assert_eq!(
+        run.matches("self.tick_jpeg = false").count(),
+        1,
+        "tick_jpeg 的清零点不止一处 —— 会在兜底之后被清掉，标签重新变成谎报"
+    );
+    assert_eq!(
+        run.matches("self.tick_jpeg = true").count(),
+        1,
+        "tick_jpeg 的置位点不止一处 —— 硬编成功圈也可能被误标成兜底"
+    );
+    let fall = run
+        .find("Step::FallThrough =>")
+        .expect("推流循环没有 FallThrough（硬编没出帧）分支");
+    let set = run
+        .find("self.tick_jpeg = true")
+        .expect("兜底分支不再置 tick_jpeg —— 标签抓不到 JPEG");
+    assert!(
+        set > fall && set - fall < 300,
+        "tick_jpeg 的置位（偏移 {set}）不在 FallThrough 臂（偏移 {fall}）里 —— 兜底不会被标签抓到"
+    );
+    // ② 标签本体先看「这一圈编了什么」，再看编码器对象在不在。
+    let label = video
+        .find("fn pipeline_label")
+        .expect("管线标签函数被删 —— 两个报告入口没有统一口径");
+    let body = &video[label..];
+    let gate = body
+        .find("if self.tick_jpeg")
+        .expect("pipeline_label 不再以 tick_jpeg 为首要判据 —— 会退回按 h264.is_some() 谎报");
+    let why = body
+        .find("JPEG（{why}）")
+        .expect("兜底原因三档（无硬编/抓屏已熔断/单帧回退）被合并 —— 只剩「兜过底」这一个信息量");
+    assert!(gate < why, "tick_jpeg 判据排在了兜底原因之后");
+    assert!(
+        body.contains("抓屏已熔断") && body.contains("单帧回退") && body.contains("无硬编"),
+        "兜底三档原因缺一条 —— 现场分不出是没配、熔断还是单帧失败"
+    );
+    // ③ 汇总行与收尾行都必须经 pipeline_label，且不得再直接从 h264 对象推断。
+    let extra = video
+        .find("fn perf_extra")
+        .expect("汇总行上下文入口被删");
+    let extra_last = video
+        .find("fn perf_extra_last")
+        .expect("收尾行上下文入口被删");
+    let head = &video[extra..extra_last];
+    assert!(
+        head.contains("self.pipeline_label()"),
+        "汇总行的管线不再走 pipeline_label"
+    );
+    assert!(
+        !head.contains("h264"),
+        "perf_extra 里又出现直接读 h264 的判据 —— 那正是谎报 `管线 H264` 的写法"
+    );
+    assert!(
+        video[extra_last..].contains("self.pipeline_label()"),
+        "收尾行不再兜正空转圈 —— 末圈空转会把整场管线盖成「空转」"
+    );
+    // ④ 「没出帧」与「出帧但兜底」是两件事，标签必须能同时表达。
+    assert!(
+        head.contains("if !self.perf_last.produced"),
+        "空转判定被删 —— 屏幕未变的圈会被算成兜底"
+    );
+}
+
+/// 守卫：兜底计数必须出现在 **5s 汇总行**，不能只在收尾行露一次（2026-10-06）。
+///
+/// `JPEG_FALLBACK` / `CAPTURE_FAIL` 是进程级 static，过去只有会话收尾的
+/// `counters::snapshot()` 打印它们——于是「兜了 25 分钟」这件事，中途在日志里
+/// 一片安静，只有会话结束才看得到，而那正好是没人看的时候。累计口径还必须从
+/// 本会话起点算（static 不随会话复位），否则第二场会话会显示第一场的账。
+#[test]
+fn 守卫_汇总行必须带兜底增量() {
+    let perf = include_str!("../perf.rs");
+    assert!(
+        perf.contains("兜底 +") && perf.contains("抓屏失败 +"),
+        "5s 汇总行不再打印兜底/抓屏失败增量 —— 中途看不见，只剩收尾那一行"
+    );
+    assert!(
+        perf.contains("base_jpeg_fallback: jf") && perf.contains("base_capture_fail: cf"),
+        "FrameStats 起点不再快照进程计数 —— 兜底累计会把上一场会话算进本场"
+    );
+    assert!(
+        perf.contains("saturating_sub(self.base_jpeg_fallback)"),
+        "本场累计不再减基线"
+    );
+    // 纯累计（无新增）时这段必须整段缺席，否则汇总行常年挂着「兜底 +0」噪声。
+    assert!(
+        perf.contains("if djf > 0 || dcf > 0"),
+        "兜底段不再按「本区间有新增」门控"
     );
 }

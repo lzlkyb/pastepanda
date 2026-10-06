@@ -9,6 +9,16 @@ enum Payload {
 }
 struct Job { generation: u64, queued: std::time::Instant, started_ms: u64, payload: Payload }
 
+/// `InboundVideo::media_gate()` 的结果（P0：问门不再阻塞采集圈）。
+pub(super) enum Gate {
+    /// 本帧可以采集+编码+发送。
+    Open,
+    /// 本帧丢掉；`u64` 是下一次来问之前的毫秒数（`Flow::gate_retry_ms`，8..200ms）。
+    Drop(u64),
+    /// 会话或流水线已经没了，调用方退出循环。
+    End,
+}
+
 pub(in crate::rc) struct MediaPipe {
     tx: tokio::sync::mpsc::Sender<Job>,
     generation: Arc<AtomicU64>,
@@ -91,19 +101,36 @@ impl InboundVideo {
         self.enc.lock().unwrap_or_else(|p| p.into_inner()).reset_reference();
     }
 
-    pub(super) async fn wait_media_capacity(&mut self) -> bool {
+    /// 🔴 P0（2026-10-06）：**生产者不再被发送侧预算阻塞**。
+    /// 旧实现 `wait_media_capacity()` 在采集圈前面空转到准入放行，于是「预算低」直接
+    /// 表现为「帧率低」，控制器只看到交付变慢，分不清是线路窄还是我们自己断粮——实测
+    /// 把 400kbps 地板当成线路能力钉死（`docs/链路切换画质回升-业界源码对照-2026-10-06.md` §4）。
+    /// 现在拿不到额度就**丢掉这一帧**（WebRTC `video_stream_encoder.cc` 的
+    /// "Do not encode this frame"、Sunshine `thread_safe.h` 的 32 帧有界队列 `drop_oldest`），
+    /// 节拍照走，并把「本窗丢过帧」当作确凿需求证据回灌给 `Flow`（`note_drop`）。
+    /// 返回值里的 `End` 就是旧实现 `false` 的那两条退出路径，语义不变。
+    pub(super) fn media_gate(&mut self) -> Gate {
         self.ensure_media_pipe();
+        // 预算刷新（含换路重播种）留在每次问门的时候做，与旧实现同一时刻。
         self.svc.media_budget_kbps(&self.my_id);
-        loop {
-            if !self.svc.session_id_is(&self.my_id) { return false; }
-            if self.media_pipe.as_ref().is_some_and(|p| p.tx.is_closed()) { return false; }
-            match self.svc.media_admission(&self.my_id) {
-                crate::rc::media_flow::Admission::Ready if self.media_pipe.as_ref().unwrap().available() => return true,
-                crate::rc::media_flow::Admission::Reset => self.discard_media_stream(),
-                _ => {}
+        if !self.svc.session_id_is(&self.my_id) { return Gate::End; }
+        if self.media_pipe.as_ref().is_some_and(|p| p.tx.is_closed()) { return Gate::End; }
+        let admission = self.svc.media_admission(&self.my_id);
+        let slot_free = self.media_pipe.as_ref().is_some_and(|p| p.available());
+        match admission {
+            crate::rc::media_flow::Admission::Ready if slot_free => Gate::Open,
+            // RESET 照旧重开参考链；不再原地等下一格，本帧丢掉即可。
+            // ❗ 这条**不记**需求证据：RESET 说明 ACK 窗口是自己的债务，不是「链路还有余量」，
+            // 记进去会立刻放行 P3 的 ×2 探测。
+            crate::rc::media_flow::Admission::Reset => {
+                self.discard_media_stream();
+                Gate::Drop(self.svc.media_gate_retry_ms(&self.my_id))
             }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-            if self.svc.media_paused() { return true; }
+            // 字节窗满 / 发送债务未到期 / 单槽被在写的帧占着：三种都是「想发发不下」。
+            _ => {
+                self.svc.media_frame_dropped(&self.my_id);
+                Gate::Drop(self.svc.media_gate_retry_ms(&self.my_id))
+            }
         }
     }
 
