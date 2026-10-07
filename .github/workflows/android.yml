@@ -56,14 +56,11 @@ jobs:
       - name: 安装 Android SDK + NDK
         uses: android-actions/setup-android@v3
         with:
-          # 🔴 cmdline-tools 由本 action 自己的 cmdline-tools-version 输入装，
-          #    不要塞进 packages（塞了会 `Failed to find package 'cmdline-tools:latest'` 直接判挂）。
-          #    这里只列 sdkmanager 合法包，每行一个（NDK 版本与本机配方对齐，首跑已确认此版本可下）。
-          packages: |
-            ndk;27.2.12479018
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
+          # 🔴 必须空格分隔单行：setup-android 把 packages 原样喂给 sdkmanager，
+          #    用 `|` 字面块会让整段被当成**一个**包名 → `Failed to find package 'ndk;...'`。
+          #    cmdline-tools 由本 action 自己的 cmdline-tools-version 输入装，别写进这里
+          #    （写成 `cmdline-tools:latest` 会 `Failed to find package` 判挂）。
+          packages: ndk;27.2.12479018 platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: JDK 17（gradle 与 apksigner 都需要）
         uses: actions/setup-java@v4
