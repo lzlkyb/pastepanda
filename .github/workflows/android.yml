@@ -56,9 +56,11 @@ jobs:
       - name: 安装 Android SDK + NDK
         uses: android-actions/setup-android@v3
         with:
-          packages: >-
+          # 🔴 cmdline-tools 由本 action 自己的 cmdline-tools-version 输入装，
+          #    不要塞进 packages（塞了会 `Failed to find package 'cmdline-tools:latest'` 直接判挂）。
+          #    这里只列 sdkmanager 合法包，每行一个（NDK 版本与本机配方对齐，首跑已确认此版本可下）。
+          packages: |
             ndk;27.2.12479018
-            cmdline-tools:latest
             platform-tools
             platforms;android-34
             build-tools;34.0.0
