@@ -78,17 +78,15 @@ async fn fetch(name: &str, dir: &Path, target: &Path) -> Result<PathBuf, String>
             log::warn!("[RC-UNDERLAY] 备用组件校验不匹配，弃用该源：{name}");
             continue;
         }
-        // 校验通过后才落盘；直接 CREATE_ALWAYS+WRITE_THROUGH 写目标名。
+        // 校验通过后才落盘；create+truncate 映射到 CREATE_ALWAYS（不能塞 custom_flags，那是 dwFlagsAndAttributes 位）。
         // 同机同时最多一个写者：single-instance 插件保证桌面单实例，会话本身又是单槽。
         let mut options = std::fs::OpenOptions::new();
-        options.write(true);
+        options.write(true).create(true).truncate(true);
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
-            options.custom_flags(0x8000_0000 | 6); // FILE_FLAG_WRITE_THROUGH | CREATE_ALWAYS
+            options.custom_flags(0x8000_0000); // FILE_FLAG_WRITE_THROUGH
         }
-        #[cfg(not(windows))]
-        options.create(true).truncate(true);
         use std::io::Write as _;
         let mut file = options.open(target).map_err(|e| format!("备用组件落盘失败：{e}"))?;
         file.write_all(&body).map_err(|e| e.to_string())?;
@@ -189,5 +187,23 @@ mod tests {
     #[tokio::test]
     async fn unknown_component_never_reaches_filesystem_or_network() {
         assert!(desktop_binary("cmd.exe").await.unwrap_err().contains("未知"));
+    }
+
+    #[test]
+    fn write_options_create_missing_target_file() {
+        // 钉住落盘语义：目标不存在时必须新建成功（曾有组合把 CREATE_ALWAYS 塞进 custom_flags 而静默判挂）。
+        let dir = std::env::temp_dir().join(format!("pp-fetch-opts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("missing.bin");
+        let _ = std::fs::remove_file(&target);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x8000_0000);
+        }
+        options.open(&target).expect("不存在的目标必须能新建落盘");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
