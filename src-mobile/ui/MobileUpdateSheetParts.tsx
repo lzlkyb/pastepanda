@@ -1,4 +1,4 @@
-import { Download, RefreshCw, ShieldCheck, TriangleAlert, UploadCloud } from "lucide-react";
+import { BellOff, Download, RefreshCw, ShieldCheck, TriangleAlert, UploadCloud } from "lucide-react";
 import { progressText, type MobileUpdate, type MobileUpdateStatus } from "./MobileUpdate";
 import styles from "./MobileUpdateSheet.module.css";
 import ui from "./MobileUi.module.css";
@@ -16,6 +16,8 @@ export function sheetTitle(status: MobileUpdateStatus, target: string): string {
       return "需要授权";
     case "error":
       return "更新未完成";
+    case "skipped":
+      return "已跳过该版本";
     case "checking":
       return "检查更新";
     default:
@@ -92,6 +94,18 @@ export function UpdateStatusBody({ update }: { update: MobileUpdate }) {
       </div>
     );
   }
+  // skipped：已跳过该版本（取消入口在此）
+  if (status === "skipped") {
+    return (
+      <div className={styles.state}>
+        <div className={styles.stateIco}>
+          <BellOff size={26} aria-hidden="true" />
+        </div>
+        <h3 className={styles.stateH}>已跳过 v{target}</h3>
+        <p className={styles.stateP}>这个版本之后不再自动提醒你；出现更新的版本时仍会照常提示，也可随时取消跳过。</p>
+      </div>
+    );
+  }
   // checking / uptodate / idle
   return (
     <div className={styles.state}>
@@ -164,6 +178,17 @@ export function UpdateFooter({ update, onClose }: { update: MobileUpdate; onClos
         <RefreshCw size={18} aria-hidden="true" />
         {info ? "重试下载" : "重新检查"}
       </button>
+    );
+  }
+  if (status === "skipped") {
+    return (
+      <>
+        {skip}
+        <button type="button" className={ui.primary} onClick={() => void update.unskipThisVersion()}>
+          <BellOff size={18} aria-hidden="true" />
+          取消跳过
+        </button>
+      </>
     );
   }
   if (status === "checking") {

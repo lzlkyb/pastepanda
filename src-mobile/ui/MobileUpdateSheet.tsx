@@ -67,7 +67,7 @@ export function MobileUpdateSheet({ open, onClose }: { open: boolean; onClose: (
       </div>}
     >
       {status === "available" ? (
-        <AvailableBody entry={entry} target={target} installed={installed} themeLine={themeLine} onManual={openManual} />
+        <AvailableBody entry={entry} target={target} installed={installed} themeLine={themeLine} onManual={openManual} onSkip={update.skipThisVersion} />
       ) : (
         <UpdateStatusBody update={update} />
       )}
@@ -82,12 +82,14 @@ function AvailableBody({
   installed,
   themeLine,
   onManual,
+  onSkip,
 }: {
   entry: ReturnType<typeof parseChangelogSection>;
   target: string;
   installed: string;
   themeLine: string;
   onManual: () => void | Promise<void>;
+  onSkip: () => void;
 }) {
   return (
     <>
@@ -138,6 +140,9 @@ function AvailableBody({
       <button type="button" className={styles.manual} onClick={() => void onManual()}>
         <BookOpen size={16} aria-hidden="true" />
         查看完整功能手册
+      </button>
+      <button type="button" className={styles.skipLink} onClick={onSkip}>
+        跳过此版本，不再提示
       </button>
     </>
   );

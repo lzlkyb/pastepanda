@@ -17,6 +17,8 @@ function statusRow(status: MobileUpdateStatus, version: string, installed: strin
       return { strong: "已下载，等待安装", small: "打开系统安装器完成覆盖安装", action: "安装" };
     case "needPermission":
       return { strong: "需要安装权限", small: "点此继续授权流程", action: "授权" };
+    case "skipped":
+      return { strong: `已跳过 v${version}`, small: "点此可取消跳过并查看", action: "取消" };
     case "error":
       return { strong: "更新未完成", small: "点此查看详情并重试", action: "重试" };
     case "uptodate":
@@ -36,7 +38,7 @@ export function MobileUpdateSection() {
 
   useEffect(() => {
     if (!manualCheck.current) return;
-    if (status === "available") {
+    if (status === "available" || status === "skipped") {
       manualCheck.current = false;
       setOpen(true);
     } else if (status === "error" || status === "uptodate") {

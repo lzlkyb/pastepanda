@@ -22,12 +22,18 @@ export type MobileUpdateStatus =
   | "downloading"
   | "ready"
   | "needPermission"
+  | "skipped"
   | "error";
 export type MobileUpdateInfo = { version: string; body: string | null };
 export type MobileUpdateProgress = { downloaded: number; total: number | null };
 
 const LAST_CHECK_KEY = "pastepanda_mobile_last_update_check";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// 跳过某版本后不再自动提示（与桌面 pastepanda_skip_ 同前缀、同语义）。
+const SKIP_VERSION_PREFIX = "pastepanda_skip_";
+function isVersionSkipped(version: string): boolean {
+  return localStorage.getItem(`${SKIP_VERSION_PREFIX}${version}`) === "1";
+}
 
 export function fmtBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "0 KB";
@@ -53,6 +59,10 @@ export type MobileUpdate = {
   checkNow: () => Promise<void>;
   startUpdate: () => Promise<void>;
   openInstallSettings: () => Promise<void>;
+  /** 跳过当前 available 的版本：记 flag、置 skipped 态、横幅消失，之后自动检查不再打扰。 */
+  skipThisVersion: () => void;
+  /** 取消跳过当前版本：清 flag、回到 available（唯一的取消路径，别把人锁死）。 */
+  unskipThisVersion: () => void;
   /** 只清错误文案，不动 status（dismiss 会把 needPermission 等流程态一起重置）。 */
   clearError: () => void;
   dismiss: () => void;
@@ -108,7 +118,7 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
       });
       await attach<MobileUpdateInfo>("update:available", (p) => {
         setInfo(p);
-        setStatus("available");
+        setStatus(isVersionSkipped(p.version) ? "skipped" : "available");
       });
       await attach("update:downloading", () => {
         setProgress(null);
@@ -156,7 +166,7 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
       if (r) {
         setInfo(r);
-        setStatus("available");
+        setStatus(isVersionSkipped(r.version) ? "skipped" : "available");
       } else {
         setStatus("uptodate");
       }
@@ -177,7 +187,7 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
     try {
       const r = await invoke<MobileUpdateInfo | null>("check_update");
       localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
-      if (r && statusRef.current === "idle") {
+      if (r && statusRef.current === "idle" && !isVersionSkipped(r.version)) {
         setInfo(r);
         setStatus("available");
       }
@@ -230,6 +240,19 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
     setError(null);
   }, []);
 
+  // 跳过 = 记版本 flag + 转 skipped 态（横幅随 status 消失）；不依赖 info 之外的状态。
+  const skipThisVersion = useCallback(() => {
+    if (!info) return;
+    localStorage.setItem(`${SKIP_VERSION_PREFIX}${info.version}`, "1");
+    setStatus("skipped");
+  }, [info]);
+
+  const unskipThisVersion = useCallback(() => {
+    if (!info) return;
+    localStorage.removeItem(`${SKIP_VERSION_PREFIX}${info.version}`);
+    setStatus("available");
+  }, [info]);
+
   return (
     <MobileUpdateCtx.Provider
       value={{
@@ -243,6 +266,8 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
         checkNow,
         startUpdate,
         openInstallSettings,
+        skipThisVersion,
+        unskipThisVersion,
         clearError,
         dismiss,
       }}

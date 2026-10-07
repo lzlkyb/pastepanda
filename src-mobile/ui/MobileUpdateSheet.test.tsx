@@ -40,6 +40,8 @@ function set(partial: Record<string, unknown>) {
     checkNow: vi.fn(),
     startUpdate: vi.fn(),
     openInstallSettings: vi.fn(),
+    skipThisVersion: vi.fn(),
+    unskipThisVersion: vi.fn(),
     clearError: vi.fn(),
     dismiss: vi.fn(),
     ...partial,
@@ -74,4 +76,19 @@ it("需授权：无权限时主按钮走 openInstallSettings", () => {
   render(<MobileUpdateSheet open onClose={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: /去授权/ }));
   expect(ctx.current.openInstallSettings).toHaveBeenCalled();
+});
+
+it("发现新版本：正文「跳过此版本」走 skipThisVersion", () => {
+  render(<MobileUpdateSheet open onClose={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: /跳过此版本/ }));
+  expect(ctx.current.skipThisVersion).toHaveBeenCalled();
+});
+
+it("已跳过：正文显示已跳过态，页脚「取消跳过」走 unskipThisVersion", () => {
+  set({ status: "skipped" });
+  render(<MobileUpdateSheet open onClose={() => {}} />);
+  expect(screen.getByText("已跳过 v7.2.10")).toBeTruthy();
+  expect(screen.queryByText("手机端应用内自更新")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /取消跳过/ }));
+  expect(ctx.current.unskipThisVersion).toHaveBeenCalled();
 });

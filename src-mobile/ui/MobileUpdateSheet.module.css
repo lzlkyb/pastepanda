@@ -316,6 +316,21 @@
   background: var(--accent);
   color: var(--text-on-accent);
 }
+/* 跳过此版本：正文弱操作，刻意比手册 CTA 低一级，避免与「下载并更新」抢焦点。 */
+.skipLink {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.skipLink:active {
+  color: var(--text-primary);
+}
 
 /* ===== 页脚按钮行 ===== */
 .footRow {
