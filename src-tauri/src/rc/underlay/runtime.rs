@@ -42,7 +42,7 @@ impl Runtime {
     }
 
     pub async fn peers(&self, rpc: u16) -> Result<serde_json::Value, String> {
-        let cli = windows_binary("easytier-cli.exe")?;
+        let cli = super::fetch::desktop_binary("easytier-cli.exe").await?;
         let mut cmd = command(&cli);
         cmd.stdout(Stdio::piped()).args(["-p", &format!("127.0.0.1:{rpc}"), "-o", "json", "peer", "list"]);
         let out = tokio::time::timeout(std::time::Duration::from_secs(3), cmd.output()).await
@@ -74,15 +74,6 @@ fn command(path: &std::path::Path) -> Command {
     cmd
 }
 
-fn windows_binary(name: &str) -> Result<PathBuf, String> {
-    // 开发与安装目录均不查 PATH，避免启动不确定版本的系统 EasyTier。
-    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/easytier/windows-x86_64").join(name);
-    if cfg!(debug_assertions) && source.is_file() { return Ok(source); }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let path = exe.parent().ok_or("没有应用目录")?.join("resources/easytier/windows-x86_64").join(name);
-    if path.is_file() { Ok(path) } else { Err("缺少内置备用承载组件".into()) }
-}
-
 async fn core_path() -> Result<PathBuf, String> {
     #[cfg(target_os = "android")]
     {
@@ -101,7 +92,7 @@ async fn core_path() -> Result<PathBuf, String> {
         return rx.await.map_err(|e| e.to_string())?;
     }
     #[cfg(not(target_os = "android"))]
-    windows_binary("easytier-core.exe")
+    super::fetch::desktop_binary("easytier-core.exe").await
 }
 
 pub(super) fn tcp_port() -> io::Result<u16> {
@@ -124,7 +115,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut runtime = Runtime {
             children: Vec::new(), dir,
-            core: windows_binary("easytier-core.exe").unwrap(),
+            core: super::super::fetch::desktop_binary("easytier-core.exe").await.unwrap(),
         };
         let cfg = super::super::config::seed(tcp_port().unwrap());
         runtime.spawn("seed", &cfg, tcp_port().unwrap()).unwrap();

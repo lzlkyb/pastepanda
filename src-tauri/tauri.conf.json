@@ -60,7 +60,6 @@
     "resources": {
       "resources/ocr_models/*": "resources/ocr_models",
       "resources/ffmpeg/*": "resources/ffmpeg",
-      "resources/easytier/windows-x86_64/*": "resources/easytier/windows-x86_64",
       "resources/easytier/LICENSE": "resources/easytier/LICENSE",
       "resources/easytier/COPYING-GPL-3.0.txt": "resources/easytier/COPYING-GPL-3.0.txt",
       "resources/easytier/pnet-LICENSE-MIT.txt": "resources/easytier/pnet-LICENSE-MIT.txt",

@@ -5,6 +5,7 @@ use super::service::RcService;
 
 mod config;
 mod diagnostics;
+mod fetch;
 mod runtime;
 mod session;
 mod stun;
