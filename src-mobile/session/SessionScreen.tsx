@@ -6,9 +6,10 @@ import { RemoteCursorGlyph } from "./RemoteCursorGlyph";
 import type { useRemoteCursor } from "./useRemoteCursor";
 import type { useSessionPointer } from "./useSessionPointer";
 import { SessionFrameState, SessionModeNotice } from "./SessionScreenNotices";
+import type { RcConnectStage } from "./rcConnectStage";
 import styles from "./RcMobileSession.module.css";
 
-export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitHint, onReturn, blocked,
+export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitHint, stage, onReturn, blocked,
   canvasRef, surfaceRef, viewportRef, cursorRef, chargeRef, remoteCursorRef, remoteShape, sandboxSize,
 }: {
   pointer: ReturnType<typeof useSessionPointer>;
@@ -16,6 +17,7 @@ export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitH
   hasFrame: boolean;
   statusText?: string;
   waitHint?: string;
+  stage?: RcConnectStage | null;
   onReturn: () => void;
   blocked: boolean;
   canvasRef: RefObject<HTMLCanvasElement | null>;
@@ -31,7 +33,7 @@ export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitH
     <PinchViewport ref={viewportRef} surfaceRef={surfaceRef}>
       <VideoSurface canvasRef={canvasRef} className={styles.canvas} statusText={statusText} showStatus={false} sandboxSize={sandboxSize} />
     </PinchViewport>
-    <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} onReturn={onReturn} />
+    <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} stage={stage} onReturn={onReturn} />
     {!statusText && <SessionModeNotice hasFrame={hasFrame} canControl={canControl} pointer={pointer} />}
     <div ref={cursorRef} className={styles.cursorRing} aria-hidden="true" />
     <div ref={chargeRef} className={styles.chargeRing} aria-hidden="true" />

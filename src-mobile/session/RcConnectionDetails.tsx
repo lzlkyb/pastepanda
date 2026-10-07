@@ -10,9 +10,18 @@ import styles from "./RcConnectionDetails.module.css";
 const NO_SAMPLE = "暂无样本"; // ui-rule-ok: L3 exception; telemetry is produced by the system, not a user-created list.
 
 export const RcConnectionBadge = memo(function RcConnectionBadge({ info, onOpen }: { info: MobileConnectionInfo; onOpen: () => void }) {
+  const relay = info.pathKind === "relay";
+  // ① 改动③：连接中就把已知路径说给人听（甲+乙稿 ③④⑤ 态徽章）；出画面后仍只常驻「绕中继」，
+  // 直连/局域网不抢「延时」位——那时用户要看的是数字。
+  const earlyPath = info.state === "connecting" && info.pathKind ? (relay ? "绕中继" : info.pathKind === "direct" ? "直连" : "局域网") : "";
+  const pathShown = relay ? "绕中继" : earlyPath;
+  const small = pathShown || "延时";
+  const main = info.rttMs > 0 ? `${info.rttMs} ms` : earlyPath ? "连接中" : info.label;
   const tone = info.state === "failed" || info.grade === "poor" ? styles.bad : info.grade === "fair" || info.state === "unstable" || info.state === "reconnecting" ? styles.warn : info.rttMs > 0 ? styles.good : styles.pending;
-  return <button type="button" className={`${styles.badge} ${tone}`} onClick={onOpen} aria-label={`连接详情，${info.rttMs > 0 ? `往返延时 ${info.rttMs} 毫秒，` : ""}${info.label}`}>
-    <Activity size={15} aria-hidden="true" /><span><small>延时</small>{info.rttMs > 0 ? `${info.rttMs} ms` : info.label}</span><ChevronRight size={12} aria-hidden="true" />
+  // 绕中继必须常驻标注（RustDesk/Tailscale 同款 Direct/Relay 指示器）：中继的高延迟
+  // 与画质受限是路径属性，不提示的话用户只能把它误读成产品卡顿。
+  return <button type="button" className={`${styles.badge} ${tone}`} onClick={onOpen} aria-label={`连接详情，${info.rttMs > 0 ? `往返延时 ${info.rttMs} 毫秒，` : ""}${pathShown ? `当前${pathShown}，` : ""}${main}`}>
+    <Activity size={15} aria-hidden="true" /><span><small>{small}</small>{main}</span><ChevronRight size={12} aria-hidden="true" />
   </button>;
 });
 
@@ -58,7 +67,8 @@ export const RcConnectionDetails = memo(function RcConnectionDetails({ open, tit
         ["传输（估计）", number(frame?.segNetMs, "ms", true)], ["解码", number(frame?.segDecMs)], ["操作响应（近似）", number(frame?.respMs, "ms", true)],
         ["丢包率", info.lossPermille > 0 ? `${(info.lossPermille / 10).toFixed(1)}%` : NO_SAMPLE],
       ]} /><p className={ui.hint}>往返延时是心跳实测；画面延时是采集到上屏的近似值；操作响应是输入发出到下一帧到达的近似值。静止画面下的帧率不能单独判断连接好坏。</p></details>
-      {info.grade === "poor" && <MobileNotice tone="warning">延时偏高。降低画质可能减轻画面负担，但不会直接降低网络往返延时。</MobileNotice>}
+      {info.pathKind === "relay" ? <MobileNotice tone={info.grade === "poor" ? "warning" : "info"} title="当前绕中继" detail="连接经中继服务器转发，延迟与画质上限由中继位置决定，降低画质帮助有限；回到直连后延时会自动回落。" />
+        : info.grade === "poor" && <MobileNotice tone="warning">延时偏高。降低画质可能减轻画面负担，但不会直接降低网络往返延时。</MobileNotice>}
       <button type="button" className={ui.secondary} onClick={onQuality}><Monitor size={18} aria-hidden="true" />画面与画质<ChevronRight size={16} aria-hidden="true" /></button>
     </div>
   </MobileSheet>;

@@ -11,6 +11,11 @@ import { MouseAssist } from "./MouseAssist";
 import { RcSessionHeader } from "./RcSessionHeader";
 import { RcConnectionBadge, RcConnectionDetails } from "./RcConnectionDetails";
 import { useMobileConnectionInfo } from "./useMobileConnectionInfo";
+import { rcConnectStage } from "./rcConnectStage";
+import { useDirectSwitchToast } from "./useDirectSwitchToast";
+import { useAutoSuggestToast } from "./useAutoSuggestToast";
+import { MobileToast } from "../ui/MobileToast";
+import ui from "../ui/MobileUi.module.css";
 import type { RcStatus } from "@/lib/api/rcTypes";
 import { useRcMobileInput } from "./useRcMobileInput";
 import { useModifierKeys } from "./useModifierKeys";
@@ -94,6 +99,14 @@ export function RcMobileSession({
     phase: status?.session?.phase,
   });
   const connection = useMobileConnectionInfo(sessionId, status, frames);
+  // ① 连接建立阶段化（甲+乙稿）：发起链三段映射成水位/步进点；被控态回退现役卡。
+  const connectStage = useMemo(
+    () => rcConnectStage(status?.session?.phase, connection.pathKind, !!frames.waitHint),
+    [status?.session?.phase, connection.pathKind, frames.waitHint],
+  );
+  const directToast = useDirectSwitchToast(connection);
+  const acceptAuto = useCallback(() => { void settings.pick("quality", "auto"); }, [settings.pick]);
+  const autoSuggest = useAutoSuggestToast(connection, quality, acceptAuto);
   const sandboxContent = useRef(contentSize ?? { w: 0, h: 0 });
   if (contentSize) sandboxContent.current = contentSize;
   const contentRef = pumpActive ? frames.contentRef : sandboxContent;
@@ -237,7 +250,8 @@ export function RcMobileSession({
       </div>
       <div className={styles.controlArea} onPointerDownCapture={capsule.dismissHint}>
         <SessionScreen pointer={pointer} canControl={canControl} hasFrame={hasFrame}
-          statusText={pumpActive ? frames.statusText : undefined} waitHint={frames.waitHint} onReturn={() => setRequestEnd(n => n + 1)}
+          statusText={pumpActive ? frames.statusText : undefined} waitHint={frames.waitHint}
+          stage={pumpActive ? connectStage : null} onReturn={() => setRequestEnd(n => n + 1)}
           blocked={keyboardOpen || panelOpen || fileOpen || connectionOpen || feedbackOpen} canvasRef={canvasRef} surfaceRef={surfaceRef}
           viewportRef={viewportRef} cursorRef={cursorRef} chargeRef={chargeRef} remoteCursorRef={remoteCursorRef}
           remoteShape={remoteCursor.shape} sandboxSize={pumpActive ? undefined : contentSize} />
@@ -297,6 +311,10 @@ export function RcMobileSession({
         }}>文件{file.error ? " · 异常" : ` · ${file.asks.length}`}</button> : undefined}
       />
       {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} />}
+      {directToast && <MobileToast tone="success" title={directToast.title} detail={directToast.detail} onDismiss={directToast.dismiss} />}
+      {autoSuggest && <MobileToast tone="info" title={autoSuggest.title} detail={autoSuggest.detail}
+        action={<button type="button" className={ui.textButton} onClick={autoSuggest.accept}>切回自动</button>}
+        onDismiss={autoSuggest.dismiss} />}
       <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onQuality={connectionQuality} />
     </div>
   );

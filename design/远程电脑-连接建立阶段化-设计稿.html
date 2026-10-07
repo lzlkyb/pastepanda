@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>远程电脑 · 连接建立阶段化 + 美化五档 · 设计稿（2026-10-07）</title>
+<style>
+/* ============ 真令牌：src/styles/theme.css 原值（ocean 默认 + midnight），与 S1 稿同源，只摘本稿用到的 ============ */
+:root {
+  --app-bg:
+    radial-gradient(ellipse 900px 420px at 18% -10%, rgba(2, 132, 199, 0.14), transparent 55%),
+    radial-gradient(ellipse 700px 380px at 88% 0%, rgba(109, 40, 217, 0.08), transparent 50%),
+    linear-gradient(168deg, #f4f8fc 0%, #eef3f8 42%, #e8f0f7 100%);
+  --card-bg: #fff;
+  --card-border: #e0e4eb;
+  --text-primary: #0f172a;
+  --text-secondary: #495565;
+  --border-color: #e0e4eb;
+  --accent: #0284c7;
+  --accent-light: #e0f2fe;
+  --accent-solid: #027cbb;
+  --text-on-accent: #fff;
+  --accent-strong: #0273ad;
+  --section-bg: #f0f4f8;
+  --input-bg: #f1f5f9;
+  --orange: #f97316;
+  --orange-bg: #fff7ed;
+  --orange-border: #fdba74;
+  --warning: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
+  --danger: #d82525;
+  --danger-bg: #fef2f2;
+  --success: #15803d;
+  --mobile-glass: color-mix(in srgb, var(--card-bg) 76%, transparent);
+  --mobile-glass-blur: 20px;
+  --mobile-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+[data-theme="midnight"] {
+  --app-bg: radial-gradient(100% 80% at 50% -10%, #1c1832 0%, #0b0b13 55%, #07070c 100%);
+  --card-bg: #18181b;
+  --card-border: #27272a;
+  --text-primary: #e4e4e7;
+  --text-secondary: #afafb7;
+  --border-color: #27272a;
+  --accent: #818cf8;
+  --accent-light: #1e1b4b;
+  --accent-solid: #666fc4;
+  --accent-strong: var(--accent);
+  --section-bg: #0f0f11;
+  --input-bg: #27272a;
+  --orange: #fb923c;
+  --orange-bg: #431407;
+  --orange-border: #9a3412;
+  --warning: var(--orange);
+  --warning-bg: var(--orange-bg);
+  --warning-border: var(--orange-border);
+  --danger: #f87171;
+  --danger-bg: #450a0a;
+  --success: #4ade80;
+  --mobile-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
+
+/* ============ 页面壳（稿子自己的排版，不进工程） ============ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--app-bg); color: var(--text-primary); transition: background .25s; }
+body {
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 28px clamp(12px, 4vw, 48px) 80px;
+}
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.02em; }
+.meta { color: var(--text-secondary); font-size: 13px; margin: 0 0 20px; }
+.meta a { color: var(--accent-strong); }
+.deck { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.panel { flex: 0 0 auto; }
+.spec { flex: 1 1 420px; min-width: 320px; max-width: 760px; }
+.card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px 18px; margin: 0 0 14px; }
+.card h3 { margin: 0 0 8px; font-size: 14px; }
+.card p, .card li { font-size: 13.5px; margin: 6px 0; }
+.card ul { margin: 6px 0; padding-left: 20px; }
+.card code { background: var(--section-bg); border-radius: 6px; padding: 1px 6px; font-size: 12.5px; }
+.src { color: var(--text-secondary); font-size: 12px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.chip {
+  min-height: 40px; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--card-border);
+  background: var(--card-bg); color: var(--text-primary); font-size: 13.5px; font-weight: 600; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--accent-light); color: var(--accent-strong); border-color: var(--accent); }
+table.geo { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table.geo th, table.geo td { border: 1px solid var(--border-color); padding: 6px 8px; text-align: left; vertical-align: top; }
+table.geo th { color: var(--text-secondary); font-weight: 600; background: var(--section-bg); }
+table.geo td.num { font-variant-numeric: tabular-nums; }
+
+/* ============ 手机真容器：src-mobile/session/RcMobileSession.module.css 逐值复刻（同 S1 稿） ============ */
+.phone { width: 390px; height: 780px; border-radius: 28px; border: 10px solid #0a0a0c; background: var(--app-bg); color: var(--text-primary); overflow: hidden; position: relative; box-shadow: var(--mobile-shadow); transition: background .25s; }
+.root { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+.statusRow { background: var(--mobile-glass); backdrop-filter: blur(var(--mobile-glass-blur)); display: flex; align-items: center; min-height: 48px; gap: 4px; padding: 0 8px; font-size: 15px; color: var(--text-secondary); flex: none; }
+.statusTitle { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.headerIdentity { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.headerSubtitle { color: var(--text-secondary); font-size: 12px; }
+.headerButton { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 8px; border: 0; border-radius: 12px; color: var(--text-primary); background: transparent; cursor: pointer; }
+.badge { /* 真值 RcConnectionDetails.module.css:1-11 + 语气变体 :14-17 */
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px; border: 0; border-radius: 12px;
+  padding: 4px 8px; background: var(--section-bg); flex: none; color: var(--text-secondary); cursor: pointer; font: inherit;
+}
+.badge > span { display: flex; flex-direction: column; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.badge small { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.badge.warn { color: var(--text-primary); background: var(--warning-bg); }
+.badge.pending { /* 现役变体：连接中（grade unknown 且无读数时 RcConnectionBadge 的落点） */ }
+
+.controlArea { flex: 1; min-height: 0; position: relative; }
+.screen { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: linear-gradient(160deg, #12305e 0%, #0b1e3f 55%, #081228 100%); color: #dbe7ff; }
+.screen .deskHint { font-size: 13px; opacity: .85; margin-top: 18px; }
+.screen .tag { position: absolute; left: 12px; bottom: 12px; font-size: 11.5px; opacity: .7; max-width: 70%; text-align: left; }
+
+/* .frameWaiting —— 真值 RcMobileSession.module.css:349-354 */
+.frameWaiting { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
+.frameWaiting > section { margin: auto; border: 0; background: transparent; text-align: center; width: min(100%, 360px); }
+.frameWaiting section > div { justify-content: center; flex-wrap: wrap; margin-left: 0; }
+.frameWaiting strong { flex-basis: 100%; }
+.frameWaiting p { margin-left: 0; }
+.frameWaiting .actions { margin-left: 0; justify-content: center; }
+
+/* .notice —— 真值 src-mobile/ui/MobileNotice.module.css（等待态走 pending tone） */
+.notice { padding: 16px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--section-bg); color: var(--text-primary); overflow-wrap: anywhere; min-width: 0; }
+.heading { display: flex; align-items: flex-start; gap: 10px; }
+.heading > svg { flex: none; margin-top: 2px; color: var(--accent-strong); }
+.heading strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; font-weight: 600; }
+.detail { margin: 8px 0 0 30px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0 0 30px; }
+.actions > button { min-height: 48px; }
+.notice[data-tone="pending"] .heading > svg { animation: pendingPulse 1.6s ease-in-out infinite; }
+@keyframes pendingPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.92); } }
+@media (prefers-reduced-motion: reduce) { .notice[data-tone="pending"] .heading > svg { animation: none; } }
+
+/* .mkKey —— 真值 RcMobileSession.module.css:419-425（取消连接钮） */
+.mkKey { min-width: 44px; min-height: 44px; padding: 8px 10px; border-radius: 8px; background: var(--section-bg); border: 1px solid var(--border-color); color: var(--text-primary); font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; }
+
+.toolbar { display: flex; justify-content: space-around; gap: 4px; background: var(--mobile-glass); backdrop-filter: blur(var(--mobile-glass-blur)); padding: 4px; position: relative; z-index: 100; flex: none; }
+.tbBtn { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 44px; min-height: 54px; padding: 5px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--text-secondary); font-size: 12px; font-family: inherit; cursor: pointer; }
+.root button { transition: background-color 150ms cubic-bezier(.2,0,0,1), color 150ms cubic-bezier(.2,0,0,1), transform 150ms cubic-bezier(.2,0,0,1); }
+
+/* ============ 美化五档（本稿新增样式全部集中在这一段，逐档申报） ============ */
+
+/* —— 甲 · 阶段点 + 路径胶囊 + 层级微调 —— */
+.stepper { display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+.step { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.step em { font-style: normal; }
+.step .dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-color); display: grid; place-items: center; font-size: 11px; font-style: normal; line-height: 1; color: var(--text-secondary); }
+.step[data-cur="true"] { color: var(--text-primary); font-weight: 600; }
+.step[data-cur="true"] .dot { border-color: var(--accent); color: var(--accent-strong); animation: pendingPulse 1.6s ease-in-out infinite; }
+.step[data-done="true"] .dot { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.stepLine { width: 18px; height: 1.5px; background: var(--border-color); margin: 0 6px; flex: none; }
+.stepLine[data-done="true"] { background: var(--accent); }
+.pathPill { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--accent-light); color: var(--accent-strong); font-size: 11.5px; font-weight: 600; }
+.pathPill.warn { background: var(--warning-bg); color: var(--text-primary); border: 1px solid var(--warning-border); }
+.jiaTitle { font-size: 15px; line-height: 1.6; font-weight: 600; margin: 0; }
+.jiaDetail { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+@media (prefers-reduced-motion: reduce) { .step[data-cur="true"] .dot { animation: none; } }
+
+/* —— 乙 · 呼吸连接环 —— 只在等待期存在，出首帧整层卸载（无常驻开销，规则 8）；
+   只动 transform/opacity（合成层属性，不触发重排）；环描边取 --accent→--accent-strong 渐变 */
+.yiWrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: auto; width: min(100%, 360px); text-align: center; }
+.ringHost { position: relative; width: 96px; height: 96px; display: grid; place-items: center; }
+.ringHost > svg.ring { width: 96px; height: 96px; animation: ringBreathe 2.4s ease-in-out infinite; }
+.ripple { position: absolute; inset: 6px; border-radius: 50%; border: 1.5px solid var(--accent); opacity: 0; animation: rippleOut 2.4s ease-out infinite; pointer-events: none; }
+.ripple.r2 { animation-delay: 1.2s; }
+@keyframes ringBreathe { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.04); opacity: .85; } }
+@keyframes rippleOut { 0% { transform: scale(.78); opacity: .5; } 100% { transform: scale(1.5); opacity: 0; } }
+.yiTitle { font-size: 15px; font-weight: 600; }
+.yiDetail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; max-width: 320px; margin: 0; }
+@media (prefers-reduced-motion: reduce) { .ringHost > svg.ring { animation: none; } .ripple { display: none; } }
+
+/* —— 甲乙结合 · 阶段点+图标分阶段填充 —— 甲的 notice 结构不动，卡头用应用真标
+   （public/icon.png，实测四角+中心透明，可直接压深色底）：空壳=同图 28% 透明度，
+   填充层=全彩按阶段从下往上裁出水位（33%→67%→100%），换档一次 600ms 过渡，图标无无限动画 */
+.iconHead { position: relative; width: 64px; height: 64px; margin: 0 auto 10px; }
+.iconHead img { position: absolute; inset: 0; width: 64px; height: 64px; }
+.iconHead .shell { opacity: .28; }
+.iconHead .fill { clip-path: inset(67% 0 0 0); transition: clip-path 600ms cubic-bezier(.2,0,0,1); }
+@media (prefers-reduced-motion: reduce) { .iconHead .fill { transition: none; } }
+
+/* —— 丙 · 整屏品牌化等待态 —— 覆盖画面区（不盖状态栏/工具条，保留出口）；
+   底为 --section-bg + 顶部 --accent 16% 辉光（装饰层）；外环慢转只动 transform */
+.bingLayer { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 24px 20px; overflow-y: auto;
+  background: radial-gradient(ellipse 420px 260px at 50% -6%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%), var(--section-bg); }
+.ringHost.lg { width: 120px; height: 120px; }
+.ringHost.lg > svg.ring { width: 120px; height: 120px; animation: none; }
+.bingSpin { position: absolute; inset: -8px; border-radius: 50%; border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); animation: spinSlow 9s linear infinite; pointer-events: none; }
+@keyframes spinSlow { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .bingSpin { animation: none; } }
+.bingBrand { font-size: 12px; color: var(--text-secondary); letter-spacing: .14em; }
+.bingTitle { font-size: 17px; font-weight: 700; margin: 0; }
+.bingDetail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; max-width: 320px; margin: 0; }
+.stepsV { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.stepsV .sv { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.stepsV .sv[data-cur="true"] { color: var(--text-primary); font-weight: 600; }
+.stepsV .sv i { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-color); display: grid; place-items: center; font-size: 10px; font-style: normal; line-height: 1; color: transparent; flex: none; }
+.stepsV .sv[data-done="true"] i { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.stepsV .sv[data-cur="true"] i { border-color: var(--accent); color: var(--accent-strong); animation: pendingPulse 1.6s ease-in-out infinite; }
+.bingFoot { display: flex; align-items: center; gap: 12px; }
+
+.readout { font-size: 12.5px; color: var(--text-secondary); }
+.readout strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.legend { display: inline-flex; align-items: center; gap: 6px; }
+.legend .swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--card-border); display: inline-block; }
+.stateNow { color: var(--accent-strong); font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>远程电脑 · 连接建立阶段化 + 美化五档 · 设计稿</h1>
+<p class="meta">2026-10-07 · 中继 UX 告知批次 ① · 依据本仓现状：<code>lib/rcWaitStage.ts</code>（§17.3 已有三段文案）、
+<a href="../src-mobile/session/SessionScreenNotices.tsx">SessionFrameState</a>、<code>RcMobileSession.module.css</code>、<code>MobileNotice.module.css</code>、<code>RcConnectionDetails.module.css</code>。
+样式逐值复刻，令牌逐值复刻 <code>src/styles/theme.css</code>（ocean + midnight）。<strong>口径：基准档零新增样式、零协议改动</strong>——只把手机端已有的 <code>status.path_kind</code> 说给人听；
+甲/甲乙/乙/丙/丁五档美化为对比候选，各自的新增样式在下文逐档申报，点第二行 chips 切换。</p>
+
+<div class="controls" role="group" aria-label="演示控制">
+  <button type="button" class="chip" data-state="dial" aria-pressed="true">① 拨号中</button>
+  <button type="button" class="chip" data-state="pending" aria-pressed="false">② 等对方批准</button>
+  <button type="button" class="chip" data-state="active-direct" aria-pressed="false">③ 准备画面·直连</button>
+  <button type="button" class="chip" data-state="active-relay" aria-pressed="false">④ 准备画面·绕中继</button>
+  <button type="button" class="chip" data-state="relay-slow" aria-pressed="false">⑤ 中继等太久</button>
+  <button type="button" class="chip" data-state="live" aria-pressed="false">⑥ 已出画面</button>
+  <button type="button" class="chip" id="themeToggle" aria-pressed="true">主题：midnight（点切 ocean）</button>
+</div>
+<div class="controls" role="group" aria-label="美化方案切换">
+  <button type="button" class="chip" data-variant="base" aria-pressed="true">基准 · 纯文案（零新增样式）</button>
+  <button type="button" class="chip" data-variant="jia" aria-pressed="false">甲 · 阶段点+路径胶囊</button>
+  <button type="button" class="chip" data-variant="jiaYi" aria-pressed="false">甲+乙 · 阶段点+图标填充</button>
+  <button type="button" class="chip" data-variant="yi" aria-pressed="false">乙 · 呼吸连接环</button>
+  <button type="button" class="chip" data-variant="bing" aria-pressed="false">丙 · 整屏品牌化</button>
+  <button type="button" class="chip" data-variant="ding" aria-pressed="false">丁 · 业界对齐版（推荐）</button>
+</div>
+
+<div class="deck">
+  <div class="panel">
+    <div class="phone">
+      <div class="root">
+        <header class="statusRow">
+          <button type="button" class="headerButton" aria-label="返回设备">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          </button>
+          <span class="headerIdentity"><span class="statusTitle">办公室电脑</span><span class="headerSubtitle" id="subtitle">远程控制中</span></span>
+          <button type="button" class="badge" id="badge" aria-label="连接详情">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span id="badgeText"><small>延时</small>测量中</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+          <button type="button" class="headerButton" aria-label="画面与画质">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+          </button>
+        </header>
+
+        <div class="controlArea">
+          <!-- 远端画面占位：真实实现里这是 SessionScreen 的 canvas；出画面前的拨号/等批准/起编码器都停在这一屏 -->
+          <div class="screen" id="screen">
+            <div>
+              <div class="deskHint" id="deskHint">电脑桌面画面（占位示意）</div>
+            </div>
+            <p class="tag" id="screenTag">被控端画面照常推送，本功能不改采集与编码。</p>
+          </div>
+
+          <!-- 等待层：SessionFrameState（.frameWaiting + MobileNotice pending tone）。改动只发生在 detail 文本与徽章小字 -->
+          <div class="frameWaiting" id="waitLayer">
+            <section>
+              <div class="notice" data-tone="pending" role="status">
+                <div class="heading">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <strong id="waitTitle">正在连接电脑…</strong>
+                </div>
+                <p class="detail" id="waitDetail" hidden></p>
+                <div class="actions">
+                  <button type="button" class="mkKey">取消连接</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 甲 · 阶段点版等待层（同 .frameWaiting 载体，notice 内部换 stepper+胶囊） -->
+          <div class="frameWaiting" id="varJia" hidden>
+            <section>
+              <div class="notice" data-tone="pending" role="status">
+                <div class="stepper" aria-hidden="true">
+                  <span class="step" id="jiaS1"><i class="dot">1</i><em>拨号</em></span>
+                  <span class="stepLine" id="jiaL1"></span>
+                  <span class="step" id="jiaS2"><i class="dot">2</i><em>批准</em></span>
+                  <span class="stepLine" id="jiaL2"></span>
+                  <span class="step" id="jiaS3"><i class="dot">3</i><em>起画面</em></span>
+                </div>
+                <p class="jiaTitle" id="jiaTitle">正在连接电脑…</p>
+                <p class="jiaDetail" id="jiaPathWrap" hidden><span class="pathPill" id="jiaPathPill"></span></p>
+                <p class="jiaDetail" id="jiaDetail" hidden></p>
+                <div class="actions">
+                  <button type="button" class="mkKey">取消连接</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 甲乙结合 · 甲的卡 + 卡头 64px 应用真标分阶段填充（空壳 28% + 水位 33/67/100%），文案/胶囊/超时线同甲 -->
+          <div class="frameWaiting" id="varJiaYi" hidden>
+            <section>
+              <div class="notice" data-tone="pending" role="status">
+                <div class="iconHead" aria-hidden="true">
+                  <img class="shell" src="../public/icon.png" alt="" />
+                  <img class="fill" id="jyFill" src="../public/icon.png" alt="" />
+                </div>
+                <div class="stepper" aria-hidden="true">
+                  <span class="step" id="jyS1"><i class="dot">1</i><em>拨号</em></span>
+                  <span class="stepLine" id="jyL1"></span>
+                  <span class="step" id="jyS2"><i class="dot">2</i><em>批准</em></span>
+                  <span class="stepLine" id="jyL2"></span>
+                  <span class="step" id="jyS3"><i class="dot">3</i><em>起画面</em></span>
+                </div>
+                <p class="jiaTitle" id="jyTitle">正在连接电脑…</p>
+                <p class="jiaDetail" id="jyPathWrap" hidden><span class="pathPill" id="jyPathPill"></span></p>
+                <p class="jiaDetail" id="jyDetail" hidden></p>
+                <div class="actions">
+                  <button type="button" class="mkKey">取消连接</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 丁 · 业界对齐版（甲的骨架 + RustDesk 三段文案阶梯 + 超时给「重试」，见「业界对照」卡） -->
+          <div class="frameWaiting" id="varDing" hidden>
+            <section>
+              <div class="notice" data-tone="pending" role="status">
+                <div class="stepper" aria-hidden="true">
+                  <span class="step" id="dingS1"><i class="dot">1</i><em>拨号</em></span>
+                  <span class="stepLine" id="dingL1"></span>
+                  <span class="step" id="dingS2"><i class="dot">2</i><em>批准</em></span>
+                  <span class="stepLine" id="dingL2"></span>
+                  <span class="step" id="dingS3"><i class="dot">3</i><em>起画面</em></span>
+                </div>
+                <p class="jiaTitle" id="dingTitle">正在连接电脑…</p>
+                <p class="jiaDetail" id="dingPathWrap" hidden><span class="pathPill" id="dingPathPill"></span></p>
+                <p class="jiaDetail" id="dingDetail" hidden></p>
+                <div class="actions">
+                  <button type="button" class="mkKey" id="dingRetry" hidden>重试</button>
+                  <button type="button" class="mkKey">取消连接</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 乙 · 呼吸连接环版等待层（去 notice 框，透明底压画面区，同现状口径） -->
+          <div class="frameWaiting" id="varYi" hidden>
+            <section class="yiWrap" role="status">
+              <div class="ringHost" aria-hidden="true">
+                <span class="ripple"></span><span class="ripple r2"></span>
+                <svg class="ring" viewBox="0 0 96 96" fill="none">
+                  <defs><linearGradient id="yiGrad" x1="12" y1="8" x2="84" y2="90" gradientUnits="userSpaceOnUse">
+                    <stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-strong)"/>
+                  </linearGradient></defs>
+                  <circle cx="48" cy="48" r="40" stroke="var(--accent)" stroke-opacity=".22" stroke-width="3"/>
+                  <circle id="yiArc" cx="48" cy="48" r="40" stroke="url(#yiGrad)" stroke-width="3" stroke-linecap="round" transform="rotate(-90 48 48)"/>
+                </svg>
+              </div>
+              <p class="yiTitle" id="yiTitle">正在连接电脑…</p>
+              <p class="yiDetail" id="yiDetail" hidden></p>
+              <button type="button" class="mkKey">取消连接</button>
+            </section>
+          </div>
+
+          <!-- 丙 · 整屏品牌化等待态（覆盖画面区整屏，不盖状态栏与工具条） -->
+          <div class="bingLayer" id="varBing" hidden role="status">
+            <p class="bingBrand">远程电脑</p>
+            <div class="ringHost lg" aria-hidden="true">
+              <span class="bingSpin"></span>
+              <svg class="ring" viewBox="0 0 120 120" fill="none">
+                <defs><linearGradient id="bingGrad" x1="14" y1="10" x2="106" y2="112" gradientUnits="userSpaceOnUse">
+                  <stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent-strong)"/>
+                </linearGradient></defs>
+                <circle cx="60" cy="60" r="52" stroke="var(--accent)" stroke-opacity=".22" stroke-width="3.5"/>
+                <circle id="bingArc" cx="60" cy="60" r="52" stroke="url(#bingGrad)" stroke-width="3.5" stroke-linecap="round" transform="rotate(-90 60 60)"/>
+              </svg>
+            </div>
+            <p class="bingTitle" id="bingTitle">正在连接电脑…</p>
+            <p class="bingDetail" id="bingDetail" hidden></p>
+            <div class="stepsV" aria-hidden="true">
+              <span class="sv" id="bingS1"><i>✓</i>连接电脑</span>
+              <span class="sv" id="bingS2"><i>✓</i>等待对方批准</span>
+              <span class="sv" id="bingS3"><i>✓</i>准备画面</span>
+            </div>
+            <div class="bingFoot">
+              <span class="pathPill" id="bingPath" hidden></span>
+              <button type="button" class="mkKey">取消连接</button>
+            </div>
+          </div>
+        </div>
+
+        <nav class="toolbar" aria-label="会话工具">
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="3"/><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>
+            <span>触控板</span>
+          </button>
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M7 16h10"/></svg>
+            <span>键盘</span>
+          </button>
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+            <span>画面</span>
+          </button>
+          <button type="button" class="tbBtn">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            <span>更多</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <div class="spec">
+    <div class="card">
+      <h3>改动点申报（共 3 处，除此之外与线上完全一致；<span class="stateNow" id="stateNow">① 拨号中</span>）</h3>
+      <ul>
+        <li><strong>① 等待文案叠加路径行</strong>：会话已建立（<code>status.session</code> 存在）且 <code>status.path_kind</code> 已知时，在 <code>SessionFrameState</code> 的 detail 前叠一行「已连上电脑 · 经中继转发，画面要多等几秒」/「已连上电脑 · 直连」。载体：调用点拼装（<code>useRcFrames</code> 已持有 status 与 rcWaitStage 结果），<code>rcWaitStage</code> 保持纯文案不动。<strong>没有路径读数时一个字都不加</strong>——attach 前 path_kind 为 None，宁缺不说。</li>
+        <li><strong>② 中继专属的超时话术</strong>：<code>outbound_active</code> 且路径为中继、等待超 <code>RC_WAIT_ACTIVE_HINT_MS</code>(20s) 时，hint 追加「经中继转发的连接出画面会慢一些；恢复直连后延时会自动回落」。直连路径维持现文案（「首次连接要探测硬件编码器…」）——慢的原因不同，话术不混。</li>
+        <li><strong>③ 连接中徽章小字显示已知路径</strong>：connecting 态且 path_kind 已知时，徽章小字从「延时」换成「绕中继」/「直连」/「局域网」，主字保持「连接中」。复用本批已落地的徽章逻辑（<code>pathKind</code> 字段已有），只是把条件从 <code>state==="connected"</code> 放宽到「state 连接中或已连」。</li>
+      </ul>
+      <p class="src">出画面之后的一切（徽章「绕中继」常驻、详情面板解释、切回直连 toast、切回自动建议）已在本批 ②③⑤ 落地，本稿不重复。<strong>基准档零新增样式、零协议改动</strong>：路径数据手机端轮询 <code>rc_status</code> 已有，纯前端文案工作。甲/甲乙/乙/丙/丁 美化档的新增见下一张卡。</p>
+    </div>
+
+    <div class="card">
+      <h3>美化档位申报（点第二行 chips 切换；六阶段状态对每档都生效）</h3>
+      <ul>
+        <li><strong>丁 · 业界对齐版（推荐）</strong>：结构=甲（三点步进+路径胶囊，零新动画），换上的不是皮而是<strong>业界三段阶梯文案</strong>——第三段从「电脑正在准备画面…」改为 <strong>「已连接，等待画面传输…」</strong>（RustDesk 中文文案 <code>cn.rs:84 Connected, waiting for image...</code> 同款口径：先宣布「连上了」，再说「在等画面」，把「卡死了吗」的焦虑直接拆掉）；路径胶囊只留「直连/绕中继」（「已连接」三字升进标题，不重复说）；<strong>等太久时「取消连接」旁多一颗「重试」钮</strong>（RustDesk 失败弹窗带 Retry/「中继连接」动作按钮，Moonlight 错误文案全部带行动建议）。详见下一张「业界对照」卡。</li>
+        <li><strong>甲 · 阶段点 + 路径胶囊</strong>：在现有 <code>SessionFrameState</code> 载体（.frameWaiting + notice）内部把「Clock3 图标+一句标题」升级为三点步进（拨号→批准→起画面：已过打勾填 <code>--accent</code>、当前点呼吸复用 <code>pendingPulse</code>、未到灰）；路径行从 detail 文字升为小胶囊（<code>--accent-light/--accent-strong</code>，中继走 <code>--warning-bg</code> 语义色）。<strong>新增样式仅步进/胶囊两条；不新增任何动画</strong>（复用现役 pendingPulse）。等待层卸载即全部消失，无常驻。</li>
+        <li><strong>甲+乙 · 阶段点+图标填充</strong>（你点的结合档，按你反馈把呼吸环换成应用真标）：甲的整张卡原样保留（步进点/胶囊/超时线），Clock3 图标位换成 <strong>64px 应用真标分阶段填充</strong>——同一个 <code>public/icon.png</code>（AppIcon.tsx 的唯一 logo 源；实测四角与中心透明，可直接压深色画面区）画两层：底=空壳 28% 透明度，上=全彩按阶段裁水位（拨号 33% → 批准 67% → 起画面 100%），换档一次 <code>clip-path</code> 600ms 过渡。<strong>图标本身零无限动画</strong>——「还活着」的信号由现役 pendingPulse 的步进点呼吸承担（甲已有），比呼吸环安静。最坏动态元素：水位过渡（每档只跑 0.6s）+步进点×3，全在等待期，<code>prefers-reduced-motion</code> 下过渡也停（规则 8）。文案是甲的（标题即阶段，不重复说「已连接」），文字仍在 notice 卡上，不踩乙那个 ocean 透明底对比坑。</li>
+        <li><strong>乙 · 呼吸连接环</strong>：去掉 notice 框，画面区中央一个 96px 环——底轨 <code>--accent</code> 22% 透明、进度弧按阶段走 1/3→2/3→满（渐变 <code>--accent→--accent-strong</code>），环体呼吸 + 双涟漪扩散，全部只动 transform/opacity（合成层属性，不触发重排）。文案在环下方同一条。<strong>新增动画两条 keyframe（ringBreathe/rippleOut），仅在等待期存在：出首帧等待层整体卸载，无常驻开销（规则 8）；prefers-reduced-motion 下呼吸停、涟漪隐藏。</strong>最坏元素数：3 个（1 环 + 2 涟漪）。<strong>如实报</strong>：去框后文字直接压画面区，本稿实测 ocean 主题下标题对画面底色仅 1.37:1（midnight 10.28:1 达标）——这与现状等待层透明口径是同一问题，但乙把它做成了设计本意，若选乙建议实施时给文字加一层半透明深底（新增项，另报）。</li>
+        <li><strong>丙 · 整屏品牌化等待态</strong>：覆盖整个画面区（不盖状态栏/工具条，出口保留），<code>--section-bg</code> 整屏底 + 顶部 <code>--accent</code> 16% 辉光（装饰层），120px 大环 + 外圈虚线慢转、纵列步骤名清单、路径徽章与取消钮收尾。<strong>新增样式最多、也新增一条慢转动效（spinSlow 9s，同样首帧卸载 + reduced-motion 停）；与 MobileNotice 体系分叉最大</strong>——实施要新建整层组件，等首帧后的「返回设备/取消」之外的既有提示链（帧异常、锁屏 pill）落点也要重排。过设计风险自知。</li>
+      </ul>
+      <table class="geo">
+        <tr><th>档位</th><th>改动面</th><th>新动画</th><th>风险</th><th>一句话</th></tr>
+        <tr><td>基准</td><td>纯文案</td><td>无</td><td>零</td><td>最稳，但观感与线上一模一样</td></tr>
+        <tr><td>丁（推荐）</td><td>甲结构+业界文案阶梯+重试钮</td><td>无（复用）</td><td>低</td><td>每一条话术都有业界同款背书，信息最准</td></tr>
+        <tr><td>甲</td><td>notice 内部结构</td><td>无（复用）</td><td>低</td><td>阶段感最清楚，克制</td></tr>
+        <tr><td>甲+乙</td><td>甲+卡头真标水位填充</td><td>0 新 keyframe（水位是 600ms 过渡非动画）</td><td>低</td><td>阶段点说「到哪了」，logo 水位说「走到第几步」，无循环动效</td></tr>
+        <tr><td>乙</td><td>等待层换中央环</td><td>2 条，仅等待期</td><td>中</td><td>最有「活着」的信号，等 30 秒不心慌</td></tr>
+        <tr><td>丙</td><td>整屏重做</td><td>1 条慢转，仅等待期</td><td>高</td><td>最像产品，但离这套通知体系最远</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>业界对照（丁的依据；均为本仓 gh 拉取的开源源码原文，非博客转述）</h3>
+      <table class="geo">
+        <tr><th>产品</th><th>源码证据</th><th>口径</th><th>对丁的启示</th></tr>
+        <tr><td>RustDesk（flutter/rust，开源）</td><td class="src">src/lang/cn.rs：「正在连接...」→「请等待对方接受你的连接...」→「已连接，等待画面传输...」三段；连接类型常驻标注「加密直连/加密中继连接」；relay_hint_tip「可能无法直连，可以尝试中继连接」弹窗带 [中继连接][重试] 按钮</td><td>阶段文案+路径身份常驻+失败给动作</td><td>丁的三段阶梯、胶囊、重试钮逐条对齐；本批 ②③⑤ 的「路径常驻标注」已被同款验证</td></tr>
+        <tr><td>RustDesk 建立策略</td><td class="src">src/client.rs:220 race_transports_prefer_webrtc——直连打洞与中继 TCP <strong>并发赛跑</strong>，中继结果 hold 一个窗口期等直连；设置项 relay-fallback-delay-tip 默认 2.5s</td><td>不让用户「等打洞」：哪条路先通先用哪条，路径标签事后说真话</td><td>建立期本就不该有「打洞中」进度条（没有可等的离散步骤）——丙把等待做得再美也是错方向；② 切回直连 toast 的同构依据</td></tr>
+        <tr><td>Moonlight（GameLink，开源 Android）</td><td class="src">strings.xml：conn_establishing「Establishing Connection/Starting connection」一段带过；错误全带行动建议（no_frame_received「网络不佳→降码率或换更快网络」）；网络预检弹窗承诺时长「This may take a few seconds…」</td><td>等待段克制，失败段给因+给动作</td><td>丁的重试钮；「等太久」话术要带下一步而不是判词</td></tr>
+        <tr><td>NN/g 准则</td><td class="src">Progress Indicators Make a Slow System Less Insufferable（nngroup.com/articles/progress-indicators/）：&gt;10s 必须有进度反馈；反馈要「说清进行到哪」，动画本身不是重点</td><td>10 秒是等待容忍红线</td><td>阶段点（说清到哪了）优先于装饰动画；20s/30s 超时线阈值与业界一致</td></tr>
+      </table>
+      <p class="src">未采信项：AnyDesk/TeamViewer/Parsec 官方文档本次网络不可达，无一手证据，不引用其细节。</p>
+    </div>
+
+    <div class="card">
+      <h3>六个阶段怎么演（点上方 chips）</h3>
+      <ul>
+        <li><strong>① 拨号中</strong>（phase=undefined/idle）：「正在连接电脑…」——现状原样，path 未知不加路径行（徽章「测量中」）。</li>
+        <li><strong>② 等对方批准</strong>（outbound_pending）：「已通知电脑，等待对方同意…」——现状原样。</li>
+        <li><strong>③ 准备画面·直连</strong>（outbound_active + path=direct）：detail 加「已连上电脑 · 直连」；徽章小字「直连」。</li>
+        <li><strong>④ 准备画面·绕中继</strong>（outbound_active + path=relay）：detail 加「已连上电脑 · 经中继转发，画面要多等几秒」；徽章小字「绕中继」。这一屏就是 2026-10-06 晚间中继塌方那 45 秒的答案。</li>
+        <li><strong>⑤ 中继等太久</strong>（≥20s）：detail 在路径行下追加中继专属话术（改动②）。</li>
+        <li><strong>⑥ 已出画面</strong>：等待层消失，徽章回「延时 26 ms」——后续告知归本批已落地的徽章/详情/toast。各档下同此（乙/丙的动效随等待层一起卸载；甲乙的水位是过渡不是循环动画）。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>几何申报（全部抄自真源码，本稿零新增）</h3>
+      <table class="geo">
+        <tr><th>元素</th><th>值</th><th>出处</th></tr>
+        <tr><td>等待层定位</td><td class="num">inset 0 · grid 居中 · padding 16px · z-index 6 · 宽 min(100%, 360px)</td><td>frameWaiting :349-354</td></tr>
+        <tr><td>等待 notice</td><td class="num">pending tone · Clock3 图标 20px 呼吸 1.6s · 标题 15px/600</td><td>MobileNotice.module.css（:1-33、47-60）</td></tr>
+        <tr><td>detail 文本</td><td class="num">13px · --text-secondary · margin-left 30px（frameWaiting 内归 0）</td><td>.detail :17 + .frameWaiting p :354</td></tr>
+        <tr><td>取消钮</td><td class="num">mkKey min 44×44 · radius 8px</td><td>mkKey :419-425</td></tr>
+        <tr><td>徽章</td><td class="num">min-height 44px · 小字 11px / 主字 13px/600</td><td>RcConnectionDetails.module.css :1-11</td></tr>
+        <tr><td>本稿新增样式</td><td class="num">基准/丁：无新增动效（丁复用甲的步进/胶囊样式+现役 mkKey「重试」钮）· 甲：步进点 20px/胶囊 24px 高两条 · 甲乙：甲的两条 + 图标头 3 条（.iconHead/空壳/水位，零 keyframe）· 乙：96px 环 + 涟漪×2 · 丙：整屏层 + 120px 环 + 纵列步骤</td><td class="src">见美化五档申报（甲/甲乙/乙/丙 各条为本稿新增样式，实施时进对应 .module.css；丁＝甲的样式+文案+动作）</td></tr>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>首屏读数（rAF 后实测本稿 DOM，主题/状态/<strong>档位</strong>切换即重算）</h3>
+      <p class="readout" id="readouts">计算中…</p>
+      <ul>
+        <li>对比度判据：等待标题/正文压所在底色 ≥4.5:1（AA 正文）。<strong>现状申报</strong>：基准/甲/甲乙/丁/乙的等待层在工程里本就透明底压画面区（<code>.frameWaiting&gt;section</code> :351），测量按画面区深色底近似；丙自带 <code>--section-bg</code> 整屏底，按该底色测。若 ocean 主题下等待文字对比不足，属现状问题，不归本稿。</li>
+        <li>触达判据：取消钮 ≥44×44px；徽章 min-height 44px（U 规则）。</li>
+        <li>动态判据：基准=Clock3 呼吸（现役）；甲/丁=当前步进点复用同一条 pendingPulse（零新动画）；甲乙=步进点呼吸（复用现役）+卡头真标水位 600ms 过渡（图标无循环动画）；乙=环呼吸+双涟漪；丙=外环慢转——<strong>乙/丙的动效只在等待期存在，首帧到达等待层整体卸载即停，且 prefers-reduced-motion 下全停</strong>（规则 8 申报）。</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>逐表自检（稿内元素 → 真源码）</h3>
+      <table class="geo">
+        <tr><th>稿内元素</th><th>真源码</th><th>一致性</th></tr>
+        <tr><td>等待标题四段文案</td><td>lib/rcWaitStage.ts rcWaitStage()</td><td>逐字一致（本稿不改文案本体）</td></tr>
+        <tr><td>路径行两条话术</td><td class="src">本稿新增文本（改动①②），无样式</td><td class="src">新文案，落点=SessionFrameState detail</td></tr>
+        <tr><td>等待 notice 结构/动效</td><td>SessionScreenNotices.tsx + MobileNotice.module.css</td><td>逐值复刻</td></tr>
+        <tr><td>徽章小字规则</td><td>RcConnectionDetails.tsx（本批已落地 pathKind 分支）</td><td>同逻辑，connecting 态放宽（改动③）</td></tr>
+        <tr><td>取消连接钮</td><td>SessionFrameState onReturn</td><td>逐值复刻</td></tr>
+        <tr><td>甲 步进点/胶囊</td><td class="src">本稿新增（美化档申报①）</td><td class="src">色全取令牌：--accent/--accent-light/--accent-strong/--warning-*；呼吸复用 pendingPulse</td></tr>
+        <tr><td>乙 连接环+涟漪</td><td class="src">本稿新增（美化档申报②）</td><td class="src">描边 url(#yiGrad)=--accent→--accent-strong；动效仅等待期，reduced-motion 停</td></tr>
+        <tr><td>甲乙 卡头 64px 真标</td><td>public/icon.png（AppIcon.tsx 唯一 logo 源，与 src-tauri/icons/icon.png 一致）</td><td class="src">稿内直接引用真文件；空壳 28% + 水位 stage/3，新样式仅 .iconHead 三条，零 keyframe（本稿新增·结合档）</td></tr>
+        <tr><td>丙 整屏层</td><td class="src">本稿新增（美化档申报③）</td><td class="src">底=--section-bg+--accent 16% 辉光；不盖 statusRow/工具条（逐值复刻的真组件）</td></tr>
+        <tr><td>丁 文案阶梯/重试钮</td><td>RustDesk cn.rs:84/392 阶梯、model.dart:1159 relay-hint [重试][中继连接]、Moonlight strings.xml 错误带行动</td><td class="src">结构=甲；「重试」复用现役 mkKey 样式；实施落点=调用点拼装（不动 rcWaitStage 本体）</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // stage: 1 拨号 / 2 批准 / 3 起画面；live 时等待层整体卸载
+  // path: "" 未知（宁缺不说） / "direct" / "relay"
+  var STATES = {
+    "dial":          { now: "① 拨号中",        stage: 1, path: "",      title: "正在连接电脑…",            detail: null, badge: ["延时", "测量中"],  badgeTone: "",  live: false },
+    "pending":       { now: "② 等对方批准",     stage: 2, path: "",      title: "已通知电脑，等待对方同意…", detail: null, badge: ["延时", "测量中"],  badgeTone: "",  live: false },
+    "active-direct": { now: "③ 准备画面·直连",  stage: 3, path: "direct", title: "电脑正在准备画面…",        detail: "已连上电脑 · 直连", badge: ["直连", "连接中"], badgeTone: "", live: false },
+    "active-relay":  { now: "④ 准备画面·绕中继", stage: 3, path: "relay",  title: "电脑正在准备画面…",        detail: "已连上电脑 · 经中继转发，画面要多等几秒", badge: ["绕中继", "连接中"], badgeTone: "warn", live: false },
+    "relay-slow":    { now: "⑤ 中继等太久",     stage: 3, path: "relay",  title: "电脑正在准备画面…",        detail: "已连上电脑 · 经中继转发，画面要多等几秒。经中继转发的连接出画面会慢一些；恢复直连后延时会自动回落。", badge: ["绕中继", "连接中"], badgeTone: "warn", live: false },
+    "live":          { now: "⑥ 已出画面",       stage: 4, path: "",      title: null,                      detail: null, badge: ["延时", "26 ms"],   badgeTone: "",  live: true }
+  };
+  var PATH_LABEL = { direct: "直连", relay: "绕中继" };
+  var VARIANTS = ["base", "jia", "jiaYi", "ding", "yi", "bing"];
+  var VARIANT_NAME = { base: "基准（纯文案）", jia: "甲（阶段点）", jiaYi: "甲+乙（阶段点+图标填充）", ding: "丁（业界对齐版）", yi: "乙（呼吸连接环）", bing: "丙（整屏品牌化）" };
+  var stateChips = Array.prototype.slice.call(document.querySelectorAll(".chip[data-state]"));
+  var varChips = Array.prototype.slice.call(document.querySelectorAll(".chip[data-variant]"));
+  var waitLayer = document.getElementById("waitLayer");
+  var varJia = document.getElementById("varJia");
+  var varJiaYi = document.getElementById("varJiaYi");
+  var varDing = document.getElementById("varDing");
+  var varYi = document.getElementById("varYi");
+  var varBing = document.getElementById("varBing");
+  var LAYERS = { base: waitLayer, jia: varJia, jiaYi: varJiaYi, ding: varDing, yi: varYi, bing: varBing };
+  var waitTitle = document.getElementById("waitTitle");
+  var waitDetail = document.getElementById("waitDetail");
+  var badge = document.getElementById("badge");
+  var badgeText = document.getElementById("badgeText");
+  var subtitle = document.getElementById("subtitle");
+  var deskHint = document.getElementById("deskHint");
+  var stateNow = document.getElementById("stateNow");
+  var current = "dial";
+  var variant = "base";
+
+  // .frameWaiting/.bingLayer 的类 display 会盖过 [hidden] 的 UA 样式，显隐一律走内联 display
+  function setLayerVisible(layer, on) { layer.style.display = on ? "" : "none"; }
+
+  // —— 基准：与线上组件逐值同构，改动只在 detail —— 
+  function renderBase(s) {
+    waitTitle.textContent = s.title || "";
+    if (s.detail) { waitDetail.hidden = false; waitDetail.textContent = s.detail; } else { waitDetail.hidden = true; }
+  }
+
+  // —— 甲：三点步进（当前点亮呼吸/已过打勾/未到灰）+ 标题 + 路径胶囊 + detail —— 
+  function renderJia(s) {
+    [1, 2, 3].forEach(function (i) {
+      var el = document.getElementById("jiaS" + i);
+      var dot = el.querySelector(".dot");
+      el.setAttribute("data-cur", String(s.stage === i));
+      el.setAttribute("data-done", String(s.stage > i));
+      dot.textContent = s.stage > i ? "✓" : String(i);
+      if (i < 3) document.getElementById("jiaL" + i).setAttribute("data-done", String(s.stage > i));
+    });
+    document.getElementById("jiaTitle").textContent = s.title || "";
+    var pill = document.getElementById("jiaPathPill");
+    var pillWrap = document.getElementById("jiaPathWrap");
+    if (s.path) {
+      pillWrap.hidden = false; pill.textContent = PATH_LABEL[s.path];
+      pill.className = "pathPill" + (s.path === "relay" ? " warn" : "");
+    } else { pillWrap.hidden = true; }
+    var d = document.getElementById("jiaDetail");
+    // 甲把路径行移进胶囊，detail 只留超时话术（relay-slow 的第二句）
+    var extra = s.detail && s.detail.indexOf("。", 12) > -1 && s.path ? s.detail.slice(s.detail.indexOf("。") + 1) : (s.path ? null : s.detail);
+    if (extra) { d.hidden = false; d.textContent = extra; } else { d.hidden = true; }
+  }
+
+  // —— 甲乙结合：甲的全部结构 + 卡头应用真标分阶段填充（水位 stage/3，无无限动画） —— 
+  function renderJiaYi(s) {
+    var pct = Math.round(Math.min(s.stage, 3) / 3 * 100);
+    document.getElementById("jyFill").style.clipPath = "inset(" + (100 - pct) + "% 0 0 0)";
+    [1, 2, 3].forEach(function (i) {
+      var el = document.getElementById("jyS" + i);
+      var dot = el.querySelector(".dot");
+      el.setAttribute("data-cur", String(s.stage === i));
+      el.setAttribute("data-done", String(s.stage > i));
+      dot.textContent = s.stage > i ? "✓" : String(i);
+      if (i < 3) document.getElementById("jyL" + i).setAttribute("data-done", String(s.stage > i));
+    });
+    document.getElementById("jyTitle").textContent = s.title || "";
+    var pill = document.getElementById("jyPathPill");
+    var pillWrap = document.getElementById("jyPathWrap");
+    if (s.path) {
+      pillWrap.hidden = false; pill.textContent = PATH_LABEL[s.path];
+      pill.className = "pathPill" + (s.path === "relay" ? " warn" : "");
+    } else { pillWrap.hidden = true; }
+    var d = document.getElementById("jyDetail");
+    var extra = s.detail && s.detail.indexOf("。", 12) > -1 && s.path ? s.detail.slice(s.detail.indexOf("。") + 1) : (s.path ? null : s.detail);
+    if (extra) { d.hidden = false; d.textContent = extra; } else { d.hidden = true; }
+  }
+
+  // —— 丁：甲骨架上换业界阶梯文案（RustDesk「已连接，等待画面传输...」口径）+ 超时给「重试」 —— 
+  function renderDing(s) {
+    [1, 2, 3].forEach(function (i) {
+      var el = document.getElementById("dingS" + i);
+      var dot = el.querySelector(".dot");
+      el.setAttribute("data-cur", String(s.stage === i));
+      el.setAttribute("data-done", String(s.stage > i));
+      dot.textContent = s.stage > i ? "✓" : String(i);
+      if (i < 3) document.getElementById("dingL" + i).setAttribute("data-done", String(s.stage > i));
+    });
+    // 第三段改口：先说「已连接」再说「等画面」——把「连上了没」和「画面呢」拆成两件事，
+    // 这是 RustDesk 三段阶梯的核心（用户焦虑从「卡死?」变成「在等画面，正常」）。
+    document.getElementById("dingTitle").textContent =
+      s.stage === 3 ? "已连接，等待画面传输…" : (s.title || "");
+    var pill = document.getElementById("dingPathPill");
+    var pillWrap = document.getElementById("dingPathWrap");
+    if (s.path) {
+      pillWrap.hidden = false; pill.textContent = PATH_LABEL[s.path];
+      pill.className = "pathPill" + (s.path === "relay" ? " warn" : "");
+    } else { pillWrap.hidden = true; }
+    var d = document.getElementById("dingDetail");
+    var extra = s.detail && s.detail.indexOf("。", 12) > -1 ? s.detail.slice(s.detail.indexOf("。") + 1) : null;
+    if (extra) { d.hidden = false; d.textContent = extra; } else { d.hidden = true; }
+    // 「重试」只在等太久（超时线）出现——RustDesk 失败弹窗带 Retry/Connect via relay 的口径
+    document.getElementById("dingRetry").hidden = !(current === "relay-slow");
+  }
+
+  // —— 乙：呼吸环（弧长按 stage/3）+ 标题 + detail —— 
+  var C96 = 2 * Math.PI * 40;
+  function renderYi(s) {
+    var frac = Math.min(s.stage, 3) / 3;
+    var arc = document.getElementById("yiArc");
+    arc.setAttribute("stroke-dasharray", (C96 * frac).toFixed(1) + " " + C96.toFixed(1));
+    document.getElementById("yiTitle").textContent = s.title || "";
+    var d = document.getElementById("yiDetail");
+    if (s.detail) { d.hidden = false; d.textContent = s.detail; } else { d.hidden = true; }
+  }
+
+  // —— 丙：整屏（大环弧长 + 纵列步骤 + 路径徽章 + 取消） —— 
+  var C120 = 2 * Math.PI * 52;
+  function renderBing(s) {
+    var frac = Math.min(s.stage, 3) / 3;
+    var arc = document.getElementById("bingArc");
+    arc.setAttribute("stroke-dasharray", (C120 * frac).toFixed(1) + " " + C120.toFixed(1));
+    [1, 2, 3].forEach(function (i) {
+      var el = document.getElementById("bingS" + i);
+      el.setAttribute("data-cur", String(s.stage === i));
+      el.setAttribute("data-done", String(s.stage > i));
+    });
+    document.getElementById("bingTitle").textContent = s.title || "";
+    var d = document.getElementById("bingDetail");
+    if (s.detail) { d.hidden = false; d.textContent = s.detail; } else { d.hidden = true; }
+    var pill = document.getElementById("bingPath");
+    if (s.path) {
+      pill.hidden = false; pill.textContent = PATH_LABEL[s.path];
+      pill.className = "pathPill" + (s.path === "relay" ? " warn" : "");
+    } else { pill.hidden = true; }
+  }
+
+  function render() {
+    var s = STATES[current];
+    VARIANTS.forEach(function (v) { setLayerVisible(LAYERS[v], !s.live && v === variant); });
+    if (!s.live) {
+      if (variant === "base") renderBase(s);
+      else if (variant === "jia") renderJia(s);
+      else if (variant === "jiaYi") renderJiaYi(s);
+      else if (variant === "ding") renderDing(s);
+      else if (variant === "yi") renderYi(s);
+      else renderBing(s);
+    } else { renderBase(s); renderJia(s); renderJiaYi(s); renderDing(s); renderYi(s); renderBing(s); }
+    badgeText.innerHTML = "<small></small>";
+    badgeText.firstChild.textContent = s.badge[0];
+    badgeText.appendChild(document.createTextNode(s.badge[1]));
+    badge.className = "badge" + (s.badgeTone ? " " + s.badgeTone : "");
+    badge.setAttribute("aria-label", s.live ? "连接详情，往返延时 26 毫秒，流畅"
+      : s.badge[0] === "绕中继" ? "连接详情，当前绕中继，" + s.badge[1] : "连接详情，" + s.badge[1]);
+    subtitle.textContent = s.live ? "远程控制中" : "正在连接";
+    deskHint.textContent = s.live ? "电脑桌面画面（占位示意）" : "等待出画面（占位示意）";
+    stateNow.textContent = s.now;
+    stateChips.forEach(function (c) { c.setAttribute("aria-pressed", String(c.dataset.state === current)); });
+    varChips.forEach(function (c) { c.setAttribute("aria-pressed", String(c.dataset.variant === variant)); });
+    measure();
+  }
+  stateChips.forEach(function (c) { c.addEventListener("click", function () { current = c.dataset.state; render(); }); });
+  varChips.forEach(function (c) { c.addEventListener("click", function () { variant = c.dataset.variant; render(); }); });
+  document.getElementById("themeToggle").addEventListener("click", function () {
+    var dark = document.documentElement.getAttribute("data-theme") === "midnight";
+    document.documentElement.setAttribute("data-theme", dark ? "" : "midnight");
+    this.textContent = dark ? "主题：ocean（点切 midnight）" : "主题：midnight（点切 ocean）";
+    this.setAttribute("aria-pressed", String(!dark));
+    requestAnimationFrame(function () { requestAnimationFrame(measure); });
+  });
+
+  function lum(rgb) {
+    var c = rgb.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  function parse(css) {
+    css = css.trim();
+    var m = css.match(/^#([0-9a-f]{6})$/i);
+    if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+    m = css.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/);
+    return m ? [+m[1], +m[2], +m[3]] : [0, 0, 0];
+  }
+  function contrast(fg, bg) { var a = lum(parse(fg)), b = lum(parse(bg)); return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05); }
+  function activeTitleEl() {
+    if (variant === "base") return waitTitle;
+    if (variant === "jia") return document.getElementById("jiaTitle");
+    if (variant === "jiaYi") return document.getElementById("jyTitle");
+    if (variant === "ding") return document.getElementById("dingTitle");
+    if (variant === "yi") return document.getElementById("yiTitle");
+    return document.getElementById("bingTitle");
+  }
+  function measure() {
+    var cs = getComputedStyle(document.documentElement);
+    var s = STATES[current];
+    var layer = LAYERS[variant];
+    // 标题/正文的底：丙自带 --section-bg 整屏底；其余各档等待层沿用现状口径
+    // （.frameWaiting>section :351 透明、压画面区），按 .screen 渐变首色标近似。
+    var title = activeTitleEl();
+    var titleFg = getComputedStyle(title).color;
+    var screenBg = getComputedStyle(document.getElementById("screen")).backgroundImage.match(/rgba?\([\d.]+,\s*[\d.]+,\s*[\d.]+/);
+    var backdrop = variant === "bing" ? cs.getPropertyValue("--section-bg")
+      : (screenBg ? screenBg[0] + ")" : cs.getPropertyValue("--section-bg"));
+    var tRatio = contrast(titleFg, backdrop);
+    var dRatio = contrast(cs.getPropertyValue("--text-secondary"), backdrop);
+    var extra = "";
+    var visible = layer.style.display !== "none";
+    if (visible && variant === "jiaYi") {
+      var head0 = layer.querySelector(".iconHead");
+      var fill0 = document.getElementById("jyFill");
+      var clip0 = fill0.style.clipPath || getComputedStyle(fill0).clipPath;
+      var done0 = layer.querySelectorAll('.step[data-done="true"]').length;
+      var lvl0 = Math.round((1 - parseFloat((clip0.match(/inset\(([\d.]+)%/) || [0, 0, 1])[1]) / 100) * 100);
+      extra = "卡头真标 <strong>" + Math.round(head0.getBoundingClientRect().width) + "px</strong> · 水位 <strong>" + lvl0 + "%</strong>（stage/3，换档 600ms 一次过渡，图标无无限动画）<br>"
+        + "步进点 3 · 已过 <strong>" + done0 + "</strong> · 胶囊/超时线同甲<br>";
+    } else if (visible && variant === "yi") {
+      var ring = layer.querySelector(".ringHost");
+      var anim = getComputedStyle(ring.querySelector("svg.ring")).animationName;
+      var rip = getComputedStyle(layer.querySelector(".ripple")).animationName;
+      extra = "环尺寸 <strong>" + Math.round(ring.getBoundingClientRect().width) + "×" + Math.round(ring.getBoundingClientRect().height) + "px</strong> · 呼吸：" + (anim !== "none" ? "在" : "停") + " · 涟漪：" + (rip !== "none" ? "双圈在" : "停") + "（reduced-motion 全停，首帧即卸载）<br>";
+    } else if (visible && variant === "bing") {
+      var ring2 = layer.querySelector(".ringHost");
+      var spin = getComputedStyle(layer.querySelector(".bingSpin")).animationName;
+      extra = "环尺寸 <strong>" + Math.round(ring2.getBoundingClientRect().width) + "px</strong> · 外环慢转：" + (spin !== "none" ? "在" : "停") + "（reduced-motion 停，首帧即卸载）<br>";
+    } else if (visible && (variant === "jia" || variant === "ding")) {
+      var stepDot = layer.querySelector('.step[data-cur="true"] .dot');
+      var done = layer.querySelectorAll('.step[data-done="true"]').length;
+      var retryEl = document.getElementById("dingRetry");
+      extra = "步进点 3 · 已过 <strong>" + done + "</strong> · 当前点呼吸：" + (stepDot && getComputedStyle(stepDot).animationName !== "none" ? "在" : "无当前段") + "（复用 pendingPulse，零新动画）"
+        + (variant === "ding" ? " · 重试钮：" + (retryEl.hidden ? "未出（未到超时线不给假动作）" : "已出（等太久才有，对齐 RustDesk 失败弹窗）") : "") + "<br>";
+    }
+    // 取消钮恒为最后一个 .mkKey（丁在超时前「重试」是 hidden 的，量它会得 0×0）
+    var mkKeys = layer.querySelectorAll(".mkKey");
+    var cancel = layer.style.display === "none" || !mkKeys.length ? null : mkKeys[mkKeys.length - 1].getBoundingClientRect();
+    document.getElementById("readouts").innerHTML =
+      "方案：<strong>" + VARIANT_NAME[variant] + "</strong> · 状态：<strong>" + s.now + "</strong><br>" +
+      "标题对比度：<strong>" + tRatio.toFixed(2) + ":1</strong> · 正文/detail：<strong>" + dRatio.toFixed(2) + ":1</strong>（AA 正文需 ≥4.5）<br>" +
+      extra +
+      (cancel ? "取消钮触达：<strong>" + Math.round(cancel.width) + "×" + Math.round(cancel.height) + "px</strong>（≥44）"
+              : "等待层未渲染（已出画面，与线上条件渲染一致）") +
+      " · 徽章小字：<strong>" + s.badge[0] + "</strong> · 主字：" + s.badge[1];
+  }
+  requestAnimationFrame(function () { requestAnimationFrame(measure); });
+  render();
+})();
+</script>
+</body>
+</html>

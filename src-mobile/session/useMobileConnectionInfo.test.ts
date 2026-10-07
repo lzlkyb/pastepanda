@@ -14,6 +14,11 @@ it("现有状态与视频统计生成真实读数，缺失丢包不当成 0%", (
   expect(result.current).toMatchObject({ state: "connected", label: "流畅", rttMs: 36, path: "局域网直连", lossPermille: 0 });
   expect(result.current.frames).toMatchObject({ fps: 30, latencyMs: 58 });
 });
+it("中继路径的机器值原样透传给徽章做常驻标注", () => {
+  const current = status({ path_kind: "relay" });
+  const { result } = renderHook(() => useMobileConnectionInfo("a", current, frames));
+  expect(result.current).toMatchObject({ pathKind: "relay", path: "绕中继" });
+});
 it("没有测量不展示假的零毫秒，不推测连接方式", () => {
   const current = status({ rtt_ms: 0, pong_age_ms: null, path_kind: "" });
   const { result } = renderHook(() => useMobileConnectionInfo("a", current, frames));

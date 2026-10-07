@@ -354,6 +354,35 @@
 .frameWaiting p { margin-left: 0; }
 .frameNotice { top: 8px; left: 8px; right: 8px; max-height: calc(100% - 16px); }
 .frameNotice > section { margin: 0; background: var(--card-bg); }
+/* ① 连接建立阶段化（甲+乙稿 2026-10-07）：卡头真标分阶段填充 + 步进点 + 路径胶囊。
+   图标是 public/icon.png（AppIcon.tsx 唯一 logo 源，实测四角+中心透明可压深色画面区），
+   两层画法：空壳 28% + 全彩按 stage/3 裁 clip-path 水位；图标零无限动画，
+   水位只在换档时跑一次 600ms 过渡，reduced-motion 下连过渡也停（规则 8）。 */
+.stageHead { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-basis: 100%; }
+.iconHead { position: relative; width: 64px; height: 64px; }
+.iconHead img { position: absolute; inset: 0; width: 64px; height: 64px; }
+.iconShell { opacity: .28; }
+.iconFill { transition: clip-path 600ms cubic-bezier(.2,0,0,1); }
+.iconFill1 { clip-path: inset(67% 0 0 0); }
+.iconFill2 { clip-path: inset(33% 0 0 0); }
+.iconFill3 { clip-path: inset(0% 0 0 0); }
+.stepper { display: flex; align-items: center; justify-content: center; }
+.step { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.step em { font-style: normal; }
+.step .dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border-color); display: grid; place-items: center; font-size: 11px; font-style: normal; line-height: 1; color: var(--text-secondary); }
+.step[data-cur="true"] { color: var(--text-primary); font-weight: 600; }
+.step[data-cur="true"] .dot { border-color: var(--accent); color: var(--accent-strong); animation: stagePulse 1.6s ease-in-out infinite; }
+.step[data-done="true"] .dot { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.stepLine { width: 18px; height: 1.5px; background: var(--border-color); margin: 0 6px; flex: none; }
+.stepLine[data-done="true"] { background: var(--accent); }
+.stagePillRow { margin: 6px 0 0; }
+.pathPill { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--accent-light); color: var(--accent-strong); font-size: 11.5px; font-weight: 600; }
+.pathPillWarn { background: var(--warning-bg); color: var(--text-primary); border: 1px solid var(--warning-border); }
+@keyframes stagePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.92); } }
+@media (prefers-reduced-motion: reduce) {
+  .step[data-cur="true"] .dot { animation: none; }
+  .iconFill { transition: none; }
+}
 .mouseActions {
   display: flex;
   gap: 8px;

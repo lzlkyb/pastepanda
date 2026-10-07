@@ -12,12 +12,14 @@ export interface MobileConnectionInfo {
   grade: ReturnType<typeof rttGrade>;
   rttMs: number;
   path: string;
+  /** 与 `path` 同源的机器值（lan/direct/relay/空）；徽章用它判断是否常驻标注「绕中继」。 */
+  pathKind: string;
   frames: Frames | null;
   lossPermille: number;
   samples: RttSample[];
   sampledAt: number;
 }
-const EMPTY: MobileConnectionInfo = { sessionId: "", state: "connecting", label: "测量中", grade: "unknown", rttMs: 0, path: "", frames: null, lossPermille: 0, samples: [], sampledAt: 0 };
+const EMPTY: MobileConnectionInfo = { sessionId: "", state: "connecting", label: "测量中", grade: "unknown", rttMs: 0, path: "", pathKind: "", frames: null, lossPermille: 0, samples: [], sampledAt: 0 };
 
 /** Reuses App's status polling; the only timer presents existing samples once per second while visible. */
 export function useMobileConnectionInfo(sessionId: string | undefined, status: RcStatus | null | undefined, frames: Frames) {
@@ -64,6 +66,7 @@ export function useMobileConnectionInfo(sessionId: string | undefined, status: R
       const healthy = valid && state === "connected";
       setInfo({ sessionId, state, rttMs, grade, label: grade === "unknown" ? state === "connected" || state === "connecting" ? "测量中" : linkStateLabel(state) : rttGradeLabel(grade),
         path: valid ? pathKindLabel(current.path_kind) : "",
+        pathKind: valid ? current.path_kind ?? "" : "",
         frames: healthy && frame.hasFrame && !frame.statusText ? { ...frame,
           // A zero/missing skew means calibration is unavailable, not a trustworthy cross-device latency.
           latencyMs: current?.clock_skew_ms ? frame.latencyMs : 0,
