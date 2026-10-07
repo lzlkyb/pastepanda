@@ -25,7 +25,9 @@ use crate::rc::audio::{AacEncoder, LoopbackCapture, MicCapture};
 use crate::rc::dxgi::DxgiPool;
 use crate::rc::encode_h264::H264SessionEncoder;
 
-use super::pointer::{self, PtrDraw};
+use super::events;
+use super::hooks::{self, RecEvent};
+use super::pointer::{self, PtrDraw, Ripple};
 use super::quality::{self, RecQuality};
 use super::sink::{extract_parameter_sets, sink_params, RecSink, SinkParams};
 
@@ -42,6 +44,10 @@ pub struct RecOpts {
     pub quality: RecQuality,
     pub sys_audio: bool,
     pub mic_audio: bool,
+    /// 点击高亮烧帧（四期 1.3；设置页开关，默认开）。
+    pub click_highlight: bool,
+    /// sidecar 事件轨道 `.events.json`（四期 1.3；默认开）。
+    pub event_sidecar: bool,
 }
 
 pub struct RecStatus {
@@ -71,6 +77,8 @@ struct Active {
     /// 暂停累计（elapsed 口径）；`paused_since = Some` 表示正在暂停中。
     paused_total_ms: u64,
     paused_since: Option<Instant>,
+    /// 标记时刻热键的入口（四期 1.3）：sidecar 关闭时为 None（Mark 无处可记）。
+    events: Option<std::sync::mpsc::SyncSender<hooks::RecEvent>>,
 }
 
 static ACTIVE: Mutex<Option<Active>> = Mutex::new(None);
@@ -93,6 +101,8 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
     if slot.is_some() {
         return Err("已有录制在进行".into());
     }
+    // 事件轨通道（四期 1.3）：钩子线程 / 标记热键 → 会话主循环。
+    let (ev_tx, ev_rx) = mpsc::sync_channel::<hooks::RecEvent>(64);
     let active = Active {
         stop: Arc::new(AtomicBool::new(false)),
         discard: Arc::new(AtomicBool::new(false)),
@@ -103,6 +113,7 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
         bytes: Arc::new(AtomicU64::new(0)),
         paused_total_ms: 0,
         paused_since: None,
+        events: if opts.event_sidecar { Some(ev_tx.clone()) } else { None },
     };
     let stop = active.stop.clone();
     let discard = active.discard.clone();
@@ -120,7 +131,7 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
             // 错误信息只走 toast / HUD（rec-done 的 hud 通路 / emit_failed）。
             let app_after = app.clone();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_record(app, opts, out_path, stop, discard, pause, bytes)
+                run_record(app, opts, out_path, stop, discard, pause, bytes, ev_tx, ev_rx)
             }));
             if result.is_err() {
                 emit_failed(&app_after, "录制会话异常崩溃，已中止");
@@ -133,6 +144,15 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
             format!("起录制线程失败：{e}")
         })?;
     Ok(())
+}
+
+/// 标记时刻（四期 1.3）：全局热键入口。仅录制中有效；sidecar 关闭时静默
+/// （Mark 无处可记，四期只记录不展示——五期渲染时间线刻度）。
+pub fn send_mark() {
+    let slot = ACTIVE.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(tx) = slot.as_ref().and_then(|a| a.events.as_ref()) {
+        let _ = tx.try_send(RecEvent::Mark);
+    }
 }
 
 /// 请求停止（discard=true = 落盘后删除，即「取消并丢弃」）。
@@ -234,7 +254,7 @@ fn clear_active() {
     ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).take();
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn run_record(
     app: AppHandle,
     opts: RecOpts,
@@ -243,6 +263,8 @@ fn run_record(
     discard: Arc<AtomicBool>,
     pause: Arc<AtomicBool>,
     bytes: Arc<AtomicU64>,
+    ev_tx: mpsc::SyncSender<RecEvent>,
+    ev_rx: mpsc::Receiver<RecEvent>,
 ) {
     let started_at = Instant::now();
     // ── 1. 抓首帧（拿虚拟屏画布尺寸；锁屏/禁屏时 DXGI 拿不到帧）──
@@ -279,6 +301,18 @@ fn run_record(
     let (sx, sy, _, _) = virtual_screen_origin();
     let (rx, ry, rw, rh) = quality::clamp_rect(opts.x - sx, opts.y - sy, opts.w, opts.h, vw, vh);
     let sp = sink_params(opts.quality, rw, rh);
+
+    // ── 2.5 事件轨（四期 1.3）：双开关全关 = 不装钩子（平时零钩子零开销）──
+    // guard 活到会话线程结束（Drop = 停泵 + 卸钩），钩子随会话装卸。
+    let _hooks = if opts.click_highlight || opts.event_sidecar {
+        Some(hooks::start_hooks(ev_tx))
+    } else {
+        drop(ev_tx);
+        None
+    };
+    let mut recorder = events::SidecarRecorder::new(opts.event_sidecar);
+    // 活跃涟漪：上限 8 条（规则 8 最坏界；400ms 生命期 + 正常点击频率远到不了）
+    let mut ripples: Vec<Ripple> = Vec::new();
 
     // ── 3. 编码器（内部含 BGRA→NV12；HEVC 打不开自动回落 H.264）──
     // 质量导向码控（三期 1.3）：录制写本地文件，PeakConstrainedVBR——静态桌面
@@ -334,10 +368,33 @@ fn run_record(
         // 🔴 节奏锚点必须跟着推进：next_frame 停在暂停前，长暂停会积累巨量
         // 「帧距债」，续录后循环会以无节流最高速抓帧编码把债还完。
         if pause.load(Ordering::SeqCst) {
+            // 暂停段的事件丢弃：该段不进视频，涟漪与 sidecar 都不属于它
+            while ev_rx.try_recv().is_ok() {}
             drain_audio(&mut sink, &aud_rx, audio_shift_ms);
             next_frame = Instant::now();
             std::thread::sleep(Duration::from_millis(20));
             continue;
+        }
+        // 事件轨 drain（四期 1.3）：打点用当前视频时间轴——暂停/静止跳帧时
+        // 时间冻结，涟漪起点与编码画面严格对齐（不会在静止段偷偷走完）。
+        loop {
+            match ev_rx.try_recv() {
+                Ok(ev) => {
+                    let t = frames_submitted * 1000 / u64::from(sp.fps.max(1));
+                    let canvas = match &ev {
+                        RecEvent::Click { x, y, .. } => Some((x - sx - rx, y - sy - ry)),
+                        _ => None,
+                    };
+                    recorder.record(&ev, canvas, t);
+                    if let (true, Some((cx, cy))) = (opts.click_highlight, canvas) {
+                        if ripples.len() >= 8 {
+                            ripples.remove(0);
+                        }
+                        ripples.push(Ripple { x: cx, y: cy, start_ms: t });
+                    }
+                }
+                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+            }
         }
         // 音频 mux（无音频轨时立刻返回）
         drain_audio(&mut sink, &aud_rx, audio_shift_ms);
@@ -365,17 +422,27 @@ fn run_record(
                     break;
                 }
                 crop_into(bgra, vw, rx, ry, rw, rh, &mut crop_buf);
-                // 指针合成（三期 1.2）：画在**裁剪后、缩放前**——跟内容一起缩放，
-                // 坐标 = 桌面坐标 − 画布原点（指针与画布同口径桌面系）。None =
+                // 涟漪（四期 1.3）：画在指针**之前**（光标保持最上层）、裁剪后
+                // 缩放前（跟内容一起缩放）。时间基 = 本帧时间戳（提交帧数驱动）。
+                let frame_t = frames_submitted * 1000 / u64::from(sp.fps.max(1));
+                ripples.retain(|r| frame_t.saturating_sub(r.start_ms) < pointer::RIPPLE_DURATION_MS);
+                if opts.click_highlight && !ripples.is_empty() {
+                    pointer::draw_ripples(&mut crop_buf, rw, rh, &ripples, frame_t);
+                }
+                // 指针合成（三期 1.2）：画在**裁剪后、缩放前**——跟内容一起缩放。
+                // 坐标 = 桌面绝对 − 虚拟屏原点 − 区域原点 = 画布系（crop 从
+                // 虚拟画布 (rx,ry) 起裁，指针与点击涟漪同口径）。None =
                 // 光标不在任何可复制输出上，本帧不画。
+                // 🔴 2026-10-07 修 P0：旧代码少了 − rx/− ry，区域录制时指针被
+                // 画出画布外（偏移 = 区域原点）——全屏录制（rx=ry=0）恰好掩盖。
                 if let Some(p) = ptr.as_ref() {
                     pointer::draw_pointer(
                         &mut crop_buf,
                         rw,
                         rh,
                         &PtrDraw {
-                            x: p.x - sx,
-                            y: p.y - sy,
+                            x: p.x - sx - rx,
+                            y: p.y - sy - ry,
                             hot_x: p.hot_x,
                             hot_y: p.hot_y,
                             kind: p.kind,
@@ -490,6 +557,8 @@ fn run_record(
 
     if discard.load(Ordering::SeqCst) {
         let _ = std::fs::remove_file(&path);
+        // sidecar 一并清掉（正常丢弃时还没写出，防御残留）
+        let _ = std::fs::remove_file(events::sidecar_path(&path));
         let _ = app.emit("rec-discarded", serde_json::json!({ "path": path.display().to_string() }));
         return;
     }
@@ -500,6 +569,22 @@ fn run_record(
         Some(Ok(())) => {
             let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
             let hud = main_hidden(&app);
+            // sidecar（四期 1.3）：写失败附注进 note，不吞不卡主流程（规则 15.3）
+            let mut note = interrupted.clone();
+            if opts.event_sidecar {
+                if let Err(e) = recorder.write(
+                    &path,
+                    duration_ms,
+                    (sx + rx, sy + ry, rw, rh),
+                    (sp.width, sp.height, sp.fps),
+                ) {
+                    log::warn!("[Rec] sidecar 写入失败：{e}");
+                    note = Some(match note {
+                        Some(m) => format!("{m}；事件文件写入失败：{e}"),
+                        None => format!("事件文件写入失败：{e}"),
+                    });
+                }
+            }
             let _ = app.emit(
                 "rec-done",
                 serde_json::json!({
@@ -508,7 +593,7 @@ fn run_record(
                     "duration_ms": duration_ms,
                     "frames": frames_written,
                     // 中途故障落盘的部分保存：主窗 toast 附注一句说明，不另发 rec-failed
-                    "note": interrupted,
+                    "note": note,
                     // 主窗藏着时消息由 HUD 轻浮窗承接，主窗 toast 据此闭嘴（双通路互斥）
                     "hud": hud,
                 }),
@@ -522,7 +607,7 @@ fn run_record(
                         "bytes": bytes,
                         "duration_ms": duration_ms,
                         "quality": opts.quality.as_str(),
-                        "note": interrupted,
+                        "note": note,
                     }),
                 );
             }

@@ -201,6 +201,29 @@ export function recPreviewTake(): Promise<RecPreviewData | null> {
   return invokeJson("rec_preview_take");
 }
 
+/* ── GIF 导出（四期 1.5；12fps / 宽 ≤480 / 循环，单任务串行可取消）── */
+
+export interface RecGifStatus {
+  running: boolean;
+  /** 0–99；完成态以 running=false + donePath 表达。 */
+  percent: number;
+  donePath: string | null;
+  error: string | null;
+}
+
+/** 启动导出（产物 = 同名 .gif，重复导出覆盖自己；原 mp4 不动）。 */
+export function recGifStart(path: string): Promise<void> {
+  return invokeVoid("rec_gif_start", { path });
+}
+
+export function recGifStatus(path: string): Promise<RecGifStatus> {
+  return invokeJson("rec_gif_status", { path });
+}
+
+export function recGifCancel(): Promise<void> {
+  return invokeVoid("rec_gif_cancel");
+}
+
 /* ── 内部：统一错误文案 ── */
 
 import { invoke } from "@tauri-apps/api/core";

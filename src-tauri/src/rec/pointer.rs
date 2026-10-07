@@ -143,6 +143,62 @@ fn blend_pixel(dst: &mut [u8], di: usize, b: u8, g: u8, r: u8, a: u8) {
     dst[di + 3] = 255;
 }
 
+// ── 点击涟漪（四期 1.3 烧入轨）─────────────────────────────────────────
+
+/// 一条点击涟漪（画布系坐标；start_ms = 视频时间轴 ms，事件入帧时打点）。
+pub struct Ripple {
+    pub x: i32,
+    pub y: i32,
+    pub start_ms: u64,
+}
+
+/// 涟漪生命期：圆环从 R0 扩到 R1、alpha 线性衰减到 0。
+pub const RIPPLE_DURATION_MS: u64 = 400;
+
+const RIPPLE_R0: f32 = 9.0;
+const RIPPLE_R1: f32 = 38.0;
+const RIPPLE_RING_HALF_W: f32 = 1.6; // 描边半宽（px），带抗锯齿衰减
+/// 青色（RGB；与录屏设计语言的青色手柄同源）。
+const RIPPLE_RGB: [u8; 3] = [34, 211, 238];
+
+/// 把所有活着的涟漪画进 BGRA 帧（原位修改）。调用方在指针**之前**画（光标
+/// 保持最上层）；进度按视频时间轴算——跳帧/暂停时时间冻结，涟漪与编码出的
+/// 画面严格对齐（不会在静止段偷偷走完）。
+pub fn draw_ripples(dst: &mut [u8], dst_w: u32, dst_h: u32, ripples: &[Ripple], now_ms: u64) {
+    for r in ripples {
+        let elapsed = now_ms.saturating_sub(r.start_ms);
+        if elapsed >= RIPPLE_DURATION_MS {
+            continue;
+        }
+        let p = elapsed as f32 / RIPPLE_DURATION_MS as f32;
+        let radius = RIPPLE_R0 + (RIPPLE_R1 - RIPPLE_R0) * p;
+        let alpha = ((1.0 - p) * 0.85 * 255.0) as u32;
+        let (cx, cy) = (r.x as f32, r.y as f32);
+        let span = radius as i32 + 3;
+        let (w, h) = (dst_w as i32, dst_h as i32);
+        for dy in (cy as i32 - span)..=(cy as i32 + span) {
+            if dy < 0 || dy >= h {
+                continue;
+            }
+            for dx in (cx as i32 - span)..=(cx as i32 + span) {
+                if dx < 0 || dx >= w {
+                    continue;
+                }
+                let d = ((dx as f32 - cx).powi(2) + (dy as f32 - cy).powi(2)).sqrt();
+                // 环带覆盖度：|d − r| ≤ 半宽，线性衰减出抗锯齿边
+                let edge = RIPPLE_RING_HALF_W - (d - radius).abs();
+                if edge <= 0.0 {
+                    continue;
+                }
+                let cover = (edge / RIPPLE_RING_HALF_W).min(1.0);
+                let a = ((alpha as f32 * cover) as u32).min(255) as u8;
+                let di = (dy as usize * dst_w as usize + dx as usize) * 4;
+                blend_pixel(dst, di, RIPPLE_RGB[2], RIPPLE_RGB[1], RIPPLE_RGB[0], a);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,5 +298,42 @@ mod tests {
             &PtrDraw { x: 0, y: 0, hot_x: 0, hot_y: 0, kind: 9, w: 2, h: 1, pitch: 8, data: &[255; 8] },
         );
         assert_eq!(dst, dst2());
+    }
+
+    // ── 涟漪 ──
+    /// w×h 底图，全部 (10,20,30,255)。
+    fn flat(w: usize, h: usize) -> Vec<u8> {
+        let mut v = Vec::with_capacity(w * h * 4);
+        for _ in 0..w * h {
+            v.extend_from_slice(&[10, 20, 30, 255]);
+        }
+        v
+    }
+
+    #[test]
+    fn 涟漪_环带落青色_环外环心不动() {
+        // 40×40 画布，涟漪在中心
+        let mut dst = flat(40, 40);
+        draw_ripples(&mut dst, 40, 40, &[Ripple { x: 20, y: 20, start_ms: 0 }], 0);
+        // p=0 时 r=9：中心 (20,20) 距离 0，不在环带（|0−9|=9 > 1.6）→ 原样
+        let c = (20 * 40 + 20) * 4;
+        assert_eq!(&dst[c..c + 4], &[10, 20, 30, 255], "环心不落色");
+        // 环带上的点 (20+9, 20) 必落青色
+        let ring = ((20 * 40) + 29) * 4;
+        assert!(dst[ring] > 100 && dst[ring + 1] > 100, "环带像素被混成青色系 b={}", dst[ring]);
+        // 远角原样
+        let far = (2 * 40 + 2) * 4;
+        assert_eq!(&dst[far..far + 4], &[10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn 涟漪_过期不画_越界安全() {
+        let mut dst = flat(40, 40);
+        let before = dst.clone();
+        draw_ripples(&mut dst, 40, 40, &[Ripple { x: 20, y: 20, start_ms: 0 }], 400);
+        assert_eq!(dst, before, "到时即跳过");
+        // 帧边缘上的涟漪（半径外扩越界）不 panic、帧内部分照画
+        draw_ripples(&mut dst, 40, 40, &[Ripple { x: 1, y: 1, start_ms: 0 }], 0);
+        assert_ne!(dst, before, "边缘涟漪帧内部分仍落色");
     }
 }

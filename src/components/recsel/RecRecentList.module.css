@@ -124,3 +124,10 @@
   color: var(--danger);
   line-height: 1.6;
 }
+
+/* GIF 导出进行中：进度数字等宽不抖动（点击 = 取消） */
+.opGif {
+  min-width: 38px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}

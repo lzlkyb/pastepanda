@@ -219,6 +219,9 @@ windows = { version = "0.58", features = [
 winreg = "0.52"
 # 录屏裁剪（四期 1.4）：纯 Rust MP4 容器读写——关键帧对齐剪切只重排 sample 表，零转码
 mp4 = "0.14"
+# GIF 导出（四期 1.5）：纯 Rust 编码 + 调色板量化（解码走 MF SourceReader，不碰 FF）
+gif = "0.13"
+color_quant = "1.1"
 
 # 桌面专属依赖（Android/iOS 目标不编译）。global-shortcut / clipboard-manager 是桌面
 # 插件；clipboard-manager 传递依赖的 arboard 无 Android 实现，arboard 直接依赖同理——

@@ -10,6 +10,9 @@
 #![cfg(target_os = "windows")]
 
 pub mod commands;
+pub mod events;
+pub mod gif;
+pub mod hooks;
 pub mod pointer;
 pub mod quality;
 pub mod scan;

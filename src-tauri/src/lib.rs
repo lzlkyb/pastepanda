@@ -694,6 +694,12 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
+                // 录制中：标记时刻（四期 1.3，写入 sidecar）。
+                rec_mark: saved_config
+                    .get("rec_mark_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Alt+M")
+                    .to_string(),
             };
 
             // 开机自启对账（修复「自启有时候失效」）：条目只在设置开关切换那一刻写一次，
@@ -1360,6 +1366,12 @@ pub fn run() {
             rec::commands::rec_open_preview,
             #[cfg(windows)]
             rec::commands::rec_preview_take,
+            #[cfg(windows)]
+            rec::commands::rec_gif_start,
+            #[cfg(windows)]
+            rec::commands::rec_gif_status,
+            #[cfg(windows)]
+            rec::commands::rec_gif_cancel,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
             screenshot::enum_controls,

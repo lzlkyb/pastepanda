@@ -32,6 +32,9 @@ pub struct HotkeyConfig {
     pub rec_pause: String,
     /// 录制中：停止并保存。默认不设（rec_hotkey 录制中本就是停止）。
     pub rec_stop: String,
+    /// 录制中：标记时刻（四期 1.3）。默认 Ctrl+Alt+M（M=Mark）。写入 sidecar，
+    /// 四期只记录不展示（五期渲染时间线刻度）；sidecar 关闭时按键无动作。
+    pub rec_mark: String,
 }
 
 impl Default for HotkeyConfig {
@@ -61,6 +64,8 @@ impl Default for HotkeyConfig {
             rec_pause: "Ctrl+Alt+Space".to_string(),
             // 录制中停止：默认不设（Ctrl+Alt+R 录制中本就是停止，不叠加语义）。
             rec_stop: String::new(),
+            // 标记时刻（四期 1.3，M=Mark）。与上面全部已有热键不冲突。
+            rec_mark: "Ctrl+Alt+M".to_string(),
         }
     }
 }
@@ -470,6 +475,32 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else {
         errors.push(format!("无效的录制停止热键: {}", config.rec_stop));
     }
+    // 录制中：标记时刻（四期 1.3）。写入 sidecar 元数据轨道，四期只记录不展示；
+    // sidecar 关闭 / 非录制期按键无动作。
+    if config.rec_mark.trim().is_empty() {
+        log::info!("[HotkeyManager] 标记时刻热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.rec_mark) {
+        match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                #[cfg(windows)]
+                {
+                    if crate::rec::session::status().recording {
+                        crate::rec::session::send_mark();
+                    }
+                }
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册标记时刻热键: {}", config.rec_mark),
+            Err(e) => {
+                let msg = format!("标记时刻热键 '{}' 注册失败: {}", config.rec_mark, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的标记时刻热键: {}", config.rec_mark));
+    }
+
 
     if errors.is_empty() {
         // 记录最近一次成功配置，供 reregister 失败时回滚（M27）

@@ -139,6 +139,46 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           }}
         />
       </div>
+      <ToggleRow
+        icon="👁"
+        hue="capture"
+        label="点击高亮（烧入画面）"
+        desc="回放时能看到点击处的青色圆环（~0.4s 扩散）；烧进视频不可后期移除，与事件记录互不依赖"
+        value={config.rec_click_highlight}
+        onChange={(v) => void updateAndSave({ rec_click_highlight: v })}
+      />
+      <ToggleRow
+        icon="📋"
+        hue="capture"
+        label="记录点击与按键事件"
+        desc="写同名 .events.json（时间基 = 视频时间轴）；只记修饰键组合与命名键，普通字符键不记录"
+        value={config.rec_event_sidecar}
+        onChange={(v) => void updateAndSave({ rec_event_sidecar: v })}
+      />
+      <div className={styles.sRow}>
+        <SettingTile hue="capture">🔖</SettingTile>
+        <div className={styles.sRowBody}>
+          <div className={styles.sRowLabel}>录制中：标记时刻</div>
+          <div className={styles.sRowDesc}>在事件文件里打一个标记点（五期时间线刻度的素材）；关闭事件记录后无效果</div>
+        </div>
+        <HotkeyRecorder
+          value={config.rec_mark_hotkey}
+          allowClear
+          taken={globalHotkeysTaken(config, "rec_mark_hotkey")}
+          onChange={(v) => {
+            const oldVal = config.rec_mark_hotkey;
+            void (async () => {
+              await updateAndSave({ rec_mark_hotkey: v });
+              try {
+                await reregisterQuiet();
+              } catch (e) {
+                await updateAndSave({ rec_mark_hotkey: oldVal });
+                toastActionFailed("标记时刻快捷键设置（变更未生效，已恢复原值）", e);
+              }
+            })();
+          }}
+        />
+      </div>
       <SaveDirRow
         value={config.rec_save_dir}
         onPick={(dir) => void updateAndSave({ rec_save_dir: dir })}

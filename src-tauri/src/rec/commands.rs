@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use tauri::{AppHandle, Manager, State};
 
+use super::events;
 use super::quality::{output_file_name, RecQuality};
 use super::session::{self, RecOpts};
 use super::scan;
@@ -67,6 +68,8 @@ pub async fn rec_start(
     if req.w < 16 || req.h < 16 {
         return Err("选区太小（至少 16×16）".into());
     }
+    // 事件轨开关（四期 1.3）：开始录制那一刻定死，录制中改设置不影响本场
+    let cfg = store.get_config().unwrap_or_default();
     let opts = RecOpts {
         x: req.x,
         y: req.y,
@@ -75,6 +78,8 @@ pub async fn rec_start(
         quality,
         sys_audio: req.sys_audio,
         mic_audio: req.mic_audio,
+        click_highlight: cfg.get("rec_click_highlight").and_then(|v| v.as_bool()).unwrap_or(true),
+        event_sidecar: cfg.get("rec_event_sidecar").and_then(|v| v.as_bool()).unwrap_or(true),
     };
     let path = decide_output_path(&app, &store)?;
     session::start(app.clone(), opts, path.clone())?;
@@ -248,6 +253,8 @@ pub fn rec_trim(
         n += 1;
     }
     let (bytes, in_m, out_m) = trim::trim(&src, in_ms, out_ms, &dst)?;
+    // sidecar 跟着剪：事件重映射进 [in, out)，落「_剪」同名 .events.json
+    events::write_sidecar_for_trim(&src, &dst, in_m, out_m);
     Ok(serde_json::json!({
         "path": dst.to_string_lossy(),
         "bytes": bytes,
@@ -287,6 +294,46 @@ pub fn rec_open_preview(
 #[tauri::command]
 pub fn rec_preview_take() -> Option<serde_json::Value> {
     super::take_preview_data()
+}
+
+/* ── GIF 导出（四期 1.5）：单任务串行，行内进度轮询 + 可取消 ── */
+
+/// 启动导出（产物 = 同名 .gif，覆盖旧导出；原 mp4 不动）。
+#[tauri::command]
+pub fn rec_gif_start(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+) -> Result<(), String> {
+    let p = validated_rec_path(&app, &store, &path)?;
+    if !p.exists() {
+        return Err("文件不存在（已被移动或删除？）".into());
+    }
+    super::gif::start(p)
+}
+
+/// 查询导出状态（前端对在跑任务每 500ms 轮询）。
+#[tauri::command]
+pub fn rec_gif_status(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let p = validated_rec_path(&app, &store, &path)?;
+    let s = super::gif::status(&p);
+    Ok(serde_json::json!({
+        "running": s.running,
+        "percent": s.percent,
+        "donePath": s.done_path,
+        "error": s.error,
+    }))
+}
+
+/// 取消当前导出（丢弃半成品）。
+#[tauri::command]
+pub fn rec_gif_cancel() -> Result<(), String> {
+    super::gif::cancel();
+    Ok(())
 }
 
 /// 输出目录：config `rec_save_dir` 优先；默认 `视频\PastePanda\`。

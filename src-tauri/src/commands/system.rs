@@ -695,6 +695,11 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Alt+R")
         .to_string();
+    let rec_mark = config
+        .get("rec_mark_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Alt+M")
+        .to_string();
     let rec_pause = config
         .get("rec_pause_hotkey")
         .and_then(|v| v.as_str())
@@ -721,6 +726,7 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
             screen_record,
             rec_pause,
             rec_stop,
+            rec_mark,
         };
         crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
     }

@@ -78,9 +78,15 @@ pub fn validate_rec_path(save_dir: &Path, path: &Path) -> Result<(), String> {
 }
 
 /// 删除一个录制文件（先过 `validate_rec_path` 的路径闸）。
+/// 同名 sidecar（`.events.json`）一并删——附属品不落孤儿。
 pub fn delete_rec_file(save_dir: &Path, path: &Path) -> Result<(), String> {
     validate_rec_path(save_dir, path)?;
-    std::fs::remove_file(path).map_err(|e| format!("删除失败：{e}"))
+    std::fs::remove_file(path).map_err(|e| format!("删除失败：{e}"))?;
+    let sidecar = super::events::sidecar_path(path);
+    if sidecar.exists() {
+        let _ = std::fs::remove_file(&sidecar); // best-effort：主文件删成即算成功
+    }
+    Ok(())
 }
 
 /// MP4 时长（ms）：顶层盒走到 `moov`，其子盒 `mvhd` 带 timescale/duration。

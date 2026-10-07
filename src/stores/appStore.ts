@@ -130,6 +130,9 @@ export interface AppConfig {
   rec_hotkey: string; // 屏幕录制快捷键（录制中再按 = 停止）
   rec_pause_hotkey: string; // 录制中：暂停/继续（仅录制中生效；四期 1.1）
   rec_stop_hotkey: string; // 录制中：停止并保存（空 = 不启用；避免与「一点即毁」的丢弃混淆，热键只做保存停止）
+  rec_mark_hotkey: string; // 录制中：标记时刻（写入 .events.json；四期只记录不展示）
+  rec_click_highlight: boolean; // 点击高亮烧入画面（默认开）
+  rec_event_sidecar: boolean; // 记录点击/按键事件到 .events.json（默认开；普通字符键不记录）
   rec_quality: string; // 录屏默认画质档（original/high/standard/smooth，键表 lib/recQuality）
   rec_sys_audio: boolean; // 录屏录系统声音（默认开）
   rec_mic_audio: boolean; // 录屏录麦克风（默认关，避免隐私意外）
@@ -514,6 +517,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   rec_hotkey: "ctrl+alt+r", // R=Record；与上面全部热键不冲突
   rec_pause_hotkey: "ctrl+alt+space", // Ctrl+Alt+P 被 stack_paste 占用，取 Space；与全部热键不冲突
   rec_stop_hotkey: "", // 默认不设：rec_hotkey 录制中本就是停止，不叠加语义
+  rec_mark_hotkey: "ctrl+alt+m", // M=Mark；与上面全部热键不冲突
+  rec_click_highlight: true, // 点击高亮默认开（方案 C 双轨：烧帧 + sidecar）
+  rec_event_sidecar: true, // 事件记录默认开（五期两段式架构的地基）
   rec_quality: "high", // 默认「高清」：兼容性最好的原分辨率档（设计稿 §6）
   rec_sys_audio: true, // 系统声音默认录
   rec_mic_audio: false, // 麦克风默认不录（隐私）

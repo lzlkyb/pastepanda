@@ -24,6 +24,7 @@ const GLOBAL_HOTKEY_KEYS = [
   "rec_hotkey",
   "rec_pause_hotkey",
   "rec_stop_hotkey",
+  "rec_mark_hotkey",
 ] as const satisfies ReadonlyArray<keyof AppConfig>;
 
 export type GlobalHotkeyKey = (typeof GLOBAL_HOTKEY_KEYS)[number];
