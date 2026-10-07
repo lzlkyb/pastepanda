@@ -5,31 +5,25 @@
  */
 import { useState } from "react";
 import { Illustration, isIllustrationKey } from "@/components/Illustration";
+import { stripBold, splitChangelogText } from "@/lib/changelogDisplay";
 import type { ChangeItem } from "@/lib/changelog";
 import styles from "./UpdateNotesDialog.module.css";
 
-/** 剥离 markdown 加粗符号（**…**）：React 渲染纯文本不解析 markdown，
- *  CHANGELOG 条目的 ** 原样显示成星号，这里统一剥掉。 */
-export function stripBold(s: string): string {
-  return s.replace(/\*\*/g, "");
-}
+// stripBold 现居共享层（桌面/手机同源），此处再导出维持既有引用点不破。
+export { stripBold };
 
 /** 「**标题**：明细」条目**只显示标题**（2026-09-23 用户拍板：弹窗是扫读视图，
- *  长明细由底部「查看完整手册」与 GitHub Releases 页承接）。
- *  判据硬：必须 **粗体开头 + 冒号** 才裁；不命中的条目保留全文（旧行为）——
- *  历史 98 个版本的条目全是 `**标题**：` 格式，真有例外也不会被裁残。
- *  注意两条数据路径（包内 generated / 运行时 parseChangelogSection）都过这里，
- *  本函数是它们唯一的显示收口。 */
+ *  长明细由底部「查看完整手册」与 GitHub Releases 页承接）。口径与手机半屏同源，
+ *  判据收口在 changelogDisplay.splitChangelogText。 */
 function renderItemText(text: string) {
-  const t = /^\*\*(.+?)\*\*[：:]/.exec(text);
-  if (t) return stripBold(t[1]);
-  const m = /^(.+?)(：| — )([\s\S]+)$/.exec(text);
-  if (!m) return stripBold(text);
+  const d = splitChangelogText(text);
+  if (d.kind === "titleOnly") return d.title;
+  if (d.kind === "plain") return d.text;
   return (
     <>
-      <b>{stripBold(m[1])}</b>
-      {m[2]}
-      {m[3]}
+      <b>{d.lead}</b>
+      {d.sep}
+      {d.rest}
     </>
   );
 }

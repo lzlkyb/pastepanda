@@ -76,6 +76,7 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const statusRef = useRef(status);
   statusRef.current = status;
+  const checkingRef = useRef(false);
 
   const refreshInstallStatus = useCallback(async () => {
     try {
@@ -128,22 +129,6 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
         setInstallAllowed(false);
         setStatus("needPermission");
       });
-      // 24 小时静默自检（与桌面节奏一致）；无新版本时不打扰用户。
-      const last = Number(localStorage.getItem(LAST_CHECK_KEY) ?? "0");
-      if (Number.isFinite(last) && Date.now() - last >= CHECK_INTERVAL_MS) {
-        void (async () => {
-          try {
-            const r = await invoke<MobileUpdateInfo | null>("check_update");
-            localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
-            if (r && statusRef.current === "idle") {
-              setInfo(r);
-              setStatus("available");
-            }
-          } catch {
-            // 后台自检失败保持静默，用户手动检查时会看到同样的错误。
-          }
-        })();
-      }
     })();
     return () => {
       alive = false;
@@ -161,7 +146,8 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
   }, [refreshInstallStatus]);
 
   const checkNow = useCallback(async () => {
-    if (busy) return;
+    if (checkingRef.current) return;
+    checkingRef.current = true;
     setBusy(true);
     setStatus("checking");
     setError(null);
@@ -178,9 +164,44 @@ export function MobileUpdateProvider({ children }: { children: ReactNode }) {
       setError(rcErrorText(e));
       setStatus("error");
     } finally {
+      checkingRef.current = false;
       setBusy(false);
     }
-  }, [busy]);
+  }, []);
+
+  // 静默检查：仍真发一次 check_update，但只在有新版本且当前空闲时浮现横幅；
+  // 不进 checking 态、不落 uptodate/error，与桌面 silentCheck 同口径。
+  const silentCheck = useCallback(async () => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+    try {
+      const r = await invoke<MobileUpdateInfo | null>("check_update");
+      localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
+      if (r && statusRef.current === "idle") {
+        setInfo(r);
+        setStatus("available");
+      }
+    } catch {
+      // 后台自检失败保持静默，用户手动检查时会看到同样的错误。
+    } finally {
+      checkingRef.current = false;
+    }
+  }, []);
+
+  // 启动自检 + 24h 复查，节奏对齐桌面 UpdateContext：
+  // 距上次 <24h → 静默检查（照样查、有新版才打扰）；≥24h 或首次 → 可见检查；
+  // 运行中每 24h setInterval 复查一次（App 常驻才触发，后台被系统杀后靠冷启动补）。
+  useEffect(() => {
+    const last = Number(localStorage.getItem(LAST_CHECK_KEY) ?? "0");
+    const within = Number.isFinite(last) && last > 0 && Date.now() - last < CHECK_INTERVAL_MS;
+    void (within ? silentCheck() : checkNow());
+    const timer = setInterval(() => void checkNow(), CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+    // 启动自检 + 定时器本就只该装一次：checkNow/silentCheck 虽是稳定 useCallback，
+    // 但一旦进依赖数组，将来任何重建都会重装 setInterval 把 24h 计时归零，
+    // 所以保持 [] 并关掉 exhaustive-deps。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 完整「检查→下载→拉起安装器」流程由后端 spawn 推事件；缓存命中时秒回。
   const startUpdate = useCallback(async () => {

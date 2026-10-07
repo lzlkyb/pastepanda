@@ -1,0 +1,330 @@
+/* MobileUpdateSheet.module.css — 手机端更新半屏
+   复用 MobileSheet 外壳（拖拽/返回键/常驻 footer），本文件只画内容层：
+   Hero + 分组说明卡 + 各状态块 + 手册 CTA + 页脚按钮行。
+
+   颜色：正文/边框/主色一律走主题令牌（六主题自适应）。分类 chip 需要 8 个互相可
+   区分的色相，而主题只有 accent/green/orange/danger 四支主色——不够分，硬套会让两三个
+   分类撞成同一颜色。故 chip 色以自定义属性在本组件内声明（值与桌面 CATEGORY_COLORS
+   同源，见 src/lib/changelog.ts 那段说明），用 var() 引用；这正是 V3 认的「token 定义处」。 */
+
+/* ===== Hero ===== */
+.hero {
+  position: relative;
+  border-radius: 12px;
+  padding: 16px 16px 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--accent-light) 0%, transparent 90%);
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--hero-glow);
+}
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+.heroTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.heroIco {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--version-badge-gradient);
+  box-shadow: 0 6px 16px var(--accent-shadow);
+  color: var(--text-on-accent);
+}
+.heroVer {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.vOld {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: line-through;
+  opacity: 0.65;
+  font-weight: 700;
+}
+.vArrow {
+  color: var(--accent);
+  opacity: 0.8;
+  font-weight: 800;
+}
+.vNew {
+  --vnew-end: #6d5cf0; /* 与桌面 Hero 同款渐变终点 */
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--accent) 15%, var(--vnew-end) 92%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+/* 主题句独占整行（沿用桌面逐字竖排红线：min-width:0 + anywhere + normal） */
+.heroTitle {
+  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* ===== 分组说明卡 ===== */
+.grp {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 12px;
+  margin-bottom: 12px;
+  background: var(--card-bg);
+}
+.grpHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.chip {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex: none;
+  color: var(--text-secondary);
+  background: var(--section-bg);
+}
+/* 分类谱：自定义属性声明处即 token 定义（V3 豁免），下面各引用行只写 var()。 */
+.chip[data-cat="feat"] {
+  --c: #6366f1;
+  --ink: #4338ca;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 15%, var(--card-bg));
+}
+.chip[data-cat="fix"] {
+  --c: #f59e0b;
+  --ink: #b45309;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 18%, var(--card-bg));
+}
+.chip[data-cat="change"] {
+  --c: #8b5cf6;
+  --ink: #6d28d9;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 15%, var(--card-bg));
+}
+.chip[data-cat="security"] {
+  --c: #ef4444;
+  --ink: #b91c1c;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 15%, var(--card-bg));
+}
+.chip[data-cat="perf"],
+.chip[data-cat="uiux"] {
+  --c: #10b981;
+  --ink: #047857;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 16%, var(--card-bg));
+}
+.chip[data-cat="stability"] {
+  --c: #f97316;
+  --ink: #c2410c;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 16%, var(--card-bg));
+}
+.chip[data-cat="tech"],
+.chip[data-cat="other"] {
+  --c: #7888a0;
+  --ink: #475569;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--c) 18%, var(--card-bg));
+}
+.grpTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grpSub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 8px 0 4px;
+}
+.grpItem {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  min-width: 0;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.grpItem::before {
+  content: "";
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-color);
+  margin-top: 8px;
+}
+.grpItem b {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+/* ===== 状态块（下载中/待安装/待授权/出错） ===== */
+.state {
+  padding: 4px 0 8px;
+}
+.stateIco {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px auto 12px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+}
+.stateIco[data-tone="warning"] {
+  --c: #f59e0b;
+  --ink: #b45309;
+  background: color-mix(in srgb, var(--c) 18%, var(--card-bg));
+  color: var(--ink);
+}
+.stateIco[data-tone="error"] {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.stateH {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 750;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.stateP {
+  margin: 0 auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 300px;
+  overflow-wrap: anywhere;
+}
+.progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin: 16px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--border-color);
+  overflow: hidden;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.progress::-webkit-progress-bar {
+  background: transparent;
+  border-radius: 999px;
+}
+.progress::-webkit-progress-value {
+  background: var(--accent-solid);
+  border-radius: 999px;
+}
+.progress::-moz-progress-bar {
+  background: var(--accent-solid);
+  border-radius: 999px;
+}
+.progressNum {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sysNote {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 16px auto 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--section-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 320px;
+}
+.sysNote svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent-strong);
+}
+
+/* ===== 手册 CTA ===== */
+.manual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-light);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+.manual:active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* ===== 页脚按钮行 ===== */
+.footRow {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+/* 页脚按钮均分（稍后+下载）；单按钮态因 flex:1 自然占满，无需分支。 */
+.footRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}

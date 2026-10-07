@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机端更新体验升级 · 甲方案手机原生化交互预览</title>
+<style>
+  /* ============ 真实令牌（桌面 theme.css 浅色档取值，mobile 同源 import） ============ */
+  :root {
+    --app-bg: #eef2f7;
+    --card-bg: #fff;
+    --section-bg: #f0f4f8;
+    --text-primary: #17202b;
+    --text-secondary: #55606f;
+    --text-muted: #8a95a5;
+    --border-color: #dbe2ec;
+    --accent: #0ea5e9;
+    --accent-solid: #027cbb;
+    --accent-strong: #0273ad;
+    --accent-light: #e0f2fe;
+    --text-on-accent: #fff;
+    --danger: #dc2626;
+    --danger-bg: #fee2e2;
+    --overlay-bg: rgba(0, 0, 0, 0.35);
+    --accent-shadow: rgba(2, 132, 199, 0.15);
+    --version-badge-gradient: linear-gradient(135deg, #0284c7, #0369a1);
+    --hero-glow: radial-gradient(ellipse 200px 120px at 50% 20%, rgba(2, 132, 199, 0.1), transparent);
+
+    /* mobile-base.css 真实令牌 */
+    --mobile-radius-group: 16px;
+    --mobile-radius-panel: 24px;
+    --mobile-title-size: 20px;
+    --mobile-sheet-glass: color-mix(in srgb, var(--card-bg) 90%, transparent);
+    --mobile-glass-blur: 20px;
+    --mobile-scrim: var(--overlay-bg);
+
+    /* 分类谱字面色：changelog.ts 的 CATEGORY_COLORS（--cat-* 从未定义，实现须落 CSS module 类） */
+    --cat-feat: #6366F1;
+    --cat-perf: #10B981;   /* uiux 同色 */
+    --cat-fix: #F59E0B;
+  }
+  html[data-theme="dark"] {
+    --app-bg: #0f1115;
+    --card-bg: #18181b;
+    --section-bg: #232329;
+    --text-primary: #f4f5f7;
+    --text-secondary: #b4bac4;
+    --text-muted: #838a96;
+    --border-color: #2f3037;
+    --accent: #38bdf8;
+    --accent-solid: #666fc4;
+    --accent-strong: #93a2ff;
+    --accent-light: #1e1b4b;
+    --danger-bg: #3b1414;
+    --accent-shadow: rgba(102, 111, 196, 0.28);
+    --version-badge-gradient: linear-gradient(135deg, #666fc4, #4c51a8);
+    --hero-glow: radial-gradient(ellipse 220px 130px at 50% 18%, rgba(102, 111, 196, 0.22), transparent);
+    --overlay-bg: rgba(0, 0, 0, 0.55);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--text-primary);
+    background: #cfd6e0;
+    padding: 28px 18px 60px;
+  }
+  html[data-theme="dark"] body { background: #05060a; }
+
+  /* ============ 预览外壳（house pattern：intro + controls + device + caption + proposal） ============ */
+  .intro { max-width: 1180px; margin: 0 auto 18px; }
+  .intro h1 { font-size: 22px; margin: 0 0 6px; }
+  .intro p { margin: 4px 0; color: #3a4150; max-width: 760px; }
+  html[data-theme="dark"] .intro p { color: #b4bac4; }
+  .intro .secondary { color: #6b7280; font-size: 13px; }
+
+  .controls {
+    max-width: 1180px; margin: 0 auto 22px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: #fff; border: 1px solid #dbe2ec; border-radius: 12px; padding: 12px 14px;
+  }
+  html[data-theme="dark"] .controls { background: #14151a; border-color: #2f3037; }
+  .controls .grp-label { font-size: 12px; font-weight: 700; color: #6b7280; margin-right: 2px; }
+  .controls button {
+    border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; border-radius: 9px;
+    padding: 8px 12px; font-size: 13px; font-weight: 600; cursor: pointer; min-height: 38px;
+  }
+  html[data-theme="dark"] .controls button { background: #1c1d24; border-color: #3a3b45; color: #cbd5e1; }
+  .controls button[aria-pressed="true"] { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+  .controls .divider { width: 1px; align-self: stretch; background: #dbe2ec; margin: 0 4px; }
+
+  /* ============ 设备框 ============ */
+  .stage { display: flex; justify-content: center; gap: 26px; flex-wrap: wrap; max-width: 1180px; margin: 0 auto; }
+  .device {
+    position: relative; width: 390px; height: 800px; max-height: 88vh;
+    background: var(--app-bg); border-radius: 40px; border: 10px solid #111318;
+    overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,.28);
+    display: flex; flex-direction: column;
+  }
+  html[data-theme="dark"] .device { border-color: #000; }
+  .statusbar { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font-size: 12px; color: var(--text-secondary); font-weight: 600; flex: none; }
+  .screen { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 16px 24px; }
+
+  /* ---- 更新入口所在页（设置「关于与更新」）---- */
+  .section-heading { font-size: 15px; font-weight: 500; color: var(--text-secondary); margin: 20px 0 10px; }
+  .group { background: var(--card-bg); border-radius: var(--mobile-radius-group); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; padding: 14px 16px; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; color: var(--text-secondary); text-align: left; }
+  .row:last-child { border-bottom: 0; }
+  .row > .ico { flex: none; width: 22px; height: 22px; color: var(--accent-strong); display: inline-flex; }
+  .row-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .row-text strong { color: var(--text-primary); font-size: 15px; font-weight: 600; }
+  .row-text small { font-size: 13px; line-height: 1.5; }
+  .row .text-btn { flex: none; color: var(--accent-strong); font-size: 14px; font-weight: 700; background: transparent; border: 0; padding: 8px 6px; }
+  .ver-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--section-bg); color: var(--text-secondary); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ver-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cat-fix); }
+
+  /* ---- 顶部横幅入口（会话页/首页可见，可点，点开同一张半屏）---- */
+  .banner {
+    position: absolute; left: 14px; right: 14px; top: 44px; z-index: 5;
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent); border-radius: 14px;
+    box-shadow: 0 8px 22px var(--accent-shadow);
+  }
+  .banner .b-ico { width: 34px; height: 34px; border-radius: 10px; background: var(--version-badge-gradient); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .banner .b-text { flex: 1; min-width: 0; }
+  .banner .b-text strong { display: block; font-size: 14px; color: var(--text-primary); overflow-wrap: anywhere; }
+  .banner .b-text small { font-size: 12px; color: var(--text-secondary); }
+  .banner .b-go { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 10px; background: var(--accent-solid); color: var(--text-on-accent); font-size: 13px; font-weight: 700; }
+  .banner[hidden] { display: none; }
+
+  /* ============ 底部半屏（MobileSheet 真实几何：panel 顶圆角24 / dragHandle 36×4 / sheetHead / body 滚动 / footer 常驻） ============ */
+  .scrim { position: absolute; inset: 0; background: var(--mobile-scrim); z-index: 8; opacity: 0; pointer-events: none; transition: opacity 180ms cubic-bezier(.2,0,0,1); }
+  .scrim.on { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 9;
+    max-height: 92%; display: flex; flex-direction: column;
+    padding: 0 20px calc(20px + env(safe-area-inset-bottom,0px));
+    border-radius: var(--mobile-radius-panel) var(--mobile-radius-panel) 0 0;
+    background: var(--mobile-sheet-glass); backdrop-filter: blur(var(--mobile-glass-blur));
+    color: var(--text-primary); box-shadow: 0 -10px 40px rgba(0,0,0,.18);
+    transform: translateY(101%); transition: transform 300ms cubic-bezier(.2,0,0,1);
+  }
+  .sheet.on { transform: translateY(0); }
+  .drag-handle { flex: none; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 40px; border: 0; background: transparent; }
+  .drag-handle span { width: 36px; height: 4px; border-radius: 4px; background: var(--border-color); }
+  .sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+  .sheet-title { font-size: 20px; font-weight: 650; margin: 0; line-height: 1.4; }
+  .close-btn { flex: none; min-height: 44px; border: 0; padding: 8px 0 8px 10px; background: transparent; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+
+  .sheet-body { margin-top: 4px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .sheet-foot { flex: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); display: flex; gap: 10px; }
+
+  /* ---- Hero（手机化：紧凑双列，主题句独占整行）---- */
+  .hero { position: relative; border-radius: 16px; padding: 16px 16px 14px; overflow: hidden; margin-bottom: 6px; }
+  .hero::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, var(--accent-light) 0%, transparent 90%); }
+  .hero::after { content: ""; position: absolute; inset: 0; background: var(--hero-glow); }
+  .hero > * { position: relative; z-index: 1; }
+  .hero-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hero-ico { width: 44px; height: 44px; border-radius: 13px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--version-badge-gradient); box-shadow: 0 6px 16px var(--accent-shadow); color: #fff; }
+  .hero-ver { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+  .v-old { font-size: 13px; color: var(--text-muted); text-decoration: line-through; opacity: .65; font-weight: 700; }
+  .v-arrow { color: var(--accent); opacity: .8; font-weight: 800; }
+  .v-new { font-family: "SF Mono", Consolas, monospace; font-size: 20px; font-weight: 800; letter-spacing: -.5px; background: linear-gradient(135deg, var(--accent) 15%, #6D5CF0 92%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero-title { margin-top: 10px; font-size: 16px; font-weight: 800; line-height: 1.4; color: var(--text-primary); min-width: 0; overflow-wrap: anywhere; word-break: normal; }
+
+  /* ---- 分组卡（复用桌面 chip+计数+条目语言，尺寸手机化）---- */
+  .grp { border: 1px solid var(--border-color); border-radius: 13px; padding: 11px 13px; margin-bottom: 10px; background: var(--card-bg); }
+  .grp-head { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; min-width: 0; flex-wrap: wrap; }
+  .chip { font-size: 10px; font-weight: 800; letter-spacing: .4px; padding: 2px 8px; border-radius: 6px; flex: none; }
+  .chip.feat { color: var(--cat-feat); background: color-mix(in srgb, var(--cat-feat) 14%, transparent); }
+  .chip.perf { color: var(--cat-perf); background: color-mix(in srgb, var(--cat-perf) 16%, transparent); }
+  .chip.fix  { color: #b45309; background: color-mix(in srgb, var(--cat-fix) 18%, transparent); }
+  html[data-theme="dark"] .chip.fix { color: #fbbf24; }
+  html[data-theme="dark"] .chip.perf { color: #34d399; }
+  .grp-title { font-size: 13px; font-weight: 700; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grp-item { display: flex; gap: 9px; padding: 6px 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; word-break: normal; }
+  .grp-item::before { content: ""; flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--border-color); margin-top: 8px; }
+  .grp-item b { color: var(--text-primary); font-weight: 650; }
+
+  /* ---- 状态块（下载中/待安装/待授权/出错）---- */
+  .state { padding: 4px 0 6px; }
+  .state-ico { width: 52px; height: 52px; border-radius: 15px; display: flex; align-items: center; justify-content: center; margin: 6px auto 12px; background: var(--accent-light); color: var(--accent-strong); }
+  .state-ico.warn { background: color-mix(in srgb, var(--cat-fix) 18%, transparent); color: #b45309; }
+  .state-ico.err { background: var(--danger-bg); color: var(--danger); }
+  html[data-theme="dark"] .state-ico.warn { color: #fbbf24; }
+  .state h3 { margin: 0 0 6px; font-size: 17px; font-weight: 750; text-align: center; }
+  .state p { margin: 0 auto; font-size: 13px; line-height: 1.6; color: var(--text-secondary); text-align: center; max-width: 300px; overflow-wrap: anywhere; }
+  .progress { display: block; width: 100%; height: 8px; margin: 16px 0 8px; border: 0; border-radius: 999px; background: var(--border-color); overflow: hidden; }
+  .progress i { display: block; height: 100%; border-radius: 999px; background: var(--accent-solid); transition: width 400ms linear; }
+  .progress-num { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+  /* ---- 页脚按钮 ---- */
+  .btn { flex: 1; min-height: 48px; border: 0; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 16px; font-size: 15px; font-weight: 600; }
+  .btn.primary { background: var(--accent-solid); color: var(--text-on-accent); }
+  .btn.secondary { background: var(--section-bg); color: var(--text-primary); }
+  .btn.block { width: 100%; }
+  .btn[hidden] { display: none; }
+
+  .sys-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; padding: 10px 12px; border-radius: 11px; background: var(--section-bg); color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+  .sys-note svg { flex: none; width: 16px; height: 16px; margin-top: 1px; color: var(--accent-strong); }
+
+  .manual-cta { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 14px; padding: 11px; border: 1px solid var(--accent); border-radius: 11px; background: var(--accent-light); color: var(--accent-strong); font-size: 13px; font-weight: 700; }
+
+  .caption { max-width: 1180px; margin: 22px auto 0; color: #475569; font-size: 13px; }
+  html[data-theme="dark"] .caption { color: #b4bac4; }
+  .proposal { max-width: 1180px; margin: 18px auto; background: #fff; border: 1px solid #dbe2ec; border-radius: 12px; padding: 16px 18px; }
+  html[data-theme="dark"] .proposal { background: #14151a; border-color: #2f3037; }
+  .proposal h2 { font-size: 16px; margin: 0 0 10px; }
+  .proposal ul { margin: 0; padding-left: 20px; color: #334155; font-size: 13.5px; line-height: 1.7; }
+  html[data-theme="dark"] .proposal ul { color: #cbd5e1; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-secondary); margin-top: 6px; }
+  .flow b { color: var(--accent-strong); }
+  .flow .sep { opacity: .5; }
+</style>
+</head>
+<body>
+  <svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <symbol id="i-update" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4 3 7 7 8 4-1 7-4 7-8V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01"/><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2Z"/><path d="M18 3v18"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="intro">
+    <h1>手机端更新体验升级 · 甲方案（手机原生化 + 美化 + 交互更友好）</h1>
+    <p>把桌面端「发行说明式」更新弹框搬到手机，但按手机原生气泡重排：<b>一张底部半屏承载整条更新流程</b>（说明 → 下载 → 打开安装器 → 授权引导 → 出错重试），入口横幅与设置页都点开同一张半屏。</p>
+    <p class="secondary">这是交互设计稿。装机确认是 Android 系统硬边界（无法静默安装），稿内已如实处理；连接、下载进度均为模拟。实现零改动复用 <code>@/lib/changelogParser</code> 与 <code>MobileSheet</code>。</p>
+  </header>
+
+  <div class="controls" role="group" aria-label="预览控制">
+    <span class="grp-label">半屏状态</span>
+    <button data-state="available" aria-pressed="true">发现新版本</button>
+    <button data-state="downloading" aria-pressed="false">下载中</button>
+    <button data-state="ready" aria-pressed="false">待安装</button>
+    <button data-state="permission" aria-pressed="false">需授权</button>
+    <button data-state="error" aria-pressed="false">出错</button>
+    <span class="divider"></span>
+    <span class="grp-label">场景</span>
+    <button id="toggle-banner" aria-pressed="true">入口横幅</button>
+    <span class="divider"></span>
+    <button id="toggle-theme" aria-pressed="false">深色</button>
+    <button id="open-sheet" aria-pressed="false">打开/收起半屏</button>
+  </div>
+
+  <div class="stage">
+    <section class="device" aria-label="手机端更新预览">
+      <div class="statusbar"><span>14:30</span><span>PastePanda · 5G · 88%</span></div>
+
+      <!-- 入口横幅（会话/首页可见，可点开半屏） -->
+      <div class="banner" id="banner" role="button" tabindex="0" aria-label="发现新版本，点击查看">
+        <span class="b-ico"><svg width="20" height="20"><use href="#i-update"/></svg></span>
+        <span class="b-text"><strong>发现新版本 v7.2.10</strong><small>手机上就能更新，画面更清晰</small></span>
+        <button class="b-go">查看</button>
+      </div>
+
+      <!-- 背景页：设置「关于与更新」 -->
+      <div class="screen" id="screen">
+        <h2 class="section-heading">关于与更新</h2>
+        <div class="group">
+          <div class="row">
+            <span class="ico"><svg width="22" height="22"><use href="#i-phone"/></svg></span>
+            <span class="row-text"><strong>当前版本</strong><small>v7.2.9</small></span>
+            <span class="ver-badge"><span class="ver-dot"></span>有更新</span>
+          </div>
+          <button class="row" id="open-from-row">
+            <span class="ico"><svg width="22" height="22"><use href="#i-update"/></svg></span>
+            <span class="row-text"><strong>发现新版本 v7.2.10</strong><small>手机上就能更新，画面更清晰 · 查看更新内容</small></span>
+            <span class="text-btn">更新</span>
+          </button>
+          <button class="row">
+            <span class="ico"><svg width="22" height="22"><use href="#i-refresh"/></svg></span>
+            <span class="row-text"><strong>检查更新</strong><small>已是最新时每 24 小时自动检查一次</small></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 半屏遮罩 + 底部半屏 -->
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <button class="drag-handle" aria-label="向下拖动或点击收起面板"><span></span></button>
+        <header class="sheet-head">
+          <h2 class="sheet-title" id="sheet-title">更新到 v7.2.10</h2>
+          <button class="close-btn" id="close-sheet"><svg width="18" height="18"><use href="#i-close"/></svg><span>关闭</span></button>
+        </header>
+
+        <div class="sheet-body" id="sheet-body">
+          <!-- ===== available ===== -->
+          <div class="state-view" data-view="available">
+            <div class="hero">
+              <div class="hero-top">
+                <span class="hero-ico"><svg width="24" height="24"><use href="#i-update"/></svg></span>
+                <span class="hero-ver"><span class="v-old">v7.2.9</span><span class="v-arrow">→</span><span class="v-new">v7.2.10</span></span>
+              </div>
+              <div class="hero-title">手机上就能更新，画面更清晰</div>
+            </div>
+
+            <div class="grp">
+              <div class="grp-head"><span class="chip feat">新增</span><span class="grp-title">新增 · 4</span></div>
+              <div class="grp-item"><b>手机端应用内自更新</b>：不用再回电脑传安装包，手机上检查、下载、安装一步到位</div>
+              <div class="grp-item"><b>文章一键存知识库</b>：复制的长文可直接归档，日后检索</div>
+              <div class="grp-item"><b>录屏暂停 / 继续</b>：中途停下不中断，产物只留有效画面</div>
+              <div class="grp-item"><b>远程会话防休眠</b>：长时间操作电脑时保持唤醒</div>
+            </div>
+            <div class="grp">
+              <div class="grp-head"><span class="chip perf">改进</span><span class="grp-title">改进 · 3</span></div>
+              <div class="grp-item"><b>远程画面更清晰</b>：链路切换后画质快速回升</div>
+              <div class="grp-item"><b>录屏画质与鼠标指针</b>：指针移动也进画面</div>
+              <div class="grp-item"><b>手机端远程控制回执</b>：画质/声音/键盘设置即时反馈 + 锁屏提示</div>
+            </div>
+            <div class="grp">
+              <div class="grp-head"><span class="chip fix">修复</span><span class="grp-title">修复 · 1</span></div>
+              <div class="grp-item">录屏时长按帧数统计，不再偏短</div>
+            </div>
+
+            <button class="manual-cta"><svg width="16" height="16"><use href="#i-book"/></svg>查看完整功能手册</button>
+          </div>
+
+          <!-- ===== downloading ===== -->
+          <div class="state-view" data-view="downloading" hidden>
+            <div class="state">
+              <div class="state-ico"><svg width="26" height="26"><use href="#i-update"/></svg></div>
+              <h3>正在下载 v7.2.10</h3>
+              <p>共 38 MB，走当前 Wi-Fi/移动网络。半屏保持打开即可看到进度，收起也不会中断。</p>
+              <progress class="progress" value="62" max="100"></progress>
+              <div class="progress-num"><span>已下载 23.6 MB</span><span>约剩 12 秒</span></div>
+            </div>
+          </div>
+
+          <!-- ===== ready ===== -->
+          <div class="state-view" data-view="ready" hidden>
+            <div class="state">
+              <div class="state-ico"><svg width="26" height="26"><use href="#i-check"/></svg></div>
+              <h3>下载完成，准备安装</h3>
+              <p>安装包已校验。点下方按钮打开系统安装器，在系统弹窗里点「继续 / 安装」。</p>
+              <div class="sys-note"><svg><use href="#i-shield"/></svg><span>Android 出于安全不允许应用静默安装——这一步的系统确认无法跳过，属正常流程。</span></div>
+            </div>
+          </div>
+
+          <!-- ===== permission ===== -->
+          <div class="state-view" data-view="permission" hidden>
+            <div class="state">
+              <div class="state-ico warn"><svg width="26" height="26"><use href="#i-shield"/></svg></div>
+              <h3>需要「安装未知应用」权限</h3>
+              <p>首次更新需允许 PastePanda 安装应用。授权后回到本页会自动继续，无需重新下载。</p>
+              <div class="sys-note"><svg><use href="#i-warn"/></svg><span>安装包已缓存在本地，授权这一步只放行系统安装器，不会再走一次网络。</span></div>
+            </div>
+          </div>
+
+          <!-- ===== error ===== -->
+          <div class="state-view" data-view="error" hidden>
+            <div class="state">
+              <div class="state-ico err"><svg width="26" height="26"><use href="#i-warn"/></svg></div>
+              <h3>更新没能完成</h3>
+              <p id="err-detail">下载中断：源站点连接较慢。已自动切换备用源，可点此重试。</p>
+              <div class="sys-note"><svg><use href="#i-refresh"/></svg><span>已下载部分保留，重试从断点继续，不重复消耗流量。</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 常驻页脚：按钮随状态切换 -->
+        <footer class="sheet-foot">
+          <button class="btn secondary" id="foot-skip">稍后</button>
+          <button class="btn primary" data-foot="available"><svg width="18" height="18"><use href="#i-update"/></svg>下载并更新</button>
+          <button class="btn primary" data-foot="downloading">继续等待</button>
+          <button class="btn primary" data-foot="ready" hidden><svg width="18" height="18"><use href="#i-shield"/></svg>打开安装器</button>
+          <button class="btn primary" data-foot="permission" hidden><svg width="18" height="18"><use href="#i-shield"/></svg>去授权</button>
+          <button class="btn primary" data-foot="error" hidden><svg width="18" height="18"><use href="#i-refresh"/></svg>重试</button>
+        </footer>
+      </div>
+    </section>
+  </div>
+
+  <div class="caption">
+    <div class="flow">
+      入口横幅 / 设置行 <b>点开</b> <span class="sep">→</span> <b>发现新版本</b>（阅读分组说明） <span class="sep">→</span> <b>下载中</b>（进度常驻，收起不中断） <span class="sep">→</span> <b>待安装</b>（打开系统安装器） <span class="sep">→</span> 需授权时<b>就地引导</b>、错误时<b>断点重试</b>
+    </div>
+    <p>点上方按钮切换状态，整条流程在同一张半屏里滚动，页脚按钮常驻可见。触发（更新按钮）与它的反馈（进度/结果）在同一可见性域。</p>
+  </div>
+
+  <section class="proposal">
+    <h2>落地范围（零改动复用现有件）</h2>
+    <ul>
+      <li><b>解析</b>：直接 <code>import { parseChangelogSection } from "@/lib/changelogParser"</code>，把 <code>info.body</code>（现已是完整 CHANGELOG markdown）解析成分组结构；桌面已用同一函数，无需复制。</li>
+      <li><b>容器</b>：新增 <code>MobileUpdateSheet</code> 包 <code>MobileSheet</code>（drag-to-dismiss + 返回键 + 常驻 footer 全部现成），footer 放「稍后 / 主操作」。</li>
+      <li><b>显示</b>：条目渲染沿用桌面 <code>GroupItem/stripBold</code> 口径（剥 <code>**</code>、<code>**标题**：</code> 只显标题），分类 chip 色（CATEGORY_COLORS 字面色）落 CSS module 类，不用内联 style（lint:ui V 规则）。</li>
+      <li><b>接线</b>：<code>MobileUpdateSection</code> 与 <code>MobileUpdateBanner</code> 的「更新 / 查看」统一 <code>open()</code> 半屏，取代当前 <code>firstLine()</code> 露出的裸 markdown 星号；各事件态（available/downloading/ready/needPermission/error）驱动同一张半屏切换视图。Provider/hook 不动，符合桌面 UpdateContext 零改动契约。</li>
+      <li><b>装机硬边界</b>：ready/permission 视图如实说明系统确认不可跳过，不做「假装一键装成」的误导。</li>
+    </ul>
+  </section>
+
+<script>
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const sheet = $("#sheet"), scrim = $("#scrim");
+  let state = "available";
+
+  function openSheet(on) { sheet.classList.toggle("on", on); scrim.classList.toggle("on", on); }
+
+  function applyState(s) {
+    state = s;
+    $$(".controls [data-state]").forEach(b => b.setAttribute("aria-pressed", b.dataset.state === s));
+    $$(".state-view").forEach(v => v.hidden = v.dataset.view !== s);
+    $$(".sheet-foot [data-foot]").forEach(b => b.hidden = b.dataset.foot !== s);
+    $("#foot-skip").hidden = (s !== "available"); // 说明态给「稍后」；其余态主按钮满宽
+    const titles = { available: "更新到 v7.2.10", downloading: "正在下载", ready: "准备安装", permission: "需要授权", error: "更新未完成" };
+    $("#sheet-title").textContent = titles[s];
+    openSheet(true);
+  }
+
+  $$(".controls [data-state]").forEach(b => b.addEventListener("click", () => applyState(b.dataset.state)));
+  $("#open-sheet").addEventListener("click", () => openSheet(!sheet.classList.contains("on")));
+  $("#close-sheet").addEventListener("click", () => openSheet(false));
+  scrim.addEventListener("click", () => openSheet(false));
+  $("#banner").addEventListener("click", () => applyState("available"));
+  $("#open-from-row").addEventListener("click", () => applyState("available"));
+
+  $("#toggle-banner").addEventListener("click", (e) => {
+    const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+    e.currentTarget.setAttribute("aria-pressed", on);
+    $("#banner").style.display = on ? "flex" : "none";
+  });
+
+  // 页脚主按钮驱动状态机（模拟）
+  $$(".sheet-foot [data-foot]").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.foot === "available") { fakeDownload(); }
+    else if (b.dataset.foot === "downloading") { /* 等待，收起不中断 */ openSheet(false); }
+    else if (b.dataset.foot === "ready") { applyState("permission"); }      // 模拟系统拦截首装
+    else if (b.dataset.foot === "permission") { applyState("ready"); }      // 模拟授权回来后继续
+    else if (b.dataset.foot === "error") { fakeDownload(); }
+  }));
+  $("#foot-skip").addEventListener("click", () => openSheet(false));
+
+  function fakeDownload() {
+    applyState("downloading");
+    const bar = $('.state-view[data-view="downloading"] progress');
+    const num = $('.state-view[data-view="downloading"] .progress-num span:first-child');
+    let v = 0;
+    const id = setInterval(() => {
+      v += 7 + Math.random() * 9;
+      if (v >= 100) { v = 100; clearInterval(id); setTimeout(() => applyState("ready"), 500); }
+      bar.value = v;
+      num.textContent = "已下载 " + (38 * v / 100).toFixed(1) + " MB";
+    }, 260);
+  }
+
+  $("#toggle-theme").addEventListener("click", (e) => {
+    const dark = document.documentElement.dataset.theme !== "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "";
+    e.currentTarget.setAttribute("aria-pressed", dark);
+    e.currentTarget.textContent = dark ? "浅色" : "深色";
+  });
+
+  // 初始：展开半屏到发现新版本
+  applyState("available");
+</script>
+</body>
+</html>
