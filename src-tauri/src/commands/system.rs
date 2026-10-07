@@ -695,6 +695,16 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
         .and_then(|v| v.as_str())
         .unwrap_or("Ctrl+Alt+R")
         .to_string();
+    let rec_pause = config
+        .get("rec_pause_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Ctrl+Alt+Space")
+        .to_string();
+    let rec_stop = config
+        .get("rec_stop_hotkey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     // 全局热键是桌面专属（hotkey_manager 模块在 mobile 不编译）；手机端诚实报不支持
     #[cfg(desktop)]
     {
@@ -709,6 +719,8 @@ pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Res
             daily_note,
             todo_island,
             screen_record,
+            rec_pause,
+            rec_stop,
         };
         crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
     }

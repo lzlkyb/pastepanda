@@ -15,6 +15,7 @@ pub mod quality;
 pub mod scan;
 pub mod session;
 pub mod sink;
+pub mod trim;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -25,6 +26,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 pub const SELECT_LABEL: &str = "rec-select";
 pub const CONTROL_LABEL: &str = "rec-control";
 pub const HUD_LABEL: &str = "rec-hud";
+pub const PREVIEW_LABEL: &str = "rec-preview";
 
 /// 防止快速连按热键并发创建同名窗口（同 screenshot::CREATING）。
 static CREATING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -39,6 +41,8 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// 一次性交给 HUD 窗的数据（窗挂载后 rec_hud_take 取走；新事件覆盖旧值）。
 static HUD_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
+/// 一次性交给预览裁剪窗的数据（窗挂载后 rec_preview_take 取走；重开覆盖旧值）。
+static PREVIEW_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
 /// HUD 安全网世代号：15s 强制关窗只关自己那一代（前端 8/10s 自关是主路径）。
 static HUD_GEN: AtomicU64 = AtomicU64::new(0);
 /// 「重录上次区域」计划：open_rerecord 存入，选区窗挂载经 URL 参数确认后取走。
@@ -76,6 +80,48 @@ pub fn take_rerecord() -> Option<session::RecOpts> {
 /// 一次性交给 HUD 窗的数据（窗挂载后经 rec_hud_take 取走）。
 pub fn take_hud_data() -> Option<serde_json::Value> {
     HUD_DATA.lock().unwrap_or_else(|p| p.into_inner()).take()
+}
+
+/// 一次性交给预览裁剪窗的数据（窗挂载后经 rec_preview_take 取走）。
+pub fn take_preview_data() -> Option<serde_json::Value> {
+    PREVIEW_DATA.lock().unwrap_or_else(|p| p.into_inner()).take()
+}
+
+/// 打开预览裁剪窗（rec_open_preview 校验路径并放行资产白名单后调用）。
+/// 居中于主屏偏上；数据经 PREVIEW_DATA 下发，重开时旧窗顶掉重建。
+pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) {
+    if let Some(w) = app.get_webview_window(PREVIEW_LABEL) {
+        let _ = w.close();
+    }
+    *PREVIEW_DATA.lock().unwrap_or_else(|p| p.into_inner()) = Some(data);
+    let (mx, my, mw, mh, scale) = primary_screen_metrics(app);
+    // 逻辑 840×600（视频区自适应 + 时间轴 + 操作行）；物理尺寸 = 逻辑 × 主屏 scale
+    //（同 HUD/控制条：builder 收逻辑值，物理覆盖一次）
+    let win_w = (840.0 * scale).round() as i32;
+    let win_h = (600.0 * scale).round() as i32;
+    let x = mx + (mw - win_w) / 2;
+    let y = my + (mh - win_h) / 3;
+    let built = WebviewWindowBuilder::new(
+        app,
+        PREVIEW_LABEL,
+        WebviewUrl::App("rec-preview.html".into()),
+    )
+    .title("")
+    .inner_size(840.0, 600.0) // 逻辑值占位；下方按物理覆盖
+    .position(x as f64, y as f64)
+    .resizable(false)
+    .decorations(false)
+    .shadow(true)
+    .build();
+    match built {
+        Ok(window) => {
+            let _ = window.set_size(tauri::PhysicalSize::new(win_w as u32, win_h as u32));
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(e) => log::warn!("[Rec] 创建预览窗失败: {e}"),
+    }
 }
 
 /// 打开 HUD 轻浮窗（主窗隐藏时的完成/失败通知，规则 15.1）。
@@ -249,13 +295,15 @@ fn create_selector(app: &AppHandle, url: &str) {
 pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
     let (sx, sy, sw, sh) = virtual_screen_metrics();
     let (rx, ry, rw, rh) = region;
-    // 物理尺寸 = 逻辑设计 340×48 × 条所在屏的 scale —— 🔴 不乘的话 125% 缩放下
-    // CSS 视口只有 272×38，内容 ~300+ CSS px，「停止」按钮被裁出窗外
-    // （P1，2026-10-05 审查；同 HUD 窗已修的坑，见 open_hud_window）
+    // 物理尺寸 = 逻辑设计 496×48 × 条所在屏的 scale —— 🔴 不乘的话 125% 缩放下
+    // CSS 视口只有 384×38，内容会被裁出窗外（P1，2026-10-05 审查；同 HUD 窗已修的坑）。
+    // 340 → 416（四期 1.2）→ 496（2026-10-07 真机实录：416 装下计时+体积+档位
+    // +三按钮后「停止」被裁掉一半，实测内容 ~470px，留 ~26px 余量；体积/档位
+    // 徽标 CSS 侧另做可收缩兜底，压力吃信息行、永不吃按钮）。
     let probe_x = (rx + rw as i32 / 2).clamp(sx, sx + sw - 1);
     let scale = monitor_scale_at(app, probe_x, ry.clamp(sy, sy + sh - 1));
     let gap = (12.0 * scale).round() as i32;
-    let bar_w = (340.0 * scale).round() as i32;
+    let bar_w = (496.0 * scale).round() as i32;
     let bar_h = (48.0 * scale).round() as i32;
     let mut bx = rx + (rw as i32 - bar_w) / 2;
     let mut by = ry - bar_h - gap;
@@ -269,7 +317,7 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
     }
     let builder = WebviewWindowBuilder::new(app, CONTROL_LABEL, WebviewUrl::App("rec-control.html".into()))
         .title("")
-        .inner_size(340.0, 48.0) // 逻辑值占位；下方按物理覆盖
+        .inner_size(496.0, 48.0) // 逻辑值占位；下方按物理覆盖
         .position(bx as f64, by as f64)
         .resizable(false);
     let built = builder

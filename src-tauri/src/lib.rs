@@ -682,6 +682,18 @@ pub fn run() {
                     .and_then(|v| v.as_str())
                     .unwrap_or("Ctrl+Alt+R")
                     .to_string(),
+                // 录制中：暂停/继续（四期 1.1）。Ctrl+Alt+P 被 stack_paste 占，取 Space。
+                rec_pause: saved_config
+                    .get("rec_pause_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Ctrl+Alt+Space")
+                    .to_string(),
+                // 录制中：停止并保存。默认留空（rec_hotkey 录制中本就是停止）。
+                rec_stop: saved_config
+                    .get("rec_stop_hotkey")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             };
 
             // 开机自启对账（修复「自启有时候失效」）：条目只在设置开关切换那一刻写一次，
@@ -1340,6 +1352,14 @@ pub fn run() {
             rec::commands::rec_open_file,
             #[cfg(windows)]
             rec::commands::rec_reveal,
+            #[cfg(windows)]
+            rec::commands::rec_keyframes,
+            #[cfg(windows)]
+            rec::commands::rec_trim,
+            #[cfg(windows)]
+            rec::commands::rec_open_preview,
+            #[cfg(windows)]
+            rec::commands::rec_preview_take,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
             screenshot::enum_controls,

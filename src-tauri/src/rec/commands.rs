@@ -9,7 +9,8 @@ use tauri::{AppHandle, Manager, State};
 use super::quality::{output_file_name, RecQuality};
 use super::session::{self, RecOpts};
 use super::scan;
-use super::{close_windows, open_control_window, open_selector_window};
+use super::trim;
+use super::{close_windows, open_control_window, open_preview_window, open_selector_window};
 use crate::data_store::DataStore;
 
 #[derive(Deserialize, Debug)]
@@ -113,6 +114,7 @@ pub fn rec_status() -> serde_json::Value {
         "paused": s.paused,
         "path": s.path,
         "elapsedMs": s.elapsed_ms,
+        "bytes": s.bytes,
         "quality": s.quality,
     })
 }
@@ -192,6 +194,99 @@ pub fn rec_reveal(app: AppHandle, store: State<'_, DataStore>, path: String) -> 
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|e| format!("定位失败：{e}"))
+}
+
+/// 校验「保存目录里的一段录屏产物」并转成 PathBuf——关键帧 / 裁剪 / 预览
+/// 三个命令的同一个路径闸（规则 11.1 收口，防任意路径读/写）。
+fn validated_rec_path(
+    app: &AppHandle,
+    store: &State<'_, DataStore>,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let dir = save_dir(app, store)?;
+    let p = PathBuf::from(path);
+    scan::validate_rec_path(&dir, &p)?;
+    Ok(p)
+}
+
+/// 视频轨关键帧索引（播放域毫秒）——预览窗时间轴的吸附刻度。
+#[tauri::command]
+pub fn rec_keyframes(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let p = validated_rec_path(&app, &store, &path)?;
+    let kf = trim::scan_keyframes(&p)?;
+    Ok(serde_json::json!({
+        "durationMs": kf.duration_ms,
+        "keyframesMs": kf.keyframes_ms,
+    }))
+}
+
+/// 关键帧对齐无损剪切（后端再按宁多勿少吸附一次）：产物落**新文件**
+/// （原名 + `_剪`，冲突加序号），原文件不动。返回实际入出点（吸附后）。
+#[tauri::command]
+pub fn rec_trim(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+    in_ms: u64,
+    out_ms: u64,
+) -> Result<serde_json::Value, String> {
+    let src = validated_rec_path(&app, &store, &path)?;
+    let dir = src.parent().ok_or("路径异常（无父目录）")?.to_path_buf();
+    let stem = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("文件名异常")?
+        .to_string();
+    let mut dst = dir.join(format!("{stem}_剪.mp4"));
+    let mut n = 2;
+    while dst.exists() {
+        dst = dir.join(format!("{stem}_剪{n}.mp4"));
+        n += 1;
+    }
+    let (bytes, in_m, out_m) = trim::trim(&src, in_ms, out_ms, &dst)?;
+    Ok(serde_json::json!({
+        "path": dst.to_string_lossy(),
+        "bytes": bytes,
+        "inMs": in_m,
+        "outMs": out_m,
+    }))
+}
+
+/// 打开预览裁剪窗（HUD「✂ 预览」/ 最近录制行尾 ✂ 共用入口）。
+/// <video> 走 asset 协议读文件，产物目录在 $APPDATA 外——按次放行资产白名单。
+#[tauri::command]
+pub fn rec_open_preview(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+) -> Result<(), String> {
+    let p = validated_rec_path(&app, &store, &path)?;
+    if !p.exists() {
+        return Err("文件不存在（已被移动或删除？）".into());
+    }
+    app.asset_protocol_scope()
+        .allow_file(&p)
+        .map_err(|e| format!("媒体白名单放行失败：{e}"))?;
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+    open_preview_window(
+        &app,
+        serde_json::json!({ "path": p.to_string_lossy(), "name": name, "bytes": bytes }),
+    );
+    Ok(())
+}
+
+/// 预览窗挂载后取数据（一次性消费；None = 已被重开的窗取走）。
+#[tauri::command]
+pub fn rec_preview_take() -> Option<serde_json::Value> {
+    super::take_preview_data()
 }
 
 /// 输出目录：config `rec_save_dir` 优先；默认 `视频\PastePanda\`。

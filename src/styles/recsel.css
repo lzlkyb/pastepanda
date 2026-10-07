@@ -258,6 +258,24 @@ body {
   box-sizing: border-box;
 }
 
+/* 窗口 496（四期 1.2 加体积列；2026-10-07 真机 416 装不下三按钮）：内容一律单行——
+   挤压时宁可裁空白也不许按钮文字竖排（设计稿初版实测教训）；弹簧 spacer 靠内联
+   flex:1 吸收余量。体积/档位是信息行，允许被压缩出省略号——极端态（已暂停 +
+   确认丢弃同屏）压力吃信息、永不吃按钮 */
+.rec-ctrl-root > span,
+.rec-ctrl-root > button {
+  white-space: nowrap;
+  flex: none;
+}
+
+.rec-ctrl-root > .rec-bytes,
+.rec-ctrl-root > .rec-qual-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rec-ctrl-grip {
   color: color-mix(in srgb, var(--shot-bar-text) 35%, transparent);
   font-size: 13px;
@@ -310,6 +328,13 @@ body {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.5px;
+}
+
+/* 已录体积（四期 1.2）：灰字小一号，与计时同用 tabular-nums 防数值跳动 */
+.rec-bytes {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--shot-bar-text) 65%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 
 .rec-qual-badge {
@@ -540,4 +565,283 @@ body {
 
 .rec-glass-lnk:hover {
   color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
+}
+
+/* ===== 预览裁剪窗（rec-preview 窗；四期 1.4，§18 轻预览范式） ===== */
+.rec-pv-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  border: 1px solid var(--shot-bar-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-sizing: border-box;
+  font-size: 12px;
+  cursor: default;
+}
+
+.rec-pv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  flex: none;
+}
+
+.rec-pv-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  cursor: default;
+}
+
+.rec-pv-title em {
+  font-style: normal;
+  margin-left: 8px;
+  color: var(--shot-bar-muted);
+  font-weight: 400;
+}
+
+.rec-pv-x {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--shot-bar-muted);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  padding: 0;
+  flex: none;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rec-pv-x:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  color: var(--shot-bar-text);
+}
+
+.rec-pv-video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #000; /* ui-rule-ok: 播放器黑边（letterbox）惯例，非主题色 */
+  cursor: pointer;
+}
+
+.rec-pv-timerow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 0;
+  flex: none;
+}
+
+.rec-pv-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--shot-bar-muted);
+  font-size: 11px;
+  flex: none;
+  min-width: 38px;
+}
+
+.rec-pv-track {
+  position: relative;
+  flex: 1;
+  height: 26px;
+  cursor: pointer;
+}
+
+.rec-pv-base {
+  position: absolute;
+  inset: 8px 0;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 26%, transparent),
+    color-mix(in srgb, var(--accent) 12%, transparent)
+  );
+}
+
+.rec-pv-kf {
+  position: absolute;
+  top: 11px;
+  width: 1px;
+  height: 10px;
+  background: color-mix(in srgb, var(--shot-bar-text) 32%, transparent);
+  pointer-events: none;
+}
+
+/* 手柄外区域 = 会被剪掉：斜纹压暗（设计稿 §2，一眼看懂方向） */
+.rec-pv-cut {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--shot-bar-bg) 72%, transparent) 0 4px,
+    transparent 4px 8px
+  );
+  pointer-events: none;
+}
+
+.rec-pv-sel {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  pointer-events: none;
+}
+
+.rec-pv-playhead {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--shot-bar-text);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.rec-pv-handle {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 24px;
+  margin-left: -8px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.rec-pv-handle::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 5px;
+  bottom: 5px;
+  border-radius: 4px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: transform 150ms ease;
+}
+
+.rec-pv-handle:hover::after,
+.rec-pv-handle:active::after {
+  transform: scaleY(1.18);
+}
+
+/* 拖动中的时间气泡（吸附前原始值，灰字语义） */
+.rec-pv-bubble {
+  position: absolute;
+  top: -20px;
+  transform: translateX(-50%);
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--shot-bar-text);
+  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.rec-pv-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  flex: none;
+}
+
+.rec-pv-range {
+  flex: 1;
+  min-width: 0;
+  color: var(--shot-bar-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-pv-ok {
+  flex: 1;
+  min-width: 0;
+  color: var(--success);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-pv-btn {
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--shot-bar-border);
+  background: color-mix(in srgb, var(--shot-bar-text) 8%, transparent);
+  color: var(--shot-bar-text);
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+  transition: background 150ms ease;
+}
+
+.rec-pv-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--shot-bar-text) 15%, transparent);
+}
+
+.rec-pv-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rec-pv-btn.primary {
+  background: var(--accent-solid);
+  color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，全站主按钮惯例（同 rec-btn-start） */
+  border: none;
+  font-weight: 600;
+}
+
+.rec-pv-err {
+  margin: 4px 12px 0;
+  color: var(--danger);
+  font-size: 11px;
+  flex: none;
+}
+
+.rec-pv-hints {
+  display: flex;
+  gap: 12px;
+  padding: 8px 12px 8px;
+  color: var(--shot-bar-muted);
+  font-size: 11px;
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.rec-pv-hints kbd {
+  font-size: 11px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
+  border-bottom-width: 2px;
+  color: var(--shot-bar-text);
+  font-family: inherit;
 }

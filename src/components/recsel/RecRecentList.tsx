@@ -11,6 +11,7 @@ import {
   recDeleteFile,
   recListFiles,
   recOpenFile,
+  recOpenPreview,
   recReveal,
   type RecFileMeta,
 } from "@/lib/api/rec";
@@ -87,6 +88,12 @@ export function RecRecentList() {
       setActErr(e instanceof Error ? e.message : String(e)),
     );
   };
+  const preview = (m: RecFileMeta) => {
+    setActErr(null);
+    recOpenPreview(m.path).catch((e: unknown) =>
+      setActErr(e instanceof Error ? e.message : String(e)),
+    );
+  };
   const remove = (m: RecFileMeta) => {
     if (armed !== m.path) {
       setArmed(m.path);
@@ -119,6 +126,14 @@ export function RecRecentList() {
               {fmtSize(m.bytes)} · {fmtDur(m.durationMs)}
             </span>
             <span className={styles.ops}>
+              <button
+                type="button"
+                className={styles.op}
+                title="预览 / 掐头去尾"
+                onClick={() => preview(m)}
+              >
+                ✂
+              </button>
               <button
                 type="button"
                 className={styles.op}

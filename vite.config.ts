@@ -62,6 +62,7 @@ export default defineConfig(async () => ({
         rec: resolve(projectRoot, "rec.html"),
         reccontrol: resolve(projectRoot, "rec-control.html"),
         rechud: resolve(projectRoot, "rec-hud.html"),
+        recpreview: resolve(projectRoot, "rec-preview.html"),
       },
     },
   },

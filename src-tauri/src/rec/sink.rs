@@ -102,7 +102,17 @@ pub struct RecSink {
     audio_stream: Option<u32>,
     /// AAC 帧时长（100ns），写 sample duration 用。无音频轨为 0。
     audio_frame_t100: i64,
+    /// 视频帧时长（100ns），写 sample duration 用。
+    /// 🔴 视频样本必须显式带 duration：MF 的 MP4 sink 对无时长样本只保留约
+    /// 12 帧的前向窗口（靠「下一帧时间戳」倒推上一帧时长），第 13 帧起
+    /// WriteSample 直接报 0xC00D36C9「媒体示例没有持续时间」——一二期没炸
+    /// 是因为时间轴塌在 0（delta=0 可平凡推导），三期修好时间轴后必然踩中。
+    video_frame_t100: i64,
     com_owned: bool,
+    /// 已写入的媒体字节（视频+音频裸流，不含封装开销；四期 1.2 控制条体积显示）。
+    /// 调用方持有同一 Arc 供 `rec_status` 跨线程读——计数器由会话注入（依赖注入），
+    /// sink 不自造：状态读口永远只有一个（规则 11.1 同款思路）。
+    bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl RecSink {
@@ -116,6 +126,7 @@ impl RecSink {
         hevc: bool,
         audio: Option<(u32, u32, &[u8])>, // (sample_rate, channels, asc)
         video_bitrate: u32,
+        bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
     ) -> Result<Self, String> {
         let com_owned = unsafe {
             windows::Win32::System::Com::CoInitializeEx(
@@ -201,7 +212,9 @@ impl RecSink {
                     video_stream,
                     audio_stream,
                     audio_frame_t100,
+                    video_frame_t100: 10_000_000i64 / fps.max(1) as i64,
                     com_owned,
+                    bytes,
                 });
             }
             Ok(())
@@ -220,7 +233,7 @@ impl RecSink {
 
     /// 写一帧已编码视频（Annex-B）。`at_ms` 为编码器内部时间轴（ms）。
     pub fn write_video(&mut self, at_ms: i64, data: &[u8]) -> Result<(), String> {
-        unsafe { self.write(self.video_stream, at_ms * 10_000, 0, data) }
+        unsafe { self.write(self.video_stream, at_ms * 10_000, self.video_frame_t100, data) }
     }
 
     /// 写一帧裸 AAC。`pts_ms` 来自 `AacPacket`。
@@ -241,6 +254,8 @@ impl RecSink {
                 .writer
                 .as_ref()
                 .ok_or_else(|| "SinkWriter 已释放".to_string())?;
+            use std::sync::atomic::Ordering;
+            self.bytes.fetch_add(data.len() as u64, Ordering::Relaxed);
             let buf = MFCreateMemoryBuffer(data.len().max(1) as u32).map_err(mf_err)?;
             {
                 let mut p: *mut u8 = std::ptr::null_mut();
@@ -320,6 +335,7 @@ mod tests {
     // 本测试走生产路径 RecSink::open 全真装配（含音轨），再用真编码器的帧走一次
     // 写入 + finalize，断言 moov 里出现 avcC（参数集真的进了容器）。编码器
     // 打不开的机器上端到端段优雅跳过。 ──
+
     #[test]
     fn 开封装_真实媒体类型含音轨() {
         use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
@@ -334,7 +350,16 @@ mod tests {
         // ── 段 1：生产路径开封装（视频 + 音轨全真类型）──
         let path = std::env::temp_dir().join("rec_sink_regression.mp4");
         let _ = std::fs::remove_file(&path);
-        let mut sink = RecSink::open(&path, w, h, fps, false, Some((48000, 2, &asc)), br)
+        let mut sink = RecSink::open(
+            &path,
+            w,
+            h,
+            fps,
+            false,
+            Some((48000, 2, &asc)),
+            br,
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        )
             .expect("生产同款媒体类型必须能开出 MP4 封装（视频+音轨）");
 
         // ── 段 2：真编码器端到端——写帧、finalize、moov 必须出现 avcC ──
@@ -346,7 +371,9 @@ mod tests {
         );
         let frame = vec![96u8; (w * h * 4) as usize];
         let mut packets = Vec::new();
-        for i in 0..12i64 {
+        // 40 帧：🔴 13 帧起才覆盖「MP4 sink 无时长样本前向窗口溢出」的回归
+        //（WriteSample 0xC00D36C9，2026-10-07 真机实录；12 帧恰好在窗口内绕过了它）
+        for i in 0..40i64 {
             match enc.encode_bgra(&frame, w, h) {
                 Ok(mut ps) => {
                     for p in ps.iter_mut() {

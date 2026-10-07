@@ -11,7 +11,8 @@
  */
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { recSetPaused } from "@/lib/api/rec";
+import { recSetPaused, recStatus } from "@/lib/api/rec";
+import { formatBytes } from "@/lib/utils";
 
 function fmt(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -30,6 +31,8 @@ export function RecControlBar({
 }) {
   const [sec, setSec] = useState(0);
   const [paused, setPaused] = useState(false);
+  // 已录体积（四期 1.2）：每秒随 rec_status 轮询（后端编码写入字节数，暂停即冻结）。
+  const [bytes, setBytes] = useState(0);
   // 丢弃是「一点即毁且不可恢复」的动作，与停止紧邻——两段确认挡误触：
   // 第一次点进入待确认态（红色实底 + 文案变化），3 秒不点自动回退。
   const [armDiscard, setArmDiscard] = useState(false);
@@ -38,6 +41,15 @@ export function RecControlBar({
     const t = setInterval(() => setSec((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [finalizing, paused]);
+  useEffect(() => {
+    if (finalizing) return;
+    const t = setInterval(() => {
+      void recStatus()
+        .then((s) => setBytes(s.bytes))
+        .catch(() => {});
+    }, 1000);
+    return () => clearInterval(t);
+  }, [finalizing]);
   useEffect(() => {
     if (!armDiscard) return;
     const t = setTimeout(() => setArmDiscard(false), 3000);
@@ -79,6 +91,7 @@ export function RecControlBar({
       <span className="rec-timer" data-tauri-drag-region>
         {fmt(sec)}
       </span>
+      {bytes > 0 && <span className="rec-bytes">{formatBytes(bytes)}</span>}
       <span className="rec-qual-badge">{qualityLabel}</span>
       <span style={{ flex: 1 }} />
       <button

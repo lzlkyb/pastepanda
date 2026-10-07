@@ -91,6 +91,54 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           }}
         />
       </div>
+      <div className={styles.sRow}>
+        <SettingTile hue="capture">⏸</SettingTile>
+        <div className={styles.sRowBody}>
+          <div className={styles.sRowLabel}>录制中：暂停 / 继续</div>
+          <div className={styles.sRowDesc}>仅录制中生效，其余时间按键无动作</div>
+        </div>
+        <HotkeyRecorder
+          value={config.rec_pause_hotkey}
+          allowClear
+          taken={globalHotkeysTaken(config, "rec_pause_hotkey")}
+          onChange={(v) => {
+            const oldVal = config.rec_pause_hotkey;
+            void (async () => {
+              await updateAndSave({ rec_pause_hotkey: v });
+              try {
+                await reregisterQuiet();
+              } catch (e) {
+                await updateAndSave({ rec_pause_hotkey: oldVal });
+                toastActionFailed("暂停快捷键设置（变更未生效，已恢复原值）", e);
+              }
+            })();
+          }}
+        />
+      </div>
+      <div className={styles.sRow}>
+        <SettingTile hue="capture">⏹</SettingTile>
+        <div className={styles.sRowBody}>
+          <div className={styles.sRowLabel}>录制中：停止并保存</div>
+          <div className={styles.sRowDesc}>留空 = 不启用；丢弃仍走控制条两段确认，热键不误毁</div>
+        </div>
+        <HotkeyRecorder
+          value={config.rec_stop_hotkey}
+          allowClear
+          taken={globalHotkeysTaken(config, "rec_stop_hotkey")}
+          onChange={(v) => {
+            const oldVal = config.rec_stop_hotkey;
+            void (async () => {
+              await updateAndSave({ rec_stop_hotkey: v });
+              try {
+                await reregisterQuiet();
+              } catch (e) {
+                await updateAndSave({ rec_stop_hotkey: oldVal });
+                toastActionFailed("停止快捷键设置（变更未生效，已恢复原值）", e);
+              }
+            })();
+          }}
+        />
+      </div>
       <SaveDirRow
         value={config.rec_save_dir}
         onPick={(dir) => void updateAndSave({ rec_save_dir: dir })}

@@ -34,6 +34,8 @@ export interface RecStatus {
   paused: boolean;
   path: string | null;
   elapsedMs: number;
+  /** 已写入的媒体字节（视频+音频裸流；控制条体积显示，暂停冻结）。 */
+  bytes: number;
   quality: RecQualityKey | null;
 }
 
@@ -155,6 +157,48 @@ export function recReveal(path: string): Promise<void> {
 /** 用系统播放器打开录屏产物。 */
 export function recOpenFile(path: string): Promise<void> {
   return invokeVoid("rec_open_file", { path });
+}
+
+/* ── 预览裁剪（四期 1.4；关键帧对齐无损剪切）── */
+
+/** 视频轨关键帧索引（播放域毫秒；预览窗时间轴的吸附刻度）。 */
+export interface RecKeyframeIndex {
+  durationMs: number;
+  keyframesMs: number[];
+}
+
+/** 预览窗数据（rec_preview_take 一次性消费）。 */
+export interface RecPreviewData {
+  path: string;
+  name: string;
+  bytes: number;
+}
+
+/** 裁剪结果（inMs/outMs 是吸附后的实际值，可能比用户选段略大——宁多勿少）。 */
+export interface RecTrimResult {
+  path: string;
+  bytes: number;
+  inMs: number;
+  outMs: number;
+}
+
+export function recKeyframes(path: string): Promise<RecKeyframeIndex> {
+  return invokeJson("rec_keyframes", { path });
+}
+
+/** 关键帧对齐无损剪切：产物落新文件（原名 + _剪），原文件不动。 */
+export function recTrim(path: string, inMs: number, outMs: number): Promise<RecTrimResult> {
+  return invokeJson("rec_trim", { path, inMs, outMs });
+}
+
+/** 打开预览裁剪窗（HUD「✂ 预览」/ 最近录制行尾 ✂ 共用入口）。 */
+export function recOpenPreview(path: string): Promise<void> {
+  return invokeVoid("rec_open_preview", { path });
+}
+
+/** 预览窗挂载后取数据（一次性消费；null = 已被重开的窗取走）。 */
+export function recPreviewTake(): Promise<RecPreviewData | null> {
+  return invokeJson("rec_preview_take");
 }
 
 /* ── 内部：统一错误文案 ── */

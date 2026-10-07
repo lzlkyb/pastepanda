@@ -217,6 +217,8 @@ windows = { version = "0.58", features = [
     "Win32_System_StationsAndDesktops",
 ] }
 winreg = "0.52"
+# 录屏裁剪（四期 1.4）：纯 Rust MP4 容器读写——关键帧对齐剪切只重排 sample 表，零转码
+mp4 = "0.14"
 
 # 桌面专属依赖（Android/iOS 目标不编译）。global-shortcut / clipboard-manager 是桌面
 # 插件；clipboard-manager 传递依赖的 arboard 无 Android 实现，arboard 直接依赖同理——

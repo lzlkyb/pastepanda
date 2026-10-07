@@ -27,6 +27,11 @@ pub struct HotkeyConfig {
     pub todo_island: String,
     /// 屏幕录制（rec/ 模块）：录制中再按 = 停止。默认 Ctrl+Alt+R。
     pub screen_record: String,
+    /// 录制中：暂停/继续（四期 1.1）。默认 Ctrl+Alt+Space（P 已被 stack_paste 占）。
+    /// **常驻注册、回调里判录制态**——非录制期按键被吞但不动作（与全屋热键同语义）。
+    pub rec_pause: String,
+    /// 录制中：停止并保存。默认不设（rec_hotkey 录制中本就是停止）。
+    pub rec_stop: String,
 }
 
 impl Default for HotkeyConfig {
@@ -51,6 +56,11 @@ impl Default for HotkeyConfig {
             todo_island: "Alt+T".to_string(),
             // 屏幕录制（R=Record）。与上面全部已有热键不冲突。
             screen_record: "Ctrl+Alt+R".to_string(),
+            // 录制中暂停（四期 1.1）。Ctrl+Alt+P 被 stack_paste 占用，取 Space；
+            // 与上面全部已有热键不冲突。
+            rec_pause: "Ctrl+Alt+Space".to_string(),
+            // 录制中停止：默认不设（Ctrl+Alt+R 录制中本就是停止，不叠加语义）。
+            rec_stop: String::new(),
         }
     }
 }
@@ -402,6 +412,63 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
         }
     } else {
         errors.push(format!("无效的录屏热键: {}", config.screen_record));
+    }
+
+    // 录制中：暂停/继续（四期 1.1）。常驻注册；回调判录制态，非录制期零动作。
+    // 热键 = 翻转当前暂停态（控制条按钮与 rec-paused 事件同一真相）。
+    if config.rec_pause.trim().is_empty() {
+        log::info!("[HotkeyManager] 录制暂停热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.rec_pause) {
+        match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                #[cfg(windows)]
+                {
+                    let st = crate::rec::session::status();
+                    if st.recording {
+                        if let Err(e) = crate::rec::session::set_paused(app, !st.paused) {
+                            log::warn!("[HotkeyManager] 录制暂停热键: {e}");
+                        }
+                    }
+                }
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册录制暂停热键: {}", config.rec_pause),
+            Err(e) => {
+                let msg = format!("录制暂停热键 '{}' 注册失败: {}", config.rec_pause, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的录制暂停热键: {}", config.rec_pause));
+    }
+
+    // 录制中：停止并保存（丢弃走控制条的两段确认，热键只做保存停止——
+    // 全局热键误按的代价必须低于「一点即毁」）。
+    if config.rec_stop.trim().is_empty() {
+        log::info!("[HotkeyManager] 录制停止热键已禁用（留空），跳过注册");
+    } else if let Ok(shortcut) = parse_shortcut(&config.rec_stop) {
+        match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                #[cfg(windows)]
+                {
+                    if crate::rec::session::status().recording {
+                        if let Err(e) = crate::rec::session::stop(false) {
+                            log::warn!("[HotkeyManager] 录制停止热键: {e}");
+                        }
+                    }
+                }
+            }
+        }) {
+            Ok(_) => log::info!("[HotkeyManager] 注册录制停止热键: {}", config.rec_stop),
+            Err(e) => {
+                let msg = format!("录制停止热键 '{}' 注册失败: {}", config.rec_stop, e);
+                log::warn!("[HotkeyManager] {}", msg);
+                errors.push(msg);
+            }
+        }
+    } else {
+        errors.push(format!("无效的录制停止热键: {}", config.rec_stop));
     }
 
     if errors.is_empty() {

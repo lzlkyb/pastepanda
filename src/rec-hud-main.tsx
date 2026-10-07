@@ -98,6 +98,13 @@ function RecHud({ data }: { data: HudData }) {
       .then(() => close())
       .catch((e: unknown) => setActErr(e instanceof Error ? e.message : String(e)));
   };
+  // ✂ 预览（四期 1.4）：刚录完最自然的下一步是「看一眼 / 掐一下」，放 primary
+  const preview = () => {
+    if (!data.path) return;
+    invoke("rec_open_preview", { path: data.path })
+      .then(() => close())
+      .catch((e: unknown) => setActErr(e instanceof Error ? e.message : String(e)));
+  };
   const rerecord = () => {
     invoke("rec_rerecord")
       .then(() => close())
@@ -137,7 +144,12 @@ function RecHud({ data }: { data: HudData }) {
         {data.ok && (
           <div className="rec-hud-btns">
             {data.path && (
-              <button type="button" className="rec-hud-btn primary" onClick={reveal}>
+              <button type="button" className="rec-hud-btn primary" onClick={preview} title="预览 / 掐头去尾">
+                ✂ 预览
+              </button>
+            )}
+            {data.path && (
+              <button type="button" className="rec-hud-btn" onClick={reveal}>
                 📁 打开文件夹
               </button>
             )}

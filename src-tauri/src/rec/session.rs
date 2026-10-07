@@ -11,7 +11,7 @@
 //! 抓帧连续失败（锁屏 / 显示器关闭）→ 自动落盘停止并上报，不静默丢帧。
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -52,6 +52,8 @@ pub struct RecStatus {
     pub path: Option<String>,
     /// 录制时长（扣除暂停段；毫秒）。
     pub elapsed_ms: u64,
+    /// 已写入的媒体字节（视频+音频裸流；控制条体积显示）。
+    pub bytes: u64,
     /// 画质档 key（控制条展示用；无会话为 None）。
     pub quality: Option<String>,
 }
@@ -64,6 +66,8 @@ struct Active {
     path: PathBuf,
     started: Instant,
     quality: RecQuality,
+    /// 已写入媒体字节（sink 注入同一计数器；控制条每秒轮询 rec_status 读）。
+    bytes: Arc<AtomicU64>,
     /// 暂停累计（elapsed 口径）；`paused_since = Some` 表示正在暂停中。
     paused_total_ms: u64,
     paused_since: Option<Instant>,
@@ -96,12 +100,14 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
         path: out_path.clone(),
         started: Instant::now(),
         quality: opts.quality,
+        bytes: Arc::new(AtomicU64::new(0)),
         paused_total_ms: 0,
         paused_since: None,
     };
     let stop = active.stop.clone();
     let discard = active.discard.clone();
     let pause = active.pause.clone();
+    let bytes = active.bytes.clone();
     *slot = Some(active);
     drop(slot);
     *LAST_SESSION.lock().unwrap_or_else(|p| p.into_inner()) = Some(opts.clone());
@@ -114,7 +120,7 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
             // 错误信息只走 toast / HUD（rec-done 的 hud 通路 / emit_failed）。
             let app_after = app.clone();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_record(app, opts, out_path, stop, discard, pause)
+                run_record(app, opts, out_path, stop, discard, pause, bytes)
             }));
             if result.is_err() {
                 emit_failed(&app_after, "录制会话异常崩溃，已中止");
@@ -186,6 +192,7 @@ pub fn status() -> RecStatus {
                 paused,
                 path: Some(a.path.display().to_string()),
                 elapsed_ms: elapsed.saturating_sub(a.paused_total_ms),
+                bytes: a.bytes.load(Ordering::Relaxed),
                 quality: Some(a.quality.as_str().to_string()),
             }
         }
@@ -195,6 +202,7 @@ pub fn status() -> RecStatus {
             paused: false,
             path: None,
             elapsed_ms: 0,
+            bytes: 0,
             quality: None,
         },
     }
@@ -234,6 +242,7 @@ fn run_record(
     stop: Arc<AtomicBool>,
     discard: Arc<AtomicBool>,
     pause: Arc<AtomicBool>,
+    bytes: Arc<AtomicU64>,
 ) {
     let started_at = Instant::now();
     // ── 1. 抓首帧（拿虚拟屏画布尺寸；锁屏/禁屏时 DXGI 拿不到帧）──
@@ -419,7 +428,7 @@ fn run_record(
                             if seq.is_empty() {
                                 continue; // 参数集还没出（首包可能只有 IDR 前导），下一帧再试
                             }
-                            match open_sink(&path, &sp, audio_cfg.take()) {
+                            match open_sink(&path, &sp, audio_cfg.take(), bytes.clone()) {
                                 Ok((s, audio_start_ms)) => {
                                     sink = Some(s);
                                     // 两轴 0 点差 → 晚开的那条轨整体推迟差值（不回拨）；
@@ -759,6 +768,7 @@ fn open_sink(
     path: &Path,
     sp: &SinkParams,
     audio: Option<mpsc::Receiver<AudioReady>>,
+    bytes: Arc<AtomicU64>,
 ) -> Result<(RecSink, u64), String> {
     let (audio_tuple, audio_start_ms) = match audio {
         Some(rx) => match rx.recv_timeout(Duration::from_millis(800)) {
@@ -773,7 +783,7 @@ fn open_sink(
         None => (None, 0),
     };
     let audio_ref = audio_tuple.as_ref().map(|(sr, ch, asc)| (*sr, *ch, asc.as_slice()));
-    let sink = RecSink::open(path, sp.width, sp.height, sp.fps, sp.hevc, audio_ref, sp.bitrate)?;
+    let sink = RecSink::open(path, sp.width, sp.height, sp.fps, sp.hevc, audio_ref, sp.bitrate, bytes)?;
     Ok((sink, audio_start_ms))
 }
 

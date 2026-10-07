@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>录屏四期 — 预览裁剪 / 控制条体积 / GIF 入口 / HUD 预览 / 录制热键 设计稿</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #11151f; color: #e6edf7; font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 28px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h1 .v { font-size: 12px; color: #8fe0b0; background: #1f3a2b; padding: 2px 10px; border-radius: 999px; vertical-align: middle; margin-left: 10px; }
+  .sub { color: #9fb0c8; font-size: 13px; margin-bottom: 24px; line-height: 1.7; }
+  h2 { font-size: 16px; margin: 34px 0 6px; }
+  h2 .n { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 6px; background: #06b6d4; color: #04222a; font-size: 13px; margin-right: 8px; }
+  .desc { color: #9fb0c8; font-size: 12.5px; margin: 0 0 14px; line-height: 1.8; }
+  .desc b { color: #cfe; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .card { background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); border-radius: 14px; padding: 18px; }
+  .card h3 { font-size: 13.5px; margin: 0 0 12px; }
+  .card h3 .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; margin-left: 8px; vertical-align: middle; }
+  .tag.before { background: #3a2b2b; color: #f0a0a0; }
+  .tag.after { background: #1f3a2b; color: #8fe0b0; }
+  .hint { margin-top: 12px; font-size: 12px; color: #9fb0c8; line-height: 1.8; }
+  .hint b { color: #cfe; }
+  .kbd { background: rgba(255,255,255,.12); border-radius: 4px; padding: 1px 6px; font-size: 11px; }
+  .note { margin-top: 26px; font-size: 12px; color: #9fb0c8; background: rgba(34,41,76,.6); border-left: 3px solid #06b6d4; padding: 10px 14px; border-radius: 0 8px 8px 0; line-height: 1.9; }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: #ffd9a0; }
+
+  /* ── 预览裁剪窗（§1 主面板）────────────────────────────── */
+  .pwin { width: 660px; border-radius: 14px; background: linear-gradient(160deg, rgba(30,36,64,.97), rgba(22,27,48,.97));
+          border: 1px solid rgba(255,255,255,.12); box-shadow: 0 18px 48px rgba(0,0,0,.5); overflow: hidden; }
+  .pwin .top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.07); }
+  .pwin .top .name { font-size: 12.5px; font-weight: 650; }
+  .pwin .top .badge { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(124,108,255,.18); border: 1px solid rgba(124,108,255,.4); color: #c9c2ff; }
+  .pwin .top .x { margin-left: auto; width: 22px; height: 22px; line-height: 20px; text-align: center; border-radius: 6px; background: rgba(255,255,255,.08); font-size: 12px; color: #9fb0c8; cursor: pointer; }
+  .pwin .video { position: relative; height: 300px; margin: 14px; border-radius: 10px; overflow: hidden;
+                 background: linear-gradient(135deg, #1b2334, #223049 55%, #1a2338);
+                 display: flex; align-items: center; justify-content: center; }
+  .pwin .video .desk { position: absolute; inset: 0; background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 29px, transparent 29px 30px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 29px, transparent 29px 30px); }
+  .pwin .video .cursor { position: absolute; left: 58%; top: 47%; font-size: 15px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+  .pwin .video .ripple { position: absolute; left: 58%; top: 47%; width: 34px; height: 34px; margin: -17px;
+      border: 2.5px solid rgba(6,182,212,.9); border-radius: 50%; animation: rip 1.6s ease-out infinite; }
+  @keyframes rip { 0% { transform: scale(.35); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+  .pwin .video .play { width: 52px; height: 52px; border-radius: 50%; background: rgba(10,14,24,.55);
+      border: 1px solid rgba(255,255,255,.25); color: #e6edf7; font-size: 19px; display: flex; align-items: center;
+      justify-content: center; padding-left: 5px; cursor: pointer; backdrop-filter: blur(4px); }
+  .pwin .tl { margin: 0 14px 6px; }
+  .pwin .track { position: relative; height: 30px; border-radius: 8px; background: rgba(8,11,20,.75);
+      border: 1px solid rgba(255,255,255,.08); overflow: visible; }
+  .pwin .track .wave { position: absolute; inset: 4px; border-radius: 5px;
+      background: linear-gradient(90deg, rgba(99,102,241,.55), rgba(34,211,238,.45));
+      opacity: .5; }
+  .pwin .track .out { position: absolute; top: 0; bottom: 0; left: 0; width: 9%; border-radius: 8px 0 0 8px;
+      background: repeating-linear-gradient(45deg, rgba(240,160,160,.16) 0 6px, transparent 6px 12px); }
+  .pwin .track .outr { left: auto; right: 0; width: 18%; border-radius: 0 8px 8px 0; }
+  .pwin .track .sel { position: absolute; top: 0; bottom: 0; left: 9%; right: 18%;
+      box-shadow: 0 0 0 1.5px rgba(6,182,212,.65) inset; border-radius: 4px; }
+  .pwin .handle { position: absolute; top: -6px; bottom: -6px; width: 12px; border-radius: 6px;
+      background: linear-gradient(180deg, #22d3ee, #0891b2); box-shadow: 0 0 10px rgba(34,211,238,.55);
+      cursor: ew-resize; }
+  .pwin .handle::after { content: ""; position: absolute; left: 4px; top: 7px; bottom: 7px; width: 3px;
+      border-radius: 2px; background: rgba(4,34,42,.55); }
+  .pwin .handle.l { left: calc(9% - 6px); }
+  .pwin .handle.r { right: calc(18% - 6px); }
+  .pwin .meta { display: flex; gap: 14px; padding: 2px 14px 0; font-size: 11.5px; color: #9fb0c8; }
+  .pwin .meta b { color: #67e8f9; font-weight: 650; }
+  .pwin .meta .align { color: #8fe0b0; }
+  .pwin .btns { display: flex; gap: 10px; padding: 12px 14px 14px; align-items: center; }
+  .pwin .btn { padding: 7px 16px; border-radius: 9px; font-size: 12.5px; cursor: pointer; }
+  .pwin .btn.primary { background: linear-gradient(135deg, #6366f1, #0891b2); color: #fff; font-weight: 650; border: none; }
+  .pwin .btn.ghost { background: rgba(255,255,255,.08); color: #c7d2e6; border: 1px solid rgba(255,255,255,.12); }
+
+  /* ── HUD（§2，基于 rec-hud 真实结构）─────────────────── */
+  .hud { width: 320px; border-radius: 12px; background: linear-gradient(160deg, rgba(30,36,64,.97), rgba(22,27,48,.97));
+         border: 1px solid rgba(255,255,255,.12); box-shadow: 0 14px 34px rgba(0,0,0,.45); padding: 12px; }
+  .hud .top { display: flex; align-items: center; gap: 8px; }
+  .hud .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 9px; border-radius: 999px; background: rgba(143,224,176,.14); border: 1px solid rgba(143,224,176,.4); color: #8fe0b0; }
+  .hud .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: #8fe0b0; }
+  .hud .name { font-size: 11.5px; color: #c7d2e6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .hud .x { font-size: 11px; color: #9fb0c8; }
+  .hud .meta { display: flex; gap: 10px; font-size: 11px; color: #9fb0c8; margin-top: 7px; }
+  .hud .btns { display: flex; gap: 8px; margin-top: 11px; }
+  .hud .btn { flex: 1; text-align: center; padding: 6px 0; border-radius: 8px; font-size: 11.5px;
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); color: #e6edf7; }
+  .hud .btn.primary { background: linear-gradient(135deg, #6366f1, #0891b2); border: none; color: #fff; font-weight: 650; }
+  .hud .life { height: 3px; border-radius: 2px; background: rgba(255,255,255,.1); margin-top: 10px; overflow: hidden; }
+  .hud .life i { display: block; height: 100%; width: 68%; background: linear-gradient(90deg, #6366f1, #22d3ee); }
+
+  /* ── 最近录制行（§3，基于 RecRecentList 真实结构）──────── */
+  .reclist { width: 430px; border-radius: 12px; background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); padding: 14px; }
+  .reclist .sect { font-size: 12.5px; font-weight: 650; color: #c7d2e6; margin-bottom: 9px; }
+  .reclist .item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 9px; background: rgba(10,14,24,.4); margin-bottom: 6px; }
+  .reclist .fic { font-size: 14px; }
+  .reclist .nm { font-size: 11.5px; color: #cfe; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .reclist .mt { font-size: 10.5px; color: #9fb0c8; }
+  .reclist .op { width: 24px; height: 22px; line-height: 21px; text-align: center; border-radius: 6px; font-size: 11px;
+      background: rgba(255,255,255,.07); color: #c7d2e6; cursor: pointer; }
+  .reclist .op.gif { width: auto; padding: 0 8px; background: rgba(6,182,212,.14); border: 1px solid rgba(6,182,212,.4); color: #67e8f9; }
+  .reclist .op.gif.busy { background: rgba(6,182,212,.08); color: #9fb0c8; }
+
+  /* ── 控制条（§4，基于 RecControlBar 真实结构）──────────── */
+  /* 尺寸对齐真实 CSS：font 12 / gap 8 / padding 0 12px / ghost 按钮 padding 4×8。
+     体积列加入后 340px 装不下（三期加「暂停」后已贴边）→ 窗口 340→416（×scale），
+     按钮 white-space:nowrap 防挤压换行——这两条是随本项一起落地的硬性改动。 */
+  .cbar { display: flex; align-items: center; gap: 8px; width: 416px; height: 48px; padding: 0 12px;
+      border-radius: 12px; background: linear-gradient(160deg, rgba(30,36,64,.97), rgba(22,27,48,.97));
+      border: 1px solid rgba(255,255,255,.12); box-shadow: 0 10px 26px rgba(0,0,0,.45); font-size: 12px; }
+  .cbar span { white-space: nowrap; }
+  .cbar .grip { color: rgba(230,237,247,.35); letter-spacing: 2px; }
+  .cbar .dot { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; color: #f0a0a0; }
+  .cbar .dot i { width: 8px; height: 8px; border-radius: 50%; background: #f0a0a0; flex: none; }
+  .cbar .dot.paused { color: #f0c060; } .cbar .dot.paused i { background: #f0c060; }
+  .cbar .timer { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .cbar .bytes { font-size: 11px; color: #9fb0c8; font-variant-numeric: tabular-nums; }
+  .cbar .qual { font-size: 11px; color: #9fb0c8; border: 1px solid rgba(255,255,255,.16); border-radius: 4px; padding: 0 8px; }
+  .cbar .sp { flex: 1; min-width: 0; }
+  .cbar .gb { padding: 4px 8px; border-radius: 8px; font-size: 12px; background: rgba(255,255,255,.08); color: #e6edf7; white-space: nowrap; flex: none; }
+  .cbar .sb { padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #f0a0a0; color: #180a0a; white-space: nowrap; flex: none; }
+
+  /* ── 设置热键行（§5，基于 HotkeyRecorder 真实形态）──────── */
+  .set { width: 470px; border-radius: 12px; background: rgba(34,41,76,.94); border: 1px solid rgba(255,255,255,.08); padding: 16px; }
+  .set .rowline { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed rgba(255,255,255,.07); }
+  .set .rowline:last-child { border-bottom: none; }
+  .set .lab { font-size: 12.5px; color: #e6edf7; width: 200px; }
+  .set .lab small { display: block; color: #9fb0c8; font-size: 10.5px; }
+  .set .hk { margin-left: auto; padding: 4px 14px; border-radius: 8px; font-size: 12px; background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.14); color: #e6edf7; }
+  .set .hk.empty { color: #9fb0c8; }
+  .set .hk.rec { border-color: #06b6d4; color: #67e8f9; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .55; } }
+</style>
+</head>
+<body>
+<h1>录屏四期 UI 设计稿 <span class="v">待确认 → 开工</span></h1>
+<div class="sub">
+  承接三期（指针 / VBR / 暂停续录 / 时间轴已交付）。本稿覆盖四期五个 UI 触点，均基于真实组件源码绘制：
+  RecControlBar · rec-hud · RecRecentList · HotkeyRecorder。交互遵循 §17/§18（两级取消、低频不抢高频、预览即默认）。
+  方案与取舍见 <code>docs/录屏功能-四期方案与五期路线-2026-10-07.md</code>。
+</div>
+
+<!-- ═══════════════ §1 预览裁剪窗 ═══════════════ -->
+<h2><span class="n">1</span>完成后预览 + 首尾裁剪（主菜）</h2>
+<p class="desc">入口：<b>HUD「✂ 预览」按钮</b> + <b>最近录制行尾「✂」</b>（双入口同一窗，<b>不自动弹</b>——录完只想要文件的用户不被打扰）。
+  预览即默认整段播放；拖<b>青色起/终点手柄</b>选保留段；切点<b>对齐关键帧（±1s，无损零转码秒级完成）</b>；
+  两级取消：<span class="kbd">Esc</span> 先重置选区、再按关窗；产物落<b>新文件</b>（原名 + _剪），原文件永不改动。</p>
+<div class="row">
+  <div class="card" style="padding:0; overflow:hidden;">
+    <div class="pwin" style="border:none; box-shadow:none;">
+      <div class="top">
+        <span class="badge">原画 · 60fps</span>
+        <span class="name">屏幕录制_2026-10-07_143005.mp4</span>
+        <span class="x">✕</span>
+      </div>
+      <div class="video">
+        <div class="desk"></div>
+        <div class="ripple"></div>
+        <div class="cursor">➤</div>
+        <div class="play">▶</div>
+      </div>
+      <div class="tl">
+        <div class="track">
+          <div class="wave"></div>
+          <div class="out"></div>
+          <div class="sel"></div>
+          <div class="outr out"></div>
+          <div class="handle l"></div>
+          <div class="handle r"></div>
+        </div>
+      </div>
+      <div class="meta">
+        <span>保留 <b>00:04 – 00:18</b>（14s）</span>
+        <span>丢弃头 4s · 尾 9s</span>
+        <span class="align">✓ 切点已对齐关键帧（±1s）</span>
+      </div>
+      <div class="btns">
+        <span class="btn primary">保存裁剪</span>
+        <span class="btn ghost">取消</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px; color:#9fb0c8;">拖两端手柄选段 · <span class="kbd">Esc</span> 重置 / 关窗</span>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="width: 300px;">
+    <h3>交互要点</h3>
+    <ul style="margin:0; padding-left:18px; font-size:12px; color:#c7d2e6; line-height:1.9;">
+      <li>未选择时轨道整体渐变、提示「拖动手柄选保留段」，保存按钮禁用</li>
+      <li>手柄外区域<b>斜纹压暗</b>（= 会被剪掉），一眼看懂方向</li>
+      <li>手柄吸附反馈：拖动中实时显示 <b>00:04</b> 灰字，松手落定后显示「✓ 已对齐」</li>
+      <li>空格 播放/暂停；预览行为与播放器一致，不另造心智</li>
+      <li>录制 &lt;1s（无关键帧可对齐）→ 只可播放，裁剪禁用并说明原因</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════ §2 HUD ═══════════════ -->
+<h2><span class="n">2</span>HUD 通知窗加「✂ 预览」按钮</h2>
+<p class="desc">基于 rec-hud 真实结构（badge + 文件名 + meta + 按钮行 + 生命条）。<b>改前</b>只有「打开文件夹 / 重录」；
+  <b>改后</b>加一个 primary 的「✂ 预览」——刚录完最自然的下一步就是「看一眼 / 掐一下」，放 primary 而文件夹降为普通钮。</p>
+<div class="row">
+  <div class="card">
+    <h3>改前 <span class="tag before">现状</span></h3>
+    <div class="hud">
+      <div class="top"><span class="badge"><span class="dot"></span>已保存</span><span class="name">屏幕录制_2026-10-07_143005.mp4</span><span class="x">✕</span></div>
+      <div class="meta"><span>12.3 MB</span><span>00:23</span><span>原画 · 60fps</span></div>
+      <div class="btns"><span class="btn primary">📁 打开文件夹</span><span class="btn">↻ 重录</span></div>
+      <div class="life"><i></i></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>改后 <span class="tag after">四期</span></h3>
+    <div class="hud">
+      <div class="top"><span class="badge"><span class="dot"></span>已保存</span><span class="name">屏幕录制_2026-10-07_143005.mp4</span><span class="x">✕</span></div>
+      <div class="meta"><span>12.3 MB</span><span>00:23</span><span>原画 · 60fps</span></div>
+      <div class="btns"><span class="btn primary">✂ 预览 / 裁剪</span><span class="btn">📁 文件夹</span><span class="btn">↻ 重录</span></div>
+      <div class="life"><i></i></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ §3 最近录制 GIF ═══════════════ -->
+<h2><span class="n">3</span>最近录制：GIF 导出入口</h2>
+<p class="desc">基于 RecRecentList 真实行结构（🎬 + 文件名 + 大小/时长 + 📁 ✕）。行尾加 <b>GIF</b> 钮（默认 12fps / 宽 ≤480 / 循环）；
+  导出中钮变进度（大文件抽帧数十秒，<b>必须可取消</b>——规则 9）；完成后行列表自动刷新，GIF 与 mp4 并列。</p>
+<div class="row">
+  <div class="card">
+    <h3>改后 <span class="tag after">四期</span></h3>
+    <div class="reclist">
+      <div class="sect">最近录制 <span style="color:#9fb0c8; font-size:10.5px;">3</span></div>
+      <div class="item">
+        <span class="fic">🎬</span><span class="nm">屏幕录制_2026-10-07_143005.mp4</span>
+        <span class="mt">12.3 MB · 00:23</span>
+        <span class="op gif">GIF</span><span class="op">📁</span><span class="op">✕</span>
+      </div>
+      <div class="item">
+        <span class="fic">🎬</span><span class="nm">屏幕录制_2026-10-07_142810_剪.mp4</span>
+        <span class="mt">7.1 MB · 00:14</span>
+        <span class="op gif busy">⟳ 43%</span><span class="op">📁</span><span class="op">✕</span>
+      </div>
+      <div class="item">
+        <span class="fic">🖼️</span><span class="nm">屏幕录制_2026-10-07_142810.gif</span>
+        <span class="mt">3.4 MB · 00:14</span>
+        <span class="op">📁</span><span class="op">✕</span>
+      </div>
+    </div>
+    <div class="hint">点 <b>GIF</b> 即用默认参数导出（不弹参数面板——低频动作也保持一步；参数档后续按需加）。</div>
+  </div>
+</div>
+
+<!-- ═══════════════ §4 控制条体积 ═══════════════ -->
+<h2><span class="n">4</span>控制条：已录体积实时显示（窗口 340 → 416）</h2>
+<p class="desc">基于 RecControlBar 真实结构（三期已含暂停键）。计时右侧加灰字体积（编码写入字节，暂停冻结）。
+  🔴 <b>窗口 340 → 416</b>（<code>open_control_window</code> 的 bar_w/bar_h/inner_size 同步 ×scale）：
+  按真实字号粗算 340 在三期加「暂停」后已贴边、再塞体积列必换行——本稿按钮全部
+  <code>white-space:nowrap</code> + 416px 留 ~10px 余量，落地时以 devtools 实测微调。「正在写入」收尾态维持三期行为（只剩 spinner）。</p>
+<div class="row">
+  <div class="card">
+    <h3>录制态 <span class="tag after">四期 · 416px</span></h3>
+    <div class="cbar" style="width:416px;">
+      <span class="grip">⠿</span><span class="dot"><i></i>REC</span><span class="timer">02:41</span><span class="bytes">12.3 MB</span><span class="qual">原画</span>
+      <span class="sp"></span><span class="gb">暂停</span><span class="gb">丢弃</span><span class="sb">■ 停止</span>
+    </div>
+    <div class="hint" style="margin-top:10px;">
+      体积 11px 灰、与计时同用 <b>tabular-nums</b>，数值跳动不抖动；<br>
+      弹簧 spacer 兜底吸收余量，任何缩放档按钮不换行不裁字。
+    </div>
+  </div>
+  <div class="card">
+    <h3>暂停态 <span class="tag after">三期已上线 · 体积同步冻结</span></h3>
+    <div class="cbar" style="width:416px;">
+      <span class="grip">⠿</span><span class="dot paused"><i></i>已暂停</span><span class="timer">02:41</span><span class="bytes">12.3 MB</span><span class="qual">原画</span>
+      <span class="sp"></span><span class="gb">继续</span><span class="gb">丢弃</span><span class="sb">■ 停止</span>
+    </div>
+    <div class="hint" style="margin-top:10px;">
+      红点停闪改琥珀、文案换「已暂停」、首钮换「继续」；<br>
+      计时与体积<b>同时冻结</b>——两个量同源，不会一个走一个停。
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ §5 设置热键 ═══════════════ -->
+<h2><span class="n">5</span>设置页「录屏」组：录制中热键三行</h2>
+<p class="desc">复用 HotkeyRecorder 真实控件（单键白名单 + 冲突校验走 <code>globalHotkeysTaken</code> 既有收口，只加三个 key）。
+  停止不设默认——<span class="kbd">Ctrl+Alt+R</span> 录制中本来就是停止，已有语义不叠加。</p>
+<div class="row">
+  <div class="card">
+    <h3>设置页 · 录屏组新增 <span class="tag after">四期</span></h3>
+    <div class="set">
+      <div class="rowline">
+        <span class="lab">录制中：暂停 / 继续<small>全局热键，仅录制中生效</small></span>
+        <span class="hk">Ctrl + Alt + P</span>
+      </div>
+      <div class="rowline">
+        <span class="lab">录制中：停止并保存<small>留空 = 不启用</small></span>
+        <span class="hk empty">未设置</span>
+      </div>
+      <div class="rowline">
+        <span class="lab">录制中：标记时刻<small>写入事件轨道，供后期定位</small></span>
+        <span class="hk rec">按下组合键…</span>
+      </div>
+    </div>
+    <div class="hint">冲突时拒录并提示占用方（与现有各行同款行为）；标记时刻为 1.3 的 sidecar 事件轨道打点。</div>
+  </div>
+</div>
+
+<div class="note">
+  <b>待确认清单</b>（详见 docs/录屏功能-四期方案与五期路线-2026-10-07.md §5）：
+  ① 预览窗入口 = HUD + 最近录制双入口、不自动弹；② 裁剪起步 = 关键帧对齐（±1s 无损），转码精剪后置；
+  ③ 点击高亮默认开 + sidecar 默认记录 + 普通字符键不记录；④ 默认热键 Ctrl+Alt+P / Ctrl+Alt+M；
+  ⑤ GIF 默认 12fps / 宽 ≤480 / 循环；⑥ 本稿视觉与交互。
+  开工批次：批1 体积+热键 → 批2 预览裁剪 → 批3 点击高亮 → 批4 GIF。
+</div>
+</body>
+</html>
