@@ -1,0 +1,195 @@
+name: Android APK Release
+run-name: APK ${{ github.ref_name }} - ${{ inputs.skip_gitee && 'GitHub/ghproxy（跳过 Gitee）' || '三源' }}
+
+# 手机 APK 的构建 + 签名 + 三源发布。与桌面 release.yml 解耦：
+#   - 桌面发版（推 tag → release.yml）先跑，创建 GitHub Release（tag v{version}）。
+#   - 本工作流只在**该 Release 已存在**后手动触发（workflow_dispatch），
+#     因为 publish-apk.mjs 只补传 APK 资产与 manifest，不创建 Release。
+# 触发时机：桌面 tag 发完 → 这里 dispatch 一次 → 手机用户 ≤24h 内发现更新。
+on:
+  workflow_dispatch:
+    inputs:
+      skip_gitee:
+        description: "跳过 Gitee 通道（仅 GitHub/ghproxy 两源）"
+        type: boolean
+        required: false
+        default: false
+      skip_publish:
+        description: "只构建+签名，不发布（首跑冒烟测；绝不覆盖线上同版本 APK）"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  build-and-publish:
+    name: Build · Sign · Publish (Android)
+    runs-on: ubuntu-latest
+    # 首编全树 + Rust 交叉编译是长任务；给足上限但不无限等。
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      # 与本地 scripts/android-build.mjs 的 ENV_DEFAULTS 同一套键名，只是换 Linux 路径。
+      # CARGO_TARGET_DIR 与桌面 target/ 隔离（本 job 无桌面 dev，纯为复用脚本口径）。
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target-android
+
+    steps:
+      - name: 检出代码（带 tag，publish-apk 要 git rev-parse TAG）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装 Rust + Android 目标三元组
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: 启用 sccache 缓存
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: 安装 Android SDK + NDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            ndk;27.2.12479018
+            cmdline-tools:latest
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+
+      - name: JDK 17（gradle 与 apksigner 都需要）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 注入 Android 构建环境（NDK clang 作 cargo linker）
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          if [ ! -d "$TOOLCHAIN" ]; then
+            echo "❌ 找不到 NDK 工具链：$TOOLCHAIN（setup-android 是否装上了 ndk;27.2.12479018？）"
+            exit 1
+          fi
+          {
+            echo "NDK_HOME=$NDK"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang"
+            echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang++"
+            echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android24-clang"
+          } >> "$GITHUB_ENV"
+          echo "NDK=$NDK"
+          echo "linker=$TOOLCHAIN/aarch64-linux-android24-clang"
+
+      - name: 安装前端依赖
+        run: npm install
+
+      # prepare-android 会把版本控制里的 6 个 Kotlin 类 / 清单补丁 / 钉 sha256 的 libeasytier.so
+      # 恢复进 gen/android；tauri android init 生成 gradle 工程后再补丁。顺序与本地一致
+      # （本地由 scripts/android-build.mjs 内联调用，CI 不经该脚本，故显式补这一步）。
+      - name: 生成 Android 工程（tauri android init）
+        run: npx tauri android init
+
+      - name: 恢复原生插件 / 清单 / 原生库到 gen/android
+        run: node scripts/prepare-android.mjs
+
+      - name: 构建未签名 release APK
+        shell: bash
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+        # 默认（不加 --debug）= release，走 frontendDist 自包含打包；无 --release 参数（CLI 会报 unexpected argument）。
+        run: npm run tauri android build -- --apk --target aarch64
+
+      - name: 解码长期 keystore（必须与 ~/.pastepanda/ 同一份 .jks）
+        shell: bash
+        env:
+          PP_APK_KEYSTORE_B64: ${{ secrets.PP_APK_KEYSTORE_B64 }}
+          PP_APK_KEYSTORE_PASSWORD: ${{ secrets.PP_APK_KEYSTORE_PASSWORD }}
+          PP_APK_KEY_ALIAS: ${{ secrets.PP_APK_KEY_ALIAS }}
+          PP_APK_KEY_PASSWORD: ${{ secrets.PP_APK_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PP_APK_KEYSTORE_B64:-}" ] || [ -z "${PP_APK_KEY_ALIAS:-}" ]; then
+            echo "❌ 缺少签名 secret（PP_APK_KEYSTORE_B64 / PP_APK_KEY_ALIAS 至少之一为空）。"
+            echo "   🔴 绝不在 CI 现签一份新 keystore——换 key = 全体老用户 SignatureMismatch 装不上。"
+            echo "   请把 ~/.pastepanda/ 的 .jks base64 后填入 PP_APK_KEYSTORE_B64。"
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/pp-keystore"
+          KS="$RUNNER_TEMP/pp-keystore/release.keystore"
+          printf '%s' "$PP_APK_KEYSTORE_B64" | base64 --decode > "$KS"
+          chmod 600 "$KS"
+          echo "PP_KEYSTORE=$KS" >> "$GITHUB_ENV"
+          # 打完即验：keystore 能被 keytool 读出期望别名，否则签出来的包必是废包
+          if ! keytool -list -keystore "$KS" -storepass "${PP_APK_KEYSTORE_PASSWORD}" "$PP_APK_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "❌ keystore 读不出别名 ${PP_APK_KEY_ALIAS}（secret 里的 .jks 与口令/别名不匹配？）"
+            exit 1
+          fi
+
+      - name: apksigner 签名 → publish-apk 期望的产物路径
+        shell: bash
+        env:
+          PP_APK_KEYSTORE_PASSWORD: ${{ secrets.PP_APK_KEYSTORE_PASSWORD }}
+          PP_APK_KEY_ALIAS: ${{ secrets.PP_APK_KEY_ALIAS }}
+          PP_APK_KEY_PASSWORD: ${{ secrets.PP_APK_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          OUT_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          UNSIGNED="$OUT_DIR/app-universal-release-unsigned.apk"
+          SIGNED="$OUT_DIR/app-universal-release.apk"
+          if [ ! -f "$UNSIGNED" ]; then
+            echo "❌ 未找到未签名 APK：$UNSIGNED"
+            ls -la "$OUT_DIR" || true
+            exit 1
+          fi
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort | tail -1)
+          # 与本地 scripts/android-build.mjs 同一套 pass: 直传（缺省 keyPassword 回落 storePassword）。
+          "$BT/apksigner" sign \
+            --ks "$PP_KEYSTORE" \
+            --ks-pass "pass:${PP_APK_KEYSTORE_PASSWORD}" \
+            --ks-key-alias "$PP_APK_KEY_ALIAS" \
+            --key-pass "pass:${PP_APK_KEY_PASSWORD:-$PP_APK_KEYSTORE_PASSWORD}" \
+            --out "$SIGNED" \
+            "$UNSIGNED"
+          "$BT/apksigner" verify --print-certs "$SIGNED"
+          echo "✅ 已签名（v$VERSION）：$SIGNED"
+
+      # 复用本地同一条硬闸脚本：生成 3 份 manifest → GitHub 上传资产 →（可选）Gitee 镜像 →
+      # 三源回读验证（manifest 可读且 version/sha256 一致 + APK Range 可下），任一失败 exit 1。
+      - name: 三源发布 + 回读验证
+        if: inputs.skip_publish != true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ARGS=()
+          if [ "${{ inputs.skip_gitee }}" = "true" ]; then ARGS+=(--skip-gitee); fi
+          node scripts/publish-apk.mjs "${ARGS[@]}"
+
+      # skip_publish 冒烟测：把签名 APK 作为构件上传，供真机安装点验（不碰线上 Release）。
+      - name: 上传签名 APK 构件（仅 skip_publish）
+        if: inputs.skip_publish == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: PastePanda-signed-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          if-no-files-found: error
+
+      - name: 清理临时 keystore
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/pp-keystore" 2>/dev/null || true
