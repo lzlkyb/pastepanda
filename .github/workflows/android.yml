@@ -129,8 +129,9 @@ jobs:
           printf '%s' "$PP_APK_KEYSTORE_B64" | base64 --decode > "$KS"
           chmod 600 "$KS"
           echo "PP_KEYSTORE=$KS" >> "$GITHUB_ENV"
-          # 打完即验：keystore 能被 keytool 读出期望别名，否则签出来的包必是废包
-          if ! keytool -list -keystore "$KS" -storepass "${PP_APK_KEYSTORE_PASSWORD}" "$PP_APK_KEY_ALIAS" >/dev/null 2>&1; then
+          # 打完即验：keystore 能被 keytool 读出期望别名，否则签出来的包必是废包。
+          # 🔴 别名必须用 -alias 传（keytool -list 不认裸位置参数，会「非法选项」非零退出）。
+          if ! keytool -list -keystore "$KS" -storepass "${PP_APK_KEYSTORE_PASSWORD}" -alias "$PP_APK_KEY_ALIAS"; then
             echo "❌ keystore 读不出别名 ${PP_APK_KEY_ALIAS}（secret 里的 .jks 与口令/别名不匹配？）"
             exit 1
           fi
