@@ -325,6 +325,7 @@ pub fn run() {
         // Android 应用内自更新（方案甲，2026-10-03）：装载 Kotlin 安装器插件
         // （FileProvider 拉起系统安装器），桌面 no-op。见 commands::update_android 注释。
         .plugin(commands::update_android::init())
+        .plugin(commands::mobile_knowledge_share::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
             // 🔴 硬编诊断 P1：Tauri 插件链已装、业务子系统尚未初始化。
@@ -1443,6 +1444,27 @@ pub fn run() {
             commands::note_purge_all,
             commands::note_count_expired,
             commands::note_get,
+            commands::mobile_knowledge_list,
+            commands::mobile_knowledge_image,
+            commands::mobile_knowledge_meta,
+            commands::mobile_knowledge_set_common,
+            commands::mobile_knowledge_visit,
+            commands::mobile_knowledge_draft_get,
+            commands::mobile_knowledge_draft_put,
+            commands::mobile_knowledge_draft_clear,
+            commands::mobile_knowledge_draft_commit,
+            commands::mobile_knowledge_edit_get,
+            commands::mobile_knowledge_edit_begin,
+            commands::mobile_knowledge_edit_put,
+            commands::mobile_knowledge_edit_commit,
+            commands::mobile_knowledge_edit_copy,
+            commands::mobile_knowledge_edit_clear,
+            commands::mobile_knowledge_asset_fetch,
+            commands::mobile_knowledge_asset_cancel,
+            commands::mobile_knowledge_share_list,
+            commands::mobile_knowledge_share_ack,
+            commands::mobile_knowledge_share_pick_images,
+            commands::mobile_knowledge_share_send,
             commands::note_list,
             commands::note_by_history,
             commands::note_history_ids,

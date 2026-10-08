@@ -137,7 +137,7 @@ pub struct SyncCtx {
     /// 只在 [`idle_wait`] 里听；退避与忙碌等待**不听**。
     pub wrote: Arc<tokio::sync::Notify>,
     /// 当前有循环的对端。拦重复起用（两条循环会白拨）。
-    peers: std::sync::Mutex<std::collections::HashSet<String>>,
+    peers: std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
     /// 每个对端最近一次的结果。给界面看，见 [`LastSync`]。
     last: std::sync::Mutex<HashMap<String, LastSync>>,
     /// 「有人拿着我发出的邀请来敲门」的待确认队列（见 [`super::join`]）。
@@ -332,15 +332,27 @@ fn cursor_of(ctx: &SyncCtx, peer: &str) -> i64 {
 }
 
 /// 一个对端的循环：拨 → 成功就等到「有活干」 → 失败就退避。
-pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
+async fn peer_loop(
+    ctx: Arc<SyncCtx>,
+    peer: String,
+    mut cancel: tokio::sync::watch::Receiver<bool>,
+) {
     let short = &peer[..8.min(peer.len())];
     let mut fails: u32 = 0;
     // 🔴 第一拨就带摘要（W2）：上一次可能是崩在会话中间的，
     // 而那正是两边游标已推、内容却分叉的典型成因。
     let mut want_digest = true;
-    while ctx.running.load(Ordering::SeqCst) && has_peer(&ctx, &peer) {
+    while ctx.running.load(Ordering::SeqCst) && !*cancel.borrow() {
         let cursor_before = cursor_of(&ctx, &peer);
-        let outcome = dial_once(&ctx, &peer, want_digest).await;
+        let mut dial_cancel = cancel.clone();
+        let outcome = tokio::select! {
+            biased;
+            _ = cancelled(&mut cancel) => break,
+            outcome = dial_once(&ctx, &peer, want_digest, &mut dial_cancel) => outcome,
+        };
+        if matches!(outcome, Outcome::Cancelled) {
+            break;
+        }
         // 🔴 拨完立刻量一次：游标没动 + 仍然「脏」就是一个**自我维持的循环**，
         //    必须退避（2026-09-07 新增）。已经验实的一条路径：
         //      一篇笔记在对端没标签、本机有 ⇒ 导入时 `parsed.tags.is_empty()`
@@ -361,6 +373,7 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
         //    没有关系——听了就等于把退避阶梯抹掉：一台拒绝本机的设备（游标 0，
         //    永远是“脏”的）会被每几秒拨一次。
         let wait = match &outcome {
+            Outcome::Cancelled => break,
             Outcome::Synced(_) => {
                 fails = 0;
                 Wait::Idle
@@ -381,7 +394,6 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                     why,
                     DORMANT_POLL_SECS
                 );
-                let _ = ctx.store.device_mark_offline(&peer);
                 Wait::Dormant(DORMANT_POLL_SECS)
             }
             Outcome::Failed(why) => {
@@ -415,7 +427,6 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
                     );
                 }
                 // 休眠期间不再每次都刷一条 warn：每半小时一条无用日志只会把真问题淹了。
-                let _ = ctx.store.device_mark_offline(&peer);
                 if dormant {
                     Wait::Dormant(w)
                 } else {
@@ -427,56 +438,55 @@ pub async fn peer_loop(ctx: Arc<SyncCtx>, peer: String) {
         //    于是「曾经成功过」这件事每次重启都丢（详细看
         //    `Device::last_ok_ms` 与那条迁移的注释）。
         //    先取标志再传：`outcome` 下一行就被 move 进 `record_into` 了。
-        let synced = matches!(outcome, Outcome::Synced(_));
         // dormant 从循环刚算好的 `wait` 取，不另写一遍阀值判定
-        record_into(
-            &ctx.last,
+        if !record_current(
+            &ctx,
             &peer,
+            &cancel,
             outcome,
             fails,
             wait.secs_hint(),
             matches!(wait, Wait::Dormant(_)),
-        );
-        if synced {
-            // 写库失败不能把同步循环带崩：它只影响下次重启后的那句提示。
-            if let Err(e) = ctx.store.device_mark_synced(&peer, now_ms()) {
-                log::warn!(
-                    "[sync] 记 last_ok_ms 失败 peer={} : {}",
-                    &peer[..8.min(peer.len())],
-                    e
-                );
-            }
+        ) {
+            break;
         }
-        let alive = match wait {
-            // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
-            // 那一轮里两边都没改过东西，整个会话是纯浪费。
-            Wait::Idle => match idle_wait(&ctx, &peer, cursor_stalled).await {
-                Woke::Stop => false,
-                Woke::Dirty => {
+        let waiting = async {
+            match wait {
+                // 脏了就拨、否则睡到心跳。空闲时不再固定 30 秒一轮——
+                // 那一轮里两边都没改过东西，整个会话是纯浪费。
+                Wait::Idle => match idle_wait(&ctx, &peer, cursor_stalled).await {
+                    Woke::Stop => false,
+                    Woke::Dirty => {
+                        want_digest = false;
+                        true
+                    }
+                    Woke::Heartbeat => {
+                        want_digest = true;
+                        true
+                    }
+                },
+                // 退避重试：上一拨刚失败，不是核对账的时候（失败多半是网络问题，
+                // 多算一遍摘要只是白烧）。
+                Wait::Fixed(s) => {
                     want_digest = false;
-                    true
+                    sleep_or_stop(&ctx.stop, s).await
                 }
-                Woke::Heartbeat => {
+                // 🔴 没轮到本机：**不动 `want_digest`**。这一拨根本没发出去，
+                //    清掉的话，开机时被并发闸挡下的那几台就永远拿不到
+                //    「第一拨带摘要」（W2）——而那正是上次崩在会话中间后
+                //    发现分叉的唯一机会，错过了就要等到下一次心跳（最多 690 秒）。
+                Wait::Busy(s) => sleep_or_stop(&ctx.stop, s).await,
+                // 从长睡里醒来：与对端已经很久没说过话，正是分叉最可能积起来的时候。
+                Wait::Dormant(s) => {
                     want_digest = true;
-                    true
+                    sleep_or_wake(&ctx, s).await
                 }
-            },
-            // 退避重试：上一拨刚失败，不是核对账的时候（失败多半是网络问题，
-            // 多算一遍摘要只是白烧）。
-            Wait::Fixed(s) => {
-                want_digest = false;
-                sleep_or_stop(&ctx.stop, s).await
             }
-            // 🔴 没轮到本机：**不动 `want_digest`**。这一拨根本没发出去，
-            //    清掉的话，开机时被并发闸挡下的那几台就永远拿不到
-            //    「第一拨带摘要」（W2）——而那正是上次崩在会话中间后
-            //    发现分叉的唯一机会，错过了就要等到下一次心跳（最多 690 秒）。
-            Wait::Busy(s) => sleep_or_stop(&ctx.stop, s).await,
-            // 从长睡里醒来：与对端已经很久没说过话，正是分叉最可能积起来的时候。
-            Wait::Dormant(s) => {
-                want_digest = true;
-                sleep_or_wake(&ctx, s).await
-            }
+        };
+        let alive = tokio::select! {
+            biased;
+            _ = cancelled(&mut cancel) => false,
+            alive = waiting => alive,
         };
         if !alive {
             break;
@@ -506,6 +516,7 @@ pub(super) fn record_into(
         Err(p) => p.into_inner(),
     };
     match outcome {
+        Outcome::Cancelled => {}
         Outcome::Busy(_) => {
             if let Some(e) = m.get_mut(peer) {
                 e.next_in_secs = next_in_secs;
@@ -597,12 +608,130 @@ pub(super) fn seed_last_ok(
     }
 }
 
-/// 这个对端还应该有循环吗（「忘记此设备」之后就不应该了）。
-fn has_peer(ctx: &SyncCtx, peer: &str) -> bool {
-    ctx.peers.lock().map(|p| p.contains(peer)).unwrap_or(false)
+// watch retains cancellation across subscribe/select races; Notify alone loses it.
+async fn cancelled(cancel: &mut tokio::sync::watch::Receiver<bool>) {
+    while !*cancel.borrow_and_update() {
+        if cancel.changed().await.is_err() {
+            break;
+        }
+    }
+}
+
+fn peer_cancel(ctx: &SyncCtx, peer: &str) -> Option<tokio::sync::watch::Receiver<bool>> {
+    ctx.peers.lock().ok()?.get(peer).map(|s| s.subscribe())
+}
+
+async fn serve_asset(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
+    static SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+    let Ok(_slot) = SLOTS.try_acquire() else {
+        conn.close(3u32.into(), b"asset busy");
+        return;
+    };
+    let peer = conn.remote_id().to_string();
+    if !ctx.running.load(Ordering::SeqCst) {
+        conn.close(1u32.into(), b"knowledge sync disabled");
+        return;
+    }
+    if let Err(error) = super::asset::authorized(&ctx.store, &peer) {
+        let reason: &[u8] = match error.code.as_str() {
+            "sync_disabled" => b"knowledge sync disabled",
+            "paused" => b"knowledge peer paused",
+            _ => b"knowledge authorization required",
+        };
+        conn.close(1u32.into(), reason);
+        return;
+    }
+    let Some(mut cancel) = peer_cancel(&ctx, &peer) else {
+        conn.close(2u32.into(), b"sync cancelled");
+        return;
+    };
+    let running = async {
+        let wire = tokio::time::timeout(OPEN_STREAM_TIMEOUT, super::transport::accept_streams(conn.clone()))
+            .await.map_err(|_| super::asset::AssetError::new("offline", "图片请求超时"))?
+            .map_err(|_| super::asset::AssetError::new("offline", "图片请求中断"))?;
+        super::asset::serve(&ctx.store, wire, &peer).await
+    };
+    tokio::select! {
+        biased;
+        _ = cancelled(&mut cancel) => { conn.close(2u32.into(), b"sync cancelled"); },
+        result = tokio::time::timeout(super::asset::TOTAL_TIMEOUT, running) => {
+            if !matches!(result, Ok(Ok(()))) { conn.close(2u32.into(), b"asset transfer failed"); }
+        },
+    }
+}
+
+fn cancel_peer(ctx: &SyncCtx, peer: &str) {
+    cancel_registered(&ctx.peers, Some(peer));
+}
+
+fn cancel_registered(
+    peers: &std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
+    peer: Option<&str>,
+) {
+    if let Ok(mut peers) = peers.lock() {
+        if let Some(peer) = peer {
+            if let Some(cancel) = peers.remove(peer) {
+                cancel.send_replace(true);
+            }
+        } else {
+            for (_, cancel) in peers.drain() {
+                cancel.send_replace(true);
+            }
+        }
+    }
+}
+
+fn with_peer_generation(
+    peers: &std::sync::Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
+    peer: &str,
+    cancel: &tokio::sync::watch::Receiver<bool>,
+    commit: impl FnOnce(),
+) -> bool {
+    let Ok(peers) = peers.lock() else {
+        return false;
+    };
+    let Some(current) = peers.get(peer) else {
+        return false;
+    };
+    if !current.subscribe().same_channel(cancel) || *cancel.borrow() {
+        return false;
+    }
+    // Serialize status commits with cancellation: restored peers must never
+    // receive a late success/online report from an older cancelled session.
+    commit();
+    true
+}
+
+fn record_current(
+    ctx: &SyncCtx,
+    peer: &str,
+    cancel: &tokio::sync::watch::Receiver<bool>,
+    outcome: Outcome,
+    fails: u32,
+    next_in_secs: u64,
+    dormant: bool,
+) -> bool {
+    with_peer_generation(&ctx.peers, peer, cancel, || {
+        match &outcome {
+            Outcome::Synced(report) => {
+                let _ = ctx
+                    .store
+                    .device_mark_online(peer, mark_path(peer, report.path), now_ms());
+                if let Err(error) = ctx.store.device_mark_synced(peer, now_ms()) {
+                    log::warn!("[sync] failed recording last success: {error}");
+                }
+            }
+            Outcome::Failed(_) | Outcome::Refused(_) => {
+                let _ = ctx.store.device_mark_offline(peer);
+            }
+            _ => {}
+        }
+        record_into(&ctx.last, peer, outcome, fails, next_in_secs, dormant);
+    })
 }
 
 pub(super) enum Outcome {
+    Cancelled,
     Synced(Box<session::SessionReport>),
     /// 对端拒了（在忙 / 保留了它自己那个会话）。
     Busy(String),
@@ -616,7 +745,23 @@ pub(super) enum Outcome {
     Failed(String),
 }
 
-async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
+async fn dial_once(
+    ctx: &SyncCtx,
+    peer: &str,
+    want_digest: bool,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+) -> Outcome {
+    if !ctx.running.load(Ordering::SeqCst) {
+        return Outcome::Cancelled;
+    }
+    tokio::select! {
+        biased;
+        _ = cancelled(cancel) => Outcome::Cancelled,
+        outcome = dial_once_inner(ctx, peer, want_digest) => outcome,
+    }
+}
+
+async fn dial_once_inner(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     // 本机也要先拿槽：不然本机的两条路径（周期拨号与刚收到的入连接）
     // 会同时对同一个库跑 apply。
     let _hold = match ctx.coord.try_hold(peer) {
@@ -640,9 +785,6 @@ async fn dial_once(ctx: &SyncCtx, peer: &str, want_digest: bool) -> Outcome {
     };
     match session::dial_session(&ctx.store, &ctx.endpoint, peer, to, want_digest).await {
         Ok(r) => {
-            let _ = ctx
-                .store
-                .device_mark_online(peer, mark_path(peer, r.path), now_ms());
             // [SYNC-LEASE] 临时探针（2026-09-21 加，定窗口取值用，定完删）。
             //   目的：`kbOnline.ts` 的 `ONLINE_STALE_MS`（现 90_000）是**推算**的
             //   （按同步周期 30s ± 10s），不是实测。这里把两次「真续约」之间的
@@ -748,6 +890,11 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
         ctx.store.device_get(&peer),
         Ok(Some(d)) if !d.paused
     );
+    let mut cancel = peer_cancel(&ctx, &peer);
+    if !ctx.running.load(Ordering::SeqCst) || (paired && cancel.is_none()) {
+        session::reject(&w, "sync cancelled");
+        return;
+    }
     // 暂停中的已配对设备：明确拒，且不走「敲门/待确认」——那会和暂停语义打架。
     if !paired {
         if let Ok(Some(d)) = ctx.store.device_get(&peer) {
@@ -788,19 +935,34 @@ async fn serve(ctx: Arc<SyncCtx>, conn: iroh::endpoint::Connection) {
     };
     debug_assert_eq!(hold.peer(), peer);
 
-    match session::run_accepted(&ctx.store, w, &peer).await {
+    let conn = w.conn.clone();
+    let result = tokio::select! {
+        biased;
+        _ = cancelled(cancel.as_mut().expect("paired session has cancellation")) => {
+            conn.close(2u32.into(), b"sync cancelled");
+            return;
+        },
+        result = session::run_accepted(&ctx.store, w, &peer) => result,
+    };
+    match result {
         Ok(r) => {
             // ❗ 不能写死 "lan"（改之前就是）：入连接也可能是对端从外网打洞
             //   或过中继过来的，那时徽章会说「局域网」而它根本不在本局域网。
-            let _ = ctx
-                .store
-                .device_mark_online(&peer, mark_path(&peer, r.path), now_ms());
             log::info!(
                 "[Sync] {} 发起的同步完成：收 {} 篇 / 更新 {} 篇 / 冲突 {} 处",
                 short,
                 r.applied.created,
                 r.applied.updated,
                 r.applied.conflicts
+            );
+            record_current(
+                &ctx,
+                &peer,
+                cancel.as_ref().expect("paired session has cancellation"),
+                Outcome::Synced(Box::new(r)),
+                0,
+                HEARTBEAT_SECS,
+                false,
             );
         }
         Err(e) => log::warn!("[Sync] {} 发起的同步失败：{}", short, e),
@@ -1054,7 +1216,7 @@ impl SyncService {
             stop: Arc::new(tokio::sync::Notify::new()),
             wake: Arc::new(tokio::sync::Notify::new()),
             wrote: store.write_signal(),
-            peers: std::sync::Mutex::new(std::collections::HashSet::new()),
+            peers: std::sync::Mutex::new(HashMap::new()),
             last: std::sync::Mutex::new(HashMap::new()),
             // ❗ 从服务上克隆而不是新建：关开关会重建 `SyncCtx`，
             //   新建的话拒绝名单会跟着清空，关一下再开就又开始弹同一台被拒过的机器。
@@ -1113,6 +1275,14 @@ impl SyncService {
                     tauri::async_runtime::spawn(async move { serve(ctx2, conn).await });
                 }),
             );
+            let asset_ctx = ctx.clone();
+            crate::shared_ep::register(
+                super::asset::ALPN,
+                Arc::new(move |conn| {
+                    let asset_ctx = asset_ctx.clone();
+                    tauri::async_runtime::spawn(async move { serve_asset(asset_ctx, conn).await });
+                }),
+            );
         }
         for d in &known {
             // 暂停中的设备不拨；恢复时由 kb_sync_set_paused → add_peer 补循环。
@@ -1141,10 +1311,12 @@ impl SyncService {
         let mut guard = self.inner.lock().await;
         if let Some(ctx) = guard.take() {
             ctx.running.store(false, Ordering::SeqCst);
+            cancel_registered(&ctx.peers, None);
             // ❗ 宣告线程是独立标志，漏了它就会留一个占着端口 5008 的僵尸
             ctx.presence_running.store(false, Ordering::SeqCst);
             ctx.stop.notify_waiters();
             crate::shared_ep::unregister(super::transport::ALPN);
+            crate::shared_ep::unregister(super::asset::ALPN);
             // 待确认队列也清：关掉开关后那几条敲门已经无从确认（没人在监听了），
             // 留着只会让界面显一条点下去也连不上的请求。拒绝名单不清（见 `JoinRequests::clear`）。
             ctx.joins.clear();
@@ -1154,6 +1326,51 @@ impl SyncService {
 
     pub async fn is_running(&self) -> bool {
         self.inner.lock().await.is_some()
+    }
+
+    /// Only a manual reader action calls this; missing local images never auto-dial.
+    pub async fn fetch_asset(&self, request_id: &str, peer: &str, note_id: &str, src: &str)
+        -> Result<super::asset::AssetReceipt, super::asset::AssetError>
+    {
+        use super::asset::{self, AssetError, AssetReceipt};
+        let request = super::asset_requests::begin(request_id)?;
+        let ctx = self.inner.lock().await.as_ref().cloned()
+            .ok_or_else(|| AssetError::new("sync_disabled", "请先开启知识库同步"))?;
+        asset::authorized(&ctx.store, peer)?;
+        let asset_ref = asset::reference(&ctx.store, note_id, src)?;
+        let images = ctx.store.images_dir().ok_or_else(AssetError::io)?;
+        let mut peer_cancel = peer_cancel(&ctx, peer).ok_or_else(AssetError::cancelled)?;
+        let generation = peer_cancel.clone();
+        let mut request_cancel = request.receiver();
+        let fetch = async {
+            if let Ok(bytes) = asset::read_local(&images, &asset_ref).await {
+                return Ok((bytes, true));
+            }
+            let to = target(&ctx, peer).map_err(|_| AssetError::new("invalid", "电脑标识无效"))?;
+            asset::fetch(&ctx.endpoint, to, peer, note_id, &asset_ref).await.map(|bytes| (bytes, false))
+        };
+        let (bytes, already_local) = tokio::select! {
+            biased;
+            _ = cancelled(&mut peer_cancel) => return Err(AssetError::cancelled()),
+            _ = cancelled(&mut request_cancel) => return Err(AssetError::cancelled()),
+            result = tokio::time::timeout(asset::TOTAL_TIMEOUT, fetch) => {
+                result.map_err(|_| AssetError::new("offline", "图片补齐超时，请重试"))??
+            },
+        };
+        let mut landed = Err(AssetError::cancelled());
+        let current = with_peer_generation(&ctx.peers, peer, &generation, || {
+            if request.cancelled() || !ctx.running.load(Ordering::SeqCst) { return; }
+            landed = asset::authorized(&ctx.store, peer)
+                .and_then(|_| asset::reference(&ctx.store, note_id, src))
+                .and_then(|_| if already_local { Ok(()) } else { asset::adopt(&images, &asset_ref, &bytes) });
+        });
+        if !current { return Err(AssetError::cancelled()); }
+        landed?;
+        Ok(AssetReceipt { src: src.into(), bytes: bytes.len() as u64, peer: peer.into(), already_local })
+    }
+
+    pub fn cancel_asset(&self, request_id: &str) -> Result<(), super::asset::AssetError> {
+        super::asset_requests::cancel(request_id)
     }
 
     /// 为一台**刚配对**的设备补一条循环。
@@ -1179,9 +1396,7 @@ impl SyncService {
     pub async fn drop_peer(&self, node_id: &str) {
         let guard = self.inner.lock().await;
         if let Some(ctx) = guard.as_ref() {
-            if let Ok(mut p) = ctx.peers.lock() {
-                p.remove(node_id);
-            }
+            cancel_peer(ctx, node_id);
             // ❗ 地址也要清：不清会留一条永不刷新也永不被覆盖的僵尸地址
             ctx.presence.forget(node_id);
         }
@@ -1244,9 +1459,17 @@ impl SyncService {
         // 🔴 手动同步带上分桶摘要（W2）。用户去点这个按钮，大多数时候正是
         // 因为他觉得两边不一样了——而「两边不一样但游标都推过了」正是摘要要治的那一种；
         // 不带的话他点一千次也只是反复拨一个空增量。
-        match dial_once(&ctx, node_id, true).await {
-            // 「对端在忙」不是失败：它那边正在把两边的东西都搬完
-            Outcome::Synced(_) | Outcome::Busy(_) => Ok(()),
+        let Some(mut cancel) = peer_cancel(&ctx, node_id) else {
+            return Err("同步已取消，已落盘内容保留".into());
+        };
+        match dial_once(&ctx, node_id, true, &mut cancel).await {
+            Outcome::Cancelled => Err("同步已取消，已落盘内容保留".into()),
+            Outcome::Synced(report) => {
+                if record_current(&ctx, node_id, &cancel, Outcome::Synced(report), 0, HEARTBEAT_SECS, false) {
+                    Ok(())
+                } else { Err("同步已取消，已落盘内容保留".into()) }
+            },
+            Outcome::Busy(_) => Err("本轮尚未完成：已有同步正在进行，请稍后查看结果".into()),
             // 对端明确拒了：把真正的原因告诉用户，而不是只说「失败」。
             // 这条往上报的字符串会直接弹成 toast（见 `useKbSync.syncNow`）。
             Outcome::Refused(_) => Err(
@@ -1258,15 +1481,81 @@ impl SyncService {
     }
 }
 
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_generation_cannot_commit_a_success_after_restore_or_stop() {
+        let (old_sender, old) = tokio::sync::watch::channel(false);
+        let peers = std::sync::Mutex::new(HashMap::from([("pc".into(), old_sender)]));
+        let committed = std::sync::atomic::AtomicUsize::new(0);
+        let commit = || {
+            committed.fetch_add(1, Ordering::SeqCst);
+        };
+        assert!(with_peer_generation(&peers, "pc", &old, commit));
+        cancel_registered(&peers, Some("pc"));
+        let (new_sender, new) = tokio::sync::watch::channel(false);
+        peers.lock().unwrap().insert("pc".into(), new_sender);
+        assert!(!with_peer_generation(&peers, "pc", &old, commit));
+        assert!(with_peer_generation(&peers, "pc", &new, commit));
+        cancel_registered(&peers, None);
+        assert!(!with_peer_generation(&peers, "pc", &new, commit));
+        assert_eq!(committed.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn cancel_before_wait_is_not_lost_and_resume_has_a_new_generation() {
+        let (sender, mut old) = tokio::sync::watch::channel(false);
+        let peers = std::sync::Mutex::new(HashMap::from([("pc".into(), sender)]));
+        cancel_registered(&peers, Some("pc"));
+        let (resumed, mut new) = tokio::sync::watch::channel(false);
+        peers.lock().unwrap().insert("pc".into(), resumed);
+        tokio::time::timeout(Duration::from_millis(100), cancelled(&mut old))
+            .await
+            .unwrap();
+        assert!(
+            !*new.borrow(),
+            "resume must not revive the cancelled session"
+        );
+        cancel_registered(&peers, None);
+        tokio::time::timeout(Duration::from_millis(100), cancelled(&mut new))
+            .await
+            .unwrap();
+        assert!(peers.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelling_one_peer_interrupts_pending_work_without_touching_other_peer() {
+        let (a, mut rx) = tokio::sync::watch::channel(false);
+        let (b, untouched) = tokio::sync::watch::channel(false);
+        let peers = std::sync::Mutex::new(HashMap::from([("a".into(), a), ("b".into(), b)]));
+        let work = async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            panic!("cancelled work resumed")
+        };
+        cancel_registered(&peers, Some("a"));
+        tokio::time::timeout(Duration::from_millis(100), async {
+            tokio::select! { biased; _ = cancelled(&mut rx) => {}, _ = work => {} }
+        })
+        .await
+        .unwrap();
+        assert!(!*untouched.borrow());
+        assert!(peers.lock().unwrap().contains_key("b"));
+    }
+}
+
 /// 起一条对端循环，已有就不重复起。
 fn start_peer(ctx: &Arc<SyncCtx>, node_id: &str) {
+    let (cancel, receiver) = tokio::sync::watch::channel(false);
     match ctx.peers.lock() {
         Ok(mut p) => {
-            if !p.insert(node_id.to_string()) {
+            if p.contains_key(node_id) {
                 return;
             }
+            p.insert(node_id.to_string(), cancel);
         }
         Err(_) => return,
     }
-    tokio::spawn(peer_loop(ctx.clone(), node_id.to_string()));
+    tokio::spawn(peer_loop(ctx.clone(), node_id.to_string(), receiver));
 }

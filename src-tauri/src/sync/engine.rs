@@ -136,7 +136,9 @@ fn folder_path_of(
 /// 所以只有摘要不同的笔记根本不会进增量。
 fn same_version(local: &Note, incoming_md: &str) -> bool {
     let p = crate::data_store::markdown_to_note(incoming_md, &local.title);
-    if p.title != local.title || p.content != local.content {
+    if p.title != local.title
+        || attach::to_portable(&p.content) != attach::to_portable(&local.content)
+    {
         return false;
     }
     // ❗ `p.tags` 现在是 `Option`（见 `ParsedNote::tags`）。
@@ -194,7 +196,7 @@ pub fn write_delta(store: &DataStore, delta: &Delta, out: &Path) -> Result<Expor
         //    两件事缺一件都白做：只搬字节 → 对面路径不同，图仍断；
         //    只改引用 → 对面根本没这张图。详见 `sync::attach` 模块注释。
         let md = crate::data_store::note_to_markdown(n, true);
-        for a in attach::scan_local_refs(&md) {
+        for a in attach::scan_refs(&md) {
             let Some(images) = store.images_dir() else {
                 break; // 内存库（测试）没有 images 目录，不是错
             };

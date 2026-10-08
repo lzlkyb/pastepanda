@@ -368,7 +368,7 @@ pub(super) fn expired_cutoff(days: i64) -> Option<String> {
 /// - **含中文 → 走 [`to_ngram`]**。bigram 本身就是精确匹配单元，加 `*` 只会扩大误命中。
 ///
 /// 两路都先把非字母数字字符剔干净，否则引号 / `*` / `NEAR` 会撞上 MATCH 语法。
-fn to_match_expr(kw: &str) -> String {
+pub(super) fn to_match_expr(kw: &str) -> String {
     let is_ascii_word = kw
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '-');
@@ -1125,6 +1125,20 @@ impl DataStore {
         auto: bool,
     ) -> Result<Note, String> {
         let conn = self.lock_conn();
+        self.note_insert_on(&conn, want_id, history_id, title, content, source, auto)
+    }
+
+    /// Shared insertion accepts a transaction so mobile draft creation and clearing are atomic.
+    pub(super) fn note_insert_on(
+        &self,
+        conn: &rusqlite::Connection,
+        want_id: Option<&str>,
+        history_id: Option<&str>,
+        title: &str,
+        content: &str,
+        source: &str,
+        auto: bool,
+    ) -> Result<Note, String> {
         // ❗ 只接受**形状合法的 UUID**：这一列是主键，不能让外部 `.md` 往里塞任意字符串。
         //   别的工具写的 vault 里 `pastepanda_id` 可能是任何东西，形状不对就当没给。
         let id = match want_id {
@@ -1197,6 +1211,21 @@ impl DataStore {
     ) -> Result<NoteUpdateReport, String> {
         let conn = self.lock_conn();
 
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let report = self.note_update_on(&tx, id, title, content, source)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(report)
+    }
+
+    /// Shared update path: mobile compare-and-save and its receipt must share this transaction.
+    pub(super) fn note_update_on(
+        &self,
+        conn: &rusqlite::Connection,
+        id: &str,
+        title: &str,
+        content: &str,
+        source: &str,
+    ) -> Result<NoteUpdateReport, String> {
         // 先读旧值：既用来判「真的改了吗」，也顺便代替了原来靠 UPDATE 影响行数
         // 判笔记是否存在（无变化时 UPDATE 本就不会发，那个判法失效）。
         let (old_title, old_content): (String, String) = conn
@@ -1221,9 +1250,8 @@ impl DataStore {
         }
 
         // 快照存的是**旧版本**，所以必须在 UPDATE 之前拍（D8 / note_revision.rs）。
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        Self::snapshot_note_on(&tx, id, source).map_err(|e| e.to_string())?;
-        tx.execute(
+        Self::snapshot_note_on(conn, id, source).map_err(|e| e.to_string())?;
+        conn.execute(
             // M6-P2：每一处刷 `updated_at` 的地方都必须同时刷 `updated_ms`——
             // 漏一处 = 那次改动在同步里「没发生过」。MAX(...) 是单调保证，见 [`now_ms`]。
             // §7.1：`last_agent` 跟着 source 走。空串 = 人亲自改的，
@@ -1234,7 +1262,7 @@ impl DataStore {
             rusqlite::params![id, title, content, note_now(), self.hlc_now(), source],
         )
         .map_err(|e| e.to_string())?;
-        Self::prune_revisions_on(&tx, id).map_err(|e| e.to_string())?;
+        Self::prune_revisions_on(conn, id).map_err(|e| e.to_string())?;
 
         // O-9：标题真的变了才重写引用。放在**同一个事务里**——
         // 否则「标题已改、引用未改」会成为一个可观测的中间状态。
@@ -1243,19 +1271,17 @@ impl DataStore {
         // 新标题为空时重写会把引用变成 `[[]]`，那比断链更坏。
         let relinked =
             if old_title != title && !old_title.trim().is_empty() && !title.trim().is_empty() {
-                Self::rewrite_wiki_links_on(&tx, id, &old_title, title, source, self.hlc_now())
+                Self::rewrite_wiki_links_on(conn, id, &old_title, title, source, self.hlc_now())
                     .map_err(|e| e.to_string())?
             } else {
                 Vec::new()
             };
 
-        tx.commit().map_err(|e| e.to_string())?;
-
-        Self::sync_note_indexes_on(&conn, id);
+        Self::sync_note_indexes_on(conn, id);
         // 被重写的笔记正文变了，FTS 也要跟着更新——
         // 否则搜旧标题还能把它们搜出来。
         for rid in &relinked {
-            Self::sync_note_indexes_on(&conn, rid);
+            Self::sync_note_indexes_on(conn, rid);
         }
 
         Ok(NoteUpdateReport {
@@ -1940,7 +1966,7 @@ impl DataStore {
     ///
     /// **三处必须共用这一份**：分开写早晚漂，而漂了就是「面包屑/组头写 12 条、
     /// 列表里却有 20 条」——A-32 那个 bug 就是这么来的。
-    fn note_view_from_where(
+    pub(super) fn note_view_from_where(
         folder_filter: &str,
         tag_ids: &[String],
         opts: &NoteViewOpts,
@@ -2369,7 +2395,7 @@ impl DataStore {
 
     /// 读一条笔记的标签。失败返回空 Vec 而不是报错：
     /// 标签读不到不应该让整条笔记取不出来（同 HistoryItem.tags 的取舍）。
-    fn load_note_tags_on(conn: &rusqlite::Connection, note_id: &str) -> Vec<Tag> {
+    pub(super) fn load_note_tags_on(conn: &rusqlite::Connection, note_id: &str) -> Vec<Tag> {
         let sql = "SELECT t.id, t.name, t.color, COALESCE(t.source, 'manual'), t.created_at
                    FROM note_tags nt JOIN tags t ON t.id = nt.tag_id
                    WHERE nt.note_id = ?1 ORDER BY t.name ASC";
