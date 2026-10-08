@@ -26,6 +26,7 @@ import { rcCancelRequest, rcSetEnabled, type RcCapability } from "@/lib/api/rc";
 import { capabilityLabel, rememberRequestCap } from "@/lib/rcRequest";
 import { useRcStore } from "@/stores/rcStore";
 import { ToggleRow } from "../ToggleRow";
+import { RcMobileHintRow } from "../RcMobileHintRow";
 import { RcPairLayer, type RcPairLayerMode } from "../RcPairLayer";
 import shared from "../../Settings.module.css";
 import styles from "../RcSettings.module.css";
@@ -133,6 +134,10 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
 
       {/* 规则 15.3：失败路径不折叠——藏进收起的组里就等于没有反馈 */}
       {rc.error && <div className={styles.rcErrLine}>{rc.error}</div>}
+
+      {/* 块3 情境化提示：本机一旦有已配对设备（=真在用远程电脑），就在节内出现一行手机 App 引导；
+          可关（写 localStorage，一次性），点整行跳「关于 → 手机 App 下载卡」。见 RcMobileHintRow。 */}
+      {rc.targets.length > 0 && <RcMobileHintRow />}
 
       <RcPairGroup
         rc={rc}

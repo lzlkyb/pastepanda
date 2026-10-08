@@ -233,3 +233,26 @@
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/* 手机端情境化提示行（RcMobileHintRow）：× 不再提示 + › 跳关于页，贴右同列 */
+.rcHintTrail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rcHintClose {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.3s ease;
+}
+.rcHintClose:hover {
+  background: var(--hover);
+  color: var(--text-primary);
+}
