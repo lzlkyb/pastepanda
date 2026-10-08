@@ -391,6 +391,17 @@ fn test_kb_health_unfiled_ai_ignores_trashed() {
 }
 
 /// 堆得最久的排前面——它躺在门口最久，最该先收。
+///
+/// 🔴 `created_at` 只到**毫秒**（`NOTE_TIME_FMT` = `%Y-%m-%d %H:%M:%S%.3f`）。本机三次插入
+/// 常跨开 ms，测试就一直是绿的；CI runner 快，会有几篇落进**同一个 ms** 变成平手，
+/// 那时排序落给查询里的次键 `title` 的 BINARY 比较，按 UTF-8 字节是
+/// 「中间的」(E4…) < 「最新的」(E6 9C 80 E6 96…) < 「最早的」(E6 9C 80 E6 97…)。
+/// 2026-10-09 那次真实判红是 `["中间的", "最早的", "最新的"]`：前两篇同 ms（平手组内
+/// 中间 < 最早），第三篇晚 1ms 排最后——**是测试前提假，不是排序坏了**。
+/// 平手时按标题定序本身是可复现的口径，次键不能换成 `id`（uuid v4 随机 ⇒ 平手变掷骰子）。
+/// 所以这里显式钉三个不同的时间戳，且标题的字序与时间序**故意不平行**：
+/// 万一 `ORDER BY` 哪天退化成只按 title 排，这条必然红（已用变异体验过：真红，
+/// 且红成 `["中间的", "最新的", "最早的"]`，与上面推的字序逐字吻合）。
 #[test]
 fn test_kb_health_unfiled_ai_oldest_first() {
     let store = make_store();
@@ -398,6 +409,22 @@ fn test_kb_health_unfiled_ai_oldest_first() {
         store
             .note_create_from(None, t, &"字".repeat(100), "agent:test")
             .unwrap();
+    }
+    {
+        let conn = store.lock_conn();
+        for (title, ts) in [
+            ("最早的", "2026-01-01 00:00:01.000"),
+            ("中间的", "2026-01-01 00:00:02.000"),
+            ("最新的", "2026-01-01 00:00:03.000"),
+        ] {
+            let n = conn
+                .execute(
+                    "UPDATE notes SET created_at = ?1 WHERE title = ?2",
+                    rusqlite::params![ts, title],
+                )
+                .unwrap();
+            assert_eq!(n, 1, "没找到那篇 {title}，测试的前置条件变了");
+        }
     }
     let titles: Vec<String> = store
         .kb_health()
