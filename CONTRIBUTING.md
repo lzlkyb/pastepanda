@@ -2,7 +2,7 @@
 
 感谢你参与 PastePanda 的开发！这是一份「协作者入职手册」——先读它，再动手。**人工开发与 AI Coding 都按本文件走。**
 
-**最优先的规则源是项目根目录的 [`claude.md`](claude.md)**，本文件是它的「快速上手版」。两者冲突时以 `claude.md` 为准；遇到本文件没覆盖的场景，去 `claude.md` 查。
+**最优先的规则源是项目根目录的 [`AGENTS.md`](AGENTS.md)**，本文件是它的「快速上手版」。两者冲突时以 `AGENTS.md` 为准；遇到本文件没覆盖的场景，去 `AGENTS.md` 查。
 
 ---
 
@@ -253,39 +253,63 @@ git commit          # 完成合并提交
 
 **防冲突日常姿势：** 开工前先 `git pull`；小步提交、频繁 push；分支做自己的事，合入前再 pull 一次 master。
 
+### 3.6 提交身份：先让 GitHub 认得出你
+
+提交必须用**与 GitHub 账号绑定（已验证）的邮箱**，否则这个提交在 GitHub 上只显示成一个孤立名字——不进 Contributors、不进 contribution graph、review 时也 @ 不到人。
+
+本项目已有前车之鉴：`git log` 里 616 个提交的作者是 `dev@clipboard-manager.local`，这个地址不是可收信域名、GitHub 无法验证，于是这些提交在贡献者图上**归属为零**——外人第一眼看到的「这个项目只有 1 个提交」。
+
+```bash
+git config user.email      # 先查：应是你账号里已验证的邮箱
+# 只改本仓库，不动全局配置：
+git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
+```
+
+### 3.7 一个工作树只服务一个会话
+
+本项目经常在**同一个工作树**里并行多个开发会话（人或 AI）。规矩：
+
+- 提交前先 `git status` 看清归属，**只 `git add` 自己改的文件**；禁止 `git add -A` / `git commit -a`。
+- `pre-commit` 里的 `lint-staged` 会 stash 整个工作树：别人正在写时提交，可能把他们的在途改动卷进你的提交、或从他们手底下抽走。
+- `pre-push` 跑的是**整棵工作树**的 `vitest` + `cargo test`。树里只要有他人未完成的改动，这次 push 就会被他们的代码判红——先确认树干净（或等他们那批落地）再 push。
+
+### 3.8 master 保护规则的真话
+
+仓库里确实配了「需 1 个 approval + required status checks（`Rust Tests` / `Frontend Tests`，strict）+ 禁 force push / 禁删分支」，但 **`enforce_admins` 是关的**：管理员直推 master 不受这些约束。所以「CI 全绿才可合」目前靠本地 pre-push 和人自觉，不是 GitHub 强制——历史改动全部直推 master，没有留下分支与 PR 记录。同理，`.github/CODEOWNERS` 在「Require review from Code Owners」勾选前不产生任何阻塞。
+
 ---
 
 ## 4. 用 AI Coding 协作
 
 **先完成 §2「从零到能跑 dev」**（人跑一遍或让 AI 按 §2.2–§2.5 执行），§2.5 自检全绿后再开发。  
-欢迎用 Claude Code / Cursor 等 AI 工具干活，但 **`claude.md` 对人和 AI 同样有效**，不能当甩手掌柜。
+欢迎用 Claude Code / Cursor 等 AI 工具干活，但 **`AGENTS.md` 对人和 AI 同样有效**，不能当甩手掌柜。
 
 ### 4.1 选什么工具
 
 | 工具 | 推荐度 | 说明 |
 |------|--------|------|
-| **Claude Code** | ★★★★★ | 项目以 `claude.md` 为规则源，开箱即用 |
+| **Claude Code** | ★★★★★ | 它读 `CLAUDE.md`，而该文件现在只是一句指针（`@AGENTS.md`），规则正文永远只有 `AGENTS.md` 一份 |
 | Cursor / Windsurf | ★★★★ | 在项目根放好规则文件（见下）即可 |
 | 其他 CLI（Codex、Qwen Code 等） | ★★★ | 规则加载方式各异，需手动贴规则 |
 
-**唯一硬要求**：不管用什么工具，**必须让它读到 `claude.md`**。读不到就会踩版本号、组件行数、AI 红线这些坑。
+**唯一硬要求**：不管用什么工具，**必须让它读到 `AGENTS.md`**。读不到就会踩版本号、组件行数、AI 红线这些坑。
 
 ### 4.2 让 AI 读到规则
 
 **Claude Code**：把仓库根目录当工作区打开即可。启动后第一句先核对：
 
 ```
-先读 claude.md 和 CONTRIBUTING.md，用 5 条要点复述本项目的硬性规则。
+先读 AGENTS.md 和 CONTRIBUTING.md，用 5 条要点复述本项目的硬性规则。
 ```
 
 复述不对就纠正，再开工。
 
-**Cursor / Windsurf**：任选其一——把 `claude.md` 内容贴进项目 Rules / `.cursorrules`；或在 `.cursor/rules/`、`.windsurfrules` 里写：**「开始任何任务前先完整阅读仓库根目录 `claude.md`，并严格遵守」**。
+**Cursor / Windsurf**：任选其一——把 `AGENTS.md` 内容贴进项目 Rules / `.cursorrules`；或在 `.cursor/rules/`、`.windsurfrules` 里写：**「开始任何任务前先完整阅读仓库根目录 `AGENTS.md`，并严格遵守」**。
 
 **任何工具通用的开工提示词：**
 
 ```
-你在 PastePanda 仓库工作。规则源是根目录 claude.md（已存在，先读）。
+你在 PastePanda 仓库工作。规则源是根目录 AGENTS.md（已存在，先读）。
 硬性约束（违反即失败）：
 - 不改任何版本号（tauri.conf.json / Cargo.toml / package.json）
 - 不执行 npm run tauri build
@@ -345,7 +369,7 @@ git commit          # 完成合并提交
 
 ```
 你是 PastePanda 的结对工程师。项目：Tauri 2 + React 19 + TypeScript + Rust + SQLite，
-Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md 是规则权威，优先级高于你的默认习惯。
+Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 AGENTS.md 是规则权威，优先级高于你的默认习惯。
 
 工作方式：
 - 若环境未就绪，先按 CONTRIBUTING.md §2 执行 scripts/setup-dev.ps1，自检全绿再改代码
@@ -360,7 +384,7 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md �
 
 ---
 
-## 5. 项目硬性规则（摘要，完整版见 claude.md）
+## 5. 项目硬性规则（摘要，完整版见 AGENTS.md）
 
 违反任意一条，PR 直接打回：
 
@@ -387,12 +411,12 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md �
 3. `npm run prebuild` 确认 `src/lib/changelog.generated.ts` 已含新版本；
 4. commit → push → `git tag vX.Y.Z` → `git push origin vX.Y.Z` 触发 CI 构建发布。
 
-> CHANGELOG 是给用户看的：只说「能做什么」，不说「怎么实现的」。示例与禁忌见 claude.md「发版流程」一节。
+> CHANGELOG 是给用户看的：只说「能做什么」，不说「怎么实现的」。示例与禁忌见 AGENTS.md「发版流程」一节。
 
 ---
 
 ## 7. 求助顺序
 
-1. 读 `claude.md`（规则全集，含踩坑记录）；
+1. 读 `AGENTS.md`（规则全集，含踩坑记录）；
 2. 读 `docs/` 下的专题文档（OCR 替换、AI 架构、功能清单等）；
 3. 在 Issue 里提问，或 PR 里 @ 维护者。

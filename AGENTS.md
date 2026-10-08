@@ -101,5 +101,13 @@
 
 ---
 
+## 21. 提交身份必须能归属到 GitHub 账号
+`git config user.email` 若是无法在 GitHub 验证的地址（本仓历史上是 `dev@clipboard-manager.local`，616 个提交因此在贡献者图上归属为零），**提醒用户改**，但不要自行修改 git config——由用户执行。
+
+## 22. 共享工作树：只 add 自己的文件
+同一工作树常并行多个开发会话。提交前 `git status` 判归属，禁止 `git add -A` / `git commit -a`；`pre-commit` 的 `lint-staged` 会 stash 整棵树，`pre-push` 跑整棵树的测试——树里有他人在途改动时不要 push（详见 `CONTRIBUTING.md` §3.7）。
+
+---
+
 ## 发版流程
 用户明确说「tag」或「打tag」即授权本次版本递增，按 `docs/发版流程.md` 执行完整流程；这是规则 2 的显式授权。其他时候不自动发版。
