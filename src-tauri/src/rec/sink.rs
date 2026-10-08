@@ -17,6 +17,10 @@
 //! 0xC00D36B4（2026-10-08 探针 + 变异各实测一次）。esds 由 sink 按采样率/声道数
 //! 自造，与 `rc/audio.rs::asc_for` 那份逐字节相同，所以调用方无从也无需传 asc。
 //!
+//! 🔴 每条轨在 Finalize 前必须至少收到 **1 个样本**——moov 的样本描述要从流内
+//! 自取，零样本轨 = 0xC00D4A45「未提供所需的标头」（静音场整场零环回包，
+//! 2026-10-07 实录踩坑；音频线程按墙钟补静音保活，见 session.rs::run_audio）。
+//!
 //! MF 时间单位 100ns；`at_ms * 10_000`。全部 COM 调用收敛在本文件，
 //! 释放顺序同 `encode_h264.rs::release_com`：先放对象引用再 CoUninitialize。
 
@@ -114,6 +118,8 @@ pub struct RecSink {
     /// 是因为时间轴塌在 0（delta=0 可平凡推导），三期修好时间轴后必然踩中。
     video_frame_t100: i64,
     com_owned: bool,
+    /// 已写入的音频样本数（finalize 诊断用：0 = 音轨零样本，见 finalize）。
+    audio_samples: u64,
     /// 已写入的媒体字节（视频+音频裸流，不含封装开销；四期 1.2 控制条体积显示）。
     /// 调用方持有同一 Arc 供 `rec_status` 跨线程读——计数器由会话注入（依赖注入），
     /// sink 不自造：状态读口永远只有一个（规则 11.1 同款思路）。
@@ -221,6 +227,7 @@ impl RecSink {
                     video_stream,
                     audio_stream,
                     audio_frame_t100,
+                    audio_samples: 0,
                     video_frame_t100: 10_000_000i64 / fps.max(1) as i64,
                     com_owned,
                     bytes,
@@ -248,7 +255,13 @@ impl RecSink {
     /// 写一帧裸 AAC。`pts_ms` 来自 `AacPacket`。
     pub fn write_audio(&mut self, pts_ms: i64, data: &[u8]) -> Result<(), String> {
         let stream = self.audio_stream.ok_or("无音频轨")?;
+        self.audio_samples += 1;
         unsafe { self.write(stream, pts_ms * 10_000, self.audio_frame_t100, data) }
+    }
+
+    /// 是否开了音轨（drain 侧据此静默跳过：包要照收防通道积压，但不写不刷日志）。
+    pub(crate) fn has_audio(&self) -> bool {
+        self.audio_stream.is_some()
     }
 
     unsafe fn write(
@@ -290,7 +303,18 @@ impl RecSink {
     /// 收尾：写 moov、落盘。调用后本对象不可再用（Drop 只清 COM）。
     pub fn finalize(&mut self) -> Result<(), String> {
         match self.writer.as_ref() {
-            Some(w) => unsafe { w.Finalize().map_err(mf_err) },
+            Some(w) => unsafe {
+                w.Finalize().map_err(|e| {
+                    let mut msg = mf_err(e);
+                    // 0xC00D4A45「未提供所需的标头」= 某条轨零样本，moov 写不出
+                    // （样本描述要从流内自取）。视频零样本被参数集门卫挡在 open
+                    // 前；音轨零样本只能在这里给出可读诊断（静音保活失守时）。
+                    if self.audio_stream.is_some() && self.audio_samples == 0 {
+                        msg.push_str("；诊断：音轨 0 样本（整场无音频产出）");
+                    }
+                    msg
+                })
+            },
             None => Err("SinkWriter 已释放".into()),
         }
     }

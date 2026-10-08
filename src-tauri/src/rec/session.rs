@@ -697,6 +697,9 @@ fn run_audio(
     // 与视频首帧编码时刻同轴相减就是 mux 位移。
     let audio_start_ms =
         Instant::now().saturating_duration_since(axis_t0).as_millis() as u64;
+    // 静音保活锚：音频轴（pts = 已喂样本数）已推进到的墙钟点。无真声期间按
+    // 墙钟缺口补静音（见循环内），真声到来即重锚——补多少、轴走多少，不凭空加速。
+    let mut fill_t = Instant::now();
     if sys && loopback.is_none() {
         log::warn!("[Rec] 系统声音采集不可用（无播放设备），本次录制无系统声");
     }
@@ -736,7 +739,9 @@ fn run_audio(
             |e| e.cfg(),
         );
     let cfg = AudioReady { sr: enc_cfg.sr, ch: enc_cfg.ch, asc: enc_cfg.asc, start_ms: audio_start_ms };
-    let _ = ready_tx.send(cfg);
+    // cfg 延后到**首个成功编码**再回报（见循环内）：open_sink 一收到 cfg 就开
+    // 音轨，编码器「开得成、编不出」的残废态绝不能让它开出一条永远空的音轨。
+    let mut cfg_sent = false;
 
     loop {
         // 没人收（主循环已退）就退
@@ -774,25 +779,51 @@ fn run_audio(
             }
         }
         if paused {
-            // AAC pts 按已喂样本数累计：暂停不喂 = 音频时间轴与视频轴同步冻结
+            // AAC pts 按已喂样本数累计：暂停不喂 = 音频时间轴与视频轴同步冻结。
+            // 锚点跟着墙钟走：续录从「现在」起补，不把暂停段补成静音。
+            fill_t = Instant::now();
             std::thread::sleep(Duration::from_millis(10));
             continue;
         }
         if pcm.is_empty() {
-            std::thread::sleep(Duration::from_millis(10));
-            continue;
+            // 🔴 静音保活（0xC00D4A45 实录踩坑）：WASAPI 环回在「完全没有声音
+            // 在放」时可以整场零包（音频引擎停摆不产渲染），AAC 编码器零输入
+            // → 音轨 0 样本 → MP4 sink Finalize 写不出 moov（样本描述要从流内
+            // 自取）→ 保存失败。按墙钟缺口补静音：轴照走，真声来了无缝衔接。
+            let frames = silence_fill_frames(fill_t.elapsed(), base_sr);
+            if frames == 0 {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            fill_t += Duration::from_secs_f64(frames as f64 / f64::from(base_sr));
+            pcm = vec![0i16; frames * 2];
+        } else {
+            fill_t = Instant::now();
         }
         if let Some(e) = encoder.as_mut() {
             match e.encode(&pcm) {
-                Ok(packets) if !packets.is_empty() => {
-                    if tx.send(AudioMsg::Packets(packets)).is_err() {
+                Ok(packets) => {
+                    if !cfg_sent {
+                        cfg_sent = true;
+                        let _ = ready_tx.send(cfg.clone());
+                    }
+                    if !packets.is_empty() && tx.send(AudioMsg::Packets(packets)).is_err() {
                         break;
                     }
                 }
-                Ok(_) => {}
                 Err(err) => {
                     log::warn!("[Rec] AAC 编码失败，剩余录制无音轨：{err}");
                     encoder = None;
+                    if !cfg_sent {
+                        // 首编即挂：回报空 cfg 让主循环走「只录画面」，别留空音轨
+                        cfg_sent = true;
+                        let _ = ready_tx.send(AudioReady {
+                            sr: 0,
+                            ch: 0,
+                            asc: Vec::new(),
+                            start_ms: 0,
+                        });
+                    }
                 }
             }
         }
@@ -826,6 +857,11 @@ fn drain_audio(
                 }
                 any = true;
                 if let Some(s) = sink.as_mut() {
+                    if !s.has_audio() {
+                        // 只录画面：包照收（通道必须排空，否则音频线程 send 阻塞），
+                        // 不写也不刷「无音频轨」警告
+                        continue;
+                    }
                     let mut err = None;
                     for p in &pkts {
                         if let Err(e) = s.write_audio(p.pts_ms as i64 + audio_shift_ms, &p.data) {
@@ -937,6 +973,12 @@ fn resample_linear(input: &[i16], from_sr: u32, to_sr: u32, phase: &mut f64) -> 
     out
 }
 
+/// 静音保活补帧量：距音频轴锚点的墙钟 gap → 应补的**每声道**帧数（向下取整）。
+/// 纯函数可单测；调用侧「补多少、锚点推进多少」，pts 轴在无真声期间严格按墙钟走。
+fn silence_fill_frames(gap: Duration, sr: u32) -> usize {
+    (gap.as_secs_f64() * f64::from(sr)) as usize
+}
+
 /// 供 mod.rs re-export（commands 用）。
 #[cfg(test)]
 mod tests {
@@ -975,5 +1017,16 @@ mod tests {
         // input 是 480 **帧**（960 个 s16 元素）；44.1k 的时长在 48k 下帧数 ×1.088
         let expect = 480f64 * (48_000f64 / 44_100f64);
         assert!(((out.len() / 2) as f64 - expect).abs() < 2.0, "{} vs {}", out.len() / 2, expect);
+    }
+
+    #[test]
+    fn 静音保活_墙钟缺口换算帧数() {
+        // 守卫（0xC00D4A45 静音场踩坑）：补帧 = 墙钟缺口 × 采样率（floor）——
+        // 补多少、锚点推进多少，pts 轴在无真声期间严格按墙钟走，真声衔接不失速。
+        assert_eq!(silence_fill_frames(Duration::from_millis(100), 48_000), 4_800);
+        assert_eq!(silence_fill_frames(Duration::from_millis(100), 44_100), 4_410);
+        // 微 gap 不足 1 帧不补（floor），下一轮凑够再说
+        assert_eq!(silence_fill_frames(Duration::from_micros(10), 48_000), 0);
+        assert_eq!(silence_fill_frames(Duration::ZERO, 48_000), 0);
     }
 }
