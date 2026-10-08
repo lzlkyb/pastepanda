@@ -163,12 +163,17 @@ describe("复制 stdio 卡片", () => {
   const http = MCP_CLIENTS.find((c) => !isStdioClient(c) && canOneClick(c))!;
   const EXE = "C:\\Program Files\\PastePanda\\PastePanda.exe";
 
-  /** 把 jsdom 的剪贴板换成一个能记录内容的假件。 */
+  /**
+   * 造一个能记录内容的假剪贴板。
+   *
+   * 必须用 `vi.stubGlobal` 而不是 `Object.defineProperty(navigator, …)`：本文件跑在
+   * node 环境下（见 vitest.config.ts 的 projects），而 `navigator` 是 **Node 21+ 才有的
+   * 全局**——本机 Node 24 摸得到、CI 的 Node 20 直接 `ReferenceError: navigator is not
+   * defined`（2026-10-09 CI 实测，三条用例连片红）。stubGlobal 是「没有就造一个」，
+   * 两边都成立。
+   */
   function fakeClipboard(writeText: (t: string) => Promise<void>) {
-    Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
-      configurable: true,
-    });
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
   }
 
   it("stdio：复制出去的是路径 + 参数，且一个令牌都没有", async () => {

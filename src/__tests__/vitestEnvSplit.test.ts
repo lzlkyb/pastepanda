@@ -25,7 +25,7 @@ function domNeeded(): string[] {
 
 function trackedTests(): Set<string> {
   return new Set(
-    execSync(`git ls-files "*.test.ts" "*.test.tsx" "*.spec.ts" "*.spec.ts"`, {
+    execSync(`git ls-files "*.test.ts" "*.test.tsx" "*.spec.ts" "*.spec.tsx"`, {
       cwd: ROOT,
       encoding: "utf8",
     })
@@ -106,5 +106,19 @@ describe("vitest 环境拆档守卫", () => {
     walk(dist);
     expect(hasMaxWorkers, "安装的 vitest 里没有 maxWorkers，配置里的封顶是死的").toBe(true);
     expect(hasMaxForks, "安装的 vitest 支持 maxForks 了，本条守卫和配置的口径都该跟着改").toBe(false);
+  });
+
+  // node 档的测试碰到「只有 jsdom / 新版 Node 才有的全局」时，本机绿灯不代表 CI 绿灯：
+  // CI 是 Node 20（test.yml 的 node-version），本机是 24，而 `navigator` 是 Node 21+ 才有的
+  // 全局。2026-10-09 就栽过一次——mcpConnectActions.test.ts 里 defineProperty(navigator,…)
+  // 本机全绿、CI 三条连片红。DOM_NEEDED_TS 那份清单是**在本机跑出来的实测结果**，
+  // 它对「版本差」天然瞎，所以要有一条与运行环境无关的静态网。
+  it("node 档的测试不引用 jsdom/Node21+ 才有的全局（按成员访问算）", () => {
+    const BANNED = /\bnavigator\s*[.[]/;
+    const inList = new Set(list);
+    const hits = [...trackedTests()]
+      .filter((f) => f.endsWith(".ts") && !inList.has(f))
+      .filter((f) => BANNED.test(fs.readFileSync(path.join(ROOT, f), "utf8")));
+    expect(hits, `这些 node 档测试直接访问了 navigator 的成员: ${hits.join(", ")}`).toEqual([]);
   });
 });
