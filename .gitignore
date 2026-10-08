@@ -38,8 +38,11 @@ melody_b64.txt
 # codegraph 索引产物（本地生成，勿入库）
 .codegraph/
 
-# 兑换码生成器的 Python 字节码（.pyc 里会带上运行时用过的字符串）
-tools/__pycache__/
+# Python 字节码（.pyc 里会带上运行时用过的字符串）
+# 原来只写 tools/__pycache__/，结果 scripts/__pycache__/build-easytier.cpython-312.pyc
+# 一路顺畅进了库（2026-10-08 入库审计实测）。
+__pycache__/
+*.pyc
 # 项目记忆（工作日志，本地开发档案，不入库）
 .codebuddy/
 src-tauri/.libclang/
@@ -97,3 +100,14 @@ new-installed.apk
 rd_files.json
 # 宣传视频渲染素材/产物（体积大且可由 scripts/promo-* 再生）
 videos/
+
+# ── 2026-10-08 入库审计补的四条（逐条用 git check-ignore 问过「未忽略」才加）──
+# cargo vendor 每次重跑都会留「补丁前副本」；仓里那两个 Cargo.toml.orig 就是这么进来的，
+# 编译链不读它们，只有 vendor 出来的 Cargo.toml 第 10 行一句注释提到。
+*.orig
+# 脚本/编辑器中断留下的备份（同 *.pppart 那类半成品）
+*.bak
+# scripts/ 下有 Python（build-easytier.py、promo-verify.py），谁都可能顺手建虚拟环境；
+# 本机绝对路径写死在 pyvenv.cfg 里，入库即污染别人环境。
+.venv/
+venv/
