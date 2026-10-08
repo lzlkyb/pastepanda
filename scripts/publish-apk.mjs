@@ -329,17 +329,25 @@ for (const m of manifests) {
 
 for (const c of checks) {
   let body = null;
-  for (let i = 1; i <= 4 && !body; i++) {
+  // 与 repair-gitee-channel.mjs 同一档阶梯（5 次、累计等 200s）：新建 releases 分支后
+  // Gitee 的 raw CDN 实测要到第 3 次（≈95s）才读得到。原先只等 8+16+24=48s，
+  // 会在「其实已经发布成功」的最后一步判红——而红了一轮就得重来、再把线上 APK clobber 一次。
+  for (let i = 1; i <= 5 && !body; i++) {
     try {
       const r = await fetch(c.manifestUrl, { redirect: "follow" });
       if (r.ok) body = await r.json();
     } catch {}
-    if (!body) await sleep(i * 8000); // Gitee 新分支 raw CDN 有传播延迟（CI 实测）
+    if (!body && i < 5) await sleep(i * 20000);
   }
   if (!body) fail(`回读失败：${c.label} 的 manifest 多次重试仍读不到（${c.manifestUrl}）`);
   if (body.version !== VERSION) fail(`回读不一致：${c.label} manifest version=${body.version}，期望 ${VERSION}`);
   if (body.sha256 !== sha256) fail(`回读不一致：${c.label} manifest sha256 与本地 APK 不符`);
-  const st = await getRange(c.apkUrl).catch(() => 0);
+  // 附件同理：attach_files 返回 200 ≠ 直链立刻可下。
+  let st = 0;
+  for (let i = 1; i <= 3 && st !== 200 && st !== 206; i++) {
+    st = await getRange(c.apkUrl).catch(() => 0);
+    if (st !== 200 && st !== 206 && i < 3) await sleep(i * 20000);
+  }
   if (st !== 200 && st !== 206) fail(`回读失败：${c.label} 的 APK 取不到（HTTP ${st}）：${c.apkUrl}`);
   ok(`${c.label}: manifest 可读且一致，APK 可下（HTTP ${st}）`);
 }

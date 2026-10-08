@@ -5,7 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
- * 钉住 2026-10-09 首次真实 APK 三源发布连炸两跑暴露的两条死法（靶子是 `scripts/publish-apk.mjs`）：
+ * 钉住 2026-10-09 首次真实 APK 三源发布连炸两跑暴露的两条死法，外加一条第三跑开跑前在本机
+ * 查出来的「最后一步提前判红」（靶子是 `scripts/publish-apk.mjs`）：
  *
  * 一跑：Node 的 `shell: true` **不转义** args，只是把它们用空格**拼接**成一条命令串
  * （Node 24 运行时就有 DEP0190 警告）。于是
@@ -104,5 +105,30 @@ describe("Gitee 的 releases 分支查无时就地重建", () => {
     const arm = src.match(/if \(clone\.status !== 0\) \{([\s\S]{0,400}?)\n {4}info\(/);
     expect(arm, "找不到「先判未知错误、再走重建」的结构，守卫解析不到就别自称有效").toBeTruthy();
     expect((arm as RegExpMatchArray)[1]).toMatch(/fail\(/);
+  });
+});
+
+/**
+ * 第三跑之前在本机查出来的坑（还没让它炸过 CI，所以更要钉住）：三源回读那段只等
+ * 8+16+24=48 秒。Gitee 新建 releases 分支后 raw CDN 实测要到第 3 次轮询（≈95 秒）才读得到
+ * ——这是 gitee-repair 自己踩过的，它的阶梯是 5 次、累计等 200 秒。
+ * 用 48 秒的档去验收一条新分支，失败点是「所有东西都已经发上去了」的最后一步：
+ * 整轮判红 → 重跑 → 又把线上同版本 APK clobber 一遍。
+ */
+describe("发布后的三源回读不许提前判红", () => {
+  const src = fs.readFileSync(path.join(ROOT, "scripts", "publish-apk.mjs"), "utf8");
+
+  it("manifest 回读与 repair 同档：5 次、每次等 i×20 秒", () => {
+    expect(src).toMatch(/for \(let i = 1; i <= 5 && !body; i\+\+\)/);
+    expect(src, "等待阶梯又缩回短档——新建分支的 CDN 传播还没等完就判红").toMatch(
+      /await sleep\(i \* 20000\)/,
+    );
+    expect(src, "回读里又出现 48 秒总等待的那档").not.toMatch(/sleep\(i \* 8000\)/);
+  });
+
+  it("APK 直链也有重试（attach_files 返回 200 不等于直链立刻可下）", () => {
+    const seg = src.match(/let st = 0;[\s\S]{0,400}?\n {2}if \(st !== 200 && st !== 206\) fail/);
+    expect(seg, "找不到附件直链的重试臂，多半是又改回单次 getRange 了").toBeTruthy();
+    expect((seg as RegExpMatchArray)[0]).toMatch(/for \(let i = 1; i <= 3/);
   });
 });
