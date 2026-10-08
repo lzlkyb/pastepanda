@@ -13,8 +13,15 @@ run-name: Gitee 通道自愈${{ github.event.inputs.dry_run == 'true' && '（仅
 #   不重新构建、不签名、不碰 GitHub Release，也不需要桌面/Android 构建环境。
 on:
   schedule:
-    # 每 6 小时一次；:17 分错开整点队列。健康时脚本秒退（两次 GET），几乎零开销。
-    - cron: "17 */6 * * *"
+    # 🔴 2026-10-09 从「每 6 小时」降到「每 30 分钟」，两条实测依据：
+    #    ① Gitee 的 GitHub→Gitee 镜像同步只保 master，会剪掉 releases 分支，被剪窗口实测 ≤67 分钟
+    #       ⇒ 6 小时的档等于「第 1 源每天有一段长时间是 404」，国内用户掉回 ghproxy/GitHub；
+    #    ② `17 */6 * * *` 在 2026-10-08 18:17 与 10-09 00:17 **两轮整轮没出 run**
+    #       （GitHub 的 schedule 会大幅延迟甚至跳过）⇒ 档期只能靠「多跑几次」兜住，不能靠一次跑准。
+    #    为什么不加 push 触发：剪枝发生在 push 之后约 16 分钟那次同步的**当时**，
+    #    由该次 push 触发的自愈跑在剪枝之前，等于白跑；只有下一轮定时接得住。
+    #    成本：健康时脚本秒退（两次 GET + 一次 ls-remote），本仓 public 不限分钟数。
+    - cron: "17,47 * * *"
   workflow_dispatch:
     inputs:
       tag:
