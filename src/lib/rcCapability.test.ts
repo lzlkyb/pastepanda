@@ -68,16 +68,23 @@ describe("全仓不许再写第四处 `=== \"control\"` 判定", () => {
     return out;
   }
 
-  it("比较式只能出现在判据本体与名单内", () => {
-    const files = walk(ROOT);
-    const hits: string[] = [];
-    for (const file of files) {
-      const rel = relative(ROOT, file).replace(/\\/g, "/");
-      if (ALLOWED.includes(rel) || FORBIDDEN_ZONE.test(rel)) continue;
-      if (RE.test(readFileSync(file, "utf8"))) hits.push(rel);
-    }
-    expect(hits).toEqual([]);
-  });
+  it(
+    "比较式只能出现在判据本体与名单内",
+    () => {
+      const files = walk(ROOT);
+      const hits: string[] = [];
+      for (const file of files) {
+        const rel = relative(ROOT, file).replace(/\\/g, "/");
+        if (ALLOWED.includes(rel) || FORBIDDEN_ZONE.test(rel)) continue;
+        if (RE.test(readFileSync(file, "utf8"))) hits.push(rel);
+      }
+      expect(hits).toEqual([]);
+    },
+    // 同步读 src 下 845 个非测试 ts/tsx：单独跑 134ms，2026-10-08 pre-push 满载时被拖到
+    // 破默认 5s 判红（同批 15 个 forks worker 起不来）——慢在 IO 不在断言，预算照
+    // windowCloseCapability 反向那条给到 120s。
+    120_000,
+  );
 
   it("名单不留死条目（谁被改走了就删掉谁）", () => {
     // join(ROOT, rel) 两端通吃：Windows 认 `/`，Linux 认不了 `\`——别再转反斜杠。
