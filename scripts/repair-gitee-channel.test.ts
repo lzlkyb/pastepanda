@@ -4,8 +4,11 @@ import { expect, it } from "vitest";
 import {
   DEFAULT_GITEE_REPO,
   TARGETS,
+  assetVerdict,
   deriveManifest,
   giteeRawManifestUrl,
+  giteeReleasesApiUrl,
+  sanitizeUrl,
   toGiteeUrl,
 } from "./repair-gitee-channel.mjs";
 
@@ -99,3 +102,53 @@ it("tauri.conf.json 的第 1 条更新源必须就是本脚本修复的那两个
   const attachmentRepo = new URL(derived.platforms["windows-x86_64"].url).pathname.split("/").slice(0, 3).join("/");
   expect(attachmentRepo).toBe(new URL(lists.endpoints[0]).pathname.split("/").slice(0, 3).join("/"));
 });
+
+// ─── 附件存在性判定：证据分级 ───
+// 2026-10-08 的第一版只有直链状态码一条证据，GitHub runner 到 Gitee 下载域名吃 HTTP 0，
+// 自愈按设计整轮失败 ⇒ 通道永远修不上。下面每条反例对应一种「曾经会判错」的组合。
+it("直链活着（200/206）就是终局证据，清单说没有也不许推翻", () => {
+  expect(assetVerdict({ status: 200, inAssetList: null })).toBe("ok");
+  // 清单会分页/被截断，「里面没有」推翻不了一条实际能下的地址
+  expect(assetVerdict({ status: 206, inAssetList: false })).toBe("ok");
+});
+
+it("404 永远是否定证据，清单命中也不放行（客户端用的就是这条 URL）", () => {
+  expect(assetVerdict({ status: 404, inAssetList: true })).toBe("missing");
+  expect(assetVerdict({ status: 404, inAssetList: null })).toBe("missing");
+});
+
+it("403 是访问裁决不是存在性证据：清单命中放行，拿不到清单才判缺", () => {
+  expect(assetVerdict({ status: 403, inAssetList: true })).toBe("ok");
+  expect(assetVerdict({ status: 403, inAssetList: false })).toBe("missing");
+  expect(assetVerdict({ status: 403, inAssetList: null })).toBe("missing");
+});
+
+// 🔴 这条就是那次 CI 失败的形态：连不上（0）既不能判「不存在」（那是编的），
+// 也不能判「存在」（会发出一条下不动的 manifest）。两份证据都缺席时必须留给下一轮。
+it("探不通（0/5xx）+ 清单也拿不到 → unproven，绝不猜", () => {
+  expect(assetVerdict({ status: 0, inAssetList: null })).toBe("unproven");
+  expect(assetVerdict({ status: 502, inAssetList: null })).toBe("unproven");
+});
+
+it("探不通（0/5xx）时清单说了算：命中放行、确认没有才判缺", () => {
+  expect(assetVerdict({ status: 0, inAssetList: true })).toBe("ok");
+  expect(assetVerdict({ status: 500, inAssetList: true })).toBe("ok");
+  expect(assetVerdict({ status: 0, inAssetList: false })).toBe("missing");
+});
+
+it("清单地址必须带 per_page=100（匿名默认 20 条会漏掉最新发行版），没令牌就不拼令牌", () => {
+  const anon = giteeReleasesApiUrl("lzul/pastepanda", "");
+  expect(anon).toContain("per_page=100");
+  expect(anon).not.toContain("access_token");
+  expect(giteeReleasesApiUrl("lzul/pastepanda", "TK")).toBe(`${anon}&access_token=TK`);
+});
+
+// 令牌进日志 = 泄漏。日志里出现的每一行地址都得先过这一层。
+it("sanitizeUrl 把令牌剥干净，带后续参数也不能漏尾巴", () => {
+  const s = sanitizeUrl("https://gitee.com/api/v5/repos/x/y/releases?per_page=100&access_token=SECRET&x=1");
+  expect(s).not.toContain("SECRET");
+  expect(s).toContain("access_token=***");
+  expect(s).toContain("x=1");
+  expect(sanitizeUrl("https://a/?access_token=SECRET")).toBe("https://a/?access_token=***");
+});
+

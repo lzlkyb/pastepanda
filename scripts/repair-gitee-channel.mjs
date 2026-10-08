@@ -24,7 +24,8 @@
  *   update.rs:367-370 的语义是 —— manifest 读得到但版本不比当前新，就 `return Ok(None)`
  *   判「已是最新版本」，**后面的源不再试**。所以把一条过期 manifest 补回 Gitee 比 404 更糟：
  *   404 至少会降级到 ghproxy/GitHub，过期 manifest 会让用户彻底收不到更新。
- *   同理，指向 404 附件的 manifest 也不许发出去（第 3 步的 Range 前置检查）。
+ *   同理，指向不存在附件的 manifest 也不许发出去（第 3 步：Gitee 发行版 API 清单为主、
+ *   Range 直链探测为辅 —— runner 到 Gitee 下载域名经常连不上，只看直链会永远卡死）。
  */
 
 import { spawnSync } from "node:child_process";
@@ -108,8 +109,12 @@ export function deriveManifest(kind, manifest, giteeRepo) {
   return kind === "apk" ? deriveApk(manifest, giteeRepo) : deriveDesktop(manifest, giteeRepo);
 }
 
-async function getJson(url, tries = 3) {
+async function getJson(url, tries = 3, label = url) {
   let last = "未执行";
+  // 最后一轮拿到过的 HTTP 状态码。它必须活着传出去：读不到时调用方要分清
+  // 「Gitee/GitHub 说没有这个文件」（404/403，否定证据）和「这台机器此刻连不上」
+  // （0 / 超时 / 5xx，什么都不能证明）。一律压成 status=0 会让前者永远判不出来。
+  let lastStatus = 0;
   for (let i = 1; i <= tries; i++) {
     try {
       const r = await fetch(url, {
@@ -118,27 +123,82 @@ async function getJson(url, tries = 3) {
       });
       if (!r.ok) {
         last = `HTTP ${r.status}`;
+        lastStatus = r.status;
       } else {
         const body = await r.json().catch(() => null);
-        if (body === null) throw new Error(`响应不是 JSON（大概率是被重定向到的网页）：${url}`);
+        if (body === null) throw new Error(`响应不是 JSON（大概率是被重定向到的网页）：${label}`);
         return { body, status: r.status };
       }
     } catch (e) {
       last = String(e?.message || e);
+      lastStatus = 0;
     }
     if (i < tries) await sleep(i * 3000);
   }
-  return { body: null, status: 0, error: last };
+  return { body: null, status: lastStatus, error: last };
 }
 
-/** 附件必须匿名可下：发出去一条指向 404 的 manifest 只是把「查不到更新」换成「下载失败」。 */
-async function assertDownloadable(url) {
+/** 发行版附件清单（判定「包在不在」的第一手证据）。取不到返回 null，不判否定。 */
+async function fetchGiteeAssetUrls() {
+  const apiUrl = giteeReleasesApiUrl(GITEE_REPO, GITEE_TOKEN);
+  const r = await getJson(apiUrl, 3, sanitizeUrl(apiUrl));
+  if (!Array.isArray(r.body)) {
+    warn(`Gitee 发行版清单没拿到（${r.error || r.status}）：本轮只能靠直链状态码判定`);
+    return null;
+  }
+  const set = new Set();
+  for (const rel of r.body) {
+    for (const a of rel?.assets || []) {
+      if (a?.browser_download_url) set.add(a.browser_download_url);
+    }
+  }
+  info(`Gitee 发行版清单：${r.body.length} 个发行版 / ${set.size} 条下载地址`);
+  return set;
+}
+
+/** 探测附件直链的 HTTP 状态码；连不上返回 0（这是「没探到」，不是「不存在」）。 */
+async function probeAssetStatus(url) {
   try {
     const r = await fetch(url, { method: "GET", headers: { Range: "bytes=0-1023" }, redirect: "follow" });
     return r.status;
   } catch {
     return 0;
   }
+}
+
+/**
+ * Gitee 发行版附件清单的地址。API 返回的 `assets[].browser_download_url` 就是
+ * `https://gitee.com/{repo}/releases/download/{tag}/{file}` 形态，与 manifest 里那条
+ * 同形可比对（2026-10-08 实测）。`per_page` 不给就只返回 20 条，最新那个发行版
+ * 会掉在页外面（同一天的实测：不带 per_page 时列表里根本没有 v7.2.10）。
+ */
+export function giteeReleasesApiUrl(repo, token) {
+  const base = `https://gitee.com/api/v5/repos/${repo}/releases?per_page=100`;
+  return token ? `${base}&access_token=${token}` : base;
+}
+
+/** 令牌只进请求，不进任何一行日志。 */
+export function sanitizeUrl(u) {
+  return String(u).replace(/access_token=[^&\s]*/g, "access_token=***");
+}
+
+/**
+ * 「这条 manifest 指向的包能不能放行」的判定（纯函数，无网络，口径可单测）。
+ * inAssetList：true = 发行版清单里有这条地址；false = 清单拿到了且没有；
+ * null = 清单本身没取到（此时只能看直链状态码，不能凭空造结论）。
+ * 🔴 证据分级：404 是否定证据，0 / 5xx 只是「这台机器此刻探不到」——GitHub 的 runner
+ * 到 Gitee 下载直链就经常连不上（2026-10-08 CI 实测 HTTP 0），只靠直链会把自愈永远卡死。
+ * 而 Gitee 自己的发行版 API 会把 `browser_download_url` 原样列出来，与 manifest 里那条
+ * 逐字可比（同天实测），所以「清单命中」就是来自 Gitee 的第一手存在性证据。
+ * 403 单独一档：它是访问裁决不是存在性证据（境外 runner 撞防盗链就吃 403），清单命中时放行。
+ */
+export function assetVerdict({ status, inAssetList }) {
+  if (status === 200 || status === 206) return "ok";
+  if (status === 404) return "missing";
+  if (status === 403) return inAssetList === true ? "ok" : "missing";
+  if (inAssetList === true) return "ok";
+  if (inAssetList === false) return "missing";
+  return "unproven";
 }
 
 function git(args, label) {
@@ -171,8 +231,12 @@ async function main() {
   for (const t of TARGETS) {
     const probe = await getJson(giteeRawManifestUrl(GITEE_REPO, t.name), 1);
     const got = probe.body?.version ?? null;
-    state[t.name] = { healthy: got === expectedVersion, got, raw: probe };
-    info(`探针 ${t.name}: ${probe.body ? `HTTP ${probe.status} version=${got}` : `读不到（${probe.error || probe.status}）`} → ${state[t.name].healthy ? "健康" : "需修复"}`);
+    // reason 必须是探针实际读到的东西：把它笼统写成「404」会把一次 fetch failed
+    // 记成「文件不存在」那样的否定证据（2026-10-08 CI 就出现过：日志说 fetch
+    // failed，annotation 却说读到 404）。
+    const reason = probe.body ? `读到 version=${got}` : `读不到（${probe.error || `HTTP ${probe.status}`}）`;
+    state[t.name] = { healthy: got === expectedVersion, got, raw: probe, reason };
+    info(`探针 ${t.name}: ${reason} → ${state[t.name].healthy ? "健康" : "需修复"}`);
   }
   if (TARGETS.every((t) => state[t.name].healthy)) {
     ok("Gitee 通道两份 manifest 都在且版本正确，本次无需动作。");
@@ -185,11 +249,14 @@ async function main() {
   const anonLs = (heads.stdout || "").trim().split(/\r?\n/).map((l) => l.split("\t")[1]).filter(Boolean);
   const branchExists = anonLs.includes("refs/heads/releases");
   note(
-    `需修复=${TARGETS.filter((t) => !state[t.name].healthy).map((t) => `${t.name}(读到 ${state[t.name].got ?? "404"})`).join(", ")}` +
+    `需修复=${TARGETS.filter((t) => !state[t.name].healthy).map((t) => `${t.name}：${state[t.name].reason}`).join(", ")}` +
       `｜releases 分支存在=${branchExists}｜匿名可见分支=${anonLs.join(",") || "(空)"}`,
   );
 
   // 3) 从 GitHub 已发布的 manifest 派生
+  //    先把 Gitee 侧的附件清单取回来（存在性证据，只用一次请求覆盖全部待验地址）。
+  //    放在修复分支里而不是开头：两份都健康时上面已经 return，不必多打一次 API。
+  const assetUrls = await fetchGiteeAssetUrls();
   const built = [];
   const skipped = [];
   for (const t of TARGETS) {
@@ -221,20 +288,28 @@ async function main() {
     // 不因为一份修不了就把另一份也扣住（那正是用户此刻等的那个 10 KB/s 的装机包）。
     const urls = t.kind === "apk" ? [derived.url] : Object.values(derived.platforms).map((p) => p.url);
     const missing = [];
+    const unproven = [];
     for (const url of urls) {
-      const st = await assertDownloadable(url);
-      if (st === 404 || st === 403) {
-        // 明确的「不存在 / 要登录」才叫缺附件
-        missing.push(`HTTP ${st}`);
-        warn(`Gitee 附件不可下（HTTP ${st}）：${url}`);
+      const st = await probeAssetStatus(url);
+      const inList = assetUrls ? assetUrls.has(url) : null;
+      const verdict = assetVerdict({ status: st, inAssetList: inList });
+      if (verdict === "missing") {
+        missing.push(`直链 HTTP ${st}${inList === false ? "、发行版清单里也没有" : ""}`);
+        warn(`Gitee 附件判定为缺（${missing[missing.length - 1]}）：${url}`);
+      } else if (verdict === "unproven") {
+        // 直链探不通、清单又没拿到 —— 两份证据都缺席，此时无论判「在」还是「不在」都是编的。
+        unproven.push(`HTTP ${st}`);
       } else if (st !== 200 && st !== 206) {
-        fail(
-          `探测 Gitee 附件时网络异常（HTTP ${st}）：${url}\n` +
-            `  这不能当成「附件不存在」——那样会把一次抖动记成一份永久跳过。本次失败，等下一轮自愈。`,
-        );
+        ok(`附件在 Gitee 发行版清单里（直链探测 HTTP ${st}，是这台 runner 到 Gitee 的连通性问题，不是文件不存在）：${url}`);
       } else {
         ok(`附件可下（HTTP ${st}）：${url}`);
       }
+    }
+    if (unproven.length) {
+      fail(
+        `${t.name}：探测 Gitee 附件时既没探到直链、也没拿到发行版清单（${unproven.join(", ")}）。\n` +
+          `  两种判法都缺证据，本轮不猜。等下一轮自愈（定时任务每 6 小时一次）。`,
+      );
     }
     if (missing.length) {
       skipped.push(
