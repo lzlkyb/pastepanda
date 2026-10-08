@@ -174,7 +174,10 @@ cargo check --manifest-path src-tauri/Cargo.toml   # 记得先设 LIBCLANG_PATH
 cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/几何单测）
 ```
 
-> pre-push hook 会自动跑完整测试（vitest + cargo test），约 3 分钟；push 时命令 timeout 请设 ≥300s。
+> pre-push hook 会自动跑完整测试，**不是 3 分钟**——2026-10-08 本机实测（16 逻辑核、空闲内存 3GB 量级）：
+> 密钥明文守卫 ≈ 499s（4 趟全树 `grep -rn`）+ 前端 Vitest ≈ 386s + Rust cargo test ≈ 236s（含增量编译，纯用例 77s）
+> ≈ **18.7 分钟**。push 命令的 timeout 必须 ≥ 1200s，太短会在钩子跑完前被掐死、看起来像「测试挂了」。
+> （Vitest 那段的墙钟取决于机器当下忙不忙：机器空时同一套配置 121s 就完，紧跟全树扫描之后是 386s。）
 
 ---
 
@@ -247,7 +250,7 @@ git commit          # 完成合并提交
 4. 想放弃本次合并：`git merge --abort` 回到 pull 前状态。
 
 **本项目注意点：**
-- pre-push hook 自动跑完整测试（vitest + cargo test，约 3 分钟）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
+- pre-push hook 自动跑完整测试（三段：密钥守卫 + vitest + cargo test，本机实测 ≈18.7 分钟，见 §2.7）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
 - 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`——动这些文件前先 `git pull`，尽量只改自己负责的区段。
 - 本地 dev 跑着时 pull 一般无影响（Vite HMR 热更新）；若 pull 改了 Rust 后端需重启 dev。
 

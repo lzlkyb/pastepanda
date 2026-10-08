@@ -62,7 +62,7 @@
 ## 14. git push 优先使用 SSH
 本机 HTTPS 访问 GitHub 经常超时（系统代理 `127.0.0.1:26561` 不稳定），但 SSH (`git@github.com`) 始终可用。
 - remote URL 用 SSH 格式：`git@github.com:lzlkyb/pastepanda.git`；若 `git push` 报 `Failed to connect` / `Connection was reset`，先 `git remote get-url origin` 检查，是 HTTPS 就 `git remote set-url origin git@github.com:lzlkyb/pastepanda.git`。
-- pre-push hook 会跑完整测试（vitest + cargo test），约 3 分钟，push 的 timeout 需 ≥ 300s。
+- pre-push hook 会跑完整测试（密钥守卫 + vitest + cargo test 三段），本机实测 ≈18.7 分钟（细节见 `CONTRIBUTING.md` §2.7），push 的 timeout 需 ≥ 1200s。
 
 ## 15. 反馈必须和触发在同一「可见性域」
 - **15.1 触发常驻可见，结果就必须常驻可见。** 把操作按钮提到卡头 / 摘要卡 / 工具栏时，**同一次改动**里要把它的成功与失败展示提到同一层级。按钮和它的反馈被拆进两个可见性域 = 用户眼里的「点了没反应」。
