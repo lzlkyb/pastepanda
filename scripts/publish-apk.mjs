@@ -186,13 +186,21 @@ if (DRY_RUN) {
 
 // ─── GitHub 上传 ─────────────────────────────────────────
 
+// 🔴 这里的调用一律不开 shell 选项：Node 开了 shell 不转义 args，只是把它们**拼接**成一条
+//    命令串（Node 24 运行时就有 DEP0190 警告）。带空格的参数会被拆成多个 argv——
+//    2026-10-09 首跑真实发布就是这么炸的：`-m "release: apk-update v7.2.11"` 到了 git 变成
+//    message=`release:` + 两个 pathspec，报 `pathspec 'apk-update' did not match any file(s)`；
+//    本机 Windows 用同一份 argv 复现出完全相同的两行错误（不只是 Linux 的问题）。
+//    钉这条守卫的是 src/__tests__/childProcessShellArgs.test.ts。
+//    Windows 上 `gh` / `git` 都是真 .exe，不靠 shell 也能解析（已实测），所以这里没有
+//    「.bat 必须走 shell」的约束——那个约束只在 android-build.mjs 的 apksigner.bat 上成立。
 function run(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: opts.quiet ? "pipe" : "inherit", shell: true, encoding: "utf8", env: { ...process.env, ...(opts.env || {}) } });
+  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: opts.quiet ? "pipe" : "inherit", encoding: "utf8", env: { ...process.env, ...(opts.env || {}) } });
   if (r.status !== 0) fail(`${cmd} ${args.join(" ")} 失败（exit ${r.status}）：\n${r.stderr || r.stdout || ""}`);
   return r;
 }
 
-if (spawnSync("gh", ["--version"], { shell: true, stdio: "ignore" }).status !== 0) {
+if (spawnSync("gh", ["--version"], { stdio: "ignore" }).status !== 0) {
   fail("找不到 gh CLI（GitHub 上传依赖它，先装 gh 并 gh auth login）");
 }
 info(`上传 GitHub Release ${TAG}（APK + 2 份 manifest）…`);
@@ -219,14 +227,14 @@ if (SKIP_GITEE) {
   if (!existsSync(latest)) fail("Gitee releases 分支里没有 latest/ 目录（镜像结构不符）");
   copyFileSync(path.join(DIST, "apk-update-gitee.json"), path.join(latest, "apk-update-gitee.json"));
   run("git", ["-C", mirror, "add", "-A", "latest"], { quiet: true });
-  const commit = spawnSync("git", ["-C", mirror, "-c", "user.email=pub@pastepanda.local", "-c", "user.name=pastepanda-pub", "commit", "-m", `release: apk-update ${TAG}`], { shell: true, encoding: "utf8" });
+  const commit = spawnSync("git", ["-C", mirror, "-c", "user.email=pub@pastepanda.local", "-c", "user.name=pastepanda-pub", "commit", "-m", `release: apk-update ${TAG}`], { encoding: "utf8" });
   if (commit.status !== 0 && !/nothing to commit/.test(commit.stdout || "")) {
     fail(`Gitee manifest commit 失败：${commit.stderr || commit.stdout}`);
   }
-  let push = spawnSync("git", ["-C", mirror, "push", "origin", "releases"], { shell: true, encoding: "utf8" });
+  let push = spawnSync("git", ["-C", mirror, "push", "origin", "releases"], { encoding: "utf8" });
   if (push.status !== 0) {
     info("第一次 push 失败，按 CI 经验用 postBuffer+--no-thin 重试…");
-    push = spawnSync("git", ["-C", mirror, "-c", "http.postBuffer=524288000", "push", "--no-thin", "origin", "releases"], { shell: true, encoding: "utf8" });
+    push = spawnSync("git", ["-C", mirror, "-c", "http.postBuffer=524288000", "push", "--no-thin", "origin", "releases"], { encoding: "utf8" });
     if (push.status !== 0) fail(`Gitee manifest push 两次都失败：${push.stderr || push.stdout}`);
   }
   ok("apk-update-gitee.json 已推到 releases 分支 latest/");
@@ -235,7 +243,7 @@ if (SKIP_GITEE) {
   // 2) APK → Gitee 发行版附件（attach_files 接口名，不是 GitHub 的 assets）
   const apiBase = `https://gitee.com/api/v5/repos/${GITEE_REPO}`;
   const headers = { Authorization: `token ${GITEE_TOKEN}` };
-  const sha = spawnSync("git", ["rev-parse", TAG], { cwd: ROOT, shell: true, encoding: "utf8" }).stdout?.trim();
+  const sha = spawnSync("git", ["rev-parse", TAG], { cwd: ROOT, encoding: "utf8" }).stdout?.trim();
   let rel = null;
   try {
     const resp = await fetch(`${apiBase}/releases/tags/${TAG}`, { headers });
