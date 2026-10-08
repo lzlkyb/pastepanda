@@ -12,6 +12,11 @@
 //! 🔴 输出类型必须带全尺寸/帧率/码率（音轨加码率+每块采样数）：缺了的话
 //! SetInputMediaType 也报 0xC00D36B4——错误浮现在输入侧，缺的属性在输出侧。
 //!
+//! 🔴 音轨**不许喂 `MF_MT_USER_DATA`**（裸 ASC / WAVEFORMATEX 都一样）：双侧都放
+//! → open 一路全过、Finalize 才炸 0xC00D4A45；只放输出侧 → open 当场拒
+//! 0xC00D36B4（2026-10-08 探针 + 变异各实测一次）。esds 由 sink 按采样率/声道数
+//! 自造，与 `rc/audio.rs::asc_for` 那份逐字节相同，所以调用方无从也无需传 asc。
+//!
 //! MF 时间单位 100ns；`at_ms * 10_000`。全部 COM 调用收敛在本文件，
 //! 释放顺序同 `encode_h264.rs::release_com`：先放对象引用再 CoUninitialize。
 
@@ -23,7 +28,7 @@ use windows::Win32::Media::MediaFoundation::{
     MFCreateSample, MFCreateSinkWriterFromURL, MF_MT_AVG_BITRATE, MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
     MF_MT_AUDIO_BITS_PER_SAMPLE, MF_MT_AUDIO_BLOCK_ALIGNMENT, MF_MT_AUDIO_NUM_CHANNELS,
     MF_MT_AUDIO_SAMPLES_PER_BLOCK, MF_MT_AUDIO_SAMPLES_PER_SECOND, MF_MT_FRAME_RATE,
-    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MF_MT_USER_DATA, MFMediaType_Audio,
+    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFMediaType_Audio,
     MFMediaType_Video, MFAudioFormat_AAC, MFVideoFormat_H264, MFVideoFormat_HEVC,
 };
 
@@ -124,7 +129,7 @@ impl RecSink {
         height: u32,
         fps: u32,
         hevc: bool,
-        audio: Option<(u32, u32, &[u8])>, // (sample_rate, channels, asc)
+        audio: Option<(u32, u32)>, // (采样率, 声道数)——ASC 不传，见下
         video_bitrate: u32,
         bytes: std::sync::Arc<std::sync::atomic::AtomicU64>,
     ) -> Result<Self, String> {
@@ -171,14 +176,20 @@ impl RecSink {
                 vin.SetUINT32(&MF_MT_AVG_BITRATE, video_bitrate).map_err(mf_err)?;
                 writer.SetInputMediaType(video_stream, &vin, None).map_err(mf_err)?;
 
-                // ── 音频流（可选）：裸 AAC 帧 + ASC ──
+                // ── 音频流（可选）：裸 AAC 帧 ──
                 // 音频与视频同理：缺 AVG_BYTES_PER_SECOND / SAMPLES_PER_BLOCK 会吃同样的
-                // MF_E_INVALIDMEDIATYPE；ASC 放**输入侧**会被拒、双侧都放才过
-                //（码率与 rc/audio.rs 编码器同源，128kbps）
+                // 0xC00D36B4，错误浮现在输入侧、缺的属性在输出侧
+                //（码率与 rc/audio.rs 编码器同源，128kbps）。
+                // 🔴 不要喂 ASC：MF_MT_USER_DATA 双侧都放时 open 一路全过、Finalize
+                // 才炸 0xC00D4A45「未提供所需的标头」；只放输出侧则 open 当场拒
+                // 0xC00D36B4（两种失败都实测过，裸 ASC 与 WAVEFORMATEX 形态一样）。
+                // esds 由 sink 按采样率/声道数自造（2026-10-08 探针实证：去掉
+                // USER_DATA 即 finalize ok，生成盒子里 DecoderSpecificInfo =
+                // 0x11 0x90，与 rc/audio.rs::asc_for(48000,2) 逐字节相同）。
                 let aac_br = crate::rc::audio::BITRATE_BPS / 8;
                 let mut audio_stream = None;
                 let mut audio_frame_t100 = 0i64;
-                if let Some((sr, ch, asc)) = audio {
+                if let Some((sr, ch)) = audio {
                     let aout = MFCreateMediaType().map_err(mf_err)?;
                     aout.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
                     aout.SetGUID(&MF_MT_SUBTYPE, &MFAudioFormat_AAC).map_err(mf_err)?;
@@ -188,7 +199,6 @@ impl RecSink {
                     aout.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
                     aout.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aac_br).map_err(mf_err)?;
                     aout.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_BLOCK, 1024).map_err(mf_err)?;
-                    aout.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
                     let stream = writer.AddStream(&aout).map_err(mf_err)?;
                     let ain = MFCreateMediaType().map_err(mf_err)?;
                     ain.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Audio).map_err(mf_err)?;
@@ -199,7 +209,6 @@ impl RecSink {
                     ain.SetUINT32(&MF_MT_AUDIO_BLOCK_ALIGNMENT, ch * 2).map_err(mf_err)?;
                     ain.SetUINT32(&MF_MT_AUDIO_AVG_BYTES_PER_SECOND, aac_br).map_err(mf_err)?;
                     ain.SetUINT32(&MF_MT_AUDIO_SAMPLES_PER_BLOCK, 1024).map_err(mf_err)?;
-                    ain.SetBlob(&MF_MT_USER_DATA, asc).map_err(mf_err)?;
                     writer.SetInputMediaType(stream, &ain, None).map_err(mf_err)?;
                     audio_stream = Some(stream);
                     // AAC-LC 每帧 1024 采样
@@ -327,14 +336,18 @@ mod tests {
 
 
     // ── 回归（2026-10-06 首次实录 0xC00D36B4）：MP4 sink 的 pass-through 校验
-    // 三条铁律，靠逐属性探针实证——
+    // 四条铁律，靠逐属性探针实证——
     //   ① 输出类型必须带全尺寸/帧率/码率（缺了报在 SetInputMediaType，极具迷惑性）；
     //   ② 输入类型带 MF_MT_MPEG_SEQUENCE_HEADER 必被拒（任何格式/属性组合），
     //     参数集只能靠 sink 从 Annex-B 流内自取；
-    //   ③ 音频两侧要补 AVG_BYTES_PER_SECOND + SAMPLES_PER_BLOCK，ASC 双侧都放才过。
+    //   ③ 音频两侧要补 AVG_BYTES_PER_SECOND + SAMPLES_PER_BLOCK；
+    //   ④ 🔴 音频两侧都不得带 MF_MT_USER_DATA——双侧放（裸 ASC 或 WAVEFORMATEX）
+    //     是「open 全绿、Finalize 炸 0xC00D4A45」，只放输出侧是「open 当场拒
+    //     0xC00D36B4」，两条臂都实测过（2026-10-08 探针 + 变异）。sink 自造的
+    //     esds 里 DecoderSpecificInfo = 0x11 0x90，正是 asc_for(48000,2) 那份。
     // 本测试走生产路径 RecSink::open 全真装配（含音轨），再用真编码器的帧走一次
-    // 写入 + finalize，断言 moov 里出现 avcC（参数集真的进了容器）。编码器
-    // 打不开的机器上端到端段优雅跳过。 ──
+    // 写入 + finalize，断言 moov 里出现 avcC（视频参数集进了容器）**和 esds 里
+    // 的 ASC**（音轨样本描述进了容器）。编码器打不开的机器上端到端段优雅跳过。 ──
 
     #[test]
     fn 开封装_真实媒体类型含音轨() {
@@ -356,7 +369,7 @@ mod tests {
             h,
             fps,
             false,
-            Some((48000, 2, &asc)),
+            Some((48000, 2)),
             br,
             std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         )
@@ -397,12 +410,30 @@ mod tests {
             for p in &packets {
                 sink.write_video(p.at_ms, &p.data).expect("写帧必须成功");
             }
+            // 音轨按生产口径喂帧（生产侧由 session.rs::run_audio 的静音保活保证
+            // 每条轨都有样本；这里同形）。pass-through sink 不解码，内容只要非空。
+            let aac = [0x21u8; 64];
+            for i in 0..5i64 {
+                sink.write_audio(i * 21, &aac).expect("写音频样本必须成功"); // 1024/48000 ≈ 21ms
+            }
             sink.finalize().expect("finalize 必须成功");
             drop(sink);
             let bytes = std::fs::read(&path).unwrap();
             assert!(
                 bytes.windows(4).any(|win| win == b"avcC"),
                 "moov 必须带 avcC——sink 没从流里收到参数集"
+            );
+            // 🔴 音轨标头同理必须真进容器：esds 里要能找到编码器那份 ASC。
+            // 这条断言钉的是「open 通过 ≠ 文件写得出来」——USER_DATA 一喂就是
+            // 装配全绿、finalize 炸（铁律 ④），只看 finalize 成功还不够。
+            let e = bytes
+                .windows(4)
+                .position(|win| win == b"esds")
+                .expect("moov 必须带 esds（音轨样本描述）");
+            let tail = &bytes[e..(e + 64).min(bytes.len())];
+            assert!(
+                tail.windows(2).any(|win| win == &asc[..]),
+                "esds 里的 ASC 必须是 0x11 0x90（AAC-LC/48k/立体声），否则音轨不可播"
             );
         } else {
             // 编码器缺席：类型装配（本回归的本体）已在 open 处验证过；

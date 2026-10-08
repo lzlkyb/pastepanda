@@ -857,9 +857,7 @@ fn open_sink(
 ) -> Result<(RecSink, u64), String> {
     let (audio_tuple, audio_start_ms) = match audio {
         Some(rx) => match rx.recv_timeout(Duration::from_millis(800)) {
-            Ok(c) if c.sr > 0 && !c.asc.is_empty() => {
-                (Some((c.sr, c.ch, c.asc)), c.start_ms)
-            }
+            Ok(c) if c.sr > 0 && !c.asc.is_empty() => (Some((c.sr, c.ch)), c.start_ms),
             _ => {
                 log::warn!("[Rec] 音频轨未就绪，本次只录画面");
                 (None, 0)
@@ -867,8 +865,8 @@ fn open_sink(
         },
         None => (None, 0),
     };
-    let audio_ref = audio_tuple.as_ref().map(|(sr, ch, asc)| (*sr, *ch, asc.as_slice()));
-    let sink = RecSink::open(path, sp.width, sp.height, sp.fps, sp.hevc, audio_ref, sp.bitrate, bytes)?;
+    // sink 只要采样率/声道数：esds 由它自造，喂 ASC 反而写不出标头（sink.rs 铁律 ④）
+    let sink = RecSink::open(path, sp.width, sp.height, sp.fps, sp.hevc, audio_tuple, sp.bitrate, bytes)?;
     Ok((sink, audio_start_ms))
 }
 
