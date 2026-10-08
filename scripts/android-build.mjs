@@ -161,26 +161,49 @@ if (!doDev && (doInstall || doRelease)) {
       console.error(`[android-build] keystore 文件不存在：${ks}`);
       process.exit(1);
     }
-    const apksigner = path.join(sdk, "build-tools", buildTools, "apksigner.bat");
-    // 🔴 shell: true 不能省：Windows 上 spawnSync 直接执行 .bat 会 ENOENT
-    //    （gradlew 那几处同理）。同时把 JAVA_HOME 传给 apksigner（它是 Java 程序）。
+    // 🔴 2026-10-09：这里原先执行 apksigner.bat 并配 `shell: true`（Windows 直接 spawn .bat 会
+    //    ENOENT，所以那个开关当时省不掉）。两个问题叠在一起：Node 的 shell 模式**不转义 args，
+    //    只做拼接**，而口令是以 `pass:xxx` 形态拼进命令串的——口令里出现 `&` `^` `%` 会断句甚至
+    //    注入；就算不炸，明文口令也进了 argv，同机任何进程列进程表就能读到。
+    //    改法：绕开 .bat 直连 java（shell 不再需要 ⇒ 没有拼接），口令改用 apksigner 自带的
+    //    `env:` 引用，只进子进程环境、不进命令行。
+    //    实测 build-tools 35.0.0 + JDK 17：签名产物与 .bat 版同尺寸，证书仍是长期 keystore 的
+    //    bcf9e0bf…。gradlew / npm 那两处仍是 .bat/.cmd，仍要 shell，不在这条范围内。
+    const signerJar = path.join(sdk, "build-tools", buildTools, "lib", "apksigner.jar");
+    const javaBin = path.join(env.JAVA_HOME, "bin", process.platform === "win32" ? "java.exe" : "java");
+    if (!existsSync(signerJar) || !existsSync(javaBin)) {
+      console.error(
+        `[android-build] 找不到 apksigner.jar 或 java.exe：\n  ${signerJar}\n  ${javaBin}`,
+      );
+      process.exit(1);
+    }
     const sign = spawnSync(
-      apksigner,
+      javaBin,
       [
+        "-cp",
+        signerJar,
+        "com.android.apksigner.ApkSignerTool",
         "sign",
         "--ks",
         ks,
         "--ks-pass",
-        `pass:${ksProps.storePassword}`,
+        "env:PP_APK_KS_PASS",
         "--key-pass",
-        `pass:${ksProps.keyPassword ?? ksProps.storePassword}`,
+        "env:PP_APK_KEY_PASS",
         "--ks-key-alias",
         ksProps.keyAlias,
         "--out",
         apk,
         unsigned,
       ],
-      { stdio: "inherit", shell: true, env },
+      {
+        stdio: "inherit",
+        env: {
+          ...env,
+          PP_APK_KS_PASS: ksProps.storePassword,
+          PP_APK_KEY_PASS: ksProps.keyPassword || ksProps.storePassword,
+        },
+      },
     );
     if (sign.status !== 0) process.exit(sign.status ?? 1);
     console.log(`[android-build] 已用长期 keystore 签名（${ksProps.keyAlias}）：${apk}`);
