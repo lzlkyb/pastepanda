@@ -65,4 +65,46 @@ describe("vitest 环境拆档守卫", () => {
     expect(touch, "找不到 matchMedia 打桩那一行（守卫要比较的位置没了）").toBeGreaterThan(-1);
     expect(touch > guard, "Object.defineProperty(window…) 又跑到了 typeof 判空之前").toBe(true);
   });
+
+  it("setupFiles 只挂在两个 project 上，顶层一份都不留", () => {
+    // extends:true 走 mergeConfig，数组是**拼接**：顶层再留一份，jsdom 侧的共享 setup
+    // 就会跑两遍；只查文本形态，运行时是否真装上了由 asyncUtilTimeout.test.tsx 实测。
+    expect(CONFIG.match(/setupFiles:/g)?.length, "setupFiles 出现次数变了（应为两个 project 各一处）").toBe(2);
+    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED]");
+    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED, SETUP_DOM]");
+    const beforeProjects = CONFIG.slice(0, CONFIG.indexOf("projects: ["));
+    expect(beforeProjects, "顶层 test 块里又出现了 setupFiles，jsdom 侧会重复执行").not.toContain("setupFiles:");
+    expect(fs.existsSync(path.join(ROOT, "src/test-setup.dom.ts")), "jsdom 专属 setup 文件不在了").toBe(true);
+  });
+
+  // 并发上限写进了 vitest 不认的键，表现和没写一样：机器照样被打成页抖动、
+  // worker 启动闸照样超时判红，而配置文件看着是「已封顶」。
+  // 2026-10-08 就踩过：`poolOptions.forks.maxForks` 在 vitest 4 里是死键
+  // （只打一条 deprecate 警告然后整块忽略），并发一直是 cpus-1。
+  it("并发上限用的是本机安装的 vitest 真正认识的键", () => {
+    // 只认「键名+冒号」这种配置形态：注释里会提到 poolOptions 这个词本身。
+    expect(CONFIG, "并发封顶键没了（maxWorkers 被删）").toMatch(/\n\s*maxWorkers:/);
+    expect(CONFIG, "又用回 vitest 4 的死键 poolOptions").not.toContain("poolOptions:");
+    expect(CONFIG, "内存档变了：改这里前先在本机实测，别拍数字").toContain("const MAX_WORKERS = 10;");
+
+    // 不靠记忆断言版本行为：直接扫安装副本里实际存在的键名。
+    const dist = path.join(ROOT, "node_modules/vitest/dist");
+    let hasMaxWorkers = false;
+    let hasMaxForks = false;
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (hasMaxWorkers && hasMaxForks) return;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name.endsWith(".js")) {
+          const s = fs.readFileSync(p, "utf8");
+          if (s.includes("maxWorkers")) hasMaxWorkers = true;
+          if (s.includes("maxForks")) hasMaxForks = true;
+        }
+      }
+    };
+    walk(dist);
+    expect(hasMaxWorkers, "安装的 vitest 里没有 maxWorkers，配置里的封顶是死的").toBe(true);
+    expect(hasMaxForks, "安装的 vitest 支持 maxForks 了，本条守卫和配置的口径都该跟着改").toBe(false);
+  });
 });
