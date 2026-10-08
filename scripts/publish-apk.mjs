@@ -191,7 +191,7 @@ if (DRY_RUN) {
 //    2026-10-09 首跑真实发布就是这么炸的：`-m "release: apk-update v7.2.11"` 到了 git 变成
 //    message=`release:` + 两个 pathspec，报 `pathspec 'apk-update' did not match any file(s)`；
 //    本机 Windows 用同一份 argv 复现出完全相同的两行错误（不只是 Linux 的问题）。
-//    钉这条守卫的是 src/__tests__/childProcessShellArgs.test.ts。
+//    钉这条守卫的是 src/__tests__/publishApkReleaseFailures.test.ts。
 //    Windows 上 `gh` / `git` 都是真 .exe，不靠 shell 也能解析（已实测），所以这里没有
 //    「.bat 必须走 shell」的约束——那个约束只在 android-build.mjs 的 apksigner.bat 上成立。
 function run(cmd, args, opts = {}) {
@@ -220,11 +220,30 @@ if (SKIP_GITEE) {
     );
   }
   // 1) manifest → releases 分支 latest/
+  // 🔴 `releases` 是一条 orphan 分支，Gitee 的 GitHub→Gitee 镜像同步只保 master，会把别的分支
+  //    剪掉。实测 2026-10-09：桌面 17:46 刚把它重建出来，18:53 这一轮 clone 就已经
+  //    `Remote branch releases not found in upstream origin`。所以这里不能假定它存在——
+  //    配方与 release.yml 的 Gitee 段一致：分支查无 → clone 默认分支 → `checkout --orphan` 重建。
+  //    （不这么做的话，每次发版都得先手动跑一遍 gitee-repair 才能推 APK manifest。）
   const mirror = mkdtempSync(path.join(tmpdir(), "pp-gitee-mirror-"));
   const giteeGit = `https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git`;
-  run("git", ["clone", "--depth", "1", "--branch", "releases", giteeGit, mirror], { quiet: true });
+  let clone = spawnSync("git", ["clone", "--depth", "1", "--branch", "releases", giteeGit, mirror], { encoding: "utf8" });
+  if (clone.status !== 0) {
+    if (!/Remote branch releases not found|not found in upstream origin/.test(`${clone.stderr}${clone.stdout}`)) {
+      fail(`clone Gitee releases 分支失败（不是「分支不存在」这一类，先查 GITEE_TOKEN 写权限与 GITEE_REPOSITORY=${GITEE_REPO}）：\n${clone.stderr || clone.stdout}`);
+    }
+    info("releases 分支不存在（已被镜像同步剪掉），clone 默认分支后重建孤儿分支");
+    rmSync(mirror, { recursive: true, force: true });
+    clone = spawnSync("git", ["clone", "--depth", "1", giteeGit, mirror], { encoding: "utf8" });
+    if (clone.status !== 0) fail(`clone Gitee 默认分支也失败：\n${clone.stderr || clone.stdout}`);
+    const orphan = spawnSync("git", ["-C", mirror, "checkout", "--orphan", "releases"], { encoding: "utf8" });
+    if (orphan.status !== 0) fail(`创建 releases 孤儿分支失败：\n${orphan.stderr || orphan.stdout}`);
+    const wipe = spawnSync("git", ["-C", mirror, "reset", "--hard"], { encoding: "utf8" });
+    if (wipe.status !== 0) fail(`清空孤儿分支索引失败：\n${wipe.stderr || wipe.stdout}`);
+  }
   const latest = path.join(mirror, "latest");
-  if (!existsSync(latest)) fail("Gitee releases 分支里没有 latest/ 目录（镜像结构不符）");
+  // 新建的孤儿分支里当然没有 latest/——它只是 manifest 的目录，不是镜像结构的先决条件。
+  mkdirSync(latest, { recursive: true });
   copyFileSync(path.join(DIST, "apk-update-gitee.json"), path.join(latest, "apk-update-gitee.json"));
   run("git", ["-C", mirror, "add", "-A", "latest"], { quiet: true });
   const commit = spawnSync("git", ["-C", mirror, "-c", "user.email=pub@pastepanda.local", "-c", "user.name=pastepanda-pub", "commit", "-m", `release: apk-update ${TAG}`], { encoding: "utf8" });
