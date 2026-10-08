@@ -12,11 +12,19 @@ export function RcDeviceList({
   reachability,
   channelUp,
   onPick,
+  onConnect,
+  connectBlocked = false,
+  connectingPeer,
+  detailsBlocked = false,
 }: {
   targets: RcTargetDevice[];
   reachability: Record<string, { state: "checking" | "reachable" | "unreachable" | "error"; checkedAt?: number }>;
   channelUp: boolean | null;
   onPick: (nodeId: string) => void;
+  onConnect?: (target: RcTargetDevice) => void;
+  connectBlocked?: boolean;
+  connectingPeer?: string;
+  detailsBlocked?: boolean;
 }) {
   return (
     <>
@@ -24,12 +32,12 @@ export function RcDeviceList({
         const status = rcDeviceStatus(target.presence, reachability[target.node_id], channelUp);
         const path = target.last_path ? PATH_LABEL[target.last_path] : "";
         return (
-          <button
+          <div
             key={target.node_id}
-            type="button"
             className={styles.deviceCard}
-            onClick={() => onPick(target.node_id)}
           >
+            <button type="button" className={styles.deviceDetails} disabled={detailsBlocked} onClick={() => onPick(target.node_id)}
+              aria-label={`查看 ${rcDisplayName(target, "新设备")} 详情`}>
             <span className={`${styles.deviceIcon} ${status.tone === "ok" ? styles.deviceIconOnline : ""}`}>
               <RcDeviceIcon os={target.os} size={38} />
             </span>
@@ -43,11 +51,19 @@ export function RcDeviceList({
                 />
                 {status.label}
                 {path && ` · 上次${path}`}
-                {target.denied && " · 已拒绝"}
+                {target.denied && " · 已禁止连接本机"}
               </span>
             </span>
             <ChevronRight size={18} className={styles.chevron} aria-hidden="true" />
-          </button>
+            </button>
+            {onConnect && target.source !== "sync" && (
+              <button type="button" className={styles.connectButton} disabled={connectBlocked}
+                aria-label={`${connectingPeer === target.node_id ? "正在连接" : "连接"} ${rcDisplayName(target, "新设备")}`}
+                onClick={() => onConnect(target)}>
+                {connectingPeer === target.node_id ? "连接中…" : "连接"}
+              </button>
+            )}
+          </div>
         );
       })}
     </>

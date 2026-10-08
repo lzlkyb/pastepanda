@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Keyboard, Monitor, Ellipsis, RotateCw, MousePointer2, ChevronDown } from "lucide-react";
+import { Keyboard, Monitor, Ellipsis, RotateCw, MousePointer2, ChevronDown, ArrowLeft } from "lucide-react";
 import { PointerModeSheet } from "./PointerModeSheet";
 import type { PointerMode } from "./useSessionPointer";
 import { POINTER_MODES } from "./pointerModes";
@@ -49,7 +49,7 @@ export function SessionToolbar({
   connectionEntry,
   mouseAssist,
   toolHint = false,
-  settings, orientationHint, onOrientationHintDismiss, fileEntry,
+  settings, orientationHint, onOrientationHintDismiss, fileEntry, feedbackEntry,
 }: {
   landscape: boolean;
   visible: boolean;
@@ -86,8 +86,12 @@ export function SessionToolbar({
   orientationHint?: string;
   onOrientationHintDismiss?: () => void;
   fileEntry?: ReactNode;
+  feedbackEntry?: ReactNode;
 }) {
   const [panel, setPanel] = useState<"screen" | "more" | "end" | "mode" | null>(null);
+  useEffect(() => {
+    if (panel && keyboardOn) onToggleKeyboard();
+  }, [panel, keyboardOn, onToggleKeyboard]);
   useEffect(() => {
     if (requestEnd) setPanel("end");
   }, [requestEnd]);
@@ -123,6 +127,7 @@ export function SessionToolbar({
   return (
     <>
       <div className={landscape ? styles.toolRail : styles.portraitTools}>
+      <div className={landscape ? styles.toolRailScroll : styles.portraitTools}>
       {landscape && <div className={styles.landscapeTools}>
         {!keyboardOn && (
         <button
@@ -163,6 +168,12 @@ export function SessionToolbar({
       </nav>
       {landscape && mouseAssist}
       {landscape && fileEntry}
+      {landscape && feedbackEntry}
+      </div>
+      {landscape && <button type="button" className={`${styles.tbBtn} ${styles.railExit}`} onClick={() => setPanel("end")}>
+        <ArrowLeft size={20} aria-hidden="true" />
+        <span>退出</span>
+      </button>}
       </div>
       {/* 气泡挂在 rail 外层：toolRail overflow 裁剪会吃掉伸出画面的部分。 */}
       {landscape && toolHint && !visible && !keyboardOn && (

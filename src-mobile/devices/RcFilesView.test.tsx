@@ -63,6 +63,18 @@ function snapshotFor(payload: unknown) {
 }
 
 describe("接收落点与取回", () => {
+  it("取回请求未返回时锁住目标，成功只说明等待电脑选文件", async () => {
+    let finish!: () => void;
+    api.pull.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    renderView([TARGET]);
+    await waitFor(() => expect((screen.getByRole("button", { name: "从电脑取文件" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
+    expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("正在发出取回请求…")).toBeTruthy();
+    await act(async () => finish());
+    expect(screen.getByText("已请求 台式机 选择文件，请在电脑上确认。")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
   it("取回目录被拒后可重置；只有重置成功才清错，下一次请求使用新目录", async () => {
     api.pull.mockRejectedValueOnce("接收目录建不出来：Permission denied (os error 13)").mockResolvedValue(undefined);
     api.receiveDirSet.mockRejectedValueOnce("接收目录仍不可用").mockResolvedValueOnce("/system/downloads/PastePanda 接收");

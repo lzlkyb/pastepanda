@@ -29,13 +29,10 @@ export function SessionFileRequests({
       >
         {file.error && <MobileNotice error title="文件操作未能完成" detail={rcErrorText(file.error)} />}
         <RcReceiveDirNotice directory={directory} />
-        {file.asks.length > 0 ? (
-          <RcMobileFileAsks file={file} receiveDir={dir} active={open} onHandled={() => {
-            if (file.asks.length === 1) onClose();
-          }} />
-        ) : (
-          <p className={ui.hint}>当前没有待确认的文件请求。已接受的文件继续在后台传输。</p>
-        )}
+        {/* Keep this instance after the final request: its receipt stays visible
+            until the user returns, and acceptance never means transfer finished. */}
+        <RcMobileFileAsks file={file} receiveDir={dir} active={open} />
+        {file.asks.length === 0 && <p className={ui.hint}>当前没有待确认的文件请求，可以返回远程画面。</p>}
         <button type="button" className={ui.secondary} onClick={onClose}>
           返回远程画面
         </button>

@@ -33,7 +33,7 @@ export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitH
     <PinchViewport ref={viewportRef} surfaceRef={surfaceRef}>
       <VideoSurface canvasRef={canvasRef} className={styles.canvas} statusText={statusText} showStatus={false} sandboxSize={sandboxSize} />
     </PinchViewport>
-    <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} stage={stage} onReturn={onReturn} />
+    {!hasFrame && <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} stage={stage} onReturn={onReturn} />}
     {!statusText && <SessionModeNotice hasFrame={hasFrame} canControl={canControl} pointer={pointer} />}
     <div ref={cursorRef} className={styles.cursorRing} aria-hidden="true" />
     <div ref={chargeRef} className={styles.chargeRing} aria-hidden="true" />

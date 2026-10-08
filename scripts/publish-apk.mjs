@@ -287,6 +287,8 @@ async function getRange(url, ms = 30000) {
 
 const checks = [];
 for (const m of manifests) {
+  // --skip-gitee：未发布 Gitee 源，回读也一并跳过（否则必然 404 → 假红灯）
+  if (SKIP_GITEE && m.file === "apk-update-gitee.json") continue;
   let manifestUrl;
   let apkUrl = m.body.url;
   if (m.file === "apk-update-gitee.json") {
@@ -315,4 +317,4 @@ for (const c of checks) {
   ok(`${c.label}: manifest 可读且一致，APK 可下（HTTP ${st}）`);
 }
 
-ok(`v${VERSION} Android 三源发布完成。客户端下次检查（≤24h）即可发现更新。`);
+ok(`v${VERSION} Android ${SKIP_GITEE ? "两源（GitHub/ghproxy，本次跳过 Gitee）" : "三源"}发布完成。客户端下次检查（≤24h）即可发现更新。`);

@@ -23,6 +23,26 @@ export function patchAndroidManifest(manifest) {
   if (!/<service\b[^>]*android:name\s*=\s*["'](?:\.RcSessionForegroundService|com\.pastepanda\.app\.RcSessionForegroundService)["']/.test(manifest)) {
     manifest = manifest.replace(/([ \t]*)<\/application>/, `${service}\n$1</application>`);
   }
+  if (!manifest.includes('knowledge-share-inbox')) {
+    const filter = `<!-- knowledge-share-inbox: explicit system sharing, no clipboard scanning -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="image/*" />
+            </intent-filter>`;
+    // Some clean test/init templates use a self-closing MainActivity.
+    manifest = manifest.replace(/<activity\b([^>]*android:name=["'](?:\.MainActivity|com\.pastepanda\.app\.MainActivity)["'][^>]*)\/>/, `<activity$1>${filter}</activity>`);
+    const activity = /(<activity\b[^>]*android:name=["'](?:\.MainActivity|com\.pastepanda\.app\.MainActivity)["'][^>]*>)([\s\S]*?)(<\/activity>)/;
+    if (!manifest.includes('knowledge-share-inbox')) manifest = manifest.replace(activity, `$1$2\n            ${filter}\n        $3`);
+    if (!manifest.includes('knowledge-share-inbox')) throw new Error("清单里找不到 MainActivity，无法登记系统收集入口");
+  }
+  if (!manifest.includes('androidx.core.content.FileProvider')) {
+    manifest = manifest.replace('</application>', `<provider android:name="androidx.core.content.FileProvider" android:authorities="\${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider></application>`);
+  }
   return manifest;
 }
 
@@ -59,10 +79,20 @@ export async function prepareAndroid(root) {
   const patched = patchAndroidManifest(manifest);
   const java = path.join(main, "java/com/pastepanda/app");
   await mkdir(java, { recursive: true });
-  for (const name of ["MainActivity.kt", "RcSessionDisplay.kt", "RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt"]) {
+  for (const name of ["MainActivity.kt", "RcSessionDisplay.kt", "RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt", "KnowledgeShareStore.kt", "KnowledgeSharePlugin.kt"]) {
     await copyFile(path.join(root, "src-tauri/android", name), path.join(java, name));
   }
   if (patched !== manifest) await writeFile(manifestPath, patched, "utf8");
+  const xml = path.join(main, "res/xml");
+  await mkdir(xml, { recursive: true });
+  const filePaths = path.join(xml, "file_paths.xml");
+  let paths;
+  try { paths = await readFile(filePaths, "utf8"); }
+  catch (error) { if (error.code !== "ENOENT") throw error; paths = '<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="my_cache_images" path="." /></paths>'; }
+  if (!paths.includes('name="knowledge_share_out"')) {
+    paths = paths.replace('</paths>', '<cache-path name="knowledge_share_out" path="knowledge-share-out/" /></paths>');
+    await writeFile(filePaths, paths, "utf8");
+  }
   const gradlePath = path.join(root, "src-tauri/gen/android/app/build.gradle.kts");
   const gradle = await readFile(gradlePath, "utf8");
   const gradlePatched = patchAndroidGradle(gradle);

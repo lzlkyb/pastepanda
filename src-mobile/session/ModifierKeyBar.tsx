@@ -42,7 +42,10 @@ export function ModifierKeyBar({
     if (open && keyMode === "type" && !more) field.current?.focus();
   }, [open, keyMode, more]);
   useEffect(() => {
-    if (!open) setMore(false);
+    if (!open) {
+      field.current?.blur();
+      setMore(false);
+    }
   }, [open]);
   return (
     <>

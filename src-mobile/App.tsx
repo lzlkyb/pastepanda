@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState } from "react";
-import { FolderOpen, Monitor, Settings2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRc } from "@/hooks/useRc";
 import { useRcFile } from "@/hooks/useRcFile";
 import { useRcStore } from "@/stores/rcStore";
@@ -9,27 +8,25 @@ import { RcFilesView } from "./devices/RcFilesView";
 import { rcErrorText } from "./devices/rcErrorText";
 import { RcMobileSession } from "./session/RcMobileSession";
 import { RcSettingsView } from "./settings/RcSettingsView";
+import { KnowledgeView } from "./knowledge/KnowledgeView";
+import { useKnowledgeInbox } from "./knowledge/useKnowledgeInbox";
 import { MobileNotice } from "./ui/MobileNotice";
 import { MobileUpdateBanner } from "./ui/MobileUpdateBanner";
 import { MobileUpdateProvider } from "./ui/MobileUpdate";
 import { useMobileAppearance } from "./ui/useMobileAppearance";
 import { useMobileViewport } from "./ui/useMobileViewport";
-import { MOBILE_TABS, useMobilePager } from "./ui/useMobilePager";
+import { MOBILE_DESTINATIONS, type MobileDestination } from "./ui/mobileDestinations";
+import { useMobileNavigation } from "./ui/useMobileNavigation";
 import ui from "./ui/MobileUi.module.css";
 import styles from "./App.module.css";
 
-const TAB_META = {
-  devices: { label: "设备", Icon: Monitor },
-  files: { label: "文件", Icon: FolderOpen },
-  settings: { label: "设置", Icon: Settings2 },
-};
-const TABS = MOBILE_TABS.map(id => ({ id, ...TAB_META[id] }));
+const DESTINATION_IDS = MOBILE_DESTINATIONS.map(({ id }) => id);
 
 export default function App() {
   const [sandbox, setSandbox] = useState(false);
   const [filePeer, setFilePeer] = useState<string | null>(null);
   const [fileNotice, setFileNotice] = useState<{ text: string; error: boolean } | null>(null);
-  const [errorOwners, setErrorOwners] = useState({ devices: false, settings: false });
+  const [errorOwners, setErrorOwners] = useState<Partial<Record<MobileDestination, boolean>>>({});
   const deviceErrorScope = useCallback((owned: boolean) => setErrorOwners(v => ({ ...v, devices: owned })), []);
   const settingsErrorScope = useCallback((owned: boolean) => setErrorOwners(v => ({ ...v, settings: owned })), []);
   const rc = useRc(true);
@@ -44,8 +41,14 @@ export default function App() {
   }, []);
 
   const activeSession = session?.phase === "outbound_active";
-  const pager = useMobilePager(!sandbox && !activeSession);
-  const { tab, selectTab } = pager;
+  const { tab, selectTab } = useMobileNavigation(DESTINATION_IDS, "devices", !sandbox && !activeSession);
+  const knowledgeInbox = useKnowledgeInbox();
+  const seenCollection = useRef<string | null>(null);
+  const firstCollectionId = knowledgeInbox.items[knowledgeInbox.items.length - 1]?.id;
+  useEffect(() => {
+    if (!firstCollectionId || activeSession || sandbox || seenCollection.current === firstCollectionId) return;
+    seenCollection.current = firstCollectionId; selectTab("knowledge");
+  }, [firstCollectionId, activeSession, sandbox, selectTab]);
   const pending = session?.phase === "outbound_pending";
   const rcMessage = rc.error ? rcErrorText(rc.error) : null;
   const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
@@ -83,12 +86,13 @@ export default function App() {
       )}
       <div className={styles.root} hidden={sandbox || activeSession}>
         <main className={styles.pane}>
-          <div ref={pager.contentRef} className={styles.tabContent} {...pager.events}>
-            {/* Three unique page instances retain scroll and in-flight operations; hidden pages are inert. */}
-            {TABS.map(({ id, label }) => (
+          <div className={styles.tabContent}>
+            {/* Keep one instance per destination: retain drafts, scroll and ongoing transfers. */}
+            {MOBILE_DESTINATIONS.map(({ id, label }) => (
               <section
                 key={id}
-                className={styles.pagePane}
+                className={`${styles.pagePane} ${id === "knowledge" ? styles.knowledgePane : ""}`}
+                hidden={tab !== id}
                 aria-label={label}
                 aria-hidden={tab !== id || sandbox || activeSession}
                 inert={tab !== id || sandbox || activeSession}
@@ -117,6 +121,7 @@ export default function App() {
                     onStatus={onFileStatus}
                   />
                 )}
+                {id === "knowledge" && <KnowledgeView active={tab === id && !sandbox && !activeSession} pageNotice={tab === id ? pageNotice : undefined} inbox={knowledgeInbox} />}
                 {id === "settings" && (
                   <RcSettingsView
                     pageNotice={tab === id ? pageNotice : undefined}
@@ -133,6 +138,7 @@ export default function App() {
           </div>
         </main>
         <div className={styles.globalNotice}>
+          {tab !== "knowledge" && knowledgeInbox.items.length > 0 && <MobileNotice title={`有 ${knowledgeInbox.items.length} 条知识库内容待收集`} detail="已有笔记与草稿保留，准备好后再查看。" action={<button className={ui.textButton} onClick={() => selectTab("knowledge")}>查看收集内容</button>} />}
           {tab !== "devices" && inboundCount > 0 && (
             <MobileNotice tone="info" title={`有 ${inboundCount} 个连接请求待处理`}
               detail="继续当前操作，准备好后再查看。"
@@ -175,8 +181,7 @@ export default function App() {
           {tab !== "settings" && <MobileUpdateBanner />}
         </div>
         <nav className={styles.tabbar} aria-label="主要导航">
-          <span ref={pager.selectionRef} className={styles.tabSelection} aria-hidden="true" />
-          {TABS.map(({ id, label, Icon }) => (
+          {MOBILE_DESTINATIONS.map(({ id, label, Icon }) => (
             <button
               key={id}
               type="button"

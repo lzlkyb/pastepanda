@@ -48,8 +48,29 @@ const HISTORY = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   api.clear.mockResolvedValue(true);
   api.setEnabled.mockResolvedValue(true);
+});
+
+it("设置页的四种操作习惯写入与会话共用的偏好，结果留在面板内", async () => {
+  renderView({ enabled: true });
+  fireEvent.click(screen.getByRole("button", { name: /操作习惯/ }));
+  expect(screen.getAllByRole("radio")).toHaveLength(4);
+  fireEvent.click(screen.getByRole("radio", { name: /直接点击/ }));
+  expect(localStorage.getItem("pastepanda-mobile-pointer-mode")).toBe("direct");
+  expect(screen.getByRole("radio", { name: /直接点击/ }).getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByText("默认使用直接点击，已保存").closest('[role="dialog"]')).toBeTruthy();
+});
+
+it("偏好存储失败不假装选中或保存，面板内保留恢复说明", () => {
+  renderView({ enabled: true });
+  fireEvent.click(screen.getByRole("button", { name: /操作习惯/ }));
+  const stored = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+  fireEvent.click(screen.getByRole("radio", { name: /浮动鼠标/ }));
+  expect(screen.getByRole("alert").textContent).toContain("未能保存");
+  expect(screen.getByRole("radio", { name: /^触控板/ }).getAttribute("aria-checked")).toBe("true");
+  stored.mockRestore();
 });
 
 describe("会话历史", () => {

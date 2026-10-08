@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { useMobileBack } from "./useMobileBack";
 import { useSheetDrag } from "./useSheetDrag";
+import { useMobileLayout } from "./useMobileLayout";
 import styles from "./MobileUi.module.css";
 
 export function MobileSheet({
@@ -21,7 +22,8 @@ export function MobileSheet({
   /** Operation results remain visible while the controls scroll on short screens. */
   footer?: ReactNode;
 }) {
-  const { present, sheetRef, ...dragEvents } = useSheetDrag(open, onClose);
+  const landscape = useMobileLayout();
+  const { present, sheetRef, ...dragEvents } = useSheetDrag(open, onClose, landscape);
   const saved = useRef({ title, description, children, footer });
   const restoreFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -66,7 +68,7 @@ export function MobileSheet({
                 restoreFocus.current.focus();
             }}
           >
-            <button type="button" className={styles.dragHandle} aria-label="向下拖动或点击收起面板" {...dragEvents}>
+            <button type="button" className={styles.dragHandle} aria-label={landscape ? "向右拖动或点击收起面板" : "向下拖动或点击收起面板"} {...dragEvents}>
               <span aria-hidden="true" />
             </button>
             <header className={styles.sheetHead}>

@@ -1,7 +1,7 @@
 .notice {
   padding: 16px;
   margin-bottom: 16px;
-  border: 1px solid var(--border-color);
+  border: 0;
   border-radius: 12px;
   background: var(--section-bg);
   color: var(--text-primary);
@@ -10,11 +10,11 @@
 }
 .heading { display: flex; align-items: flex-start; gap: 10px; }
 .heading > svg { flex: none; margin-top: 2px; color: var(--accent-strong); }
-.heading strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; font-weight: 600; }
+.heading strong { flex: 1; min-width: 0; font-size: var(--mobile-font-body); line-height: 1.5; font-weight: 600; }
 .notice[data-tone="error"] .heading > svg { color: var(--danger); }
 .notice[data-tone="warning"] .heading > svg { color: var(--warning); }
 .notice[data-tone="success"] .heading > svg { color: var(--success); }
-.detail, .technical { margin: 8px 0 0 30px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.detail, .technical { margin: 8px 0 0 30px; color: var(--text-secondary); font-size: var(--mobile-font-secondary); line-height: 1.6; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0 0 30px; }
 .actions > button { min-height: 48px; }
 .actions details { min-width: 0; flex-basis: 100%; }
@@ -24,10 +24,10 @@
 .dismiss:focus-visible, .actions summary:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
 .inline { width: 100%; }
 .compact { padding: 10px 12px; margin-bottom: 8px; }
-.compact .heading strong { font-size: 13px; }
+.compact .heading strong { font-size: var(--mobile-font-secondary); }
 .compact .dismiss, .banner .dismiss { margin-top: -8px; margin-bottom: -8px; }
 .banner { margin: 0; border-radius: 0; padding: 8px 12px; }
-.banner .heading strong { font-size: 13px; }
+.banner .heading strong { font-size: var(--mobile-font-secondary); }
 .banner .actions { margin-top: 0; }
 .toast { margin: 0; }
 .toastHost { position: fixed; z-index: var(--mobile-layer-notice); left: max(16px, env(safe-area-inset-left, 0px)); right: var(--mobile-toast-right); top: calc(var(--mobile-viewport-top, 0px) + var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance, 96px)); transform: translateY(-100%); max-height: calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance, 96px) - max(16px, env(safe-area-inset-top, 0px))); overflow-y: auto; }

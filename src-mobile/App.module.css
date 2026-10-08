@@ -1,180 +1,99 @@
 .root {
   height: 100%;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   position: relative;
   overflow: hidden;
   background: var(--mobile-surface);
 }
-.pane {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  touch-action: auto;
-}
+.pane, .tabContent { min-height: 0; min-width: 0; overflow: hidden; }
+.tabContent { height: 100%; }
 .pagePane {
-  flex: 0 0 100%;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
-  overscroll-behavior-y: contain;
-  overscroll-behavior-x: auto;
-  padding: env(safe-area-inset-top, 0px) max(var(--mobile-page-inset), env(safe-area-inset-right, 0px)) var(--mobile-nav-clearance) max(var(--mobile-page-inset), env(safe-area-inset-left, 0px));
-  touch-action: auto;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-}
-.tabContent {
-  height: 100%;
-  display: flex;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-  touch-action: auto;
-  scrollbar-width: none;
-}
-.tabContent::-webkit-scrollbar {
-  display: none;
-}
-.tabContent input,
-.tabContent textarea,
-.tabContent select,
-.tabContent [contenteditable="true"] {
-  touch-action: pan-y pinch-zoom;
-}
-.tabContent input[type="range"],
-.tabContent [role="slider"] {
-  touch-action: none;
-}
-:global(body[data-mobile-sheets]) .tabContent {
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  padding: env(safe-area-inset-top, 0px) max(var(--mobile-page-inset), env(safe-area-inset-right, 0px)) 24px max(var(--mobile-page-inset), env(safe-area-inset-left, 0px));
+  touch-action: pan-y pinch-zoom;
+  animation: pageIn 200ms cubic-bezier(0.2, 0, 0, 1);
 }
+.pagePane[hidden] { display: none; }
+.pagePane[hidden] * { animation-play-state: paused; }
 .tabbar {
-  position: absolute;
   z-index: var(--mobile-layer-nav);
-  left: 16px;
-  right: 16px;
-  bottom: var(--mobile-nav-bottom);
-  max-width: 560px;
-  margin: 0 auto;
-  height: 56px;
   display: flex;
-  padding: 4px;
-  border-radius: var(--mobile-radius-panel);
-  background: var(--mobile-glass);
-  backdrop-filter: blur(var(--mobile-glass-blur));
-  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
-  box-shadow: var(--mobile-shadow);
+  gap: 4px;
+  padding: 8px max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  background: var(--card-bg);
+  box-shadow: 0 -1px var(--border-color);
 }
 .tab {
-  position: relative;
   flex: 1;
   min-width: 0;
+  min-height: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 12px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
+  padding: 8px 4px;
 }
-.tabActive {
-  color: var(--accent-strong);
-}
-.tabSelection {
-  position: absolute;
-  left: 4px;
-  top: 4px;
-  bottom: 4px;
-  width: calc((100% - 8px) / 3);
-  border-radius: calc(var(--mobile-radius-panel) - 4px);
-  background: var(--accent-light);
-  transform: translateX(var(--mobile-tab-offset, 0%));
-  pointer-events: none;
-}
-:global(body[data-mobile-sheets]) .tabbar {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-.tabIcon {
-  display: flex;
-  position: relative;
-}
+.tabActive { color: var(--accent-strong); background: var(--accent-light); font-weight: 600; }
+.tab:active:not(:disabled) { transform: none; background: var(--accent-light); }
+.tabIcon { display: flex; position: relative; }
 .badge {
   position: absolute;
-  top: -5px;
-  left: 18px;
-  min-width: 18px;
+  top: -8px;
+  left: 16px;
+  min-width: 20px;
   padding: 0 4px;
-  height: 18px;
-  line-height: 18px;
+  min-height: 20px;
+  line-height: 20px;
   border-radius: 12px;
   background: var(--accent-solid);
   color: var(--text-on-accent);
-  font-size: 11px;
+  font-size: var(--mobile-font-label);
   font-variant-numeric: tabular-nums;
 }
 .globalNotice {
-  position: absolute;
-  z-index: var(--mobile-layer-notice);
-  left: 16px;
-  right: 16px;
-  bottom: var(--mobile-nav-clearance);
-  max-width: 560px;
-  margin: 0 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: min(40dvh, calc(var(--mobile-viewport-height, 100dvh) - var(--mobile-nav-clearance) - 16px));
+  max-height: calc(var(--mobile-viewport-height, 100dvh) * 0.35);
+  padding: 8px var(--mobile-page-inset);
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--card-bg);
 }
 .globalNotice:empty { display: none; }
-.globalNotice > section {
-  flex: none;
-  margin: 0;
-}
-@media (min-width: 640px) {
-  .pagePane > div {
-    width: 600px;
-    max-width: 100%;
-    margin: 0 auto;
-  }
-}
-:global(html[data-mobile-layout="landscape"]) .pane { padding-right: var(--mobile-side-clearance); }
-:global(html[data-mobile-layout="landscape"]) .pagePane > div { width: 100%; max-width: 1040px; }
-:global(html[data-mobile-layout="landscape"]) .tabbar {
-  left: auto;
-  right: max(8px, env(safe-area-inset-right, 0px));
-  top: max(8px, env(safe-area-inset-top, 0px));
-  bottom: auto;
-  width: 64px;
-  height: 176px;
-  max-height: calc(100% - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-  margin: 0;
-  flex-direction: column;
-  border-radius: 12px;
-}
-:global(html[data-mobile-layout="landscape"]) .tab { border-radius: 8px; }
-:global(html[data-mobile-layout="landscape"]) .tabSelection {
-  right: 4px;
-  bottom: auto;
-  width: auto;
-  height: calc((100% - 8px) / 3);
-  border-radius: 8px;
-  transform: translateY(var(--mobile-tab-offset, 0%));
-}
-:global(html[data-mobile-layout="landscape"]) .globalNotice { right: var(--mobile-side-clearance); bottom: var(--mobile-nav-clearance); }
-:global(html[data-mobile-keyboard="true"]) .tabbar { display: none; }
-:global(html[data-mobile-keyboard="true"]) .pane { padding-right: 0; }
-:global(html[data-mobile-keyboard="true"]) .globalNotice { right: 16px; }
-@media (prefers-reduced-transparency: reduce) {
+.globalNotice > section { flex: none; margin: 0; }
+.pagePane > div { width: 100%; max-width: 600px; margin: 0 auto; }
+.pagePane.knowledgePane { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); overflow: hidden; }
+.pagePane.knowledgePane > div { max-width: none; }
+@media (min-width: 600px) {
+  .root { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .pane { grid-column: 2; grid-row: 1; }
+  .globalNotice { grid-column: 2; grid-row: 2; }
   .tabbar {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+    align-items: stretch;
+    width: calc(76px + env(safe-area-inset-left, 0px));
+    padding: max(8px, env(safe-area-inset-top, 0px)) 8px max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+    box-shadow: 1px 0 var(--border-color);
+    overflow-y: auto;
   }
+  .tab { flex: none; min-height: 60px; }
+  .pagePane > div { max-width: 1040px; }
 }
+:global(html[data-mobile-keyboard="true"]) .tabbar { display: none; }
+@keyframes pageIn { from { opacity: 0.6; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pagePane { animation: none; } }

@@ -1,25 +1,23 @@
-/* B 分层毛玻璃：内容实底，导航轻透，弹层厚透；颜色与桌面同源。 */
+/* Approved B: solid task surfaces, shared semantic colors and scalable type roles. */
 :root {
   /* ui-rule-ok: 已确认 C 方案的大标题和移动端分组圆角，颜色仍使用桌面令牌 */
-  --mobile-title-size: 20px;
+  --mobile-title-size: 1.25rem;
+  --mobile-font-body: 1rem;
+  --mobile-font-secondary: 0.875rem;
+  --mobile-font-label: 0.8125rem;
   --mobile-radius-group: 16px;
   --mobile-radius-panel: 24px;
   /* ui-rule-ok: 输入字号至少 16px，避免 iOS 聚焦表单时自动放大页面 */
-  --mobile-input-size: 16px;
+  --mobile-input-size: 1rem;
   --mobile-nav-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   --mobile-nav-clearance: calc(80px + env(safe-area-inset-bottom, 0px));
   --mobile-page-inset: 16px;
   --mobile-side-clearance: calc(80px + env(safe-area-inset-right, 0px));
   --mobile-toast-right: max(16px, env(safe-area-inset-right, 0px));
-  --mobile-glass: color-mix(in srgb, var(--card-bg) 76%, transparent);
-  --mobile-sheet-glass: color-mix(in srgb, var(--card-bg) 90%, transparent);
-  --mobile-glass-blur: 20px;
-  --mobile-surface: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--accent-light) 55%, var(--app-bg)),
-    var(--app-bg) 42%,
-    color-mix(in srgb, var(--accent-light) 22%, var(--app-bg))
-  );
+  --mobile-glass: var(--card-bg);
+  --mobile-sheet-glass: var(--card-bg);
+  --mobile-glass-blur: 0px;
+  --mobile-surface: var(--section-bg);
   --mobile-scrim: var(--overlay-bg);
   --mobile-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 9%, transparent);
   --mobile-layer-nav: 100;
@@ -39,7 +37,7 @@ body {
   background: var(--app-bg);
   color: var(--text-primary);
   font:
-    16px/1.5 -apple-system,
+    1rem/1.5 -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     "Microsoft YaHei",

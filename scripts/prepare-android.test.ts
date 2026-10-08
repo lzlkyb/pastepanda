@@ -43,6 +43,10 @@ it("全新 Android 清单恢复保活与相机声明，重复执行不重复注�
   expect(restored).toContain("ACCESS_NETWORK_STATE");
   expect(restored).toContain('android.hardware.camera" android:required="false"');
   expect(restored).toContain('android:name="other.Provider"');
+  const xml = new DOMParser().parseFromString(restored, "application/xml");
+  const shared = Array.from(xml.querySelectorAll("activity intent-filter"));
+  expect(shared.some(filter => filter.innerHTML.includes("text/plain") && filter.innerHTML.includes("image/*"))).toBe(true);
+  expect(restored).toContain("androidx.core.content.FileProvider");
   expect(patchAndroidManifest(restored)).toBe(restored);
 });
 
@@ -92,6 +96,8 @@ it("从纳入版本控制的源码恢复插件，覆盖生成目录的过期副�
       expect(await readFile(path.join(main, "java/com/pastepanda/app", name), "utf8")).toBe(await readFile(path.join(sources, name), "utf8"));
     }
     expect(await readFile(path.join(main, "AndroidManifest.xml"), "utf8")).toContain("RcSessionForegroundService");
+    expect(await readFile(path.join(main, "res/xml/file_paths.xml"), "utf8")).toContain('path="knowledge-share-out/"');
+    expect(await readFile(path.join(main, "java/com/pastepanda/app/KnowledgeSharePlugin.kt"), "utf8")).toContain("override fun onNewIntent");
   } finally {
     // Only remove this test's freshly allocated directory under the system temp root.
     if (path.dirname(root) === path.resolve(os.tmpdir()) && path.basename(root).startsWith("pastepanda-android-")) await rm(root, { recursive: true, force: true });

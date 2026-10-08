@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { askCountdown, askPrompt } from "@/lib/rcFile";
 import { formatBytes } from "@/lib/utils";
 import type { RcFileView } from "@/hooks/useRcFile";
+import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import styles from "./RcDevices.module.css";
 
 export function RcMobileFileAsks({
@@ -17,6 +18,8 @@ export function RcMobileFileAsks({
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [working, setWorking] = useState<{ id: string; accepting: boolean } | null>(null);
+  // 请求确认后会从快照移除；结果留在不会随请求行卸载的这一层。
+  const [result, setResult] = useState<MobileFeedback | null>(null);
   const locked = useRef(false);
   useEffect(() => {
     if (!active || file.asks.length === 0) return;
@@ -42,8 +45,16 @@ export function RcMobileFileAsks({
     }
     locked.current = true;
     setWorking({ id, accepting: dir !== null });
+    setResult(null);
     try {
-      if (await file.respond(id, dir)) onHandled?.();
+      if (await file.respond(id, dir)) {
+        setResult({ tone: "success", title: dir !== null ? "已接受文件请求，等待传输" : "已拒绝文件请求" });
+        onHandled?.();
+      } else {
+        setResult({ tone: "error", title: "文件请求未能处理", detail: "请重试；若请求已消失，请让电脑重新发送。" });
+      }
+    } catch {
+      setResult({ tone: "error", title: "文件请求未能处理", detail: "请重试；若请求已消失，请让电脑重新发送。" });
     } finally {
       locked.current = false;
       setWorking(null);
@@ -51,6 +62,7 @@ export function RcMobileFileAsks({
   };
   return (
     <>
+      {active && result && <MobileNotice {...result} onDismiss={() => setResult(null)} />}
       {file.asks.map((ask) => {
         const prompt = askPrompt(ask);
         const countdown = askCountdown(ask, now);

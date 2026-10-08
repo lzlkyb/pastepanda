@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ChevronRight, Monitor, ScanLine, Smartphone } from "lucide-react";
 import { formatShortCode } from "@/lib/rcShortCode";
 import { formatCountdown, useOwnPairCode, usePairCodeVisibility } from "@/hooks/usePairCodeVisibility";
@@ -8,8 +8,13 @@ import { RcShowQr } from "./RcShowQr";
 import { useMobilePairing } from "./useMobilePairing";
 import styles from "./RcPair.module.css";
 
-export function RcPairCard({ onPaired }: { onPaired: (name: string) => void }) {
-  const pairing = useMobilePairing(onPaired);
+export function RcPairCard({ onPaired, initialDraft = "", onDraftChange }: {
+  onPaired: (name: string) => void;
+  initialDraft?: string;
+  onDraftChange?: (draft: string) => void;
+}) {
+  const pairing = useMobilePairing(onPaired, initialDraft);
+  useEffect(() => { onDraftChange?.(pairing.peerInput); }, [pairing.peerInput, onDraftChange]);
   const [scanning, setScanning] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const inputId = useId();

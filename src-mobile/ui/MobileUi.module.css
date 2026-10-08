@@ -24,7 +24,7 @@
 }
 .subtitle {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   line-height: 1.5;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
@@ -35,12 +35,12 @@
   justify-content: space-between;
   gap: 12px;
   margin: 24px 0 10px;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   color: var(--text-secondary);
 }
 .sectionHeading {
   margin: 24px 0 10px;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 500;
   color: var(--text-secondary);
 }
@@ -61,7 +61,7 @@
   justify-content: center;
   gap: 8px;
   padding: 12px 16px;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
 }
 .primary {
@@ -87,14 +87,14 @@
   border-radius: 12px;
   background: transparent;
   color: var(--accent-strong);
-  font-size: 15px;
+  font-size: var(--mobile-font-secondary);
 }
 .textButton:hover {
   background: var(--accent-light);
 }
 .description,
 .hint {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   line-height: 1.7;
   margin: 0;
@@ -127,13 +127,13 @@
   margin: 0 0 20px;
 }
 .empty h2 {
-  font-size: 20px;
+  font-size: var(--mobile-title-size);
   line-height: 1.4;
   margin: 0 0 10px;
 }
 .empty p {
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   line-height: 1.7;
   margin: 0 0 24px;
 }
@@ -166,8 +166,6 @@
   overscroll-behavior: contain;
   border-radius: var(--mobile-radius-panel) var(--mobile-radius-panel) 0 0;
   background: var(--mobile-sheet-glass);
-  backdrop-filter: blur(var(--mobile-glass-blur));
-  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
   color: var(--text-primary);
 }
 .sheet[data-state="closed"] {
@@ -209,7 +207,7 @@
   margin: 0 0 16px;
 }
 .sheetTitle {
-  font-size: 20px;
+  font-size: var(--mobile-title-size);
   font-weight: 650;
   margin: 0;
   line-height: 1.4;
@@ -223,7 +221,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--mobile-font-label);
 }
 .sheetBody {
   margin-top: 12px;
@@ -242,6 +240,7 @@
 :global(html[data-mobile-layout="landscape"]) .pageHead { min-height: 48px; padding-top: 0; align-items: center; }
 /* 横屏面板独立滚动，标题和关闭入口始终留在可视窗口内。 */
 :global(html[data-mobile-layout="landscape"]) .sheet {
+  transform: translateX(var(--mobile-sheet-offset, 0px));
   left: auto;
   right: max(8px, env(safe-area-inset-right, 0px));
   top: calc(var(--mobile-viewport-top, 0px) + max(8px, env(safe-area-inset-top, 0px)));

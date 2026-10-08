@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda 桌面端「移动端 App 下载入口」设计稿 2026-10-07</title>
+<!--
+  设计稿基线严格对齐真实源码，未涉及部分保持现状：
+  - 卡片结构 = src/components/SponsorCard.module.css（.card/.cardHead/.cardIcon/.cardTitle/.cardDesc/.cardBtns/.cardBtn）
+  - 令牌数值 = src/styles/theme.css :root 默认浅色主题（accent #0284c7 / section-bg #f0f4f8 / card-bg #fff …）
+  - 二维码出码 = src/components/rc/RcShortCodeQr.tsx 的 qrcode.toCanvas({width,margin:2,errorCorrectionLevel:"M"})，深块浅底 margin=2（对齐 NN/g 静区/不反色判据）
+  - 落位：设置→关于（AboutTabContent，插在 aboutDivider 之后、SponsorCard 之前）；设置→同步与互联（SyncSection 顶行）；远程配对完成后情境化一次性提示。
+  本稿仅用于确认布局/交互，真码与真文案在实现时由现有组件产出。
+-->
+<style>
+  :root, [data-theme="light"] {
+    --app-bg:#eef1f6; --card-bg:#fff; --section-bg:#f0f4f8;
+    --text-primary:#0f172a; --text-secondary:#495565; --text-muted:#627083;
+    --border-color:#e0e4eb; --accent:#0284c7; --accent-light:#e0f2fe;
+    --hover:#e8ecf2; --shadow-md:0 4px 12px rgba(0,0,0,.08); --green:#11813a; --green-bg:#e7f6ec;
+    --overlay-bg:rgba(0,0,0,.35);
+  }
+  [data-theme="dark"] {
+    --app-bg:#0b0b13; --card-bg:#18181b; --section-bg:#0f0f11;
+    --text-primary:#e4e4e7; --text-secondary:#afafb7; --text-muted:#8d8d95;
+    --border-color:#27272a; --accent:#818cf8; --accent-light:#1e1b4b;
+    --hover:#1f1f23; --shadow-md:0 4px 12px rgba(0,0,0,.45); --green:#4ade80; --green-bg:#122a19;
+    --overlay-bg:rgba(0,0,0,.5);
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--app-bg); color:var(--text-primary);
+    font-family:system-ui,"Segoe UI","Microsoft YaHei",sans-serif; padding:28px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { font-size:12px; color:var(--text-muted); margin-bottom:20px; }
+  .toolbar { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center;
+    background:var(--app-bg); padding:8px 0 14px; margin-bottom:8px; }
+  .toolbar button { font:inherit; font-size:12px; padding:6px 12px; border-radius:8px;
+    border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-primary); cursor:pointer; }
+  .frame { max-width:520px; margin:0 auto 26px; background:var(--card-bg); border:1px solid var(--border-color);
+    border-radius:16px; box-shadow:var(--shadow-md); overflow:hidden; }
+  .frameCap { font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase;
+    color:var(--text-muted); padding:12px 18px; background:var(--section-bg); border-bottom:1px solid var(--border-color); }
+  .body { padding:22px 24px 24px; }
+  /* 关于页 hero（真实结构缩略） */
+  .aboutHero { display:flex; align-items:center; gap:20px; margin-bottom:24px; }
+  .aboutIcon { width:64px; height:64px; border-radius:16px; background:linear-gradient(135deg,#38bdf8,#0284c7); display:grid; place-items:center; font-size:26px; }
+  .aboutName { font-size:20px; font-weight:800; margin-bottom:6px; }
+  .ver { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; background:var(--green-bg); color:var(--green); border:1px solid var(--green); }
+  .aboutDivider { height:1px; background:var(--border-color); margin:0 0 24px; }
+  .label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:var(--text-muted); margin:0 0 12px; }
+
+  /* ===== 新增：手机 App 卡（沿用 SponsorCard .card 结构） ===== */
+  .card { padding:14px 16px; border-radius:12px; background:var(--section-bg); border:1px solid transparent; margin-bottom:24px; transition:all .2s; }
+  .card:hover { border-color:var(--border-color); box-shadow:var(--shadow-md); }
+  .cardHead { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .cardIcon { font-size:15px; }
+  .cardTitle { font-size:13px; font-weight:700; }
+  .cardBadge { margin-left:auto; font-size:11px; color:var(--text-muted); }
+  .cardDesc { font-size:11.5px; line-height:1.6; color:var(--text-secondary); margin:0 0 12px; }
+  .dlRow { display:flex; gap:14px; align-items:flex-start; }
+  .qrWrap { flex-shrink:0; width:140px; }
+  /* 真码位：实现时是 <canvas>（RcShortCodeQr size=140, margin=2）。这里画代表码，深块浅底。 */
+  .qr { width:140px; height:140px; background:#fff; border:1px solid var(--border-color); border-radius:10px; display:grid; place-items:center; padding:8px; }
+  .qr canvas { image-rendering:pixelated; }
+  .qrCap { font-size:10.5px; color:var(--text-muted); margin-top:6px; text-align:center; line-height:1.5; }
+  .dlSide { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+  .hintStep { font-size:11px; color:var(--text-secondary); line-height:1.6; }
+  .hintStep b { color:var(--text-primary); }
+  .cardBtns { display:flex; gap:8px; }
+  .cardBtn { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:9px 0;
+    border-radius:9px; border:1px solid var(--border-color); font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; background:var(--card-bg); color:var(--text-primary); transition:all .15s; }
+  .cardBtn:active { transform:scale(.98); }
+  .cardBtn.primary { background:var(--accent); color:#fff; border-color:transparent; }
+  .moreBtn { background:none; border:none; color:var(--accent); font-size:11.5px; font-weight:600; cursor:pointer; padding:2px 0; font-family:inherit; text-align:left; }
+  .more { display:none; margin-top:12px; padding-top:12px; border-top:1px dashed var(--border-color); }
+  .more.open { display:block; }
+  .srcList { display:flex; flex-direction:column; gap:6px; margin:0 0 12px; }
+  .src { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11.5px; }
+  .src a { color:var(--accent); text-decoration:none; word-break:break-all; }
+  .src .tag { font-size:10px; color:var(--text-muted); flex-shrink:0; }
+  .guide { font-size:11.5px; line-height:1.7; color:var(--text-secondary); background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; }
+  .guide ol { margin:0; padding-left:18px; }
+
+  /* 同步分区行 */
+  .sSection { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:var(--text-muted); margin:0 0 10px; }
+  .row { display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px; background:var(--card-bg); border:1px solid var(--border-color); cursor:pointer; }
+  .row .ico { font-size:16px; }
+  .row .rt { flex:1; min-width:0; }
+  .row .rt strong { display:block; font-size:12.5px; }
+  .row .rt small { font-size:11px; color:var(--text-muted); }
+  .row .chev { color:var(--text-muted); }
+
+  /* 情境化一次性提示 */
+  .ctxCard { position:relative; max-width:420px; margin:0 auto; padding:16px; border-radius:14px; background:var(--card-bg);
+    border:1px solid var(--accent); box-shadow:0 10px 30px rgba(2,132,199,.16); }
+  .ctxHead { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+  .ctxHead .t { font-size:13px; font-weight:700; }
+  .ctxClose { margin-left:auto; width:24px; height:24px; border:none; background:none; color:var(--text-muted); cursor:pointer; font-size:16px; border-radius:6px; }
+  .ctxClose:hover { background:var(--hover); }
+  .ctxBody { display:flex; gap:14px; align-items:center; }
+  .ctxSide { flex:1; font-size:11.5px; color:var(--text-secondary); line-height:1.6; }
+
+  .toast { position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:var(--text-primary); color:var(--card-bg); font-size:12px; padding:9px 16px; border-radius:20px; transition:.25s; pointer-events:none; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .note { max-width:520px; margin:0 auto; font-size:11.5px; line-height:1.7; color:var(--text-secondary); }
+  .note h2 { font-size:13px; color:var(--text-primary); margin:18px 0 6px; }
+  .note code { background:var(--section-bg); padding:1px 5px; border-radius:5px; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button id="themeBtn">切换深色/浅色</button>
+  <span class="sub" style="margin:0">PastePanda 桌面端 → 移动端 App 下载入口 · 方案A 为主（内容折进卡展开区，C 不做常驻）</span>
+</div>
+
+<!-- 屏 1：设置 · 关于 -->
+<div class="frame">
+  <div class="frameCap">屏 1 · 设置 → 关于（主入口，插在分割线后、赞助开发者前）</div>
+  <div class="body">
+    <div class="aboutHero">
+      <div class="aboutIcon">🐼</div>
+      <div><div class="aboutName">PastePanda</div><span class="ver">● 已是最新 v7.2.10</span></div>
+    </div>
+    <div class="aboutDivider"></div>
+
+    <!-- 新增卡片 -->
+    <div class="card" id="mobileCard">
+      <div class="cardHead">
+        <span class="cardIcon">📱</span>
+        <span class="cardTitle">手机 App</span>
+        <span class="cardBadge">Android</span>
+      </div>
+      <p class="cardDesc">把 PastePanda 装到安卓手机：随时随地收发粘贴、用手机连你的电脑远程取用。用手机自带的<b>相机扫下面的码</b>即可开始下载。</p>
+      <div class="dlRow">
+        <div class="qrWrap">
+          <div class="qr"><canvas id="qrA" width="124" height="124"></canvas></div>
+          <div class="qrCap">扫一扫，手机打开下载页</div>
+        </div>
+        <div class="dlSide">
+          <div class="hintStep">1. 手机打开<b>相机</b>对准此码</div>
+          <div class="hintStep">2. 点通知跳转到下载页，选一个可连的源下载</div>
+          <div class="hintStep">3. 打开安装包，按提示允许「安装未知应用」</div>
+          <div class="cardBtns">
+            <button class="cardBtn" data-copy>复制链接</button>
+            <button class="cardBtn primary" data-open>打开下载页</button>
+          </div>
+          <button class="moreBtn" id="moreA">更多下载方式与安装说明 ▾</button>
+        </div>
+      </div>
+      <div class="more" id="moreBodyA">
+        <div class="label">下载源（三选其一，按你的网络）</div>
+        <div class="srcList">
+          <div class="src"><a data-open>https://pastepanda.pages.dev/#android</a><span class="tag">主站·国内可达</span></div>
+          <div class="src"><a data-open>github.com/lzlkyb/pastepanda/releases/latest</a><span class="tag">GitHub</span></div>
+          <div class="src"><a data-open>gitee.com/lzul/pastepanda/releases</a><span class="tag">Gitee 镜像</span></div>
+        </div>
+        <div class="guide">
+          <b>装不上？Android 安全限制需要一步手动允许：</b>
+          <ol>
+            <li>下载得到 <code>.apk</code> 文件后点开；</li>
+            <li>系统提示「禁止安装未知应用」→ 设置 → 允许此来源；</li>
+            <li>返回再点安装包即可完成，本地数据不丢。</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardHead"><span class="cardIcon">🧡</span><span class="cardTitle">赞助开发者</span></div>
+      <p class="cardDesc">PastePanda 完全免费开源……（现状保持不变）</p>
+    </div>
+  </div>
+</div>
+
+<!-- 屏 2：同步与互联 顶行入口 -->
+<div class="frame">
+  <div class="frameCap">屏 2 · 设置 → 同步与互联（一行轻量入口，滚动/打开同一张卡）</div>
+  <div class="body">
+    <div class="sSection">同步与互联</div>
+    <div class="row" id="syncRow" style="margin-bottom:10px">
+      <span class="ico">📱</span>
+      <span class="rt"><strong>在手机上安装 PastePanda</strong><small>扫码下载 · 手机连电脑远程取用</small></span>
+      <span class="chev">›</span>
+    </div>
+    <div class="row" style="opacity:.6"><span class="ico">🔗</span><span class="rt"><strong>局域网同步 / 键鼠同步 / 远程电脑…</strong><small>（现有小节保持原样，仅在其上方加此一行）</small></span></div>
+  </div>
+</div>
+
+<!-- 屏 3：情境化一次性提示 -->
+<div class="frame">
+  <div class="frameCap">屏 3 · 远程电脑配对成功后的一次性提示（可关，不常驻）</div>
+  <div class="body" style="background:var(--section-bg)">
+    <div class="ctxCard" id="ctxCard">
+      <button class="ctxClose" id="ctxClose">×</button>
+      <div class="ctxHead"><span class="cardIcon">📱</span><span class="t">想在手机上连这台电脑？</span></div>
+      <div class="ctxBody">
+        <div class="qr" style="width:112px"><canvas id="qrC" width="96" height="96"></canvas></div>
+        <div class="ctxSide">手机装 PastePanda App 后，配对即可远程浏览、取用这台电脑的剪贴板与文件。<div style="margin-top:8px" class="cardBtns"><button class="cardBtn primary" data-open>去下载</button></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 设计说明 / 自检 -->
+<div class="frame">
+  <div class="frameCap">设计说明与自检</div>
+  <div class="body note">
+    <h2>为什么这样做</h2>
+    桌面用户手里就有机，跨设备传递的最大摩擦是「怎么把链接送到手机」——<b>二维码</b>一步到位，且本产品已在远程配对里用 QR 出码，视觉语言现成。业界把「下载手机 App」落成<b>独立下载落地页</b>（Battle.net「on the go」、微软 Copilot 分平台页），能处理国内三源可达性与「允许未知来源」引导，优于甩一个裸 APK 直链。
+    <h2>QR 指向（本稿按倾向选 ②）</h2>
+    扫/点均指向 <code>https://pastepanda.pages.dev/#android</code>。<b>前置工作</b>：落地页 <code>#download</code> 现在只有 Windows，需先补一个 Android 区（三源按钮 + 安装引导）。若你要改成 ①直链 APK，我可把码改成直接指 <code>releases/latest</code>。
+    <h2>NN/g 二维码可用性判据（已满足）</h2>
+    深块浅底不反色（<code>.qr background:#fff</code>）、静区边距（toCanvas <code>margin:2</code>）、旁边写清「扫一扫→到哪」（有信息 scent）、不放在会轮播/一闪而过的容器里。
+    <h2>落位与打扰</h2>
+    主入口在<b>关于</b>（心智=找 App 信息处）；<b>同步与互联</b>一行做二次发现；<b>情境化</b>只在配对成功后出现一次、可关闭、不常驻——避开顶栏宽度约束（Explore 实测 480px 拥挤，故不做常驻图标）。
+    <h2>待你拍板</h2>
+    ① QR 目标 = 落地页(②) 还是 APK 直链(①)？选② 是否把落地页 Android 区一并纳入本次实现？② 情境化提示要不要？③ 卖点文案：主打「手机连电脑」还是「收发粘贴」或两者。确认后按真组件（复用 <code>RcShortCodeQr</code>/<code>qrcode</code>）落地，改动只走 <code>src</code>、不动并发会话文件、不升版。
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const DOWNLOAD_URL = "https://pastepanda.pages.dev/#android";
+  // —— 代表二维码绘制（真实现用 qrcode.toCanvas；离线时画确定性深块浅底码形占位）——
+  function drawQr(canvas, seed) {
+    const n = 25, s = Math.floor(canvas.width / n), ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#0b0b13";
+    let h = seed >>> 0;
+    const rnd = () => ((h = (h * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (rnd() > 0.5) ctx.fillRect(x * s, y * s, s, s);
+    const finder = (cx, cy) => { ctx.fillStyle="#0b0b13"; ctx.fillRect(cx*s,cy*s,7*s,7*s); ctx.fillStyle="#fff"; ctx.fillRect((cx+1)*s,(cy+1)*s,5*s,5*s); ctx.fillStyle="#0b0b13"; ctx.fillRect((cx+2)*s,(cy+2)*s,3*s,3*s); };
+    finder(0,0); finder(n-7,0); finder(0,n-7);
+  }
+  drawQr(document.getElementById("qrA"), 7210);
+  drawQr(document.getElementById("qrC"), 7211);
+
+  const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.classList.add("show"); clearTimeout(t._i); t._i = setTimeout(() => t.classList.remove("show"), 1600); };
+  document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "light" ? "dark" : "light"; };
+  document.getElementById("moreA").onclick = () => { const b = document.getElementById("moreBodyA"); const o = b.classList.toggle("open"); document.getElementById("moreA").textContent = (o ? "收起下载方式与安装说明 ▴" : "更多下载方式与安装说明 ▾"); };
+  document.querySelectorAll("[data-open]").forEach((el) => (el.onclick = () => toast("示例：将打开下载页 " + DOWNLOAD_URL)));
+  document.querySelectorAll("[data-copy]").forEach((el) => (el.onclick = () => { try { navigator.clipboard.writeText(DOWNLOAD_URL); } catch (e) {} toast("已复制下载链接"); }));
+  document.getElementById("ctxClose").onclick = () => { document.getElementById("ctxCard").style.display = "none"; };
+  document.getElementById("syncRow").onclick = () => { const c = document.getElementById("mobileCard"); c.scrollIntoView({ behavior: "smooth", block: "center" }); c.style.transition = "outline-color .3s"; c.style.outline = "2px solid var(--accent)"; setTimeout(() => (c.style.outline = "none"), 1200); };
+</script>
+</body>
+</html>

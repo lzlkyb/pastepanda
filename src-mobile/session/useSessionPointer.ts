@@ -6,9 +6,9 @@ import type { TouchCallbacks } from "./touchClassifier";
 import { useTouchGestures } from "./useTouchGestures";
 import { POINTER_MODES, type PointerMode } from "./pointerModes";
 import { LONG_PRESS_MS } from "./touchConstants";
+import { readPointerPreference, savePointerPreference } from "./pointerPreference";
 
 export type { PointerMode } from "./pointerModes";
-const MODE_KEY = "pastepanda-mobile-pointer-mode";
 
 /** 保存内容坐标而非屏幕像素，键盘、旋转或缩放后指针仍指向同一目标。 */
 export function useSessionPointer({
@@ -36,12 +36,7 @@ export function useSessionPointer({
     charge(mode: "on" | "drag" | "off", x?: number, y?: number): void;
   };
 }) {
-  const [mode, setMode] = useState<PointerMode>(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY);
-      return saved && Object.prototype.hasOwnProperty.call(POINTER_MODES, saved) ? saved as PointerMode : "trackpad";
-    } catch { return "trackpad"; }
-  });
+  const [mode, setMode] = useState<PointerMode>(readPointerPreference);
   const [hint, setHint] = useState("");
   const [hintTone, setHintTone] = useState<"success" | "warning">("success");
   const clearHint = useCallback(() => setHint(""), []);
@@ -250,7 +245,7 @@ export function useSessionPointer({
       setMode(next);
       setMouseOpen(true);
       try {
-        localStorage.setItem(MODE_KEY, next);
+        savePointerPreference(next);
         setHintTone("success");
         setHint(`已切换为${POINTER_MODES[next].label} · 已记住选择`);
       } catch {

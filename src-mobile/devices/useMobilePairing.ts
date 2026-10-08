@@ -7,8 +7,8 @@ type PairPhase = "idle" | "joining" | "waiting" | "cancelling" | "paired" | "err
 type Notice = { tone: "info" | "success" | "error"; text: string } | null;
 
 /** 手机短码会合：手动发起，5 秒轮询，关闭或取消使旧请求失效。 */
-export function useMobilePairing(onPaired: (name: string) => void) {
-  const [peerInput, setPeerInput] = useState("");
+export function useMobilePairing(onPaired: (name: string) => void, initialDraft = "") {
+  const [peerInput, setPeerInput] = useState(initialDraft);
   const [phase, setPhase] = useState<PairPhase>("idle");
   const [notice, setNotice] = useState<Notice>(null);
   const [listening, setListening] = useState(false);

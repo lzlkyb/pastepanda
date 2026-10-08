@@ -8,15 +8,16 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function setup() {
+function setup(sideways = false) {
   const clock = setupMotionClock();
   const close = vi.fn();
-  const h = renderHook(({ open }) => useSheetDrag(open, close), { initialProps: { open: true } });
+  const h = renderHook(({ open }) => useSheetDrag(open, close, sideways), { initialProps: { open: true } });
   const sheet = document.createElement("div");
   h.result.current.sheetRef.current = sheet;
   const event = (y: number, id = 1, time = 0) =>
     ({
       clientY: y,
+      clientX: y,
       pointerId: id,
       timeStamp: time,
       button: 0,
@@ -24,6 +25,22 @@ function setup() {
     }) as unknown as PointerEvent<HTMLButtonElement>;
   return { ...h, close, sheet, event, clock };
 }
+it("横屏沿右侧进出，垂直滑动把手不能误判为点击收起", () => {
+  const h = setup(true);
+  act(() => {
+    h.result.current.onPointerDown(h.event(100));
+    h.result.current.onPointerMove({ ...h.event(190), clientX: 100 });
+    h.result.current.onPointerUp({ ...h.event(190), clientX: 100 });
+  });
+  expect(h.close).not.toHaveBeenCalled();
+  act(() => {
+    h.result.current.onPointerDown(h.event(100));
+    h.result.current.onPointerMove({ ...h.event(190), clientY: 100 });
+    h.result.current.onPointerUp({ ...h.event(190), clientY: 100 });
+  });
+  expect(h.close).toHaveBeenCalledTimes(1);
+  expect(h.sheet.style.getPropertyValue("--mobile-sheet-offset")).toBe("90px");
+});
 it("面板跟随把手，短拖动回位且不关闭", () => {
   const h = setup();
   act(() => {

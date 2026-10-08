@@ -83,15 +83,17 @@ export function RcFilesView({
   };
   return (
     <MobilePage title="文件" subtitle="不接管画面，也能互传文件。" pageNotice={pageNotice}>
+      {rc.targetsError && <MobileNotice error title="设备列表未能更新" detail={rcErrorText(rc.targetsError)}
+        action={<button className={ui.textButton} onClick={() => void rc.refreshTargets()}>重试</button>} />}
       {file.error && file.error !== actionErr && rcErrorText(file.error) !== directory.error && <MobileNotice error title="文件操作未能完成" detail={rcErrorText(file.error)} />}
       <div className={styles.fileLayout}>
       <section className={styles.fileControls} aria-label="文件传输">
       {targets.length === 0 ? (
         <div className={ui.empty}>
           <FolderOpen aria-hidden="true" />
-          <h2>还没有配对的电脑</h2>
+          <h2>{rc.targetsLoaded === false ? "正在获取设备…" : rc.targetsError ? "暂时无法获取设备" : "还没有配对的电脑"}</h2>
           <p>
-            先在「设备」页配对，
+            {rc.targetsLoaded === false ? "请稍候，设备就绪后即可选择。" : rc.targetsError ? "请重试更新设备列表，" : "先在「设备」页配对，"}
             <br />
             然后在这里发送、接收和查看进度。
           </p>
@@ -107,7 +109,7 @@ export function RcFilesView({
             type="button"
             className={styles.peerSelect}
             onClick={() => setChoosePeer(true)}
-            disabled={send.sending}
+            disabled={send.sending || pulling}
           >
             <RcDeviceIcon os={target?.os} size={34} />
             <span>

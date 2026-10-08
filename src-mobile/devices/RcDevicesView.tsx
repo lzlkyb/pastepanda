@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { KeyRound, Monitor, Plus, ScanLine, ShieldCheck } from "lucide-react";
+import { ChevronRight, KeyRound, Monitor, Plus, ScanLine } from "lucide-react";
+import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { RcDeviceList } from "./RcDeviceList";
@@ -8,6 +9,7 @@ import { RcPairCard } from "./RcPairCard";
 import { RcUnoJoinCard } from "./RcUnoJoinCard";
 import { RcInboundAskCard } from "./RcInboundAskCard";
 import { rcErrorText } from "./rcErrorText";
+import { useMobileDeviceConnect } from "./useMobileDeviceConnect";
 import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileNotice } from "../ui/MobileNotice";
@@ -31,10 +33,14 @@ export function RcDevicesView({
   pageNotice?: ReactNode;
 }) {
   const [pairing, setPairing] = useState(false);
+  // 配对卡随面板关闭卸载；仅保留手输草稿，相机与会合请求仍在关闭时释放。
+  const [pairDraft, setPairDraft] = useState("");
   const [unoJoin, setUnoJoin] = useState<{ fixedTarget: string | null } | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const connection = useMobileDeviceConnect(rc, session);
   const targets = rc.targets ?? [];
+  const connectionTarget = targets.find(target => target.node_id === connection.peer);
   const pending = session?.phase === "outbound_pending" ? session : null;
   // 入站申请的确认卡（2026-10-02）：只有 App 开着就一定看得到。同屏来多条时
   // 全部列出——后到的可能是另一台电脑，不能只露出最新那条就把人堵死。
@@ -43,7 +49,7 @@ export function RcDevicesView({
   );
   const pickedTarget = targets.find((target) => target.node_id === picked);
   const dismissNotice = useCallback(() => setNotice(""), []);
-  const ownsError = active && (!!pickedTarget || !!unoJoin);
+  const ownsError = active && (!!pickedTarget || !!unoJoin || !!connection.peer);
   useEffect(() => {
     onErrorScopeChange?.(ownsError);
     return () => onErrorScopeChange?.(false);
@@ -58,17 +64,17 @@ export function RcDevicesView({
   }, [probeTargets]);
   useEffect(() => {
     if (active && rc.targetsLoaded && targets.length > 0) probe();
-    // Pages stay mounted for paging; probe on entering, never for an offscreen preview.
+    // 切页保留页面状态；只在进入设备页时探测，后台页不发请求。
   }, [active, rc.targetsLoaded, targets.length, probe]);
   return (
     <MobilePage
       title="设备"
-      pageNotice={pageNotice}
       subtitle="连接电脑，让工作随身。"
+      pageNotice={pageNotice}
       action={
         <button className={ui.textButton} onClick={() => setPairing(true)}>
           <Plus size={20} aria-hidden="true" />
-          添加
+          添加电脑
         </button>
       }
     >
@@ -84,7 +90,14 @@ export function RcDevicesView({
           }
         />
       )}
-      {active && notice && <MobileToast tone="success" title={notice} onDismiss={dismissNotice} />}
+      {active && notice && <MobileToast placement="flow" tone="success" title={notice} onDismiss={dismissNotice} />}
+      {active && connection.peer && !pickedTarget && !unoJoin && (connection.error || rc.error) && (
+        <MobileNotice error title={`未能连接 ${rcDisplayName(connectionTarget ?? {}, "目标设备")}`} detail={connection.error || rcErrorText(rc.error)}
+          onDismiss={connection.clearError}
+          action={<button className={ui.textButton} disabled={connection.blocked || !connectionTarget} onClick={() => {
+            if (connectionTarget) void connection.request(connectionTarget, "control");
+          }}>重试</button>} />
+      )}
       {probeError && targets.length > 0 && (
         <MobileNotice tone="warning" title="在线状态检查失败"
           detail="设备的可用性可能不是最新，可重新检查。"
@@ -105,38 +118,14 @@ export function RcDevicesView({
           </button>} />
       )}
       {pending && (
-        <MobileNotice tone="pending" title={`正在连接 ${pending.display_name || pending.peer_name}…`} detail="等待电脑端确认，受信任设备将自动通过。"
+        <MobileNotice tone="pending" title={`正在连接 ${rcDisplayName(pending, "电脑")}…`} detail="等待电脑端确认，受信任设备将自动通过。"
           action={<button className={ui.secondary} disabled={rc.busy} onClick={() => void rc.cancel()}>
             取消连接
           </button>} />
       )}
-      <div className={styles.channel}>
-        <div>
-          <strong>
-            {rc.status?.running
-              ? "远程通道已开启"
-              : rc.status?.enabled === false
-                ? "远程通道已关闭"
-                : rc.status
-                  ? "远程通道尚未启动"
-                  : "正在检查远程通道…"}
-          </strong>
-          <p>{targets.length} 台已配对设备</p>
-        </div>
-        <span>
-          <ShieldCheck size={22} aria-hidden="true" />
-        </span>
-      </div>
-      <div className={styles.actionsRow}>
-        <button className={ui.secondary} onClick={() => setPairing(true)}>
-          <ScanLine size={19} aria-hidden="true" />
-          添加电脑
-        </button>
-        <button className={ui.secondary} onClick={() => setUnoJoin({ fixedTarget: null })}>
-          <KeyRound size={19} aria-hidden="true" />
-          无人值守
-        </button>
-      </div>
+      {rc.status?.running !== true && <MobileNotice tone={rc.status ? "warning" : "pending"}
+        title={rc.status?.enabled === false ? "远程通道已关闭" : rc.status ? "远程通道尚未就绪" : "正在检查远程通道…"}
+        detail={rc.status?.enabled === false ? "请在设置中开启远程通道后连接电脑。" : "请稍后重新检查设备状态。"} />}
       <div className={ui.sectionHead}>
         <span>已配对设备</span>
         <button
@@ -157,15 +146,25 @@ export function RcDevicesView({
               targets={targets}
               reachability={rc.reachability}
               channelUp={rc.status?.running ?? null}
-              onPick={setPicked}
+              onPick={id => {
+                // 在途请求的错误先写全局槽再返回；此时换详情会把 A 的失败显示在 B 上。
+                if (connection.working) return;
+                // 进入另一个操作域前清除本页连接失败，避免把 A 的错误挂到 B 的详情。
+                if (connection.error) connection.clearError();
+                setPicked(id);
+              }}
+              onConnect={target => void connection.request(target, "control")}
+              connectBlocked={connection.blocked}
+              connectingPeer={connection.working?.peer}
+              detailsBlocked={!!connection.working}
             />
           </div>
-          <p className={ui.hint}>点设备选择远程控制、观看或传文件。</p>
+          <p className={ui.hint}>点「连接」控制电脑；点设备查看观看、文件和管理操作。在线状态未知时仍可尝试连接。</p>
         </>
       ) : (
         <div className={ui.empty}>
           <Monitor aria-hidden="true" />
-          <h2>{rc.targetsLoaded ? "还没有配对的电脑" : "正在获取设备…"}</h2>
+          <h2>{rc.targetsError ? "暂时无法获取设备" : rc.targetsLoaded ? "还没有配对的电脑" : "正在获取设备…"}</h2>
           <p>
             在电脑端打开远程电脑，
             <br />
@@ -178,12 +177,24 @@ export function RcDevicesView({
           )}
         </div>
       )}
+      <div className={ui.sectionHead}>其他连接方式</div>
+      <div className={ui.group}>
+        <button className={styles.connectionEntry} disabled={rc.busy || !!connection.working} onClick={() => setUnoJoin({ fixedTarget: null })}>
+          <KeyRound size={20} aria-hidden="true" /><span><strong>无人值守接入</strong><small>使用电脑提供的接入码或密码</small></span><ChevronRight size={18} aria-hidden="true" />
+        </button>
+        <button className={styles.connectionEntry} onClick={() => setPairing(true)}>
+          <ScanLine size={20} aria-hidden="true" /><span><strong>添加电脑</strong><small>扫码或输入配对码</small></span><ChevronRight size={18} aria-hidden="true" />
+        </button>
+      </div>
       <MobileSheet open={active && pairing} title="添加电脑" onClose={() => setPairing(false)}>
         {active && pairing && (
           <RcPairCard
+            initialDraft={pairDraft}
+            onDraftChange={setPairDraft}
             onPaired={(name) => {
               void rc.refreshTargets();
               setPairing(false);
+              setPairDraft("");
               setNotice(`已与「${name}」配对。`);
             }}
           />

@@ -1,0 +1,116 @@
+.host {
+  min-width: 0;
+}
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--mobile-font-secondary);
+  text-align: left;
+}
+.entry > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.entry > svg {
+  flex: none;
+}
+.entryLabel {
+  color: var(--accent-strong);
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: var(--mobile-font-body);
+  font-weight: 600;
+}
+.panel p {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--mobile-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.panel code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: inherit;
+  user-select: text;
+}
+.device {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.actions > button {
+  gap: 8px;
+  max-width: 100%;
+  white-space: normal;
+}
+.report {
+  margin-top: 12px;
+}
+.consent {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--section-bg);
+  border-radius: var(--mobile-radius-group);
+}
+.consent > button {
+  width: 100%;
+  white-space: normal;
+}
+.offer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  width: 100%;
+  padding: 12px 0;
+  background: transparent;
+  color: var(--text-primary);
+  border: 0;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.offer[aria-pressed="true"] {
+  color: var(--accent-strong);
+}
+.offer svg {
+  flex: none;
+}
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 0;
+  font-size: var(--mobile-font-secondary);
+  color: var(--text-primary);
+}
+.checkbox input {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  accent-color: var(--accent);
+}

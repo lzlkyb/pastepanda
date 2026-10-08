@@ -12,7 +12,7 @@ import { useMobileNoticeTimer } from "../ui/useMobileNoticeTimer";
 type Issue = { feedback: MobileFeedback; dismiss: () => void; action?: ReactNode };
 /** One compact summary outside the video; details never stack over remote targets. */
 export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSendFailDismiss,
-  blocked = false, onOpenChange, setting, settings, onSettingDismiss, onSettingOpen,
+  blocked = false, compact = false, onOpenChange, setting, settings, onSettingDismiss, onSettingOpen,
 }: {
   pointer: Pick<ReturnType<typeof useSessionPointer>, "hint" | "hintTone" | "clearHint">;
   orient: Pick<ReturnType<typeof useOrientationLock>, "hint" | "clearHint">;
@@ -20,6 +20,7 @@ export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSend
   sendFailed?: boolean;
   onSendFailDismiss: () => void;
   blocked?: boolean;
+  compact?: boolean;
   onOpenChange?: (open: boolean) => void;
   setting?: MobileFeedback;
   settings?: { key: RcSettingKey; feedback: MobileFeedback }[];
@@ -49,7 +50,7 @@ export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSend
   useMobileNoticeTimer(ordinary, title, dismiss ?? (() => {}), blocked || open || focused);
   if (!first) return null;
   return <>
-    {!blocked && <div className={styles.summary} role={first.feedback.tone === "error" ? "alert" : "status"} aria-atomic="true"
+    {!blocked && <div className={`${styles.summary} ${compact ? styles.compact : ""}`} role={first.feedback.tone === "error" ? "alert" : "status"} aria-atomic="true"
       onFocusCapture={() => setFocused(true)} onBlurCapture={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
       }}>

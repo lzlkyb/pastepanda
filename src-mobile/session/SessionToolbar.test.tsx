@@ -103,6 +103,21 @@ it("横屏辅助按键与工具在同一侧栏，收起工具不会丢掉辅助�
   expect(screen.queryByRole("button", { name: "触控板" })).toBeNull();
 });
 
+it("横屏退出在收起、请求和键盘状态下始终可达，并保留二次确认", () => {
+  const p = props();
+  const view = render(<SessionToolbar {...p} landscape visible={false} fileEntry={<button>文件 · 3</button>} feedbackEntry={<p>画质未能切换</p>} />);
+  expect(screen.getByRole("button", { name: "退出" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "文件 · 3" })).toBeInTheDocument();
+  expect(screen.getByText("画质未能切换")).toBeInTheDocument();
+  view.rerender(<SessionToolbar {...p} landscape visible={false} keyboardOn />);
+  fireEvent.click(screen.getByRole("button", { name: "退出" }));
+  expect(p.onToggleKeyboard).toHaveBeenCalledOnce();
+  expect(p.onEnd).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog", { name: "断开连接？" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "确认断开" }));
+  expect(p.onEnd).toHaveBeenCalledOnce();
+});
+
 it("横屏工具栏直接打开画面，两次点击即可适应屏幕", () => {
   const p = props();
   render(<SessionToolbar {...p} landscape />);

@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
-import { reportScroll, setupPagerLayout } from "./ui/mobilePagerTestUtils";
 import { MobileSheet } from "./ui/MobileSheet";
 
 const state = vi.hoisted(() => ({ update: false, targetsError: null as string | null, fileError: null as string | null, error: null as string | null, session: null as null | { id: string; phase: string; capability: string; peer_name: string }, pending: [] as { peer: string; first_seen_ms: number }[] }));
-beforeEach(() => { setupPagerLayout(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); state.session = null; state.pending = []; state.error = null; state.targetsError = null; state.fileError = null; state.update = false; rcMocks.cancel.mockClear(); });
 const rcMocks = vi.hoisted(() => ({ cancel: vi.fn() }));
 vi.mock("@/hooks/useRc", () => ({ useRc: () => ({ status: { pending: state.pending }, error: state.error, targetsError: state.targetsError, busy: false, cancel: rcMocks.cancel, clearError: vi.fn() }) }));
@@ -27,6 +25,10 @@ vi.mock("./devices/RcDevicesView", () => ({ RcDevicesView: function DevicePage({
   </>;
 } }));
 vi.mock("./settings/RcSettingsView", () => ({ RcSettingsView: ({ pageNotice }: { pageNotice?: React.ReactNode }) => <>{pageNotice}<p>设置内容</p></> }));
+vi.mock("./knowledge/KnowledgeView", () => ({ KnowledgeView: function KnowledgePage() {
+  const [draft, setDraft] = useState("");
+  return <><p>知识库内容</p><input aria-label="知识库草稿" value={draft} onChange={event => setDraft(event.target.value)} /></>;
+} }));
 vi.mock("./session/RcMobileSession", () => ({ RcMobileSession: () => <p>远控内容</p> }));
 vi.mock("./devices/RcFilesView", () => ({ RcFilesView: function FilePage({ initialPeer, onStatus, pageNotice }: { initialPeer: string | null; onStatus?: (text: string | null, error?: boolean) => void; pageNotice?: React.ReactNode }) {
   const [draft, setDraft] = useState(0);
@@ -50,6 +52,21 @@ it("文件状态切页与进入远控期间保留，隐藏页不能触发操作"
   expect(screen.queryByRole("button", { name: "上传状态 1" })).toBeNull();
   state.session = null; view.rerender(<App />);
   expect(screen.getByRole("button", { name: "上传状态 1" })).toBeTruthy();
+});
+
+it("知识库是第四个目的地，切页或进入远控不会卸载草稿", () => {
+  const view = render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: /^知识库$/ }));
+  fireEvent.change(screen.getByLabelText("知识库草稿"), { target: { value: "正在记录" } });
+  fireEvent.click(screen.getByRole("button", { name: /^文件$/ }));
+  expect(screen.queryByLabelText("知识库草稿")).not.toBeNull();
+  expect(screen.queryByRole("region", { name: "知识库" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^知识库$/ }));
+  expect((screen.getByLabelText("知识库草稿") as HTMLInputElement).value).toBe("正在记录");
+  state.session = { id: "remote", phase: "outbound_active", capability: "control", peer_name: "电脑" };
+  view.rerender(<App />); expect(screen.queryByRole("region", { name: "知识库" })).toBeNull();
+  state.session = null; view.rerender(<App />);
+  expect((screen.getByLabelText("知识库草稿") as HTMLInputElement).value).toBe("正在记录");
 });
 
 it("后台连接请求保持当前页面，只在用户点击查看时跳转", () => {
@@ -78,7 +95,7 @@ it("真实相邻页保持单一实例、独立滚动；隐藏页面不可访问"
   render(<App />);
   const devices = screen.getByRole("region", { name: "设备" });
   const allPages = document.querySelectorAll("main > div > section");
-  expect(allPages).toHaveLength(3);
+  expect(allPages).toHaveLength(4);
   devices.scrollTop = 240;
   fireEvent.scroll(devices);
   fireEvent.click(screen.getByRole("button", { name: "文件" }));
@@ -163,13 +180,17 @@ it("跨页的文件准备状态可关闭，发送失败与待确认请求不给�
   expect(failNotice.getAttribute("data-tone")).toBe("error");
   view.unmount();
 });
-it("原生滚动仅在整页落定后激活业务页，竖向滚动不会改变导航", () => {
+it("内容横滑和滚动不会改变主导航，只有点击目的地才切页", () => {
   render(<App />);
   const pager = document.querySelector("main > div") as HTMLElement;
-  reportScroll(pager, 170);
+  pager.scrollLeft = 400;
+  fireEvent.scroll(pager);
+  fireEvent(pager, new Event("scrollend"));
+  fireEvent.touchStart(pager, { touches: [{ clientX: 300, clientY: 180 }] });
+  fireEvent.touchEnd(pager, { changedTouches: [{ clientX: 40, clientY: 180 }] });
   expect(screen.getByRole("region", { name: "设备" })).toBeTruthy();
   expect(screen.queryByRole("region", { name: "文件" })).toBeNull();
-  reportScroll(pager, 400, true);
+  fireEvent.click(screen.getByRole("button", { name: "文件" }));
   const files = screen.getByRole("region", { name: "文件" });
   expect(files.hasAttribute("inert")).toBe(false);
   expect(screen.queryByRole("region", { name: "设备" })).toBeNull();
@@ -181,5 +202,5 @@ it("原生滚动仅在整页落定后激活业务页，竖向滚动不会改变�
   files.scrollTop = 300;
   fireEvent.scroll(files);
   expect(screen.getByRole("region", { name: "文件" })).toBe(files);
-  expect(pager.dataset.moving).toBe("false");
+  expect(screen.getByRole("button", { name: "文件" }).getAttribute("aria-current")).toBe("page");
 });
