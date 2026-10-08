@@ -1,0 +1,61 @@
+name: Gitee Channel Repair
+run-name: Gitee 通道自愈${{ github.event.inputs.dry_run == 'true' && '（仅诊断）' || '' }} · ${{ github.event.inputs.tag || '最新 Release' }}
+
+# 为什么需要这条独立工作流：
+#   客户端第 1 更新源是 https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json，
+#   它活在 Gitee 一条只放 manifest 的 orphan 分支 `releases` 上。发版 CI 每次重建它，但之后它会消失
+#   （v7.2.9 / v7.2.10 两次发版日志里都是 `[new branch]`），而客户端读不到第 1 源就逐级降级到
+#   ghproxy → GitHub 直连，国内用户因此从「国内 CDN」掉回「国际线路」——就是安装包只有 10 KB/s 的来路。
+#   端点列表是编译进已发布二进制的，改 tauri.conf.json 救不了已经装上的用户，
+#   所以这里不改任何客户端代码，只保证**那个地址背后一直有个文件**。
+#
+# 职责边界：只在「读不到 / 读到的是过期版本」时动作；内容全部从 GitHub 已发布的 Release 资产派生，
+#   不重新构建、不签名、不碰 GitHub Release，也不需要桌面/Android 构建环境。
+on:
+  schedule:
+    # 每 6 小时一次；:17 分错开整点队列。健康时脚本秒退（两次 GET），几乎零开销。
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要恢复的 tag（留空 = GitHub 最新 Release）"
+        required: false
+        type: string
+      dry_run:
+        description: "只诊断 + 生成本地产物，不推送 Gitee"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  repair:
+    name: Probe · Derive · Repair manifests
+    # fork 上不必跑（GITEE_TOKEN 也拿不到）
+    if: github.repository == 'lzlkyb/pastepanda'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      # 两个 run 同时向 Gitee 同一条分支 push 会互相撞；排队而不是取消
+      group: gitee-channel-repair
+      cancel-in-progress: false
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 脚本只用 node 内置模块 + git，因此不跑 npm install（一次自愈不该等依赖安装）。
+      - name: 自检并按需修复 Gitee 通道
+        env:
+          GH_TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPOSITORY: ${{ secrets.GITEE_REPOSITORY }}
+        run: node scripts/repair-gitee-channel.mjs
