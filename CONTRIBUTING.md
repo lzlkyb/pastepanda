@@ -192,8 +192,11 @@ cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/�
 > `src/__tests__/secretGuardCanary.test.ts` 里备了 force-add 与「不在 git 仓库里跑」两个反例把它验过。
 > 同一次改动顺手补回一个真窟窿：旧名单里的 `design/` 下面有 312 个被追踪稿子，等于对整仓那两趟失明，已移出排除名单。
 >
-> 省一轮钩子的办法：**分支和 tag 一次推**（`git push origin master v7.2.11`）——一次 push 只跑一遍 pre-push，
+> 省一轮钩子的办法 historically 是：**分支和 tag 一次推**（`git push origin master v7.2.11`）——一次 push 只跑一遍 pre-push，
 > 而 `git push origin v7.2.11` 单独推标签**同样会跑完整钩子**，白等一整轮。
+> 🔴 2026-10-09 起这条**对发版不再适用**：master 开了 `enforce_admins`（见 §3.8），版本号提交必须走
+> `chore/release-v{version}` → PR → 合并，而 `release.yml` 是**由 tag 触发**的——提前把 tag 随分支推上去，
+> 会出现「Release 已在构建、PR 还没合并」的错位。宁可多付一整轮钩子：先合 PR，再从 master 切 tag 单独推。
 
 ---
 
@@ -304,9 +307,16 @@ git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
 - `pre-commit` 里的 `lint-staged` 会 stash 整个工作树：别人正在写时提交，可能把他们的在途改动卷进你的提交、或从他们手底下抽走。
 - `pre-push` 跑的是**整棵工作树**的 `vitest` + `cargo test`。树里只要有他人未完成的改动，这次 push 就会被他们的代码判红——先确认树干净（或等他们那批落地）再 push。
 
-### 3.8 master 保护规则的真话
+### 3.8 master 保护规则（2026-10-09 起真生效）
 
-仓库里确实配了「需 1 个 approval + required status checks（`Rust Tests` / `Frontend Tests`，strict）+ 禁 force push / 禁删分支」，但 **`enforce_admins` 是关的**：管理员直推 master 不受这些约束。所以「CI 全绿才可合」目前靠本地 pre-push 和人自觉，不是 GitHub 强制——历史改动全部直推 master，没有留下分支与 PR 记录。同理，`.github/CODEOWNERS` 在「Require review from Code Owners」勾选前不产生任何阻塞。
+实测配置（`gh api repos/lzlkyb/pastepanda/branches/master/protection` 回读）：`enforce_admins=true` + required status checks（`Rust Tests` / `Frontend Tests`，`strict=true`）+ **`required_approving_review_count=0`** + `dismiss_stale_reviews=true` + 禁 force push / 禁删分支。
+
+三条真话：
+
+1. **管理员也被约束**。此前 `enforce_admins` 是关的，所以历史 654 笔全部直推 master、不留分支与 PR 记录；2026-10-09 起直推 master 会被 GitHub 拒，改动一律走 PR。
+2. **审批数故意是 0**。GitHub 不允许作者批准自己的 PR，而当前只有 1 位维护者 + 1 位外部贡献者——保留「需 1 个 approval」等于把维护者锁在自己的规则门外。等来了第二个人，再把这条调回 1（`gh api -X PATCH .../protection/required_pull_request_reviews -F required_approving_review_count=1`）。
+3. **本仓不做 code owner 强制**。`require_code_owner_reviews` 保持 `false`，所以 `.github/CODEOWNERS` 不产生任何阻塞，已随这次改动删除——留着一个不生效的文件，比没有更容易让人误以为有人把关。同理「Require review from Code Owners」这一勾不要顺手打开：它要求「代码所有者批准」，而代码所有者就是提交者本人，又是一个自批死结。
+
 
 ### 3.9 日常开发节拍（同时有新功能在途 + bug 要修时）
 

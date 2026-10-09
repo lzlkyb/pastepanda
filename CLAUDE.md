@@ -8,4 +8,4 @@
 
 - 用 Claude Code：它读 `CLAUDE.md`（本文件），上面的 `@AGENTS.md` 会把规则正文引进来。
 - 用其他工具（Cursor / Windsurf / Codex / Qoder）：直接把 `AGENTS.md` 设为规则源。
-- 待办：本文件在 git 里是小写 `claude.md`，Linux 区分大小写时 Claude Code 找不到；规范化成 `CLAUDE.md` 需要一次只改大小写的 `git mv`，留到工作树干净的窗口再做。
+- 已完成（2026-10-09）：本文件在 git 里原本是小写 `claude.md`，区分大小写的系统上（macOS 的 APFS 默认敏感 / Linux）Claude Code 找不到规则入口。规范化成 `CLAUDE.md` 需要一次只改大小写的 `git mv`，而 Windows 侧 `core.ignorecase=true` 会让单步改名变成 no-op，实测配方是两步：`git mv claude.md claude.md.tmp && git mv claude.md.tmp CLAUDE.md`。
