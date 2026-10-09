@@ -81,12 +81,15 @@ describe("接收落点与取回", () => {
     renderView([TARGET]);
     await waitFor(() => expect((screen.getByRole("button", { name: "从电脑取文件" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
-    expect(await screen.findByText(/无法在当前接收位置保存文件/)).toBeTruthy();
+    // 同一句文案先出现在 store 的通知里（无动作），晚一拍才出现在 actionErr 的通知里（带动作）；
+    // 等文案会在负载高的机器上拿到中间帧，同步 getByRole 就判空——CI 的红色转储就是那一帧。等被点的按钮本身。
+    const reset = await screen.findByRole("button", { name: "重置接收位置" });
+    expect(screen.getByText(/无法在当前接收位置保存文件/)).toBeTruthy();
     expect(screen.queryByText("操作权限不足，请检查系统设置")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "重置接收位置" }));
+    fireEvent.click(reset);
     expect(await screen.findByText("接收目录仍不可用")).toBeTruthy();
     // 重置失败不把原取回失败伪装成已恢复；目录错误的重试可继续使用。
-    fireEvent.click(screen.getByRole("button", { name: "重置接收位置" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重置接收位置" }));
     expect(await screen.findByText("已恢复默认接收位置，请重新取文件。")).toBeTruthy();
     expect(api.receiveDirSet).toHaveBeenCalledWith("");
     fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
