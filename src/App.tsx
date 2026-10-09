@@ -1552,7 +1552,7 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "置顶 / 取消", keys: primaryShortcutLabel("d") },
       { desc: "撤销删除", keys: primaryShortcutLabel("z") },
       { desc: "打开设置", keys: primaryShortcutLabel("s") },
-      { desc: "打开帮助", keys: primaryShortcutLabel("h") },
+      { desc: "打开帮助", keys: configuredShortcutLabel("ctrl+h", "") },
       { desc: "显示此面板", keys: "? 或 Shift+/" },
       { desc: "关闭此面板", keys: "Esc" },
     ];

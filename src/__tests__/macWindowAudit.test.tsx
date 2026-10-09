@@ -80,7 +80,11 @@ describe("native labels and disabled physical bindings", () => {
     expect(await getAppName()).toBe("Custom Panda");
   });
   it("guards the real App and card adapters against Control-only regressions", () => {
-    expect(readFileSync("src/App.tsx", "utf8")).toContain("ctrlKey: primaryModifierHeld(e)");
+    const app = readFileSync("src/App.tsx", "utf8");
+    expect(app).toContain("ctrlKey: primaryModifierHeld(e)");
+    // Command+H belongs to the native macOS Hide menu, so do not advertise it as help.
+    expect(app).toContain('desc: "打开帮助", keys: configuredShortcutLabel("ctrl+h", "")');
+    expect(configuredShortcutLabel("ctrl+h", "")).toBe("Control+H");
     expect(readFileSync("src/components/CardList.tsx", "utf8")).toContain("onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)");
   });
 });
