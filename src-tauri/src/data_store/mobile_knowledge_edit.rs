@@ -248,7 +248,7 @@ impl DataStore {
                 return Ok(MobileKnowledgeEditResult::Conflict { latest });
             }
         }
-        Self::mobile_edit_validate_category_on(&tx, &draft)?;
+        Self::mobile_knowledge_validate_category_on(&tx, &draft.folder_id, &draft.tag_ids)?;
         let (note_id, relinked) = if copy {
             // Copies must remain distinguishable in title-based wiki-link resolution.
             let title = format!("{}（手机副本）", draft.title.trim());
@@ -259,7 +259,7 @@ impl DataStore {
                 self.note_update_on(&tx, &draft.note_id, &draft.title, &draft.content, "")?;
             (draft.note_id.clone(), report.relinked)
         };
-        self.mobile_edit_category_on(&tx, &note_id, &draft)?;
+        self.mobile_knowledge_category_on(&tx, &note_id, &draft.folder_id, &draft.tag_ids)?;
         tx.execute("INSERT INTO mobile_knowledge_edit_commits(draft_id,revision,note_id,kind,relinked) VALUES(?,?,?,?,?)",
             params![id,revision,note_id,kind,relinked]).map_err(|e| e.to_string())?;
         tx.execute(
@@ -272,11 +272,12 @@ impl DataStore {
         Ok(MobileKnowledgeEditResult::Saved { note, relinked })
     }
 
-    fn mobile_edit_validate_category_on(
+    pub(super) fn mobile_knowledge_validate_category_on(
         conn: &Connection,
-        draft: &MobileKnowledgeEditDraft,
+        folder_id: &Option<String>,
+        tag_ids: &[String],
     ) -> Result<(), String> {
-        if let Some(id) = &draft.folder_id {
+        if let Some(id) = folder_id {
             if !conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM note_folders WHERE id=?)",
@@ -288,7 +289,7 @@ impl DataStore {
                 return Err("MOBILE_EDIT_REJECTED:folder_missing".into());
             }
         }
-        for id in &draft.tag_ids {
+        for id in tag_ids {
             if !conn
                 .query_row("SELECT EXISTS(SELECT 1 FROM tags WHERE id=?)", [id], |r| {
                     r.get::<_, bool>(0)
@@ -301,11 +302,12 @@ impl DataStore {
         Ok(())
     }
 
-    fn mobile_edit_category_on(
+    pub(super) fn mobile_knowledge_category_on(
         &self,
         conn: &Connection,
         note_id: &str,
-        draft: &MobileKnowledgeEditDraft,
+        folder_id: &Option<String>,
+        tag_ids: &[String],
     ) -> Result<(), String> {
         let current_folder: Option<String> = conn
             .query_row("SELECT folder_id FROM notes WHERE id=?", [note_id], |r| {
@@ -319,11 +321,11 @@ impl DataStore {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(|e| e.to_string())?;
-        let mut wanted = draft.tag_ids.clone();
+        let mut wanted = tag_ids.to_vec();
         wanted.sort();
         wanted.dedup();
         current.sort();
-        if current_folder == draft.folder_id && current == wanted {
+        if &current_folder == folder_id && current == wanted {
             return Ok(());
         }
         // Keep unchanged AI tag associations intact; only explicitly added tags become manual.
@@ -340,7 +342,7 @@ impl DataStore {
         }
         conn.execute(
             "UPDATE notes SET folder_id=?2,updated_ms=MAX(?3,updated_ms+1) WHERE id=?1",
-            params![note_id, draft.folder_id, self.hlc_now()],
+            params![note_id, folder_id, self.hlc_now()],
         )
         .map_err(|e| e.to_string())?;
         Ok(())

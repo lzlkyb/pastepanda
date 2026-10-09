@@ -135,3 +135,8 @@ export function rcFileDefaultDir(): Promise<string> {
 export function rcFileReceiveDirSet(dir: string): Promise<string> {
   return invoke<string>("rc_file_receive_dir_set", { dir });
 }
+
+/** Uses task identity, never a frontend supplied private file path. */
+export function mobileReceivedFileAction(taskId: string, action: "open" | "share" | "export"): Promise<{ status: "opened" | "exported" | "cancelled" }> {
+  return invoke("mobile_received_file_action", { taskId, action });
+}

@@ -45,7 +45,7 @@ it("the authorization action requires an explicit full-library consent and prese
   render(<KnowledgeSync active />);
   await waitFor(() => expect(screen.getByRole("button", { name: /仅本机使用/ })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: /仅本机使用/ }));
-  fireEvent.click(await screen.findByRole("button", { name: "My PC" }));
+  fireEvent.click(await screen.findByRole("radio", { name: /My PC/ }));
   expect(screen.getByText(/当前无法预先取得电脑资料数量/)).toBeTruthy();
   const authorize = screen.getByRole("button", { name: "授权并开启同步" });
   expect(authorize.hasAttribute("disabled")).toBe(true);
@@ -62,7 +62,7 @@ it("an existing authorization suppresses another-computer selection", async () =
   render(<KnowledgeSync active />);
   await waitFor(() => expect(screen.getByRole("button", { name: /同步已关闭/ })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: /同步已关闭/ }));
-  expect(screen.queryByRole("button", { name: "My PC" })).toBeNull();
+  expect(screen.queryByRole("radio", { name: /My PC/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "授权并开启同步" })).toBeNull();
   expect(screen.getByRole("button", { name: "取消并暂停同步" })).toBeTruthy();
 });

@@ -11,6 +11,7 @@
 import { X } from "lucide-react";
 import { classifyErr, closingText, isTerminal, taskLine } from "@/lib/rcFile";
 import type { RcFileTask } from "@/lib/api/rcFile";
+import { RcReceivedFileActions } from "./RcReceivedFileActions";
 import { MobileNotice } from "../ui/MobileNotice";
 import styles from "./RcDevices.module.css";
 
@@ -59,6 +60,7 @@ export function RcFileTaskList({
             {tip && <MobileNotice compact tone={t.state === "denied" ? "warning" : "error"}>{tip}</MobileNotice>}
             {closingText(t) && <div className={styles.fileTaskSub}>{closingText(t)}</div>}
             <div className={styles.fileTaskPeer}>{t.peer_name || t.peer}</div>
+            {t.state === "done" && t.dir === "recv" && t.path && <RcReceivedFileActions taskId={t.id} />}
           </li>
         );
       })}

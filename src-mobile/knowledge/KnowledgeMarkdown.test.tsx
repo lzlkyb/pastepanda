@@ -99,7 +99,7 @@ describe("手机阅读安全与原位反馈", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
     await screen.findByText("重新读取未能完成，当前图片仍可查看。");
     expect(view.container.querySelectorAll("img")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "查看图片" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^查看图片/ })).toBeTruthy();
   });
   it("图片缓存同时受总24MP预算限制，不只是限制张数", async () => {
     vi.mocked(mobileKnowledgeImage).mockResolvedValue("data:image/png;base64,aA==");

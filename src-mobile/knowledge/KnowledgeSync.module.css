@@ -114,3 +114,7 @@
   flex: none;
   accent-color: var(--accent);
 }
+
+.details { margin: 8px 0; }
+.details summary { min-height: 48px; padding-block: 12px; color: var(--accent-strong); font-size: var(--mobile-font-secondary); cursor: pointer; }
+.details[open] summary { margin-bottom: 8px; }

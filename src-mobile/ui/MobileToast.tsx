@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMobileNoticeTimer } from "./useMobileNoticeTimer";
 import { createPortal } from "react-dom";
 import { MobileNotice, type MobileNoticeProps } from "./MobileNotice";
@@ -11,9 +11,10 @@ export function MobileToast({ onDismiss, placement = "floating", ...props }: Mob
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const host = useRef<HTMLDivElement>(null);
   const tone = props.tone ?? (props.error ? "error" : "info");
-  useMobileNoticeTimer(tone === "info" || tone === "success", props.title ?? props.children, onDismiss, hovered || focused);
-  const content = <div className={placement === "flow" ? styles.flowHost : styles.toastHost}
+  useMobileNoticeTimer(tone === "info" || tone === "success", props.title ?? props.children, onDismiss, hovered || focused, host);
+  const content = <div ref={host} className={placement === "flow" ? styles.flowHost : styles.toastHost}
     onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}
     onFocusCapture={() => setFocused(true)} onBlurCapture={event => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);

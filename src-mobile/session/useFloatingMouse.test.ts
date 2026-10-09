@@ -68,3 +68,10 @@ it("第二根手指不接管活动控制柄，失焦后旧触点不能继续操�
 it("狭小窗口中的控制柄边界仍有限且落在可见范围", () => {
   expect(clampRcFloatingMousePosition(900, -100, 180, 140)).toEqual({ x: 90, y: 70 });
 });
+
+it("新增四个辅助按钮后，测量到的完整宽高约束保证边缘可达", () => {
+  const position = clampRcFloatingMousePosition(900, 900, 390, 320, 280, 128);
+  expect(position.x + 140).toBeLessThanOrEqual(390);
+  expect(position.x - 140).toBeGreaterThanOrEqual(0);
+  expect(position.y - 28 + 128).toBeLessThanOrEqual(320);
+});

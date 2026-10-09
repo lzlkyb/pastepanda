@@ -1465,6 +1465,7 @@ pub fn run() {
             commands::mobile_knowledge_share_ack,
             commands::mobile_knowledge_share_pick_images,
             commands::mobile_knowledge_share_send,
+            commands::mobile_received_file_action,
             commands::note_list,
             commands::note_by_history,
             commands::note_history_ids,

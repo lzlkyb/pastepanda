@@ -11,6 +11,7 @@ import { RcSettingsView } from "./settings/RcSettingsView";
 import { KnowledgeView } from "./knowledge/KnowledgeView";
 import { useKnowledgeInbox } from "./knowledge/useKnowledgeInbox";
 import { MobileNotice } from "./ui/MobileNotice";
+import { MobileToast } from "./ui/MobileToast";
 import { MobileUpdateBanner } from "./ui/MobileUpdateBanner";
 import { MobileUpdateProvider } from "./ui/MobileUpdate";
 import { useMobileAppearance } from "./ui/useMobileAppearance";
@@ -43,12 +44,12 @@ export default function App() {
   const activeSession = session?.phase === "outbound_active";
   const { tab, selectTab } = useMobileNavigation(DESTINATION_IDS, "devices", !sandbox && !activeSession);
   const knowledgeInbox = useKnowledgeInbox();
-  const seenCollection = useRef<string | null>(null);
-  const firstCollectionId = knowledgeInbox.items[knowledgeInbox.items.length - 1]?.id;
+  const seenShareRequest = useRef<string | null>(null);
+  const openRequestId = knowledgeInbox.openRequestId;
   useEffect(() => {
-    if (!firstCollectionId || activeSession || sandbox || seenCollection.current === firstCollectionId) return;
-    seenCollection.current = firstCollectionId; selectTab("knowledge");
-  }, [firstCollectionId, activeSession, sandbox, selectTab]);
+    if (!openRequestId || activeSession || sandbox || seenShareRequest.current === openRequestId) return;
+    seenShareRequest.current = openRequestId; selectTab("knowledge");
+  }, [openRequestId, activeSession, sandbox, selectTab]);
   const pending = session?.phase === "outbound_pending";
   const rcMessage = rc.error ? rcErrorText(rc.error) : null;
   const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
@@ -64,6 +65,9 @@ export default function App() {
   // 文件状态通知的关闭入口只给「纯状态」内容：错误与待确认请求的关闭入口在文件页，
   // 跨页 X 掉会让用户以为已处理。dismissing 只清跨页镜像，文件页内的状态不受影响。
   const fileNoticeDismissable = !!fileNotice && !fileNotice.error && file.asks.length === 0 && !file.error;
+  const dismissFileNotice = useCallback(() => setFileNotice(null), []);
+  const badgeCounts = { devices: inboundCount, files: file.asks.length, knowledge: knowledgeInbox.items.length, settings: 0 };
+  const fileFeedbackVisible = tab !== "files" && (!!file.error && !repeatedFileError || !!fileNotice) && !pending;
   return (
     <MobileUpdateProvider>
       <>
@@ -138,12 +142,6 @@ export default function App() {
           </div>
         </main>
         <div className={styles.globalNotice}>
-          {tab !== "knowledge" && knowledgeInbox.items.length > 0 && <MobileNotice title={`有 ${knowledgeInbox.items.length} 条知识库内容待收集`} detail="已有笔记与草稿保留，准备好后再查看。" action={<button className={ui.textButton} onClick={() => selectTab("knowledge")}>查看收集内容</button>} />}
-          {tab !== "devices" && inboundCount > 0 && (
-            <MobileNotice tone="info" title={`有 ${inboundCount} 个连接请求待处理`}
-              detail="继续当前操作，准备好后再查看。"
-              action={<button className={ui.textButton} onClick={() => selectTab("devices")}>查看连接请求</button>} />
-          )}
           {tab !== "devices" && pending && (
             <MobileNotice
               tone="pending"
@@ -161,10 +159,9 @@ export default function App() {
               正在连接 {session.display_name || session.peer_name}，等待电脑确认
             </MobileNotice>
           )}
-          {tab !== "files" && (file.asks.length > 0 || file.error && !repeatedFileError || fileNotice) && !pending && (
-            <MobileNotice
+          {fileFeedbackVisible && (fileNoticeDismissable ? <MobileToast placement="flow" tone="info" title={fileNotice?.text}
+            onDismiss={dismissFileNotice} action={<button className={ui.textButton} onClick={() => selectTab("files")}>查看</button>} /> : <MobileNotice
               error={!!file.error && !repeatedFileError || !!fileNotice?.error}
-              onDismiss={fileNoticeDismissable ? () => setFileNotice(null) : undefined}
               action={
                 <button className={ui.textButton} onClick={() => selectTab("files")}>
                   查看
@@ -173,12 +170,10 @@ export default function App() {
             >
               {file.error && !repeatedFileError
                 ? fileMessage
-                : file.asks.length > 0
-                  ? `有 ${file.asks.length} 个文件请求待处理`
-                  : fileNotice?.text}
+                : fileNotice?.text}
             </MobileNotice>
           )}
-          {tab !== "settings" && <MobileUpdateBanner />}
+          {tab !== "settings" && <MobileUpdateBanner quiet={pending || fileFeedbackVisible} />}
         </div>
         <nav className={styles.tabbar} aria-label="主要导航">
           {MOBILE_DESTINATIONS.map(({ id, label, Icon }) => (
@@ -187,16 +182,19 @@ export default function App() {
               type="button"
               className={`${styles.tab} ${tab === id ? styles.tabActive : ""}`}
               aria-current={tab === id ? "page" : undefined}
+              aria-label={label}
+              aria-describedby={badgeCounts[id] > 0 ? `mobile-badge-${id}` : undefined}
               onClick={() => selectTab(id)}
             >
               <span className={styles.tabIcon}>
                 <Icon size={23} aria-hidden="true" />
-                {((id === "files" && file.asks.length > 0) || (id === "devices" && inboundCount > 0)) && (
+                {badgeCounts[id] > 0 && (
                   <span
                     className={styles.badge}
-                    aria-label={`${id === "files" ? file.asks.length : inboundCount} 个待处理请求`}
+                    id={`mobile-badge-${id}`}
+                    aria-label={id === "knowledge" ? `${badgeCounts[id]} 条待收集内容` : `${badgeCounts[id]} 个待处理请求`}
                   >
-                    {id === "files" ? file.asks.length : inboundCount}
+                    {badgeCounts[id]}
                   </span>
                 )}
               </span>

@@ -236,6 +236,14 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.sheetActions {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.sheetActions > button { flex: 1 1 120px; margin-top: 0; }
 :global(html[data-mobile-layout="landscape"]) .subtitle { display: none; }
 :global(html[data-mobile-layout="landscape"]) .pageHead { min-height: 48px; padding-top: 0; align-items: center; }
 /* 横屏面板独立滚动，标题和关闭入口始终留在可视窗口内。 */

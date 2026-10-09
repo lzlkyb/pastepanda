@@ -40,6 +40,7 @@ export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitH
     <div ref={remoteCursorRef} className={styles.remoteCursor} aria-hidden="true"><RemoteCursorGlyph shape={remoteShape} /></div>
     {pointer.mode === "floating" && <FloatingMouse visible={canControl && hasFrame && !statusText && !blocked}
       surfaceRef={surfaceRef} point={pointer.point} move={pointer.moveFloating} reveal={pointer.reveal} cancel={pointer.reset}
-      dragging={pointer.dragging} scrolling={pointer.scrolling} onClick={pointer.click} onDrag={pointer.toggleDrag} />}
+      dragging={pointer.dragging} scrolling={pointer.scrolling} clickEnabled={pointer.clickEnabled}
+      onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />}
   </div>;
 }

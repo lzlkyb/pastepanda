@@ -57,3 +57,16 @@ it("取消传入本批信号，保留已提交状态，下一批使用新信号"
   await act(() => result.current.send("pc", "电脑", [new File(["b"], "b.txt")]));
   expect((send.mock.calls[1][3] as AbortSignal).aborted).toBe(false);
 });
+
+it("回执归属于发起设备，切对象隐藏，回原对象保留", async () => {
+  send.mockResolvedValueOnce([{ ok: false, name: "a.txt", err: "A不可用" }]);
+  const status = vi.fn();
+  const hook = renderHook(({ peer }) => useMobileFileSend(status, peer), { initialProps: { peer: "A" } });
+  await act(() => hook.result.current.send("A", "电脑A", [new File(["a"], "a.txt")]));
+  expect(hook.result.current.error).toContain("A不可用");
+  hook.rerender({ peer: "B" });
+  expect(hook.result.current.error).toBeNull();
+  expect(status).toHaveBeenLastCalledWith(null, false);
+  hook.rerender({ peer: "A" });
+  expect(hook.result.current.error).toContain("A不可用");
+});

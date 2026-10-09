@@ -1,8 +1,10 @@
 import { MobileSheet } from "../ui/MobileSheet";
-import { MousePointer2 } from "lucide-react";
+import { MousePointer2, Move, Hand, RectangleHorizontal } from "lucide-react";
+import { MobileChoice } from "../ui/MobileChoice";
 import { POINTER_MODES, type PointerMode } from "./pointerModes";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcMobileSession.module.css";
+const MODE_ICONS = { trackpad: Move, direct: Hand, pad: RectangleHorizontal, floating: MousePointer2 };
 
 export function PointerModeSheet({
   open,
@@ -24,26 +26,15 @@ export function PointerModeSheet({
   return (
     <MobileSheet open={open} title="操作方式" onClose={onClose}>
       <div className={styles.panelActions}>
-        {(Object.keys(POINTER_MODES) as PointerMode[]).map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={styles.pointerOption}
-            aria-pressed={mode === value}
-            disabled={!enabled}
-            onClick={() => {
-              onMode(value);
-              onClose();
-            }}
-          >
-            <MousePointer2 size={22} aria-hidden="true" />
-            <span className={styles.pointerOptionText}>
-              <strong>{POINTER_MODES[value].label}{value === "trackpad" ? " · 推荐默认" : ""}</strong>
-              <span>{POINTER_MODES[value].description}</span>
-            </span>
-            {mode === value && <span className={styles.pointerSelected}>已选</span>}
-          </button>
-        ))}
+        <div className={styles.panelActions} role="radiogroup" aria-label="操作方式">
+          {(Object.keys(POINTER_MODES) as PointerMode[]).map(value => {
+            const Icon = MODE_ICONS[value];
+            return <MobileChoice key={value} value={value} checked={mode === value} disabled={!enabled}
+              title={`${POINTER_MODES[value].label}${value === "trackpad" ? " · 推荐默认" : ""}`}
+              description={POINTER_MODES[value].description} icon={<Icon size={22} aria-hidden="true" />}
+              onSelect={() => { onMode(value); onClose(); }} />;
+          })}
+        </div>
         <p className={styles.panelHint}>自动记住这部手机的选择，下次连接继续使用。</p>
         <button type="button" className={ui.secondary} disabled={!enabled} onClick={() => {
           onMode("trackpad");

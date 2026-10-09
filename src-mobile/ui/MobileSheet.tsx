@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { useMobileBack } from "./useMobileBack";
 import { useSheetDrag } from "./useSheetDrag";
 import { useMobileLayout } from "./useMobileLayout";
@@ -11,24 +11,33 @@ export function MobileSheet({
   title,
   description,
   onClose,
+  onBack,
+  backPriority = 10,
   children,
   footer,
+  actions,
 }: {
   open: boolean;
   title: string;
   description?: string;
   onClose: () => void;
+  /** Return to the source step; close remains an explicit exit from the whole flow. */
+  onBack?: () => void;
+  backPriority?: number;
   children: ReactNode;
   /** Operation results remain visible while the controls scroll on short screens. */
   footer?: ReactNode;
+  /** Primary actions stay reachable independently of long feedback on short screens. */
+  actions?: ReactNode;
 }) {
   const landscape = useMobileLayout();
-  const { present, sheetRef, ...dragEvents } = useSheetDrag(open, onClose, landscape);
-  const saved = useRef({ title, description, children, footer });
+  const back = onBack ?? onClose;
+  const { present, sheetRef, ...dragEvents } = useSheetDrag(open, back, landscape);
+  const saved = useRef({ title, description, children, footer, actions });
   const restoreFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    if (open) saved.current = { title, description, children, footer };
-  }, [open, title, description, children, footer]);
+    if (open) saved.current = { title, description, children, footer, actions };
+  }, [open, title, description, children, footer, actions]);
   useEffect(() => {
     if (!present) return;
     // Pause underlying glass while a sheet owns focus; content stays sharp.
@@ -41,14 +50,14 @@ export function MobileSheet({
       else delete body.dataset.mobileSheets;
     };
   }, [present]);
-  const content = open ? { title, description, children, footer } : saved.current;
+  const content = open ? { title, description, children, footer, actions } : saved.current;
   const descriptionId = useId();
-  useMobileBack(open, onClose);
+  useMobileBack(open, back, true, backPriority);
   return (
     <Dialog.Root
       open={open}
       onOpenChange={(value) => {
-        if (!value) onClose();
+        if (!value) back();
       }}
     >
       {present && (
@@ -72,11 +81,12 @@ export function MobileSheet({
               <span aria-hidden="true" />
             </button>
             <header className={styles.sheetHead}>
+              {onBack && <button type="button" className={styles.textButton} onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />返回</button>}
               <Dialog.Title className={styles.sheetTitle}>{content.title}</Dialog.Title>
-              <Dialog.Close className={styles.closeButton}>
+              <button type="button" className={styles.closeButton} onClick={onClose}>
                 <X size={18} aria-hidden="true" />
-                <span>关闭</span>
-              </Dialog.Close>
+                <span>{onBack ? "关闭全部" : "关闭"}</span>
+              </button>
             </header>
             {content.description && (
               <Dialog.Description id={descriptionId} className={styles.description}>
@@ -85,6 +95,7 @@ export function MobileSheet({
             )}
             <div className={styles.sheetBody}>{content.children}</div>
             {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
+            {content.actions && <div className={styles.sheetActions}>{content.actions}</div>}
           </Dialog.Content>
         </Dialog.Portal>
       )}

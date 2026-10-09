@@ -71,15 +71,9 @@
   font-weight: 800;
 }
 .vNew {
-  --vnew-end: #6d5cf0; /* 与桌面 Hero 同款渐变终点 */
-  font-family: "SF Mono", "Fira Code", Consolas, monospace;
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, var(--accent) 15%, var(--vnew-end) 92%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-size: var(--mobile-title-size);
+  font-weight: 700;
+  color: var(--text-primary);
 }
 /* 主题句独占整行（沿用桌面逐字竖排红线：min-width:0 + anywhere + normal） */
 .heroTitle {

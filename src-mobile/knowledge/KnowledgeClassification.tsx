@@ -32,7 +32,7 @@ export function KnowledgeClassification({ open, folder, tags, onClose, onApply }
   }, [open, folder, tags, retry]);
   return <MobileSheet open={open} title="文件夹与标签" onClose={onClose} footer={<>
     {error && <MobileNotice error title="分类条件未能读取" detail={error} action={<button className={ui.textButton} onClick={() => setRetry(v => v + 1)}>重新读取</button>} />}
-    <button className={ui.primary} disabled={loading || !!error} onClick={() => onApply(selectedFolder, selectedTags)}>应用到修改草稿</button>
+    <button className={ui.primary} disabled={loading || !!error} onClick={() => onApply(selectedFolder, selectedTags)}>应用到草稿</button>
   </>}>
     {loading && <MobileNotice tone="pending" title="正在读取分类…" />}
     <label className={styles.label} htmlFor="edit-folder">文件夹</label>

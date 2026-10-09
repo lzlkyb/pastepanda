@@ -17,7 +17,7 @@
 .tags { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent-strong); font-size: var(--mobile-font-secondary); }
 .footer { flex: none; display: flex; flex-direction: column; max-height: 45%; padding: 8px 16px; border-top: 1px solid var(--border-color); }
 /* Keep feedback with its action, but let long details scroll on short/large-type screens. */
-.footer > section { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; }
+.footer > :not(.footerActions) { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; }
 .footerActions { flex: none; display: flex; gap: 12px; }
 .footerActions button { flex: 1; }
 .footerActions button[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-light); }
@@ -51,3 +51,12 @@
 .markdown :global(.kb-image [hidden]) { display:none; }
 @media (orientation: landscape) and (max-height: 500px) { .header { padding-block: 0; } .scroll { padding: 12px 20px; } .footer { padding: 4px 12px; } }
 @media (min-width: 700px) { .scroll { padding: 24px 32px; } }
+
+/* Once decoded, the picture is the target; recovery controls belong to missing-image state. */
+.markdown :global(.kb-image[data-loaded="true"]) { padding: 0; background: transparent; }
+.markdown :global(.kb-image[data-loaded="true"] > strong),
+.markdown :global(.kb-image[data-loaded="true"] > span:not(.kb-image-result)),
+.markdown :global(.kb-image[data-loaded="true"] > [data-local-image]) { display: none; }
+.markdown :global(.kb-image [data-view-image]) { display: block; padding: 0; width: 100%; background: transparent; }
+.markdown :global(.kb-image [data-view-image] img) { margin: auto; }
+.markdown :global(.kb-image img) { max-height: 75dvh; object-fit: contain; }

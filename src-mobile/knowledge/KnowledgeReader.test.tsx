@@ -55,10 +55,11 @@ it("正文复制的成功失败在触发操作面板可见，常用失败不改�
   expect(copyToClipboard).toHaveBeenCalledWith(note.content);
   fireEvent.click(screen.getByRole("button", { name: "复制正文" }));
   await screen.findByText("已复制正文");
+  fireEvent.click(screen.getByRole("button", { name: "关闭面板" }));
   failure = "mobile_knowledge_set_common";
   fireEvent.click(screen.getByRole("button", { name: "加入手机常用" }));
   await screen.findByText("未能更新常用");
-  expect(screen.getByRole("button", { name: "加入常用" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("button", { name: "加入手机常用" }).getAttribute("aria-pressed")).toBe("false");
 });
 it("后台重新读取只提示新版，用户选择之后才替换阅读正文", async () => {
   render(<KnowledgeReader noteId="n1" active onBack={vi.fn()} />);
@@ -131,8 +132,8 @@ it("元数据加载失败仍阅读正文且不能误改未知常用状态", asyn
   render(<KnowledgeReader noteId="n1" active onBack={vi.fn()} />);
   await screen.findByText("原始正文");
   expect(screen.getByText("阅读偏好未能加载")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "加入常用" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByRole("button", { name: "加入手机常用" }).hasAttribute("disabled")).toBe(true);
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "重试偏好" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "加入常用" }).hasAttribute("disabled")).toBe(false));
+  await waitFor(() => expect(screen.getByRole("button", { name: "加入手机常用" }).hasAttribute("disabled")).toBe(false));
 });

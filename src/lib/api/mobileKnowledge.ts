@@ -36,6 +36,9 @@ export interface MobileKnowledgeDraft {
   revision: number;
   title: string;
   content: string;
+  /** Optional for pre-upgrade drafts; persisted with the same revision as the text. */
+  folder_id?: string | null;
+  tag_ids?: string[];
   updated_at?: string;
 }
 

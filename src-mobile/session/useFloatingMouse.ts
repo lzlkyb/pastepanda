@@ -20,7 +20,8 @@ export function useFloatingMouse({ enabled, surfaceRef, point, move, reveal, can
     let position = { x: 0, y: 0 };
     const place = () => {
       const rect = host.getBoundingClientRect();
-      position = clampRcFloatingMousePosition(position.x, position.y, rect.width, rect.height);
+      const controls = root.getBoundingClientRect();
+      position = clampRcFloatingMousePosition(position.x, position.y, rect.width, rect.height, controls.width || 208, controls.height || 116);
       root.style.left = `${position.x}px`;
       root.style.top = `${position.y}px`;
     };

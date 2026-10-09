@@ -17,6 +17,7 @@ export function useKnowledgeImages(root: RefObject<HTMLDivElement | null>, conte
     // Keep measured layout space when releasing decoded pixels, so reading does not jump.
     (box as HTMLElement).style.minHeight = `${Math.max(box.getBoundingClientRect().height, heights.current.get(box) || 0)}px`;
     image.remove(); image.src = ""; cached.current.delete(box);
+    (box as HTMLElement).dataset.loaded = "false";
     retainedPixels.current -= pixels.current.get(box) || 0; pixels.current.delete(box);
     heights.current.delete(box);
     const button = box.querySelector<HTMLButtonElement>("button");
@@ -50,13 +51,16 @@ export function useKnowledgeImages(root: RefObject<HTMLDivElement | null>, conte
             const oldest = cached.current.entries().next().value;
             if (oldest) release(oldest[0], oldest[1]); else break;
           }
-          box.append(image); cached.current.set(box, image); pixels.current.set(box, size); retainedPixels.current += size;
+          const view = box.querySelector<HTMLButtonElement>("[data-view-image]");
+          if (view) { view.replaceChildren(image); view.hidden = false; view.setAttribute("aria-label", `查看图片：${image.alt}`); }
+          else box.append(image);
+          (box as HTMLElement).dataset.loaded = "true";
+          cached.current.set(box, image); pixels.current.set(box, size); retainedPixels.current += size;
           heights.current.set(box, box.getBoundingClientRect().height);
           load.textContent = "重新加载"; result.textContent = ""; resolve();
           const fetch = box.querySelector<HTMLButtonElement>("[data-fetch-image]");
           if (fetch) fetch.hidden = true;
-          const view = box.querySelector<HTMLButtonElement>("[data-view-image]");
-          if (view) view.hidden = false;
+
         };
         const cancel = () => finish(false);
         const timeout = setTimeout(cancel, 15000);

@@ -96,6 +96,26 @@ it("辅助拖拽保持按住时，双指不能同时注入滚轮", () => {
   expect(h.input.scrollByFrame).not.toHaveBeenCalled();
   expect(h.result.current.dragging).toBe(true);
 });
+it("滚动态所有辅助点击入口均被同一守卫阻止", () => {
+  const h = setup();
+  act(() => h.result.current.toggleScroll());
+  act(() => { h.result.current.click(1); h.result.current.click(2); });
+  expect(h.input.sendClick).not.toHaveBeenCalled();
+  act(() => h.result.current.toggleScroll());
+  act(() => h.result.current.click(1));
+  expect(h.input.sendClick).toHaveBeenCalledOnce();
+});
+it("收起辅助条后切换与恢复操作方式仍尊重开合选择", () => {
+  const h = setup();
+  act(() => h.result.current.toggleMouse());
+  expect(h.result.current.mouseOpen).toBe(false);
+  act(() => h.result.current.pickMode("direct"));
+  expect(h.result.current.mouseOpen).toBe(false);
+  act(() => h.result.current.pickMode("pad"));
+  expect(h.result.current.mouseOpen).toBe(true);
+  act(() => h.result.current.pickMode("trackpad"));
+  expect(h.result.current.mouseOpen).toBe(false);
+});
 it("按钮锁住拖拽后长按移动再松手，仍保持拖拽直到再次点按钮", () => {
   const h = setup();
   act(() => h.result.current.toggleDrag());

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useRcHistory } from "@/hooks/useRcHistory";
 import type { UseRc } from "@/hooks/useRc";
 import { formatDuration, formatWhen } from "@/lib/rcSessionStats";
+import { useMobileBack } from "../ui/useMobileBack";
 import { MobileNotice } from "../ui/MobileNotice";
 import { rcErrorText } from "../devices/rcErrorText";
 import ui from "../ui/MobileUi.module.css";
@@ -12,6 +13,7 @@ export function RcMobileHistory({ rc }: { rc: UseRc }) {
   const [confirm, setConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const locked = useRef(false);
+  useMobileBack(confirm, () => { if (!clearing) setConfirm(false); }, true, 20);
   const clear = async () => {
     if (locked.current) return;
     locked.current = true;

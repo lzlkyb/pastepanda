@@ -519,3 +519,6 @@
 .unoInput {
   font-size: var(--mobile-font-body);
 }
+
+.fileUse { display: grid; gap: 8px; }
+.fileUseActions { display: flex; flex-wrap: wrap; gap: 8px; }

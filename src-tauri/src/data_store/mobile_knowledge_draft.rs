@@ -9,13 +9,24 @@ pub struct MobileKnowledgeDraft {
     pub title: String,
     pub content: String,
     #[serde(default)]
+    pub folder_id: Option<String>,
+    #[serde(default)]
+    pub tag_ids: Vec<String>,
+    #[serde(default)]
     pub updated_at: String,
+}
+
+pub(super) fn init_mobile_knowledge_draft_schema(conn: &Connection) -> rusqlite::Result<()> {
+    // Keep the old draft table intact; missing rows naturally restore old drafts as unclassified.
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS mobile_knowledge_draft_category (
+        draft_id TEXT PRIMARY KEY REFERENCES mobile_knowledge_draft(id) ON DELETE CASCADE,
+        folder_id TEXT, tag_ids TEXT NOT NULL);")
 }
 
 impl DataStore {
     fn mobile_draft_on(conn: &Connection) -> Result<Option<MobileKnowledgeDraft>, String> {
         conn.query_row(
-            "SELECT id,revision,title,content,updated_at FROM mobile_knowledge_draft WHERE slot=1",
+            "SELECT d.id,d.revision,d.title,d.content,d.updated_at,c.folder_id,COALESCE(c.tag_ids,'[]') FROM mobile_knowledge_draft d LEFT JOIN mobile_knowledge_draft_category c ON c.draft_id=d.id WHERE d.slot=1",
             [],
             |r| {
                 Ok(MobileKnowledgeDraft {
@@ -24,6 +35,8 @@ impl DataStore {
                     title: r.get(2)?,
                     content: r.get(3)?,
                     updated_at: r.get(4)?,
+                    folder_id: r.get(5)?,
+                    tag_ids: serde_json::from_str(&r.get::<_, String>(6)?).map_err(|e| rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, Box::new(e)))?,
                 })
             },
         )
@@ -43,6 +56,7 @@ impl DataStore {
             return Err("草稿身份或版本无效".into());
         }
         let conn = self.lock_conn();
+        let conn = conn.unchecked_transaction().map_err(|e| e.to_string())?;
         let committed: bool = conn
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM mobile_knowledge_commits WHERE draft_id=?)",
@@ -59,7 +73,7 @@ impl DataStore {
             }
             if old.revision > draft.revision
                 || (old.revision == draft.revision
-                    && (old.title != draft.title || old.content != draft.content))
+                    && (old.title != draft.title || old.content != draft.content || old.folder_id != draft.folder_id || old.tag_ids != draft.tag_ids))
             {
                 return Err("草稿已更新，请保留当前内容并重新读取".into());
             }
@@ -71,6 +85,9 @@ impl DataStore {
         stored.updated_at = super::note::note_now();
         conn.execute("INSERT INTO mobile_knowledge_draft(slot,id,revision,title,content,updated_at) VALUES (1,?1,?2,?3,?4,?5) ON CONFLICT(slot) DO UPDATE SET revision=excluded.revision,title=excluded.title,content=excluded.content,updated_at=excluded.updated_at",
             params![stored.id, stored.revision, stored.title, stored.content, stored.updated_at]).map_err(|e| e.to_string())?;
+        conn.execute("INSERT INTO mobile_knowledge_draft_category(draft_id,folder_id,tag_ids) VALUES(?1,?2,?3) ON CONFLICT(draft_id) DO UPDATE SET folder_id=excluded.folder_id,tag_ids=excluded.tag_ids",
+            params![stored.id,stored.folder_id,serde_json::to_string(&stored.tag_ids).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+        conn.commit().map_err(|e| e.to_string())?;
         Ok(stored)
     }
 
@@ -126,7 +143,9 @@ impl DataStore {
         } else {
             draft.title.trim().to_string()
         };
-        let note = self.note_insert_on(&tx, Some(id), None, &title, &draft.content, "", false)?;
+        Self::mobile_knowledge_validate_category_on(&tx, &draft.folder_id, &draft.tag_ids)?;
+        self.note_insert_on(&tx, Some(id), None, &title, &draft.content, "", false)?;
+        self.mobile_knowledge_category_on(&tx, id, &draft.folder_id, &draft.tag_ids)?;
         tx.execute(
             "INSERT INTO mobile_knowledge_commits(draft_id,revision) VALUES (?,?)",
             params![id, revision],
@@ -138,6 +157,7 @@ impl DataStore {
         )
         .map_err(|e| e.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
-        Ok(note)
+        drop(conn);
+        self.note_get(id)?.ok_or_else(|| "保存结果无法读取".into())
     }
 }

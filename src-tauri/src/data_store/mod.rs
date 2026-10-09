@@ -800,6 +800,7 @@ impl DataStore {
             CREATE INDEX IF NOT EXISTS idx_mcp_audit_at ON mcp_audit(at);",
         )?;
         mobile_knowledge_edit::init_mobile_knowledge_edit_schema(&conn)?;
+        mobile_knowledge_draft::init_mobile_knowledge_draft_schema(&conn)?;
 
         // 笔记全文索引。**常规 FTS5，不是外部内容表**——同 history_fts 的取舍
         // （见下方 history_fts 那段长注释：外部内容表与「手工塞 ngram 串」根本矛盾）。

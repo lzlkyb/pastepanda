@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { copyToClipboard, knowledgeErrorText } from "@/lib/utils";
 import { mobileKnowledgeResolve, mobileKnowledgeSetCommon, type MobileNoteSummary } from "@/lib/api/mobileKnowledge";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
+import { MobileToast } from "../ui/MobileToast";
 import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
 import { KnowledgeMarkdown, type KnowledgeHeading } from "./KnowledgeMarkdown";
@@ -153,13 +154,15 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
       </article>}
     </div>
     <footer className={styles.footer}>
-      {!sheet && feedback && <MobileNotice compact {...feedback} onDismiss={feedback.tone !== "pending" ? () => setFeedback(null) : undefined} />}
+      {!sheet && feedback && (feedback.tone === "success" || feedback.tone === "info"
+        ? <MobileToast placement="flow" compact {...feedback} onDismiss={() => setFeedback(null)} />
+        : <MobileNotice compact {...feedback} onDismiss={feedback.tone !== "pending" ? () => setFeedback(null) : undefined} />)}
       <div className={styles.footerActions}>
-        <button type="button" disabled={!note || !meta || commonBusy || missing} aria-pressed={!!meta?.common} onClick={() => void toggleCommon()}><Star size={20} aria-hidden="true" /><span>{meta?.common ? "手机常用" : "加入常用"}</span></button>
+        <button type="button" disabled={!note || !meta || commonBusy || missing} aria-pressed={!!meta?.common} onClick={() => void toggleCommon()}><Star size={20} aria-hidden="true" /><span>{meta?.common ? "手机常用" : "加入手机常用"}</span></button>
         <button type="button" disabled={!note} onClick={() => setSheet("toc")}><List size={20} aria-hidden="true" /><span>目录</span></button>
       </div>
     </footer>
-    <MobileSheet open={!!sheet && active} title={sheet === "toc" ? "文章目录" : sheet === "link" ? "打开链接" : "阅读操作"} onClose={() => { ++linkRequest.current; setLinkBusy(false); setSheet(null); }} footer={sheet === "more" && feedback ? <MobileNotice {...feedback} /> : sheet === "link" && linkFeedback ? <MobileNotice {...linkFeedback} /> : undefined}>
+    <MobileSheet open={!!sheet && active} title={sheet === "toc" ? "文章目录" : sheet === "link" ? "打开链接" : "阅读操作"} onClose={() => { ++linkRequest.current; setLinkBusy(false); setSheet(null); }} footer={sheet === "more" && feedback ? (feedback.tone === "success" || feedback.tone === "info" ? <MobileToast placement="flow" compact {...feedback} onDismiss={() => setFeedback(null)} /> : <MobileNotice compact {...feedback} />) : sheet === "link" && linkFeedback ? <MobileNotice {...linkFeedback} /> : undefined}>
       {sheet === "more" && <div className={styles.sheetActions}>
         {onEdit && <button type="button" disabled={actionBusy || missing} onClick={async () => {
           if (!note || actionBusy) return;
@@ -171,7 +174,6 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
         <button type="button" disabled={actionBusy} onClick={() => void shareNote(false)}><Share2 size={20} aria-hidden="true" /><span>分享正文文字</span></button>
         {localImageCount > 0 && <button type="button" disabled={actionBusy} onClick={() => void shareNote(true)}><Share2 size={20} aria-hidden="true" /><span>分享文字与本机图片</span></button>}
         <button type="button" disabled={copyBusy} onClick={() => void copyNote()}><Copy size={20} aria-hidden="true" /><span>{copyBusy ? "正在复制…" : "复制正文"}</span></button>
-        <button type="button" disabled={!meta || commonBusy || missing} onClick={() => void toggleCommon()}><Star size={20} aria-hidden="true" /><span>{meta?.common ? "移出手机常用" : "加入手机常用"}</span></button>
         <button type="button" disabled={loading} onClick={() => void reading.check()}>{loading ? "正在检查…" : "检查本机更新"}</button>
         <p className={styles.meta}>此处读取手机上的正文，不表示电脑已收到最新修改。</p>
       </div>}

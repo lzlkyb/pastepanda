@@ -24,6 +24,7 @@ class KnowledgeShareStore(private val context: Context) {
     val processing: Boolean get() = pending.get() > 0
     private val executor = Executors.newSingleThreadExecutor()
     @Volatile private var lastFailure = ""
+    @Volatile private var openRequestId = ""
 
     @Synchronized private fun load(): JSONObject = try {
         index.openRead().use { JSONObject(it.readBytes().toString(Charsets.UTF_8)) }
@@ -46,7 +47,7 @@ class KnowledgeShareStore(private val context: Context) {
                 "text" to row.getString("text"), "status" to row.getString("status"),
                 "message" to row.getString("message"), "created_at" to row.getLong("created_at"),
                 "images" to (0 until images.length()).map { images.getString(it) })
-        }, "processing" to processing, "staging_dir" to directory.absolutePath,
+        }, "processing" to processing, "staging_dir" to directory.absolutePath, "openRequestId" to openRequestId,
             "notice" to lastFailure.ifEmpty { load().optString("notice") })
     }
 
@@ -69,6 +70,8 @@ class KnowledgeShareStore(private val context: Context) {
     @Suppress("DEPRECATION")
     fun receive(intent: Intent, complete: () -> Unit) {
         if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return
+        // A picker/list/ack is background state, not a request to replace the user's page.
+        openRequestId = UUID.randomUUID().toString()
         val text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty()
         val title = intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()
         val uris = if (intent.action == Intent.ACTION_SEND_MULTIPLE)

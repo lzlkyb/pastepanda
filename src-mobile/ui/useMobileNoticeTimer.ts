@@ -1,7 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 /** Shared visible reading time for ordinary outcomes; errors never expire. */
-export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss: () => void, paused = false) {
+export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss: () => void, paused = false, host?: RefObject<HTMLElement | null>) {
   const remaining = useRef(4000);
   useEffect(() => { remaining.current = 4000; }, [title, enabled]);
   useEffect(() => {
@@ -14,7 +14,9 @@ export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss
       remaining.current -= Date.now() - started;
     };
     const update = () => {
-      if (document.hidden || document.body.dataset.mobileSheets || paused) { stop(); return; }
+      const dialogs = document.querySelectorAll('[role="dialog"][data-state="open"]');
+      const inVisibleSheet = !!host?.current?.closest('[role="dialog"][data-state="open"]') && host.current.closest('[role="dialog"]') === dialogs[dialogs.length - 1];
+      if (document.hidden || (document.body.dataset.mobileSheets && !inVisibleSheet) || paused) { stop(); return; }
       if (timer !== undefined) return;
       started = Date.now();
       timer = setTimeout(dismiss, Math.max(0, remaining.current));
@@ -24,5 +26,5 @@ export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss
     document.addEventListener("visibilitychange", update);
     update();
     return () => { stop(); modal.disconnect(); document.removeEventListener("visibilitychange", update); };
-  }, [enabled, title, dismiss, paused]);
+  }, [enabled, title, dismiss, paused, host]);
 }

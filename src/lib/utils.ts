@@ -937,12 +937,12 @@ export function clampRcViewportOffset(offset: number, size: number, scale: numbe
   return Math.max(size * (1 - scale), Math.min(0, offset));
 }
 /** 控制柄及邻近按钮留在可见区域；远端指针独立移动，仍可到达电脑画面边缘。 */
-export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number) {
-  const marginX = Math.min(108, width / 2);
+export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number, controlWidth = 208, controlHeight = 116) {
+  const marginX = Math.min(controlWidth / 2 + 4, width / 2);
   const minY = Math.min(96, height / 2);
   return {
     x: Math.max(marginX, Math.min(width - marginX, x)),
-    y: Math.max(minY, Math.min(Math.max(minY, height - 88), y)),
+    y: Math.max(minY, Math.min(Math.max(minY, height - (controlHeight - 28)), y)),
   };
 }
 

@@ -1,15 +1,17 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type RefObject } from "react";
 import { ChevronRight, Monitor, ScanLine, Smartphone } from "lucide-react";
 import { formatShortCode } from "@/lib/rcShortCode";
 import { formatCountdown, useOwnPairCode, usePairCodeVisibility } from "@/hooks/usePairCodeVisibility";
+import { useMobileBack } from "../ui/useMobileBack";
 import { MobileNotice } from "../ui/MobileNotice";
 import { RcScanOverlay } from "./RcScanOverlay";
 import { RcShowQr } from "./RcShowQr";
 import { useMobilePairing } from "./useMobilePairing";
 import styles from "./RcPair.module.css";
 
-export function RcPairCard({ onPaired, initialDraft = "", onDraftChange }: {
+export function RcPairCard({ onPaired, initialDraft = "", onDraftChange, backRef }: {
   onPaired: (name: string) => void;
+  backRef?: RefObject<(() => boolean) | null>;
   initialDraft?: string;
   onDraftChange?: (draft: string) => void;
 }) {
@@ -22,6 +24,14 @@ export function RcPairCard({ onPaired, initialDraft = "", onDraftChange }: {
   // 本机码按需取用；出示后常驻，到期静默换新，与桌面端同一规则。
   const { vis, show, hide } = usePairCodeVisibility({ autoHideMs: null });
   const { ownCode, remain, expired, reveal } = useOwnPairCode({ show, onError: pairing.reportError });
+  const back = () => {
+    if (scanning) { setScanning(false); return true; }
+    if (pairing.busy) { void pairing.cancelPair(); return true; }
+    if (vis === "shown") { hide(); return true; }
+    return false;
+  };
+  useMobileBack(scanning || vis === "shown" || pairing.busy, back, true, 20);
+  useEffect(() => { if (backRef) backRef.current = back; return () => { if (backRef) backRef.current = null; }; });
   const showOwnCode = async () => {
     if (revealing) return;
     setRevealing(true);

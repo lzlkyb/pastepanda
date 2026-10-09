@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, RefreshCw, ShieldCheck } from "lucide-react";
 import { MobileSheet } from "../ui/MobileSheet";
+import { MobileToast } from "../ui/MobileToast";
+import { useMobileBack } from "../ui/useMobileBack";
+import { MobileChoice } from "../ui/MobileChoice";
 import { MobileNotice } from "../ui/MobileNotice";
 import { useKnowledgeSync } from "./useKnowledgeSync";
 import type { KbDevice } from "@/hooks/useKbSync";
@@ -16,6 +19,7 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
   useEffect(() => {
     if (!active) setOpen(false);
   }, [active]);
+  useMobileBack(open && active && !!revoking, () => setRevoking(null), true, 20);
   const candidate = sync.offers.find((o) => o.node_id === selected);
   const blocked = sync.devices.length > 0;
   const status = !sync.ready
@@ -26,6 +30,9 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
         : "同步已关闭 · 内容保留在手机"
       : "仅本机使用 · 可授权电脑同步";
   const feedback = sync.feedback;
+  const receipt = feedback && (feedback.tone === "info" || feedback.tone === "success"
+    ? <MobileToast placement="flow" compact {...feedback} onDismiss={sync.dismissFeedback} />
+    : <MobileNotice compact {...feedback} onDismiss={sync.busy ? undefined : sync.dismissFeedback} />);
   return (
     <div className={styles.host}>
       <button type="button" className={styles.entry} onClick={() => setOpen(true)}>
@@ -34,13 +41,13 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
         <span className={styles.entryLabel}>同步</span>
         <ChevronRight size={18} aria-hidden="true" />
       </button>
-      {active && feedback && !open && <MobileNotice compact {...feedback} onDismiss={sync.busy ? undefined : sync.dismissFeedback} />}
+      {active && !open && receipt}
       <MobileSheet
         open={open}
         onClose={() => setOpen(false)}
         title="知识库同步"
         description="阅读和新建先保存在手机。知识库授权与远控配对相互独立。"
-        footer={feedback ? <MobileNotice compact {...feedback} onDismiss={sync.busy ? undefined : sync.dismissFeedback} /> : undefined}
+        footer={receipt}
       >
         <div className={styles.panel}>
           {!sync.ready && (
@@ -80,11 +87,11 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
                 <h3>{device.name || "已授权电脑"}</h3>
                 <p>{device.paused ? "已暂停后续同步" : sync.enabled ? "等待或进行设备同步" : "同步开关已关闭"}</p>
                 <p>
-                  身份：<code>{device.node_id}</code>
-                </p>
-                <p>
                   最后成功同步：{report?.last_ok_ms ? new Date(report.last_ok_ms).toLocaleString() : "尚无成功记录"}
                 </p>
+                {!!report?.fails && <MobileNotice compact tone="warning" title="最近同步未成功" detail="本机内容可以继续使用；检查电脑同步与授权后重试。" />}
+                {!!(report?.missing_files || report?.import_failed || report?.assets_skipped || report?.conflicts || report?.clock_too_far_ahead_ms) && <MobileNotice compact tone="warning" title="有资料需要处理" detail="请展开同步详情。正文中的缺图可单张补齐，本机内容仍保留。" />}
+                <details className={styles.details}><summary>设备与同步详情</summary><p>身份：<code>{device.node_id}</code></p>
                 {report && (
                   <div className={styles.report}>
                     <p>
@@ -99,16 +106,9 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
                     {!!report.skipped_older && <p>较旧版本未采纳：{report.skipped_older}</p>}
                     {!!report.clock_too_far_ahead_ms && <p>电脑时间偏差过大，请校准两端时间。</p>}
                     {!!report.diverged_buckets && <p>正在修复资料差异：{report.diverged_buckets} 组</p>}
-                    {!!report.fails && (
-                      <MobileNotice
-                        compact
-                        tone="warning"
-                        title="最近同步未成功"
-                        detail="电脑可能离线、同步未开启或授权未确认。本机内容可以继续使用。"
-                      />
-                    )}
                   </div>
                 )}
+                </details>
                 <div className={styles.actions}>
                   <button
                     type="button"
@@ -171,22 +171,8 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
               <h3>从已配对电脑开启</h3>
               <p>远控配对不会自动共享笔记。选择电脑后，还需要确认知识库授权。</p>
               {sync.offers.length === 0 && <p>没有可授权的电脑。可先在“设备”中添加电脑；现在仍能新建本机笔记。</p>}
-              {sync.offers.map((offer) => (
-                <button
-                  type="button"
-                  key={offer.node_id}
-                  className={styles.offer}
-                  disabled={!sync.ready || !!sync.busy}
-                  aria-pressed={selected === offer.node_id}
-                  onClick={() => {
-                    setSelected(offer.node_id);
-                    setConsent(false);
-                  }}
-                >
-                  <span>{offer.name || "已配对电脑"}</span>
-                  <ChevronRight size={18} aria-hidden="true" />
-                </button>
-              ))}
+              <div className={styles.panel} role="radiogroup" aria-label="授权同步的电脑">{sync.offers.map(offer => <MobileChoice key={offer.node_id} value={offer.node_id} title={offer.name || "已配对电脑"} checked={selected === offer.node_id} disabled={!sync.ready || !!sync.busy}
+                onSelect={() => { setSelected(offer.node_id); setConsent(false); }} />)}</div>
               {candidate && (
                 <div className={styles.consent}>
                   <h3>授权 {candidate.name || "这台电脑"}</h3>
@@ -226,8 +212,10 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
               )}
             </section>
           )}
-          <p>暂停会取消正在进行的同步，并停止后续同步。已经落盘的内容保留，不撤回已经传到电脑的内容。</p>
-          <p>报告按设备与同步轮次记录，不提供单篇“电脑已收到”的保证。图片是否完整请以正文中的缺图提示为准。</p>
+          <details className={styles.details}><summary>同步范围与暂停说明</summary>
+            <p>暂停会取消当前同步并停止后续同步。已保存在两端的内容不会撤回。</p>
+            <p>报告按设备与轮次记录，不代表单篇笔记的电脑保存回执。图片完整性以正文的缺图提示为准。</p>
+          </details>
         </div>
       </MobileSheet>
     </div>

@@ -1,6 +1,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PointerEvent } from "react";
+import { useState } from "react";
 import { useSheetDrag } from "./useSheetDrag";
 import { setupMotionClock } from "./mobileMotionTestUtils";
 afterEach(() => {
@@ -25,6 +26,27 @@ function setup(sideways = false) {
     }) as unknown as PointerEvent<HTMLButtonElement>;
   return { ...h, close, sheet, event, clock };
 }
+it.each([false, true])("返回来源步骤后面板保持打开并回到可见位置（横屏 %s）", sideways => {
+  const clock = setupMotionClock();
+  const h = renderHook(() => {
+    const [step, setStep] = useState("screen");
+    return { step, ...useSheetDrag(true, () => setStep("more"), sideways) };
+  });
+  const sheet = document.createElement("div");
+  Object.defineProperties(sheet, { offsetHeight: { value: 400 }, offsetWidth: { value: 400 } });
+  h.result.current.sheetRef.current = sheet;
+  const event = (position: number, time: number) => ({ clientX: position, clientY: position, button: 0,
+    pointerId: 1, timeStamp: time, currentTarget: { setPointerCapture() {} } }) as unknown as PointerEvent<HTMLButtonElement>;
+  act(() => {
+    h.result.current.onPointerDown(event(0, 0));
+    h.result.current.onPointerMove(event(220, 100));
+    h.result.current.onPointerUp(event(220, 110));
+  });
+  act(() => clock.advance(1200));
+  expect(h.result.current.step).toBe("more");
+  expect(h.result.current.present).toBe(true);
+  expect(sheet.style.getPropertyValue("--mobile-sheet-offset")).toBe("0px");
+});
 it("横屏沿右侧进出，垂直滑动把手不能误判为点击收起", () => {
   const h = setup(true);
   act(() => {

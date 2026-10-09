@@ -6,6 +6,7 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
   const sheetRef = useRef<HTMLDivElement>(null);
   const spring = useRef<MobileSpring | null>(null);
   const [present, setPresent] = useState(open);
+  const [dismissRequest, setDismissRequest] = useState(0);
   const active = useRef<{
     id: number;
     start: number;
@@ -44,9 +45,10 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
     if (fresh && open) motion.set(height);
     active.current = null;
     sheetRef.current.removeAttribute("data-dragging");
-    motion.move(open ? 0 : height, releaseVelocity.current, open ? undefined : () => setPresent(false));
+    // Returning to a source step keeps the sheet open; its drag must settle too.
+    motion.move(open ? 0 : height, open ? 0 : releaseVelocity.current, open ? undefined : () => setPresent(false));
     releaseVelocity.current = undefined;
-  }, [open, present, ensureSpring, sideways]);
+  }, [open, present, ensureSpring, sideways, dismissRequest]);
   useLayoutEffect(
     () => () => {
       spring.current?.dispose();
@@ -128,13 +130,14 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
       spring.current?.set(distance);
       if (distance > 80 || (distance > 16 && velocity > 600) || moved < 4) {
         releaseVelocity.current = velocity;
+        setDismissRequest(request => request + 1);
         onClose();
       } else spring.current?.move(0, velocity);
     },
     onPointerCancel: cancel,
     onLostPointerCapture: cancel,
     onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-      if (event.detail === 0) onClose();
+      if (event.detail === 0) { setDismissRequest(request => request + 1); onClose(); }
     },
   };
 }

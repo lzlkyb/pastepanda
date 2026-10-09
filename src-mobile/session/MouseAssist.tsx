@@ -1,11 +1,13 @@
 import { MousePointer2 } from "lucide-react";
 import styles from "./RcMobileSession.module.css";
+import { MouseButtons } from "./MouseButtons";
 
 export function MouseAssist({
   visible,
   padOpen,
   dragging,
   scrolling,
+  clickEnabled,
   padRef,
   onClick,
   onDrag,
@@ -15,6 +17,7 @@ export function MouseAssist({
   padOpen: boolean;
   dragging: boolean;
   scrolling: boolean;
+  clickEnabled: boolean;
   padRef: React.RefObject<HTMLDivElement | null>;
   onClick: (button: 1 | 2) => void;
   onDrag: () => void;
@@ -22,20 +25,8 @@ export function MouseAssist({
 }) {
   return (
     <section className={styles.mouseAssist} data-pad-open={padOpen} hidden={!visible} aria-label="鼠标辅助">
-      <div className={styles.mouseActions}>
-        <button type="button" disabled={dragging} onClick={() => onClick(1)}>
-          左键
-        </button>
-        <button type="button" disabled={dragging} onClick={() => onClick(2)}>
-          右键
-        </button>
-        <button type="button" aria-pressed={dragging} onClick={onDrag}>
-          {dragging ? "释放拖拽" : "拖拽"}
-        </button>
-        <button type="button" aria-pressed={scrolling} onClick={onScroll}>
-          滚动
-        </button>
-      </div>
+      <MouseButtons className={styles.mouseActions} clickEnabled={clickEnabled} dragging={dragging}
+        scrolling={scrolling} onClick={onClick} onDrag={onDrag} onScroll={onScroll} />
       <div ref={padRef} className={styles.trackpad} hidden={!padOpen}>
         <MousePointer2 size={22} aria-hidden="true" />
         <span>

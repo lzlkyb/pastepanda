@@ -1,6 +1,6 @@
 # 设计稿索引（design/）
 
-> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-10-08）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
+> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-10-09）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
 
 ## 这份目录是什么
 
@@ -56,16 +56,17 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `mobile-touch-2026-10-02/` | 5 | 141 KB |  |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
 | `probe-cert/` | 2 | 3 KB |  |
-| `*.html`（根目录） | 329 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 330 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（329 份，按主题分组）
+## 设计稿清单（330 份，按主题分组）
 
-### 视觉与品牌（24）
+### 视觉与品牌（25）
 
 *主题、色彩、图标、Logo、吉祥物、质感、全局规则审计。改观感前先看这里。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`mobile-ui-unification-2026-10-09`](./mobile-ui-unification-2026-10-09.html) | — | 3 KB |
 | [`皮肤整改-角色替换与石墨深色与跟随系统-设计稿`](./%E7%9A%AE%E8%82%A4%E6%95%B4%E6%94%B9-%E8%A7%92%E8%89%B2%E6%9B%BF%E6%8D%A2%E4%B8%8E%E7%9F%B3%E5%A2%A8%E6%B7%B1%E8%89%B2%E4%B8%8E%E8%B7%9F%E9%9A%8F%E7%B3%BB%E7%BB%9F-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 65 KB |
 | [`手机端UI-C方案落地预览-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AFUI-C%E6%96%B9%E6%A1%88%E8%90%BD%E5%9C%B0%E9%A2%84%E8%A7%88-2026-10-02.html) | 2026-10-06 近期 | 4 KB |
 | [`PastePanda-提问框渐变光晕Composer-设计稿`](./PastePanda-%E6%8F%90%E9%97%AE%E6%A1%86%E6%B8%90%E5%8F%98%E5%85%89%E6%99%95Composer-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 48 KB |
@@ -425,10 +426,10 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | — | 6 KB |
-| [`mobile-knowledge-collection-attachments-2026-10-08`](./mobile-knowledge-collection-attachments-2026-10-08.html) | — | 8 KB |
-| [`mobile-commercial-upgrade-2026-10-07`](./mobile-commercial-upgrade-2026-10-07.html) | — | 57 KB |
-| [`desktop-mobile-download-entry-2026-10-07`](./desktop-mobile-download-entry-2026-10-07.html) | — | 17 KB |
+| [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | 2026-10-08 | 6 KB |
+| [`mobile-knowledge-collection-attachments-2026-10-08`](./mobile-knowledge-collection-attachments-2026-10-08.html) | 2026-10-08 | 8 KB |
+| [`mobile-commercial-upgrade-2026-10-07`](./mobile-commercial-upgrade-2026-10-07.html) | 2026-10-08 | 57 KB |
+| [`desktop-mobile-download-entry-2026-10-07`](./desktop-mobile-download-entry-2026-10-07.html) | 2026-10-08 | 17 KB |
 | [`PastePanda-录屏四期-预览裁剪与控制条-设计稿`](./PastePanda-%E5%BD%95%E5%B1%8F%E5%9B%9B%E6%9C%9F-%E9%A2%84%E8%A7%88%E8%A3%81%E5%89%AA%E4%B8%8E%E6%8E%A7%E5%88%B6%E6%9D%A1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-07 | 22 KB |
 | [`月白色调对照-色卡稿`](./%E6%9C%88%E7%99%BD%E8%89%B2%E8%B0%83%E5%AF%B9%E7%85%A7-%E8%89%B2%E5%8D%A1%E7%A8%BF.html) | 2026-10-06 | 41 KB |
 | [`手机端-触屏升级落地预览-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AF-%E8%A7%A6%E5%B1%8F%E5%8D%87%E7%BA%A7%E8%90%BD%E5%9C%B0%E9%A2%84%E8%A7%88-2026-10-02.html) | 2026-10-06 | 0 KB |
@@ -466,8 +467,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`待办灵动岛-液态玻璃-3a设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%B6%B2%E6%80%81%E7%8E%BB%E7%92%83-3a%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 | 13 KB |
 | [`md-outline-jump-microanim-方案2`](./md-outline-jump-microanim-%E6%96%B9%E6%A1%882.html) | 2026-09-20 | 11 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 4 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 1 份。
 
 ---
 
-_共 329 份设计稿。重新生成：`npm run gen:design-index`_
+_共 330 份设计稿。重新生成：`npm run gen:design-index`_

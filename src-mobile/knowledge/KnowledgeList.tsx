@@ -49,7 +49,7 @@ export function KnowledgeList({ items, loading, hasMore, error, cancelled, scrol
       <ul ref={list} className={styles.notes}>{virtual.getVirtualItems().map(row => { const note = items[row.index]; return <li key={note.id} className={styles.virtualRow} data-index={row.index} ref={element => {
         if (element) { element.style.setProperty("--knowledge-row-top", `${row.start - margin}px`); virtual.measureElement(element); }
       }}>
-        <button className={styles.note} data-note-id={note.id} aria-current={selected === note.id ? "true" : undefined} disabled={loading} onClick={() => onOpen(note.id)}>
+        <button className={styles.note} data-note-id={note.id} aria-current={selected === note.id ? "true" : undefined} onClick={() => onOpen(note.id)}>
           <strong>{note.title || "未命名笔记"}</strong><p>{note.excerpt || "打开查看正文"}</p><span className={styles.meta}>{note.folder_name || (note.folder_id ? "已分类" : "未分类")} · {relativeTime(note.updated_at)}</span>
         </button>
       </li>; })}</ul>

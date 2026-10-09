@@ -46,6 +46,7 @@ export function useSessionPointer({
   const dragOwner = useRef<"button" | "gesture" | null>(null);
   const [scrolling, setScrolling] = useState(false);
   const [charging, setCharging] = useState(false);
+  const clickEnabled = enabled && canControl && !dragging && !scrolling;
   const padRef = useRef<HTMLDivElement>(null);
   const position = useRef({ x: 32768, y: 32768 });
   const initialized = useRef(false);
@@ -93,7 +94,7 @@ export function useSessionPointer({
     return visible;
   };
   const click = (button: 1 | 2, isDouble = false) => {
-    if (!enabled || !canControl || dragging) return;
+    if (!clickEnabled) return;
     initialized.current = true;
     const p = point();
     if (!p) return;
@@ -229,6 +230,7 @@ export function useSessionPointer({
     dragging,
     scrolling,
     charging,
+    clickEnabled,
     padRef,
     point,
     moveFloating: (dx: number, dy: number) => {
@@ -243,11 +245,10 @@ export function useSessionPointer({
     pickMode: (next: PointerMode) => {
       reset();
       setMode(next);
-      setMouseOpen(true);
       try {
         savePointerPreference(next);
         setHintTone("success");
-        setHint(`已切换为${POINTER_MODES[next].label} · 已记住选择`);
+        setHint(`${POINTER_MODES[next].hint} · 已记住选择`);
       } catch {
         setHintTone("warning");
         setHint(`已切换为${POINTER_MODES[next].label}，无法保存偏好；本次会话仍可使用。`);

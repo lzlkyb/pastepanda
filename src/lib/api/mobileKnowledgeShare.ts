@@ -15,6 +15,8 @@ export interface MobileKnowledgeInbox {
   processing: boolean;
   /** Queue capacity / duplicate notice; receiving never overwrites a note or draft. */
   notice: string;
+  /** Native ACTION_SEND intent nonce; ordinary queue changes never request navigation. */
+  openRequestId?: string;
 }
 export const mobileKnowledgeShareList = () =>
   invoke<MobileKnowledgeInbox>("mobile_knowledge_share_list");

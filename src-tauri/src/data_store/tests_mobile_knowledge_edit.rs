@@ -475,6 +475,8 @@ fn mobile_edit_survives_reopen_and_keeps_capture_draft_independent() {
         revision: 1,
         title: "捕获".into(),
         content: "独立草稿".into(),
+        folder_id: None,
+        tag_ids: Vec::new(),
         updated_at: String::new(),
     };
     store.mobile_knowledge_draft_put(&capture).unwrap();

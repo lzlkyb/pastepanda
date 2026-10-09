@@ -72,12 +72,12 @@ export function useKnowledgeDraft(enabled: boolean) {
       if (!initial || initial.id === value.current.id) return true;
       setError("已有未完成记录。分享内容仍保留，请先继续或放弃原草稿。"); return false;
     }
-    const next = { id: initial?.id || crypto.randomUUID(), revision: 1, title: initial?.title || "", content: initial?.content || "" };
+    const next = { id: initial?.id || crypto.randomUUID(), revision: 1, title: initial?.title || "", content: initial?.content || "", folder_id: null, tag_ids: [] };
     durable.current = 0; replace(next); setError(""); setStatus("正在保存草稿…");
     try { await write(next); } catch { /* Keep the input surface available for recovery. */ }
     return true;
   }, [ready, replace, write]);
-  const update = useCallback((field: "title" | "content", text: string) => {
+  const update = useCallback(<K extends "title" | "content" | "folder_id" | "tag_ids">(field: K, text: MobileKnowledgeDraft[K]) => {
     if (!value.current || busy.current || pending.current) return;
     const next = { ...value.current, [field]: text, revision: value.current.revision + 1 };
     replace(next); setStatus("正在保存草稿…");
@@ -94,8 +94,11 @@ export function useKnowledgeDraft(enabled: boolean) {
     } catch (cause) { setError(knowledgeErrorText(cause)); return false; }
     finally { busy.current = false; if (mounted.current) setSaving(false); }
   }, [flush, replace]);
-  const save = useCallback(async () => {
+  const save = useCallback(async (expectedId?: string) => {
     if (!value.current || busy.current) return null;
+    if (expectedId && value.current.id !== expectedId) {
+      setError("原收集草稿已变化，当前草稿没有被保存。请先核对原笔记。"); return null;
+    }
     if (!value.current.content.trim()) { setError("先记一点内容，再保存到手机。"); return null; }
     busy.current = true; setSaving(true); setError("");
     try {
@@ -104,6 +107,11 @@ export function useKnowledgeDraft(enabled: boolean) {
       const note = await mobileKnowledgeDraftCommit(pending.current.id, pending.current.revision);
       pending.current = null; replace(null); durable.current = 0; setLocked(false); setStatus(""); return note;
     } catch (cause) {
+      const rejected = cause instanceof Error ? cause.message : String(cause);
+      // A transactional validation rejection is a known no-write result: allow fixing classification.
+      if (/^MOBILE_EDIT_REJECTED:(?:folder_missing|tag_missing)/.test(rejected)) {
+        pending.current = null; setLocked(false);
+      }
       setError(pending.current ? "保存结果未能确认，输入已保留。请重试核对后继续编辑。" : knowledgeErrorText(cause));
       return null;
     } finally { busy.current = false; if (mounted.current) setSaving(false); }

@@ -29,6 +29,6 @@ export function useMobileNavigation<T extends string>(destinations: readonly T[]
     flush();
     return () => { observer.disconnect(); document.removeEventListener("visibilitychange", flush); };
   }, [active, selectTab]);
-  useMobileBack(active && tab !== initial, () => selectTab(initial));
+  useMobileBack(active && tab !== initial, () => selectTab(initial), false, -100);
   return { tab, selectTab };
 }

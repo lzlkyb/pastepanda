@@ -103,3 +103,14 @@ it("deduplicates simultaneous flushes and can commit an acknowledged durable ver
   expect(api.mobileKnowledgeDraftCommit).toHaveBeenCalledTimes(1);
   expect(h.result.current.draft).toBeNull();
 });
+
+it("rejects a collection retry bound to another draft without committing current input", async () => {
+  const h = renderHook(() => useKnowledgeDraft(true));
+  await waitFor(() => expect(h.result.current.ready).toBe(true));
+  await act(async () => { await h.result.current.begin(); });
+  act(() => h.result.current.update("content", "另一份草稿仍保留"));
+  await act(async () => { expect(await h.result.current.save("old-collection-id")).toBeNull(); });
+  expect(api.mobileKnowledgeDraftCommit).not.toHaveBeenCalled();
+  expect(h.result.current.draft?.content).toBe("另一份草稿仍保留");
+  expect(h.result.current.error).toMatch(/原收集草稿已变化/);
+});

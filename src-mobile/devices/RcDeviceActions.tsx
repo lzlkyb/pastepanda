@@ -1,25 +1,29 @@
 import { RcDeviceMeta } from "@/components/rc/RcDeviceMeta";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
-import { useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { Eye, KeyRound, MousePointer2, Settings2, Unlink, Upload } from "lucide-react";
 import type { RcTargetDevice } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
 import { rcDeviceStatus } from "@/lib/utils";
 import { rcErrorText } from "./rcErrorText";
 import { useMobileDeviceConnect } from "./useMobileDeviceConnect";
+import { useMobileBack } from "../ui/useMobileBack";
+import { RcChannelNotice } from "./RcChannelNotice";
 import { MobileNotice } from "../ui/MobileNotice";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcDevices.module.css";
 
 export function RcDeviceActions({
   rc,
+  backRef,
   target,
   onClose,
   onSendFiles,
   onUno,
 }: {
   rc: UseRc;
+  backRef?: RefObject<(() => boolean) | null>;
   target: RcTargetDevice;
   onClose: () => void;
   onSendFiles: () => void;
@@ -28,6 +32,14 @@ export function RcDeviceActions({
   const [confirmForget, setConfirmForget] = useState(false);
   const [managing, setManaging] = useState(false);
   const [working, setWorking] = useState<"control" | "view" | "forget" | null>(null);
+  const back = () => {
+    if (working || rc.busy) return true;
+    if (confirmForget) { setConfirmForget(false); return true; }
+    if (managing) { setManaging(false); return true; }
+    return false;
+  };
+  useMobileBack(confirmForget || managing, back, true, 20);
+  useEffect(() => { if (backRef) backRef.current = back; return () => { if (backRef) backRef.current = null; }; });
   const connection = useMobileDeviceConnect(rc);
   const status = rcDeviceStatus(target.presence, rc.reachability[target.node_id], rc.status?.running ?? null);
   const request = async (capability: "control" | "view") => {
@@ -96,8 +108,7 @@ export function RcDeviceActions({
             <Eye size={19} aria-hidden="true" />
             {working === "view" ? "正在申请观看…" : "只看画面"}
           </button>
-          {rc.status?.enabled === false && <p className={ui.hint}>请先在设置中开启远程通道。</p>}
-          {rc.status?.enabled !== false && !rc.status?.running && <p className={ui.hint}>远程通道尚未就绪，请重新检查设备状态。</p>}
+          <RcChannelNotice rc={rc} />
           {target.source === "sync" && <p className={ui.hint}>这台设备只有同步关系，请先添加电脑完成远程配对。</p>}
           {target.denied && <p className={ui.hint}>已禁止这台设备连接本机，你仍可以主动连接它。</p>}
           <button className={ui.secondary} disabled={!!working || rc.busy} onClick={onSendFiles}>

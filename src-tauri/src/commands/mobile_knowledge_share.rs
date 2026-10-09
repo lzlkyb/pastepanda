@@ -23,6 +23,8 @@ pub struct KnowledgeInbox {
     processing: bool,
     #[serde(default)]
     notice: String,
+    #[serde(default, rename = "openRequestId", skip_serializing_if = "String::is_empty")]
+    open_request_id: String,
     #[serde(default, skip_serializing)]
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     staging_dir: String,
@@ -37,7 +39,7 @@ pub struct ShareReply {
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeOutgoing { title: String, text: String, #[serde(default)] image_sources: Vec<String> }
 #[cfg(target_os = "android")]
-pub struct KnowledgeShare<R: Runtime>(tauri::plugin::PluginHandle<R>);
+pub struct KnowledgeShare<R: Runtime>(pub(crate) tauri::plugin::PluginHandle<R>);
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("knowledge-share").setup(|app, api| {
@@ -73,7 +75,7 @@ pub async fn mobile_knowledge_share_list(app: AppHandle) -> Result<KnowledgeInbo
         }).await.map_err(|_| "图片收集任务失败".to_string())
     }
     #[cfg(not(target_os = "android"))]
-    { let _ = app; Ok(KnowledgeInbox { items: vec![], processing: false, notice: String::new(), staging_dir: String::new() }) }
+    { let _ = app; Ok(KnowledgeInbox { items: vec![], processing: false, notice: String::new(), open_request_id: String::new(), staging_dir: String::new() }) }
 }
 
 #[tauri::command]

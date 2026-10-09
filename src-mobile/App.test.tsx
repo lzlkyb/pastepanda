@@ -7,6 +7,9 @@ import { MobileSheet } from "./ui/MobileSheet";
 const state = vi.hoisted(() => ({ update: false, targetsError: null as string | null, fileError: null as string | null, error: null as string | null, session: null as null | { id: string; phase: string; capability: string; peer_name: string }, pending: [] as { peer: string; first_seen_ms: number }[] }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); state.session = null; state.pending = []; state.error = null; state.targetsError = null; state.fileError = null; state.update = false; rcMocks.cancel.mockClear(); });
 const rcMocks = vi.hoisted(() => ({ cancel: vi.fn() }));
+const inboxState = vi.hoisted(() => ({ items: [] as { id: string }[], openRequestId: undefined as string | undefined }));
+vi.mock("./knowledge/useKnowledgeInbox", () => ({ useKnowledgeInbox: () => inboxState }));
+afterEach(() => { inboxState.items = []; inboxState.openRequestId = undefined; });
 vi.mock("@/hooks/useRc", () => ({ useRc: () => ({ status: { pending: state.pending }, error: state.error, targetsError: state.targetsError, busy: false, cancel: rcMocks.cancel, clearError: vi.fn() }) }));
 vi.mock("@/hooks/useRcFile", () => ({ useRcFile: () => ({ asks: [], error: state.fileError }) }));
 vi.mock("@/stores/rcStore", () => ({ useRcStore: (select: (s: unknown) => unknown) => select({ status: { session: state.session } }) }));
@@ -69,13 +72,14 @@ it("知识库是第四个目的地，切页或进入远控不会卸载草稿", (
   expect((screen.getByLabelText("知识库草稿") as HTMLInputElement).value).toBe("正在记录");
 });
 
-it("后台连接请求保持当前页面，只在用户点击查看时跳转", () => {
+it("后台连接请求只更新目的地角标，不挤占内容或抢页面", () => {
   const view = render(<App />);
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
   state.pending = [{ peer: "pc", first_seen_ms: 1 }];
   view.rerender(<App />);
   expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
-  expect(screen.getByText("有 1 个连接请求待处理")).toBeTruthy();
+  expect(screen.getByLabelText("1 个待处理请求")).toBeTruthy();
+  expect(screen.queryByText("有 1 个连接请求待处理")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "文件" }));
   expect(screen.getByRole("button", { name: "上传状态 0" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
@@ -86,7 +90,7 @@ it("后台连接请求保持当前页面，只在用户点击查看时跳转", (
   state.pending = [{ peer: "pc", first_seen_ms: 2 }];
   view.rerender(<App />);
   expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "查看连接请求" }));
+  fireEvent.click(screen.getByRole("button", { name: "设备" }));
   expect(screen.getByRole("region", { name: "设备" })).toBeTruthy();
   expect(screen.queryByText("有 1 个连接请求待处理")).toBeNull();
 });
@@ -203,4 +207,20 @@ it("内容横滑和滚动不会改变主导航，只有点击目的地才切页"
   fireEvent.scroll(files);
   expect(screen.getByRole("region", { name: "文件" })).toBe(files);
   expect(screen.getByRole("button", { name: "文件" }).getAttribute("aria-current")).toBe("page");
+});
+
+it("迟到旧分享和清理最新条目不抢当前页面，仅显式分享意图可跳转", () => {
+  const view = render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  inboxState.items = [{ id: "older" }, { id: "newer" }];
+  view.rerender(<App />);
+  expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
+  expect(screen.getByLabelText("2 条待收集内容")).toBeTruthy();
+  inboxState.items = [{ id: "older" }]; view.rerender(<App />);
+  expect(screen.getByRole("region", { name: "设置" })).toBeTruthy();
+  inboxState.openRequestId = "explicit-share"; view.rerender(<App />);
+  expect(screen.getByRole("region", { name: "知识库" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "文件" }));
+  inboxState.items = []; view.rerender(<App />);
+  expect(screen.getByRole("region", { name: "文件" })).toBeTruthy();
 });

@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeft, Folder, ImagePlus } from "lucide-react";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
+import { KnowledgeEditorShell } from "./KnowledgeEditorShell";
 import { KnowledgeMarkdown } from "./KnowledgeMarkdown";
 import { KnowledgeClassification } from "./KnowledgeClassification";
 import type { useKnowledgeEdit } from "./useKnowledgeEdit";
@@ -29,28 +29,16 @@ export function KnowledgeEditPanel({ edit, active, onBack, onSaved, onPickImages
     const result = await edit.save(copy);
     if (result) onSaved(result.note.id, result.copied, result.relinked);
   };
-  return <div className={styles.root}>
-    <header className={styles.head}><button className={ui.textButton} aria-label="返回并保留修改草稿" disabled={edit.saving} onClick={leave}><ArrowLeft size={20} aria-hidden="true" /></button><h1>修改笔记</h1><button className={ui.textButton} onClick={() => setPreview(true)}>预览</button></header>
-    <div className={styles.scroll}>
-      <p className={styles.meta}>修改保存前会核对原笔记版本；有新版本时保留你的输入。</p>
-      <label className={styles.label} htmlFor="knowledge-edit-title">标题</label>
-      <input className={styles.input} id="knowledge-edit-title" value={edit.draft.title} readOnly={readonly} onChange={e => edit.update("title", e.target.value)} />
-      <label className={styles.label} htmlFor="knowledge-edit-content">内容</label>
-      <textarea className={styles.textarea} id="knowledge-edit-content" value={edit.draft.content} readOnly={readonly} onChange={e => edit.update("content", e.target.value)} />
-      <p className={styles.meta} role="status">{edit.status || "输入会保留为本机修改草稿。"}</p>
-      <div className={styles.actions}><button className={ui.secondary} disabled={readonly} onClick={() => setClassification(true)}><Folder size={20} aria-hidden="true" />文件夹与标签</button>
-        {onPickImages && <button className={ui.secondary} disabled={readonly} onClick={onPickImages}><ImagePlus size={20} aria-hidden="true" />添加图片</button>}
-      </div>
-    </div>
-    <footer className={styles.footer}>
-      <div className={styles.feedback}>
-      {operationNotice && <MobileNotice compact {...operationNotice} />}
-      {collectionNotice}
-      {edit.error && <MobileNotice error title={edit.locked ? "保存结果待核对" : "修改仍保留"} detail={edit.error} />}
-      {!edit.error && edit.conflict && <MobileNotice tone="warning" title={edit.conflict.status === "deleted" ? "原笔记已不在本机" : "原笔记已有新版本"} detail="手机修改仍保留，可以另存一篇。" action={<button className={ui.textButton} onClick={() => setConflictOpen(true)}>处理版本变化</button>} />}
-      </div>
-      <button className={ui.primary} disabled={edit.saving} onClick={() => void save()}>{edit.saving ? "正在保存…" : edit.locked ? "重试核对保存" : "保存修改到手机"}</button>
-    </footer>
+  return <KnowledgeEditorShell heading="修改笔记" idPrefix="knowledge-edit" title={edit.draft.title} content={edit.draft.content}
+    readonly={readonly} saving={edit.saving} status={edit.status || "输入会保留为本机修改草稿。"}
+    saveLabel={edit.saving ? "正在保存…" : edit.locked ? "重试核对保存" : "保存修改到手机"}
+    onBack={leave} onPreview={() => setPreview(true)} onTitle={value => edit.update("title", value)} onContent={value => edit.update("content", value)}
+    onClassification={() => setClassification(true)} onPickImages={onPickImages} onSave={() => void save()}
+    feedback={<>
+      {operationNotice && <MobileNotice compact {...operationNotice} />}{collectionNotice}
+      {edit.error && <MobileNotice compact error title={edit.locked ? "保存结果待核对" : "修改仍保留"} detail={edit.error} />}
+      {!edit.error && edit.conflict && <MobileNotice compact tone="warning" title={edit.conflict.status === "deleted" ? "原笔记已不在本机" : "原笔记已有新版本"} detail="手机修改仍保留，可以另存一篇。" action={<button className={ui.textButton} onClick={() => setConflictOpen(true)}>处理版本变化</button>} />}
+    </>}>
     <MobileSheet open={preview && active} title="修改预览" onClose={() => { setPreview(false); setPreviewFeedback(false); }} footer={previewFeedback ? <MobileNotice title="当前是草稿预览" detail="保存后可在全文中打开链接。" /> : undefined}>
       <h2>{edit.draft.title || "未命名笔记"}</h2><KnowledgeMarkdown content={edit.draft.content} active={active && preview} onLink={() => setPreviewFeedback(true)} />
     </MobileSheet>
@@ -67,5 +55,5 @@ export function KnowledgeEditPanel({ edit, active, onBack, onSaved, onPickImages
       <h3>手机修改</h3><p className={styles.version}>{edit.draft.title}{"\n\n"}{edit.draft.content}</p>
       {edit.conflict?.status === "conflict" && <><h3>本机当前版本</h3><p className={styles.version}>{edit.conflict.latest.title}{"\n\n"}{edit.conflict.latest.content}</p></>}
     </MobileSheet>
-  </div>;
+  </KnowledgeEditorShell>;
 }

@@ -47,3 +47,5 @@
 :global(html[data-mobile-keyboard="true"]) .workspace[data-reading="true"] .listPane { display: none; }
 :global(html[data-mobile-layout="landscape"]) .head { padding-top: 4px; padding-bottom: 4px; }
 :global(html[data-mobile-layout="landscape"]) .textarea { min-height: 8rem; }
+
+.syncSummary { flex: none; max-height: 30%; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--mobile-page-inset); }

@@ -131,9 +131,9 @@ describe("接收落点与取回", () => {
     api.pull.mockResolvedValue(true);
     renderView([TARGET, { node_id: "pc-2", name: "笔记本", display_name: "笔记本" }]);
     fireEvent.click(screen.getByRole("button", { name: /传输对象/ }));
-    await waitFor(() => expect(screen.getByRole("radio", { name: "笔记本" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("radio", { name: /笔记本/ })).toBeTruthy());
     await act(async () => {
-      fireEvent.click(screen.getByRole("radio", { name: "笔记本" }));
+      fireEvent.click(screen.getByRole("radio", { name: /笔记本/ }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /从电脑取文件/ }));
@@ -210,4 +210,33 @@ describe("对方推来的 ask 卡", () => {
     });
     expect(api.cancel).toHaveBeenCalledWith("t-1");
   });
+});
+
+it("切换设备后不显示旧取回错误，重试不能变成新对象", async () => {
+  api.pull.mockRejectedValueOnce("A电脑不可用");
+  const rc = { targets: [TARGET, { node_id: "pc-2", display_name: "笔记本" }], status: { enabled: true, running: true } } as unknown as UseRc;
+  const view = render(<RcFilesView rc={rc} initialPeer="pc-1" />);
+  await waitFor(() => expect((screen.getByRole("button", { name: "从电脑取文件" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "从电脑取文件" }));
+  expect(await screen.findByText("A电脑不可用")).toBeTruthy();
+  view.rerender(<RcFilesView rc={rc} initialPeer="pc-2" />);
+  await waitFor(() => expect(screen.queryByText("A电脑不可用")).toBeNull());
+  expect(screen.queryByRole("button", { name: "重试" })).toBeNull();
+  expect(api.pull).toHaveBeenCalledTimes(1);
+});
+it("只有在途任务不能清记录；有结束记录明确只清记录", async () => {
+  snapshotFor({ asks: [], tasks: [{ id: "t", peer: "pc-1", peer_name: "电脑", dir: "recv", name: "a.txt", size: 1, offset: 0, done: 0, state: "transferring", started_ms: 0, updated_ms: 0 }] });
+  renderView([TARGET]);
+  const clear = await screen.findByRole("button", { name: "清除已结束记录" });
+  expect((clear as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("只清除记录，不删除已接收文件。")).toBeTruthy();
+});
+it("通道关闭时先恢复，不打开文件选择器或发请求", async () => {
+  const enable = vi.fn().mockResolvedValue(true);
+  render(<RcFilesView rc={{ targets: [TARGET], status: { enabled: false, running: false }, setEnabled: enable } as unknown as UseRc} />);
+  await screen.findByRole("button", { name: "开启远程通道" });
+  expect((screen.getByRole("button", { name: "发文件到电脑" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "开启远程通道" }));
+  await waitFor(() => expect(enable).toHaveBeenCalledWith(true));
+  expect(api.pull).not.toHaveBeenCalled();
 });

@@ -11,7 +11,7 @@ import { KnowledgeView } from "./KnowledgeView";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../ui/useMobileBack", () => ({ useMobileBack: vi.fn() }));
-vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ open, title, children, footer, onClose }: { open: boolean; title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) => open ? <aside role="dialog" aria-label={title}><button onClick={onClose}>关闭面板</button>{children}{footer}</aside> : null }));
+vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ open, title, children, footer, actions, onClose }: { open: boolean; title: string; children: ReactNode; footer: ReactNode; actions: ReactNode; onClose: () => void }) => open ? <aside role="dialog" aria-label={title}><button onClick={onClose}>关闭面板</button>{children}{footer}{actions}</aside> : null }));
 const original: Note = { id: "note", title: "原笔记", content: "原来的内容", created_at: "2026-10-07T10:00:00Z", updated_at: "2026-10-07T10:00:00Z", folder_id: null, tags: [], history_id: null, source_agent: "", summary: null, daily_date: null };
 const metadata = { common: false, last_access_at: null, reading_position: 0 };
 const captureId = "a52cbf8d-9608-4c5a-ad76-f4760504cb21";
@@ -53,6 +53,50 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+it("quick saving a share opens the saved note; failed queue cleanup cannot create a duplicate", async () => {
+  const source = inbox([incoming]);
+  source.acknowledge = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  render(<KnowledgeView active inbox={source} />);
+  fireEvent.click(await screen.findByRole("button", { name: "保存到手机" }));
+  await screen.findByText("笔记已保存到手机");
+  expect(notes.filter(note => note.id === incoming.id)).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "重试清理收集状态" }));
+  await waitFor(() => expect(source.acknowledge).toHaveBeenCalledTimes(2));
+  expect(notes.filter(note => note.id === incoming.id)).toHaveLength(1);
+  await within(screen.getByRole("region", { name: "笔记全文" })).findByText(incoming.text);
+});
+
+it("a lost quick-save reply recovered in the editor never saves a later unrelated draft", async () => {
+  const source = inbox([incoming]);
+  const originalInvoke = vi.mocked(invoke).getMockImplementation()!;
+  let lost = true;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "mobile_knowledge_draft_commit") {
+      const saved = notes.find(note => note.id === (args as { id: string }).id);
+      if (saved) return saved;
+      const result = await originalInvoke(command, args);
+      if (lost) { lost = false; throw new Error("reply lost"); }
+      return result;
+    }
+    return originalInvoke(command, args);
+  });
+  render(<KnowledgeView active inbox={source} />);
+  fireEvent.click(await screen.findByRole("button", { name: "保存到手机" }));
+  await within(screen.getByRole("dialog", { name: "收集内容预览" })).findByRole("alert");
+  fireEvent.click(screen.getByRole("button", { name: "关闭面板" }));
+  fireEvent.click(screen.getByRole("button", { name: "重试保存到手机" }));
+  await screen.findByText("已保存到手机");
+  fireEvent.click(screen.getByRole("button", { name: /^返回$/ }));
+  fireEvent.click(screen.getByRole("button", { name: "新建" }));
+  fireEvent.change(await screen.findByLabelText("内容", { exact: true }), { target: { value: "草稿B，不应由分享A保存" } });
+  fireEvent.click(screen.getByRole("button", { name: "查看收集内容" }));
+  fireEvent.click(screen.getByRole("button", { name: "重试清理收集状态" }));
+  await waitFor(() => expect(source.acknowledge).toHaveBeenCalledWith(incoming.id));
+  expect(notes).toHaveLength(2);
+  expect((screen.getByLabelText("内容", { exact: true }) as HTMLTextAreaElement).value).toBe("草稿B，不应由分享A保存");
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "mobile_knowledge_draft_commit").map(([,args]) => (args as {id:string}).id)).toEqual([incoming.id, incoming.id]);
+});
+
 it("saved edits immediately show the new body instead of stale text under a success receipt", async () => {
   render(<KnowledgeView active />);
   fireEvent.click(await screen.findByRole("button", { name: /原笔记 原来的内容/ }));
@@ -76,7 +120,7 @@ it("a warm share remains reachable while writing and cannot replace the existing
   page.rerender(<KnowledgeView active inbox={{ ...source, items: [incoming] }} />);
   fireEvent.click(screen.getByRole("button", { name: "查看收集内容" }));
   await screen.findByText("先处理正在写的记录");
-  expect((screen.getByRole("button", { name: "继续记录" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "继续编辑" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "继续已有草稿" }));
   expect((screen.getByLabelText("内容", { exact: true }) as HTMLTextAreaElement).value).toBe("正在写的内容");
   expect(source.acknowledge).not.toHaveBeenCalled();
@@ -94,7 +138,6 @@ it("picker binds its returned payload; failed acknowledgement never appends the 
   expect(screen.queryByRole("dialog", { name: "收集内容预览" })).toBeNull();
   page.rerender(<KnowledgeView active inbox={{ ...source, items: [incoming, image], pickedId: image.id }} />);
   await act(async () => resolve(true));
-  fireEvent.click(await screen.findByRole("button", { name: "加入当前草稿" }));
   await screen.findByRole("button", { name: "重试清理收集状态" });
   fireEvent.click(screen.getByRole("button", { name: "重试清理收集状态" }));
   await waitFor(() => expect(source.acknowledge).toHaveBeenCalledTimes(2));
@@ -107,7 +150,7 @@ it("acknowledgement can be retried after the imported capture has become a saved
   const source = inbox([incoming]); source.acknowledge = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   render(<KnowledgeView active inbox={source} />);
   await waitFor(() => expect((screen.getByLabelText("文字与备注") as HTMLTextAreaElement).value).toBe(incoming.text));
-  fireEvent.click(await screen.findByRole("button", { name: "继续记录" }));
+  fireEvent.click(await screen.findByRole("button", { name: "继续编辑" }));
   await screen.findByRole("button", { name: "重试清理收集状态" });
   fireEvent.click(within(screen.getByRole("dialog", { name: "收集内容预览" })).getByRole("button", { name: "关闭面板" }));
   fireEvent.click(screen.getByRole("button", { name: "保存到手机" }));

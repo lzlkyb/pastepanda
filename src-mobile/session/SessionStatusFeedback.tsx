@@ -19,7 +19,7 @@ export function useAcknowledgedSendFailure(sendFailed: boolean) {
 
 /** Keep stream and command outcomes beside the session tools, outside remote targets. */
 export function SessionStatusFeedback({ pointer, orient, clipboard, settings, sendFailed, onSendFailDismiss, blocked,
-  landscape, statusText, waitHint, hasFrame, keyboardOpen, toggleTyping, onScreen, onMore, onReturn, onOpenChange,
+  statusText, waitHint, hasFrame, keyboardOpen, toggleTyping, onScreen, onMore, onReturn, onOpenChange,
   directToast, autoSuggest, feedbackOpen,
 }: {
   pointer: ReturnType<typeof useSessionPointer>;
@@ -45,7 +45,7 @@ export function SessionStatusFeedback({ pointer, orient, clipboard, settings, se
 }) {
   return <div className={styles.feedbackSlot}>
     {hasFrame && !blocked && <SessionFrameState text={statusText} hasFrame hint={waitHint} onReturn={onReturn} />}
-    <SessionFeedback pointer={pointer} orient={orient} clipboard={clipboard} compact={landscape}
+    <SessionFeedback pointer={pointer} orient={orient} clipboard={clipboard}
       blocked={blocked} onOpenChange={onOpenChange}
       settings={settings.notices} onSettingDismiss={settings.dismiss}
       onSettingOpen={(key) => {

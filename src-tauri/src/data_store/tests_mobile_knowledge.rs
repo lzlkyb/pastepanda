@@ -7,8 +7,56 @@ fn draft() -> MobileKnowledgeDraft {
         revision: 1,
         title: "随手记".into(),
         content: "离线也要留下正文".into(),
+        folder_id: None,
+        tag_ids: Vec::new(),
         updated_at: String::new(),
     }
+}
+
+#[test]
+fn mobile_draft_classification_survives_restore_and_commits_with_note() {
+    let store = make_store();
+    let folder = store.folder_create("手机资料", None).unwrap();
+    let mut capture = draft();
+    capture.folder_id = Some(folder.id.clone());
+    store.mobile_knowledge_draft_put(&capture).unwrap();
+    assert_eq!(store.mobile_knowledge_draft_get().unwrap().unwrap().folder_id, capture.folder_id);
+    let mut stale = capture.clone();
+    stale.folder_id = None;
+    assert!(store.mobile_knowledge_draft_put(&stale).is_err());
+    let note = store.mobile_knowledge_draft_commit(&capture.id, capture.revision).unwrap();
+    assert_eq!(note.folder_id, capture.folder_id);
+    assert!(store.mobile_knowledge_draft_get().unwrap().is_none());
+    assert_eq!(store.mobile_knowledge_draft_commit(&capture.id, capture.revision).unwrap().folder_id, capture.folder_id);
+}
+
+#[test]
+fn mobile_draft_missing_category_rejects_atomically_and_allows_correction() {
+    let store = make_store();
+    let mut capture = draft();
+    capture.tag_ids = vec!["removed-tag".into()];
+    store.mobile_knowledge_draft_put(&capture).unwrap();
+    assert!(store.mobile_knowledge_draft_commit(&capture.id, 1).unwrap_err().contains("tag_missing"));
+    assert_eq!(store.note_count(), 0);
+    assert_eq!(store.mobile_knowledge_draft_get().unwrap().unwrap().content, capture.content);
+    capture.tag_ids.clear(); capture.revision += 1;
+    store.mobile_knowledge_draft_put(&capture).unwrap();
+    assert!(store.mobile_knowledge_draft_commit(&capture.id, capture.revision).is_ok());
+}
+
+#[test]
+fn mobile_draft_old_payload_and_unclassified_database_row_remain_readable() {
+    let store = make_store();
+    let capture = draft();
+    let legacy: MobileKnowledgeDraft = serde_json::from_value(serde_json::json!({
+        "id": capture.id, "revision": 1, "title": "旧草稿", "content": "原正文"
+    })).unwrap();
+    store.mobile_knowledge_draft_put(&legacy).unwrap();
+    // Old installations have no accompanying classification row.
+    store.lock_conn().execute("DELETE FROM mobile_knowledge_draft_category", []).unwrap();
+    let restored = store.mobile_knowledge_draft_get().unwrap().unwrap();
+    assert_eq!(restored.content, "原正文");
+    assert!(restored.folder_id.is_none() && restored.tag_ids.is_empty());
 }
 
 #[test]

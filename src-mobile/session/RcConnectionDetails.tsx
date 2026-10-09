@@ -41,14 +41,14 @@ function Trend({ info }: { info: MobileConnectionInfo }) {
   </div>;
 }
 
-export const RcConnectionDetails = memo(function RcConnectionDetails({ open, title, info, quality, onClose, onQuality }: {
-  open: boolean; title: string; info: MobileConnectionInfo; quality: string; onClose: () => void; onQuality: () => void;
+export const RcConnectionDetails = memo(function RcConnectionDetails({ open, title, info, quality, onClose, onBack, onQuality }: {
+  open: boolean; title: string; info: MobileConnectionInfo; quality: string; onClose: () => void; onBack?: () => void; onQuality: () => void;
 }) {
   const frame = info.frames;
   const number = (n: number | undefined, unit = "ms", approximate = false) => n != null && n > 0 ? `${approximate ? "≈ " : ""}${Math.round(n)} ${unit}` : NO_SAMPLE;
   const codec = frame?.codec === "h264" ? "H.264" : frame?.codec === "hevc" ? "HEVC" : frame?.codec === "av1" ? "AV1" : frame?.codec === "jpeg" ? "JPEG" : NO_SAMPLE;
   const unstable = info.state === "unstable" || info.state === "reconnecting" || info.state === "failed";
-  return <MobileSheet open={open} title="连接详情" description={`${title} · 本次会话`} onClose={onClose}>
+  return <MobileSheet open={open} title="连接详情" description={`${title} · 本次会话`} onClose={onClose} onBack={onBack}>
     <div className={styles.body}>
       {unstable && <MobileNotice tone={info.state === "failed" ? "error" : "warning"}>{info.state === "failed" ? "连接已断开，请返回设备重新连接。" : "连接不稳，正在等待恢复。恢复后继续显示实时读数。"}</MobileNotice>}
       <div className={styles.measurements}>

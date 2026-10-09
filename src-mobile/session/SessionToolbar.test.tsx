@@ -37,6 +37,30 @@ afterEach(async () => {
   cleanup();
   await waitFor(() => expect(history.state?.mobileBackLayer).toBeUndefined());
 });
+it("更多进入画面后返回仍回更多，关闭全部回画面", async () => {
+  render(<SessionToolbar {...props()} />);
+  fireEvent.click(screen.getByRole("button", { name: "更多" }));
+  fireEvent.click(screen.getByRole("button", { name: "画面与画质" }));
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
+  await waitFor(() => expect(screen.getByRole("dialog", { name: "更多" })).toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+it("横屏失败回执不属于工具滚动区域", () => {
+  render(<SessionToolbar {...props()} landscape feedbackEntry={<p>画质未能切换</p>} />);
+  expect(screen.getByText("画质未能切换").closest('[class*="toolRailScroll"]')).toBeNull();
+});
+
+it("批准前退出直接取消申请，失败才出现重试入口", () => {
+  const p = props();
+  const view = render(<SessionToolbar {...p} landscape waiting />);
+  fireEvent.click(screen.getByRole("button", { name: "取消申请" }));
+  expect(p.onEnd).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "确认断开" })).toBeNull();
+  view.rerender(<SessionToolbar {...p} landscape waiting endError="取消失败" />);
+  fireEvent.click(screen.getByRole("button", { name: "重试取消申请" }));
+  expect(p.onEnd).toHaveBeenCalledTimes(2);
+});
 
 it("断开必须明确确认，失败仍留在确认面板", async () => {
   const p = props();
@@ -157,10 +181,10 @@ it("四种操作方式可直接选择，选择后关闭面板，恢复默认有�
   const view = render(<SessionToolbar {...p} onPointerMode={choose} />);
   fireEvent.click(screen.getByRole("button", { name: "触控板" }));
   expect(screen.getByRole("dialog", { name: "操作方式" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /触控板 · 推荐默认/ })).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByRole("button", { name: /直接点击.*点哪里/ })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /独立触控板.*上方/ })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /浮动鼠标.*拖动/ }));
+  expect(screen.getByRole("radio", { name: /触控板 · 推荐默认/ })).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByRole("radio", { name: /直接点击.*点哪里/ })).toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: /独立触控板.*上方/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("radio", { name: /浮动鼠标.*拖动/ }));
   expect(choose).toHaveBeenCalledWith("floating");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   view.rerender(<SessionToolbar {...p} pointerMode="floating" onPointerMode={choose} />);

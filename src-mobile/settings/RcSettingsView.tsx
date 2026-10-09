@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, History, Palette, Hand, ShieldCheck, HelpCircle } from "lucide-react";
 import type { UseRc } from "@/hooks/useRc";
+import { MobileChoice } from "../ui/MobileChoice";
 import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileToast } from "../ui/MobileToast";
@@ -144,11 +145,9 @@ export function RcSettingsView({
         onClose={() => setPanel(null)}
         footer={pointerResult && <MobileNotice compact tone={pointerResult.error ? "error" : "success"} title={pointerResult.title} />}>
         <div className={styles.choices} role="radiogroup" aria-label="默认操作方式">
-          {(Object.keys(POINTER_MODES) as PointerMode[]).map(mode => <button key={mode} type="button" role="radio"
-            aria-checked={pointerMode === mode} className={`${styles.preference} ${pointerMode === mode ? styles.preferenceOn : ""}`}
-            onClick={() => pickPointer(mode)}>
-            <strong>{POINTER_MODES[mode].label}</strong><span>{POINTER_MODES[mode].description}</span>
-          </button>)}
+          {(Object.keys(POINTER_MODES) as PointerMode[]).map(mode => <MobileChoice key={mode} value={mode}
+            checked={pointerMode === mode} onSelect={() => pickPointer(mode)} title={POINTER_MODES[mode].label}
+            description={POINTER_MODES[mode].description} />)}
         </div>
       </MobileSheet>
       <MobileSheet open={active && panel === "history"} title="会话历史" onClose={() => setPanel(null)}>
@@ -162,18 +161,8 @@ export function RcSettingsView({
         onClose={() => setPanel(null)}
       >
         <div className={styles.choices} role="radiogroup" aria-label="显示外观">
-          {(["system", "light", "dark"] as const).map((value) => (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={appearance === value}
-              key={value}
-              className={appearance === value ? ui.primary : ui.secondary}
-              onClick={() => onAppearance?.(value)}
-            >
-              {appearanceLabel[value]}
-            </button>
-          ))}
+          {(["system", "light", "dark"] as const).map(value => <MobileChoice key={value} value={value}
+            checked={appearance === value} onSelect={() => onAppearance?.(value)} title={appearanceLabel[value]} />)}
         </div>
       </MobileSheet>
       <MobileSheet open={active && panel === "help"} title="手势使用指南" onClose={() => setPanel(null)}>

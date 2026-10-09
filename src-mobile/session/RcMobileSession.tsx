@@ -77,6 +77,8 @@ export function RcMobileSession({
   const [panelOpen, setPanelOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const connectionBack = useRef<(() => void) | undefined>(undefined);
+  const screenBack = useRef<(() => void) | undefined>(undefined);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [requestEnd, setRequestEnd] = useState(0);
   const [requestScreen, setRequestScreen] = useState(0);
@@ -171,14 +173,18 @@ export function RcMobileSession({
   };
   const resetPointer = pointer.reset;
   const releaseModifiers = mods.releaseAll;
-  const openConnection = useCallback(() => {
+  const openConnection = useCallback((onBack?: () => void) => {
+    // Header/badge DOM handlers can pass a click event; only a route callback is a source.
+    connectionBack.current = typeof onBack === "function" ? onBack : undefined;
     resetPointer();
     if (keyboardOpen) toggleKeyboard();
     setConnectionOpen(true);
   }, [resetPointer, keyboardOpen, toggleKeyboard]);
   const closeConnection = useCallback(() => setConnectionOpen(false), []);
+  const openScreen = () => { screenBack.current = undefined; setRequestScreen(n => n + 1); };
   const connectionQuality = useCallback(() => {
     setConnectionOpen(false);
+    screenBack.current = () => { setConnectionOpen(true); };
     setRequestScreen((n) => n + 1);
   }, []);
 
@@ -225,14 +231,15 @@ export function RcMobileSession({
     blocked={panelOpen || fileOpen || connectionOpen} onOpenChange={setFeedbackOpen} landscape={capsule.landscape}
     sendFailed={sendFailure.visible} onSendFailDismiss={sendFailure.dismiss} statusText={pumpActive ? frames.statusText : undefined}
     waitHint={frames.waitHint} hasFrame={hasFrame} keyboardOpen={keyboardOpen} toggleTyping={toggleTyping}
-    onScreen={() => setRequestScreen(n => n + 1)} onMore={() => setRequestMore(n => n + 1)} onReturn={() => setRequestEnd(n => n + 1)} />;
-  const mouseAssist = <MouseAssist visible={pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
+    onScreen={openScreen} onMore={() => setRequestMore(n => n + 1)} onReturn={() => setRequestEnd(n => n + 1)} />;
+  const mouseAssist = <MouseAssist visible={pointer.mode !== "floating" && pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
     padOpen={pointer.padOpen} padRef={pointer.padRef} dragging={pointer.dragging} scrolling={pointer.scrolling}
+    clickEnabled={pointer.clickEnabled}
     onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />;
   return (
     <div className={styles.root} data-landscape={capsule.landscape} data-keyboard={keyboardOpen}>
       {!capsule.landscape && <RcSessionHeader title={title} subtitle={subtitle} info={connection} onDetails={openConnection}
-        onBack={() => setRequestEnd((n) => n + 1)} onScreen={() => setRequestScreen((n) => n + 1)} />}
+        onBack={() => setRequestEnd((n) => n + 1)} onScreen={openScreen} />}
 
       <div className={styles.controlArea} onPointerDownCapture={capsule.dismissHint}>
         <SessionScreen pointer={pointer} canControl={canControl} hasFrame={hasFrame}
@@ -244,7 +251,7 @@ export function RcMobileSession({
         {(!capsule.landscape || pointer.padOpen) && mouseAssist}
       </div>
 
-      {!capsule.landscape && statusFeedback}
+      {statusFeedback}
 
       {
         <ModifierKeyBar
@@ -291,16 +298,17 @@ export function RcMobileSession({
         requestEnd={requestEnd}
         requestScreen={requestScreen}
         requestMore={requestMore}
+        waiting={status?.session?.phase === "idle" || status?.session?.phase === "outbound_pending"}
+        requestedScreenBack={screenBack.current}
         onConnectionDetails={openConnection}
         connectionEntry={<RcConnectionBadge info={connection} onOpen={openConnection} />}
         mouseAssist={capsule.landscape && !pointer.padOpen ? mouseAssist : undefined}
-        feedbackEntry={capsule.landscape ? statusFeedback : undefined}
         fileEntry={file && (file.asks.length > 0 || file.error) ? <button type="button" className={styles.tbBtn} onClick={() => {
           pointer.reset(); if (keyboardOpen) toggleKeyboard(); setFileOpen(true);
         }}>文件{file.error ? " · 异常" : ` · ${file.asks.length}`}</button> : undefined}
       />
       {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} />}
-      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onQuality={connectionQuality} />
+      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onBack={connectionBack.current ? () => { closeConnection(); connectionBack.current?.(); } : undefined} onQuality={connectionQuality} />
     </div>
   );
 }

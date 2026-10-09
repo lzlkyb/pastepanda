@@ -24,6 +24,11 @@ import java.io.File
 
 @TauriPlugin
 class KnowledgeSharePlugin(private val activity: Activity) : Plugin(activity) {
+    private val receivedFiles by lazy { ReceivedFileActions(activity) }
+    @Command fun receivedFile(invoke: Invoke) { receivedFiles.start(invoke, this) }
+    @ActivityCallback fun receivedFileExport(invoke: Invoke, result: ActivityResult) { receivedFiles.exportResult(invoke, result) }
+    fun chooseExport(invoke: Invoke, intent: Intent) { startActivityForResult(invoke, intent, "receivedFileExport") }
+
     private val store by lazy { KnowledgeShareStore.get(activity.applicationContext) }
     private fun changed() { activity.runOnUiThread { triggerObject("incoming", mapOf("changed" to true)) } }
 

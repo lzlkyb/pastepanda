@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, KeyRound, Monitor, Plus, ScanLine } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, KeyRound, Monitor, Plus } from "lucide-react";
 import { rcDisplayName } from "@/lib/rcDevice";
 import type { RcSession } from "@/lib/api/rc";
 import type { UseRc } from "@/hooks/useRc";
+import { RcChannelNotice } from "./RcChannelNotice";
 import { RcDeviceList } from "./RcDeviceList";
 import { RcDeviceActions } from "./RcDeviceActions";
 import { RcPairCard } from "./RcPairCard";
@@ -32,6 +33,9 @@ export function RcDevicesView({
   onErrorScopeChange?: (owned: boolean) => void;
   pageNotice?: ReactNode;
 }) {
+  const pairBack = useRef<(() => boolean) | null>(null);
+  const deviceBack = useRef<(() => boolean) | null>(null);
+  const unoBack = useRef<(() => boolean) | null>(null);
   const [pairing, setPairing] = useState(false);
   // 配对卡随面板关闭卸载；仅保留手输草稿，相机与会合请求仍在关闭时释放。
   const [pairDraft, setPairDraft] = useState("");
@@ -71,7 +75,7 @@ export function RcDevicesView({
       title="设备"
       subtitle="连接电脑，让工作随身。"
       pageNotice={pageNotice}
-      action={
+      action={targets.length > 0 &&
         <button className={ui.textButton} onClick={() => setPairing(true)}>
           <Plus size={20} aria-hidden="true" />
           添加电脑
@@ -123,9 +127,7 @@ export function RcDevicesView({
             取消连接
           </button>} />
       )}
-      {rc.status?.running !== true && <MobileNotice tone={rc.status ? "warning" : "pending"}
-        title={rc.status?.enabled === false ? "远程通道已关闭" : rc.status ? "远程通道尚未就绪" : "正在检查远程通道…"}
-        detail={rc.status?.enabled === false ? "请在设置中开启远程通道后连接电脑。" : "请稍后重新检查设备状态。"} />}
+      <RcChannelNotice rc={rc} />
       <div className={ui.sectionHead}>
         <span>已配对设备</span>
         <button
@@ -182,13 +184,12 @@ export function RcDevicesView({
         <button className={styles.connectionEntry} disabled={rc.busy || !!connection.working} onClick={() => setUnoJoin({ fixedTarget: null })}>
           <KeyRound size={20} aria-hidden="true" /><span><strong>无人值守接入</strong><small>使用电脑提供的接入码或密码</small></span><ChevronRight size={18} aria-hidden="true" />
         </button>
-        <button className={styles.connectionEntry} onClick={() => setPairing(true)}>
-          <ScanLine size={20} aria-hidden="true" /><span><strong>添加电脑</strong><small>扫码或输入配对码</small></span><ChevronRight size={18} aria-hidden="true" />
-        </button>
+
       </div>
-      <MobileSheet open={active && pairing} title="添加电脑" onClose={() => setPairing(false)}>
+      <MobileSheet open={active && pairing} title="添加电脑" onBack={() => { if (!pairBack.current?.()) setPairing(false); }} onClose={() => setPairing(false)}>
         {active && pairing && (
           <RcPairCard
+            backRef={pairBack}
             initialDraft={pairDraft}
             onDraftChange={setPairDraft}
             onPaired={(name) => {
@@ -200,9 +201,10 @@ export function RcDevicesView({
           />
         )}
       </MobileSheet>
-      <MobileSheet open={active && !!unoJoin} title="无人值守接入" onClose={() => setUnoJoin(null)}>
+      <MobileSheet open={active && !!unoJoin} title="无人值守接入" onBack={() => { if (!unoBack.current?.()) setUnoJoin(null); }} onClose={() => setUnoJoin(null)}>
         {active && unoJoin && (
           <RcUnoJoinCard
+            backRef={unoBack}
             rc={rc}
             fixedTarget={unoJoin.fixedTarget}
             onClose={() => setUnoJoin(null)}
@@ -210,9 +212,10 @@ export function RcDevicesView({
           />
         )}
       </MobileSheet>
-      <MobileSheet open={active && !!pickedTarget} title="设备操作" onClose={() => setPicked(null)}>
+      <MobileSheet open={active && !!pickedTarget} title="设备操作" onBack={() => { if (!deviceBack.current?.()) setPicked(null); }} onClose={() => setPicked(null)}>
         {active && pickedTarget && (
           <RcDeviceActions
+            backRef={deviceBack}
             rc={rc}
             target={pickedTarget}
             onClose={() => setPicked(null)}
