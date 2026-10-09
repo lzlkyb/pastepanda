@@ -394,9 +394,22 @@ fn test_kb_health_unfiled_ai_ignores_trashed() {
 #[test]
 fn test_kb_health_unfiled_ai_oldest_first() {
     let store = make_store();
-    for t in ["最早的", "中间的", "最新的"] {
+    for (title, created_at) in [
+        ("最新的", "2026-01-03T00:00:00+00:00"),
+        ("最早的", "2026-01-01T00:00:00+00:00"),
+        ("中间的", "2026-01-02T00:00:00+00:00"),
+    ] {
+        let note = store
+            .note_create_from(None, title, &"字".repeat(100), "agent:test")
+            .unwrap();
+        // Wall-clock timestamps can tie when notes are created in one tick.
+        // Explicit, out-of-insertion-order dates test the query's age ordering.
         store
-            .note_create_from(None, t, &"字".repeat(100), "agent:test")
+            .lock_conn()
+            .execute(
+                "UPDATE notes SET created_at = ?1 WHERE id = ?2",
+                rusqlite::params![created_at, note.id],
+            )
             .unwrap();
     }
     let titles: Vec<String> = store

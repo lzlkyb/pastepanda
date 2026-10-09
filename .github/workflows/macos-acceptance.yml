@@ -6,15 +6,33 @@ on:
     paths:
       - 'src-tauri/**'
       - 'scripts/macos-*.mjs'
+      - 'scripts/*updater*.mjs'
       - '.github/workflows/macos-acceptance.yml'
   pull_request:
     paths:
       - 'src-tauri/**'
       - 'scripts/macos-*.mjs'
+      - 'scripts/*updater*.mjs'
       - '.github/workflows/macos-acceptance.yml'
 permissions:
   contents: read
 jobs:
+  updater-key:
+    if: github.repository == 'lzlkyb/pastepanda' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Verify existing updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/check-updater-key.mjs
   backend:
     strategy:
       fail-fast: false

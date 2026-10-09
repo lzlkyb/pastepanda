@@ -69,6 +69,14 @@ npm run macos:release:verify
 
 ## 硬件与功能剩余项
 
-`.github/workflows/macos-acceptance.yml` 为 macOS 14 ARM 与 macOS 15 Intel 原生探针及 Rust 回归，开发分支相关变更推送/PR 可触发。流程已准备，尚无实际运行结果。CI 无屏幕/麦克风隐私授权，不能代替 GUI、混合 DPI、多屏或双设备远控验收，也不证明最低支持系统 12/13 已验收。
+`.github/workflows/macos-acceptance.yml` 为 macOS 14 ARM 与 macOS 15 Intel 原生探针及 Rust 回归，开发分支相关变更推送/PR 可触发。首次推送 f44e2a2 的 macOS 14.8.9 ARM 已完成：14 项原生探针、2124 项 Rust 单元及全部集成测试通过；Intel 任务仍在运行。CI 无屏幕/麦克风隐私授权，不能代替 GUI、混合 DPI、多屏或双设备远控验收，也不证明最低支持系统 12/13 已验收。
 
 真实多屏、第二设备远控、麦克风音质/同步、Intel GUI 与 macOS 12/13 仍待对应硬件与授权。AV1 原生发送仍未实现；已向用户提出 Rust rav1e 与 FFmpeg + SVT-AV1 两种实现方案，按 AGENTS.md 规则 1 等待架构选择，不能未经选择添加这类依赖。
+
+## 更新签名私钥兼容检查
+
+`npm run updater:check-key` 仅对固定的临时测试文本使用真实 Tauri CLI 签名，然后用当前应用公钥验证，结束清理；缺少或不匹配的私钥将失败。输出不会包含私钥、密码、签名器错误原文或参数。实际 CLI 临时密钥的正例/错配拒绝已本地验证，仓库现有 Secrets 的真实匹配结果仍待 CI。
+
+架构回归 workflow 新增独立 `updater-key` 任务，只在本仓库的 push 或手动执行时运行，PR 不读取秘密；Secrets 仅提供给签名检查一步，不提供给原生编译/后端测试。该检查不依赖 Apple 凭据、不输出密钥，也不发布任何文件。
+
+Windows CI 首轮通过编译但有一项既有知识库年龄排序测试失败：同一时钟粒度内创建笔记会出现相同时间戳，从而走标题的次序。测试夹具已改为明确且不按插入顺序的日期，产品排序逻辑未改。新夹具的本地定向回归通过，Windows 结果待后续 CI。

@@ -42,7 +42,8 @@
     "macos:build": "node scripts/macos-dev.mjs build",
     "macos:release:check": "node scripts/macos-release.mjs check",
     "macos:release": "node scripts/macos-release.mjs build",
-    "macos:release:verify": "node scripts/macos-release.mjs verify"
+    "macos:release:verify": "node scripts/macos-release.mjs verify",
+    "updater:check-key": "node scripts/check-updater-key.mjs"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [
