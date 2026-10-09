@@ -180,6 +180,13 @@ cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/�
 > 三段相加只有 ~18 分钟，差额是机器上还跑着别的会话——**按整轮的 22 分钟设 timeout，不要按相加的 18 分钟**：
 > push 命令的 timeout 必须 ≥ 1800s，太短会在钩子跑完前被掐死、看起来像「测试挂了」。
 >
+> 🔴 2026-10-09 第一段已被根治掉，上面那个 499s 是历史数：守卫合并成 2 趟（`LC_ALL=C`）后本机实测 263s，
+> 再剔掉 `target-android`(7.6G/16314 文件)、`gen`(2.8G)、`.cache` 三个**零个被追踪文件**的构建缓存目录后
+> **10.2s**（同一台机器、同一份判据，`bash tools/check_no_plaintext_secrets.sh` 直接量）。
+> 排除名单不是口头承诺：脚本开头会用 `git ls-files` 断言「每个排除目录下 0 个被追踪文件」，违反就判红；
+> `src/__tests__/secretGuardCanary.test.ts` 里备了 force-add 与「不在 git 仓库里跑」两个反例把它验过。
+> 同一次改动顺手补回一个真窟窿：旧名单里的 `design/` 下面有 312 个被追踪稿子，等于对整仓那两趟失明，已移出排除名单。
+>
 > 省一轮钩子的办法：**分支和 tag 一次推**（`git push origin master v7.2.11`）——一次 push 只跑一遍 pre-push，
 > 而 `git push origin v7.2.11` 单独推标签**同样会跑完整钩子**，白等 22 分钟。
 
