@@ -124,7 +124,7 @@ export function JsonEditor({ item, registerActions }: EditorProps) {
         charCount={charCount}
         isModified={isModified}
         status={
-          <span className={validation.valid || !text.trim() ? "json-valid-badge" : "json-invalid-badge"} title={text.trim() ? validation.message : "输入 JSON 后开始校验"}>
+          <span className={!text.trim() ? undefined : validation.valid ? "json-valid-badge" : "json-invalid-badge"} title={text.trim() ? validation.message : "输入 JSON 后开始校验"}>
             {jsonValidationLabel(text, validation)}
           </span>
         }

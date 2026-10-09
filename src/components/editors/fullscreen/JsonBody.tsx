@@ -83,17 +83,21 @@ export function JsonFormatBar({ bridge }: { bridge: ShellBridge }) {
         <TextBtn icon={<Database size={13} />} label="SQL IN" title="转换为 SQL IN 并复制" onClick={copySqlIn} />
       )}
       {validation.valid || !text.trim() ? (
-        <span className={`${styles.validBadge} ${styles.validOk}`} title={text.trim() ? "JSON 格式正确" : "输入 JSON 后开始校验"}>
+        <span className={`${styles.validBadge}${validation.valid ? ` ${styles.validOk}` : ""}`} title={text.trim() ? "JSON 格式正确" : "输入 JSON 后开始校验"}>
           {jsonValidationLabel(text, validation)}
         </span>
-      ) : (
+      ) : validation.line ? (
         <button
           className={`${styles.validBadge} ${styles.validBad} ${styles.validBadgeBtn}`}
           title={`${validation.message ?? "JSON 无效"}${validation.line ? "（点击跳转到错误行）" : ""}`}
           onClick={() => validation.line && gotoLine(validation.line)}
         >
-          {jsonValidationLabel(text, validation)}{validation.line ? " · 跳转" : ""}
+          {jsonValidationLabel(text, validation)} · 跳转
         </button>
+      ) : (
+        <span className={`${styles.validBadge} ${styles.validBad}`} title={validation.message}>
+          {jsonValidationLabel(text, validation)}
+        </span>
       )}
     </>
   );

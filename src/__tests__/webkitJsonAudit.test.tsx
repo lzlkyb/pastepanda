@@ -28,7 +28,7 @@ describe("WebKit JSON errors without positions", () => {
   it("shows format error without an unusable jump link on the actual toolbar", () => {
     vi.spyOn(JSON, "parse").mockImplementation(() => { throw new SyntaxError("JSON Parse error: Expected '}'"); });
     render(<JsonFormatBar bridge={{ text: '{"n":', openSearch: vi.fn(), gotoLine: vi.fn(), replaceDoc: vi.fn() } as unknown as ShellBridge} />);
-    expect(screen.getByText("✕ JSON 格式错误")).toBeTruthy();
+    expect(screen.getByText("✕ JSON 格式错误").tagName).toBe("SPAN");
     expect(screen.queryByText(/跳转/)).toBeNull();
     expect(screen.queryByText(/第 \? 行/)).toBeNull();
   });
