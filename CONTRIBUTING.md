@@ -182,15 +182,29 @@ cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/�
 >
 > | 档 | 触发条件 | 跑什么 | 钩子自报耗时（本机实测） |
 > |---|---|---|---|
-> | `light` | 被推的**远端** ref 只是特性分支（`fix/** feature/** chore/** agent/** docs/**`） | 密钥守卫 + `npx tsc --noEmit` | **48s**（判档 1s / 守卫 12s / tsc 35s；tsc 冷启动另一次量到 **73s**） |
-> | `full` | 远端 ref 是 `refs/heads/master`，或掺了任何 `refs/tags/*`；以及**读不到 stdin / node 不可用 / ref 行读不懂** | 上面两项 + 全量 Vitest + `cargo test` | **566s**（分档之前每一笔 push 都是这个档） |
+> | `light` | 被推的**远端** ref 只是特性分支（`fix/** feature/** chore/** agent/** docs/**`） | 覆盖守卫 + 密钥守卫 + `npx tsc --noEmit` | **48s**（判档 1s / 守卫 12s / tsc 35s；tsc 冷启动另一次量到 **73s**） |
+> | `full` | 远端 ref 是 `refs/heads/master`，或掺了任何 `refs/tags/*`；以及**读不到 stdin / node 不可用 / ref 行读不懂** | 上面三项 + 全量 Vitest + `cargo test` | **566s**（分档之前每一笔 push 都是这个档） |
 >
 > 分档的理由不是「本地慢所以省掉」，而是**裁判换了地方**：master 现在有 `enforce_admins=true` + required status checks
 > （`Rust Tests` / `Frontend Tests`，§3.8），PR 合入前 GitHub 已经跑过同一套全量；特性分支再本地跑第二遍是同一套测试付两遍，
 > 而钩子判的是**整棵工作树**——别人的在途文件在给本次 push 判分（§3.7）。兜底方向一律是 `full`：判档器看不懂就得多跑。
 >
+> 判档器同时是**覆盖守卫**（`decideOwnership`，同一支脚本、同一次 stdin）：这次 push 若会把「不是本机身份写的提交」从远端某个分支上抹掉，
+> 脚本退出码 **9**、钩子在跑任何测试之前就拒绝（明细走 stderr，stdout 只留档位给 `$(...)` 收）。
+> 为什么装在钩子而不是 GitHub：**分支保护只装在 master 上，而 ruleset 的 bypass 名单只认角色/团队/GitHub App，做不到「拦管理员但放行写权限的协作者」**
+> （2026-10-09 逐条查证过，因此没有给 `feature/kynnzhou-dev` 加保护——加了会连协助者自己要求的 `strict=true` rebase 都推不动）。
+> 判据只用本地对象库、不联网：新分支和 fast-forward 不拦；旧 tip 本地没有 → **不拦**（不把「没 fetch 过」当罪证，git 的 `--force-with-lease` 是第二道闸）；
+> 删分支只看 **tip 作者**（分支历史必然从 master 继承别人的提交，按全集判等于永远删不掉自己的分支）。
+> 「本机身份」是一个**集合**：`git config user.email` + `dev@clipboard-manager.local`（AGENTS 21，改地址前的 616 笔），
+> 少列后者会让「rebase 自己 10-09 以前的分支」全部误判，而误判的出路是 `--no-verify`——那等于把守卫整个废掉。
+> 判红的用例在 `src/__tests__/prePushOwnership.test.ts`（注入假 repo，11 条）+ `prePushHookParity.test.ts` 钉接线顺序。
+>
 > 🔴 `tsc` 故意留在轻档里，别顺手归进 full：`npx vitest` 只**剥**类型不校验类型，而 CI 的 frontend-test 只有 `npx vitest run` 一步，
 > 全仓唯一会跑 `tsc` 的地方就是这个钩子（`npm run build` 只在发版构建里跑）。归进 full 等于「特性分支的类型错误没人查，直到发版才第一次爆」。
+> 这条断言两个方向都喂过反例（2026-10-09，都是我在当次改动的工作树上临时造的，仓里没有任何一笔提交处于过那个状态）：
+> ① 删掉 `npx tsc --noEmit` 这一行 → `at()` 报「缺这句」（这条调用本身是 `5d2b891` 随分档一起引入的，一直在闸外）。
+> ② 把它从恒跑区搬进 full 闸内部 → 判红 `expected 2972 to be less than 2940`。
+> 覆盖守卫同理：删掉拒绝块里的 `exit 9` → 只有新用例红，其余 5 条绿。
 
 >
 > 三段的可复现口径（2026-10-09 三次 push 的钩子自报数；**这台机器上 Vitest 那一段能差 5 倍**，所以只能按档读，不能当一个数）：
@@ -346,6 +360,24 @@ git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
 5. 归属隔离（§3.7）：每次提交前 `git status` 判归属，只 `git add` 自己改的路径；别人的未跟踪文档一律不碰、不 `git stash`、不 `git add -A`。树上别人只剩未跟踪文件时再提交，避开 lint-staged 的整树 stash。
 6. 提交粒度：一个 bug 一笔、一个功能语义单元一笔、纯文档单独一笔。攒到一个完整可交付状态再 push。
 7. 三件不自动做的事：版本号（规则 2）、`npx tauri build`（规则 3）、把「欠真机点验」当已完成——点验项一律写进 commit/PR 描述或 Issue。
+
+---
+
+### 3.10 覆盖守卫：管理员推别人的分支会被本机拦下
+
+§3.8 的保护只覆盖 master。协助者自己那条 `feature/kynnzhou-dev` 上，管理员 force push 覆盖掉他的提交，
+GitHub 既不拦也不提示——ruleset 的 bypass 名单只认角色/团队/GitHub App，做不到「拦管理员、放行写权限的协作者」，
+所以给那条分支加保护会连**他本人**要求的 `strict=true` rebase 都推不动（2026-10-09 查证后放弃这条路）。
+唯一还能拦的地方是 pre-push：`scripts/prePushTier.mjs` 的 `decideOwnership`，判据和退出码见 §2.7。
+
+- 它只读**本地对象库**：不 fetch、不联网，`git cat-file` / `merge-base --is-ancestor` / `log --format=%ae` 三种问句。
+- 拒绝时机在跑任何测试**之前**——先付 48s 再告「这次本来不该推」是错的顺序（`prePushHookParity` 钉着）。
+- 认作「我的」的地址是一个集合：`git config user.email` + `dev@clipboard-manager.local`（§3.6 / AGENTS 21 改地址前的 616 笔）。
+- 逃生口：确认要覆盖就 `git push --no-verify`（同时跳过测试，所以只在核对过 `git log old..new` 之后用）。
+- 端到端取证配方（`decideOwnership` 的单测注入假 repo，CLI 那半边用真 git 对象）：
+  `git init` 一个临时仓（放 `.cache/` 下，别污染树上别人的路径），`git -c user.email=<对方的> commit` 造一条他的提交当旧 tip，
+  再 `--orphan` 造一条无关历史当新 tip，喂 `printf '<local-ref> <新sha> <remote-ref> <旧sha>\n' | node scripts/prePushTier.mjs`，
+  期望 `light` + `exit=9`；同一目标改成 fast-forward 期望 `exit=0`。2026-10-09 六条场景（覆盖/ff/删他分支/删我分支/新分支/旧 tip 本地没有）全按预期。
 
 ---
 

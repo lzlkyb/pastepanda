@@ -85,4 +85,30 @@ describe("pre-push 两份钩子等价", () => {
       expect(tsc, `${name} 的 tsc 跑在判档之前（读不到 stdin 时无从知道该不该跑）`).toBeGreaterThan(decide);
     }
   });
+
+  // 覆盖守卫（decideOwnership）接线。为什么必须有：分支保护只装在 master 上，
+  // ruleset 的 bypass 名单只认角色/团队/App，做不到「拦管理员但放行写权限的协作者」，
+  // 所以协助者自己分支上的提交只有本机这一道能拦（2026-10-09 查证）。
+  // 判红反例：把 `exit 9` 那行删掉，或者把拒绝块挪到密钥守卫之后，本用例应转红。
+  it("覆盖守卫的拒绝发生在付代价之前，且守卫自己坏了就降级 full", () => {
+    for (const [name, s] of [[".husky", husky], [".githooks", plain]] as const) {
+      const at = (needle: string) => {
+        const i = s.indexOf(needle);
+        expect(i, `${name} 缺这句：${needle}`).toBeGreaterThan(-1);
+        return i;
+      };
+      const decide = at("prePushTier.mjs");
+      // 退出码是约定接口：9 = 拒绝，钩子必须认这个数而不是解析文案。
+      const capture = at("TIER_EXIT=$?");
+      expect(capture, `${name} 没接住 node 的退出码（set -e 会把整轮掐死）`).toBeGreaterThan(decide);
+      const reject = at('if [ "$TIER_EXIT" = 9 ]');
+      expect(reject, `${name} 没有 9 号退出码的拒绝分支`).toBeGreaterThan(capture);
+      expect(s.slice(reject, reject + 400), `${name} 的拒绝分支没有 exit 9`).toContain("exit 9");
+      // 顺序：判档/拒绝 → 密钥守卫 → tsc → 全量闸。先付 48s 再说「不该推」是错序。
+      expect(reject, `${name} 的拒绝发生在密钥守卫之后，白付一轮`).toBeLessThan(at("check_no_plaintext_secrets.sh"));
+      expect(reject, `${name} 的拒绝发生在 tsc 之后，白付一轮`).toBeLessThan(at("npx tsc --noEmit"));
+      // 守卫自身出错（node 缺、脚本坏）不能变成「静默放行轻档」。
+      expect(s, `${name} 缺「守卫异常就压回 full」的降级路径`).toContain('MODE=""');
+    }
+  });
 });
