@@ -32,6 +32,17 @@ describe("pre-push 两份钩子等价", () => {
     }
   });
 
+  // CONTRIBUTING §2.7 与 AGENTS 规则 14 现在都写「耗时由钩子自己打印」，不再抄常数。
+  // 删掉计时那句就又是假话——而假话正是这份文档历史上犯过两次的错（「约 3 分钟」/「22.2 分钟」）。
+  it("三段各自计时并打印（文档依赖这句输出，不许退回手抄常数）", () => {
+    for (const [name, s] of [[".husky", husky], [".githooks", plain]] as const) {
+      expect(s, `${name} 的计时代码没了，整轮耗时又得靠人手抄`).toContain("HOOK_START=$(date +%s)");
+      for (const seg of ["密钥守卫", "前端 Vitest", "Rust cargo test"]) {
+        expect(s, `${name} 少给「${seg}」这一段计时`).toContain(`mark "${seg}"`);
+      }
+    }
+  });
+
   // --max-workers / --maxWorkers 在 vitest 4.1.9 的 CLI 上不生效（实测：12 文件三档
   // 16.7–18.4s 没差别，只有 VITEST_MAX_WORKERS 环境变量翻到 31.30s）。写在这里
   // 会让人以为并发已经压下来了。
