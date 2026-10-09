@@ -22,7 +22,12 @@ impl InboundVideo {
         let force = self.force_key.swap(false, Ordering::SeqCst);
         let fps =
             crate::rc::pace::want_fps_for(opts.profile.interval_ms, opts.virtual_screen, false);
-        let fps = fps.min(self.svc.media_fps_limit(&self.my_id)).max(1);
+        let requested = super::video::want_stream_codec(opts.profile.hevc, &opts.codec);
+        let av1 = requested == crate::rc::video_params::VideoCodec::Av1;
+        let fps = crate::rc::video_params::mac_encoder_fps(
+            requested,
+            fps.min(self.svc.media_fps_limit(&self.my_id)),
+        );
         let budget = self
             .svc
             .media_budget_kbps(&self.my_id)
@@ -32,7 +37,6 @@ impl InboundVideo {
             let ts = chrono::Utc::now().timestamp_millis();
             let start = std::time::Instant::now();
             let surface = !opts.virtual_screen || opts.monitor >= 0;
-            let hevc = opts.profile.hevc || opts.codec == crate::rc::stream_cfg::StreamCodec::Hevc;
             if surface {
                 enc.lock()
                     .unwrap_or_else(|p| p.into_inner())
@@ -44,7 +48,7 @@ impl InboundVideo {
                         opts.monitor,
                         opts.profile.max_w,
                         opts.profile.interval_ms < 16,
-                        hevc,
+                        requested,
                         fps,
                         budget,
                         force,
@@ -53,14 +57,23 @@ impl InboundVideo {
                 let elapsed = start.elapsed().as_millis().min(u16::MAX as u128) as u16;
                 return Ok::<_, String>(result.map(|(p, c)| (p, c, 0, elapsed)));
             }
-            let (w, h, bytes) = crate::rc::video::capture_mac_rgba(
+            let (w, h, bytes) = crate::rc::video::capture_mac_rgba_at_fps(
                 &mut enc.lock().unwrap_or_else(|p| p.into_inner()),
+                fps,
             )?;
             let cap = start.elapsed().as_millis().min(u16::MAX as u128) as u16;
             let start = std::time::Instant::now();
             let frame = image::RgbaImage::from_raw(w, h, bytes).ok_or("Mac 远控图像尺寸无效")?;
-            let width = w.min(opts.profile.max_w).max(2) & !1;
-            let height = ((u64::from(h) * u64::from(width) / u64::from(w)).max(2) as u32) & !1;
+            let (width, height) = crate::rc::mac_video::surface_dimensions(
+                w,
+                h,
+                if av1 {
+                    opts.profile.max_w.min(1920)
+                } else {
+                    opts.profile.max_w
+                },
+                av1,
+            );
             let frame = if (w, h) == (width, height) {
                 frame
             } else {
@@ -73,21 +86,22 @@ impl InboundVideo {
             };
             let mut native = native.lock().unwrap_or_else(|p| p.into_inner());
             native.suspend_surface();
-            let (packet, codec) =
-                native.encode(hevc, &frame, width, height, fps, budget, force, ts)?;
-            Ok::<_, String>(Some((
-                packet,
-                codec,
-                cap,
-                start.elapsed().as_millis().min(u16::MAX as u128) as u16,
-            )))
+            let result = native.encode(requested, &frame, width, height, fps, budget, force, ts)?;
+            Ok::<_, String>(result.map(|(packet, codec)| {
+                (
+                    packet,
+                    codec,
+                    cap,
+                    start.elapsed().as_millis().min(u16::MAX as u128) as u16,
+                )
+            }))
         })
         .await;
         let (packet, codec, cap, encode) = match result {
             Ok(Ok(Some(result))) => result,
             Ok(Ok(None)) => return Step::Sleep,
             other => {
-                log::warn!("[RC] Mac VideoToolbox 回退 JPEG：{other:?}");
+                log::warn!("[RC] Mac 视频编码回退 JPEG：{other:?}");
                 self.mac_video_retry =
                     Some(std::time::Instant::now() + std::time::Duration::from_secs(5));
                 self.mac_video
@@ -99,19 +113,23 @@ impl InboundVideo {
             }
         };
         self.mac_video_retry = None;
-        self.mac_video_codec = if codec.starts_with("hev1.") {
+        self.mac_video_codec = if codec == "av1" {
+            "AV1 (SVT-AV1)"
+        } else if codec.starts_with("hev1.") {
             "HEVC"
         } else {
             "H.264"
         }
         .into();
+        let codec = crate::rc::video_params::wire_codec_label(&codec)
+            .expect("Mac encoder returns a known codec");
         self.svc.media_note_encode_width(&self.my_id, packet.width);
         self.perf_last =
             crate::rc::perf::FrameTiming::produced(u64::from(cap), u64::from(encode), None);
         self.mac_video_seq = self.mac_video_seq.wrapping_add(1);
         let at = packet.at_ms;
         if self
-            .send_via_video_plane(&packet, self.mac_video_seq, at, cap, encode, &codec)
+            .send_via_video_plane(&packet, self.mac_video_seq, at, cap, encode, codec)
             .await
         {
             Step::Sleep

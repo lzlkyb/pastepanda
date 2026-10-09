@@ -460,7 +460,7 @@ impl InboundVideo {
     #[cfg(not(target_os = "windows"))]
     pub(in crate::rc) fn pipeline_label(&self) -> String {
         #[cfg(target_os="macos")]
-        {if self.tick_jpeg {"JPEG".to_string()} else {format!("{} (VideoToolbox)",self.mac_video_codec)}}
+        {if self.tick_jpeg {"JPEG".to_string()} else if self.mac_video_codec.starts_with("AV1") {self.mac_video_codec.clone()} else {format!("{} (VideoToolbox)",self.mac_video_codec)}}
         #[cfg(not(target_os="macos"))]
         {"JPEG".to_string()}
     }

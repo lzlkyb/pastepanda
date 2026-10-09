@@ -518,7 +518,9 @@ pub(super) async fn send_caps_frame(
     // 编码能力探测是 Windows 宿主专属（mobile 无硬编，恒 false，与 hevc 同款处理）。
     #[cfg(target_os = "windows")]
     let av1 = crate::rc::encode_h264::av1_hw_available();
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let av1 = crate::macos::av1::available();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let av1 = false;
     let msg = serde_json::json!({
         "t": "caps",

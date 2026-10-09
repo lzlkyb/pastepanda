@@ -37,6 +37,11 @@ jobs:
           printf 'APPLE_API_KEY_PATH=%s\n' "$key_path" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run macos:release:check
+      - name: Build AV1 runtime before application regression
+        run: |
+          brew install cmake nasm
+          npm run macos:av1:build
+          npm run macos:av1:test
       - run: npm test
       - name: Native probes and backend tests
         shell: bash

@@ -312,4 +312,8 @@ impl SurfaceCapture {
     pub(crate) fn handle(&self) -> *mut c_void {
         self.source.0
     }
+    pub fn frame(&mut self) -> Result<(u32, u32, Vec<u8>), String> {
+        self.check()?;
+        self.source.frame()
+    }
 }

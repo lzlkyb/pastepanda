@@ -47,6 +47,8 @@ pub struct Encoder {
     native: Option<Native>,
     parameters: Option<(bool, u32, u32, u32, u32)>,
     surface: Option<crate::rc::mac_capture::SurfaceCapture>,
+    av1: Option<crate::macos::av1::Encoder>,
+    av1_failed: bool,
 }
 impl Encoder {
     fn prepare(
@@ -96,7 +98,7 @@ impl Encoder {
     }
     pub fn encode(
         &mut self,
-        hevc: bool,
+        requested: crate::rc::video_params::VideoCodec,
         rgba: &[u8],
         w: u32,
         h: u32,
@@ -104,11 +106,43 @@ impl Encoder {
         bitrate: u32,
         key: bool,
         at_ms: i64,
-    ) -> Result<(crate::rc::video_params::VideoPacket, String), String> {
+    ) -> Result<Option<(crate::rc::video_params::VideoPacket, String)>, String> {
         if rgba.len() as u64 != u64::from(w) * u64::from(h) * 4 {
             return Err("Mac 远控像素数据无效".into());
         }
-        self.prepare(hevc, w, h, fps, bitrate)?;
+        if requested == crate::rc::video_params::VideoCodec::Av1 && !self.av1_failed {
+            let result = (|| {
+                if self
+                    .av1
+                    .as_ref()
+                    .is_none_or(|e| !e.matches(w, h, fps, bitrate))
+                {
+                    self.av1 = None;
+                    self.av1 = Some(crate::macos::av1::Encoder::open(w, h, fps, bitrate)?);
+                }
+                self.native = None;
+                self.parameters = None;
+                self.av1.as_mut().unwrap().encode(rgba, key, at_ms)
+            })();
+            match result {
+                Ok(packet) => return Ok(packet.map(|p| (p, "av1".into()))),
+                Err(error) => {
+                    log::warn!("[RC] {error}，本次 AV1 会话回退 H.264");
+                    self.av1 = None;
+                    self.av1_failed = true;
+                }
+            }
+        } else if requested != crate::rc::video_params::VideoCodec::Av1 {
+            self.av1 = None;
+            self.av1_failed = false;
+        }
+        self.prepare(
+            requested == crate::rc::video_params::VideoCodec::Hevc,
+            w,
+            h,
+            fps,
+            bitrate,
+        )?;
         let (mut bytes, mut length, mut out_key) = (std::ptr::null_mut(), 0, false);
         let mut codec = [0_i8; 64];
         let status = unsafe {
@@ -124,7 +158,7 @@ impl Encoder {
                 codec.len(),
             )
         };
-        read_packet(status, bytes, length, out_key, &codec, w, h, at_ms)
+        read_packet(status, bytes, length, out_key, &codec, w, h, at_ms).map(Some)
     }
     pub fn suspend_surface(&mut self) {
         self.surface = None;
@@ -133,13 +167,15 @@ impl Encoder {
         self.surface = None;
         self.native = None;
         self.parameters = None;
+        self.av1 = None;
+        self.av1_failed = false;
     }
     pub fn encode_screen(
         &mut self,
         monitor: i32,
         max_w: u32,
         high: bool,
-        hevc: bool,
+        requested: crate::rc::video_params::VideoCodec,
         fps: u32,
         bitrate: u32,
         key: bool,
@@ -159,11 +195,13 @@ impl Encoder {
         if selected.monitor.w < 16 || selected.monitor.h < 16 {
             return Err("显示器尺寸无效".into());
         }
+        let av1 = requested == crate::rc::video_params::VideoCodec::Av1;
+        let fps = if av1 { fps.min(30) } else { fps };
         let (w, h) = surface_dimensions(
             selected.monitor.w as u32,
             selected.monitor.h as u32,
-            max_w,
-            high,
+            if av1 { max_w.min(1920) } else { max_w },
+            high || av1,
         );
         if self
             .surface
@@ -176,7 +214,19 @@ impl Encoder {
             )?);
         }
         self.surface.as_ref().unwrap().check()?;
-        self.prepare(hevc, w, h, fps, bitrate)?;
+        if av1 {
+            let (fw, fh, rgba) = self.surface.as_mut().unwrap().frame()?;
+            return self.encode(requested, &rgba, fw, fh, fps, bitrate, key, at_ms);
+        }
+        self.av1 = None;
+        self.av1_failed = false;
+        self.prepare(
+            requested == crate::rc::video_params::VideoCodec::Hevc,
+            w,
+            h,
+            fps,
+            bitrate,
+        )?;
         let (mut bytes, mut length, mut out_key) = (std::ptr::null_mut(), 0, false);
         let mut codec = [0_i8; 64];
         let status = unsafe {
@@ -294,5 +344,37 @@ mod tests {
         assert_eq!(surface_dimensions(3840, 2160, 1920, true), (1920, 1080));
         assert_eq!(surface_dimensions(2160, 3840, 1920, true), (606, 1080));
         assert_eq!(surface_dimensions(3840, 2160, 3840, false), (3840, 2160));
+    }
+    #[test]
+    fn unsupported_av1_size_falls_back_to_avc_and_stays_there() {
+        if std::env::var_os("PASTEPANDA_TEST_AV1").is_none() {
+            return;
+        }
+        assert!(crate::macos::av1::available());
+        let mut encoder = Encoder::default();
+        let pixels = vec![120; 32 * 32 * 4];
+        for at in [0, 34] {
+            let (packet, codec) = encoder
+                .encode(
+                    crate::rc::video_params::VideoCodec::Av1,
+                    &pixels,
+                    32,
+                    32,
+                    30,
+                    1_000_000,
+                    true,
+                    at,
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                crate::rc::video_params::wire_codec_label(&codec),
+                Some("h264")
+            );
+            assert!(packet.key && !packet.data.is_empty());
+            assert!(encoder.av1_failed && encoder.av1.is_none());
+        }
+        encoder.suspend();
+        assert!(encoder.native.is_none() && encoder.av1.is_none() && !encoder.av1_failed);
     }
 }

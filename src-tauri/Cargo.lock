@@ -5175,6 +5175,7 @@ dependencies = [
  "hostname",
  "image",
  "iroh",
+ "libloading 0.8.9",
  "log",
  "md-5",
  "mp4",

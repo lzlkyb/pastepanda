@@ -3,7 +3,7 @@
 pub enum VideoCodec {
     H264,
     Hevc,
-    /// P2.3：AV1（FF 硬编专属；MF 无 AV1，open_chain 在 MF 前就拒绝）。
+    /// AV1: Windows FF hardware candidates, Mac FFmpeg/SVT software encoder.
     Av1,
 }
 impl VideoCodec {
@@ -35,6 +35,48 @@ pub fn bitrate_for_width(width: u32) -> u32 {
     }
 }
 
+/// Protocol metadata always carries a codec family, never a decoder parameter
+/// string. Mac native encoders provide avc1/hev1; Windows provides family names.
+pub(crate) fn wire_codec_label(codec: &str) -> Option<&'static str> {
+    match codec {
+        "jpeg" => Some("jpeg"),
+        "h264" => Some("h264"),
+        "hevc" => Some("hevc"),
+        "av1" => Some("av1"),
+        c if c.starts_with("avc1.") && c.len() == 11 => Some("h264"),
+        c if c.starts_with("hev1.") && c.len() < 64 => Some("hevc"),
+        c if c.starts_with("av01.") && c.len() < 64 => Some("av1"),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod wire_codec_tests {
+    use super::*;
+    #[test]
+    fn every_producer_uses_the_same_wire_family() {
+        for (native, family) in [
+            ("avc1.64002a", "h264"),
+            ("hev1.1.6.L120.B0", "hevc"),
+            ("av01.0.08M.08", "av1"),
+            ("av1", "av1"),
+            ("jpeg", "jpeg"),
+        ] {
+            assert_eq!(wire_codec_label(native), Some(family));
+            assert_eq!(wire_codec_label(family), Some(family));
+        }
+        assert_eq!(wire_codec_label("unknown"), None);
+    }
+    #[test]
+    fn mac_software_av1_fps_budget_does_not_change_native_video() {
+        assert_eq!(mac_encoder_fps(VideoCodec::Av1, 165), 30);
+        assert_eq!(mac_encoder_fps(VideoCodec::Av1, 15), 15);
+        assert_eq!(mac_encoder_fps(VideoCodec::H264, 165), 165);
+        assert_eq!(mac_encoder_fps(VideoCodec::Hevc, 120), 120);
+        assert_eq!(mac_encoder_fps(VideoCodec::Av1, 0), 1);
+    }
+}
+
 pub fn fps_bitrate_factor(fps: u32) -> u64 {
     match fps {
         0..=30 => 100,
@@ -62,4 +104,9 @@ pub struct VideoPacket {
 /// Match Mac stream capture cadence to its supported native encoder range.
 pub(crate) fn mac_capture_fps(interval_ms: u64) -> u32 {
     crate::rc::pace::want_fps_for(interval_ms, false, true).min(60)
+}
+
+pub(crate) fn mac_encoder_fps(codec: VideoCodec, fps: u32) -> u32 {
+    fps.max(1)
+        .min(if codec == VideoCodec::Av1 { 30 } else { 165 })
 }

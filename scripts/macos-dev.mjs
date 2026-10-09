@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { debugBundlePath } from "./macos-bundle-path.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const mode = process.argv[2] ?? "check";
@@ -56,6 +57,12 @@ if (!env.LIBCLANG_PATH) {
 }
 console.log(`LIBCLANG_PATH=${env.LIBCLANG_PATH}`);
 if (mode === "check") process.exit(0);
+const commandArgs = process.argv.slice(3);
+const targetIndex = commandArgs.indexOf("--target");
+const targetName = targetIndex >= 0 ? commandArgs[targetIndex + 1] : commandArgs.find(arg => arg.startsWith("--target="))?.slice(9);
+const av1Arch = targetName === "universal-apple-darwin" ? "universal" : targetName?.startsWith("x86_64") ? "x86_64" : targetName?.startsWith("aarch64") ? "arm64" : process.arch === "arm64" ? "arm64" : "x86_64";
+const av1 = run(process.execPath, ["scripts/macos-av1-build.mjs", "--arch", av1Arch]);
+if (av1.error || av1.status !== 0) process.exit(av1.status ?? 1);
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const prepare = run(npm, ["run", "prebuild"]);
 if (prepare.error || prepare.status !== 0) process.exit(prepare.status ?? 1);
@@ -68,9 +75,10 @@ if (result.error || result.status !== 0) process.exit(result.status ?? 1);
 if (mode === "build" && process.argv.includes("--debug") && !env.APPLE_SIGNING_IDENTITY) {
   const config = JSON.parse(readFileSync(path.join(root, "src-tauri", "tauri.conf.json"), "utf8"));
   const args = process.argv.slice(3);
-  const targetFlag = args.indexOf("--target");
-  const target = targetFlag >= 0 ? args[targetFlag + 1] : args.find(arg => arg.startsWith("--target="))?.slice(9);
-  const app = path.join(env.CARGO_TARGET_DIR, ...(target ? [target] : []), "debug", "bundle", "macos", `${config.productName}.app`);
+  const app = debugBundlePath(env.CARGO_TARGET_DIR, config.productName, args, file => {
+    const input = path.resolve(root, file);
+    return readFileSync(existsSync(input) ? input : path.resolve(root, "src-tauri", file), "utf8");
+  });
   if (existsSync(app)) {
     let signature = run("codesign", ["--verify", "--deep", "--strict", app], true);
     if (signature.status !== 0) {

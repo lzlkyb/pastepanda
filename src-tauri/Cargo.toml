@@ -222,6 +222,7 @@ winreg = "0.52"
 # GIF 依赖在下方 Windows/Mac 共用，解码分别使用系统媒体框架。
 
 [target.'cfg(target_os = "macos")'.dependencies]
+libloading = "0.8.9"
 openh264 = "0.9.8"
 openh264-sys2 = "0.9.8"
 

@@ -324,6 +324,10 @@ fn crop_rgb(rgb: &[u8], w: u32, h: u32, r: DirtyRect) -> Result<Vec<u8>, String>
 #[cfg(target_os="macos")]
 pub(crate) fn capture_mac_rgba(state:&mut EncoderState)->Result<(u32,u32,Vec<u8>),String>{
     let fps=crate::rc::video_params::mac_capture_fps(state.profile.interval_ms);
+    capture_mac_rgba_at_fps(state, fps)
+}
+#[cfg(target_os="macos")]
+pub(crate) fn capture_mac_rgba_at_fps(state:&mut EncoderState, fps:u32)->Result<(u32,u32,Vec<u8>),String>{
     if state.mac_capture.as_ref().is_none_or(|c|!c.matches(state.monitor,state.virtual_screen,fps)){
         state.mac_capture=None;
         state.mac_capture=Some(crate::rc::mac_capture::Capture::start(state.monitor,state.virtual_screen,fps)?);
