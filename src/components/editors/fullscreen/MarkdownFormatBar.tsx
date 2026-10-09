@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 /**
  * Markdown 类型专属格式栏（稿子 P0-5 收束版）。
  *
@@ -73,7 +74,7 @@ export function MarkdownFormatBar({ bridge }: { bridge: ShellBridge }) {
   return (
     <>
       {/* L2：带「查找」二字，不只放大镜——快捷键对小白不可发现 */}
-      <button className={styles.fmtBtnText} title="查找 Ctrl+F" onClick={openSearch}>
+      <button className={styles.fmtBtnText} title={`查找 ${primarySearchShortcut()}`} onClick={openSearch}>
         <Search size={13} />
         <span>查找</span>
       </button>

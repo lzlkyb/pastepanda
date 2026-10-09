@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn 程序路径比较容忍大小写与前缀() {
         assert!(same_exe_path(EXE, EXE));
-        assert!(same_exe_path(EXE, &EXE.to_ascii_uppercase()));
+        assert_eq!(same_exe_path(EXE, &EXE.to_ascii_uppercase()),cfg!(windows));
         assert!(same_exe_path(EXE, &EXE.replace('/', "\\")));
         assert!(same_exe_path(
             EXE,

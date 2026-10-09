@@ -14,13 +14,14 @@ name = "pastepanda_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+cc = "1"
 tauri-build = { version = "2", features = [] }
 
 [features]
 easytier-underlay = []
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "devtools", "protocol-asset"] }
+tauri = { version = "2", features = ["tray-icon", "image-png", "devtools", "protocol-asset", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
@@ -218,8 +219,14 @@ windows = { version = "0.58", features = [
 ] }
 winreg = "0.52"
 # 录屏裁剪（四期 1.4）：纯 Rust MP4 容器读写——关键帧对齐剪切只重排 sample 表，零转码
+# GIF 依赖在下方 Windows/Mac 共用，解码分别使用系统媒体框架。
+
+[target.'cfg(target_os = "macos")'.dependencies]
+openh264 = "0.9.8"
+openh264-sys2 = "0.9.8"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 mp4 = "0.14"
-# GIF 导出（四期 1.5）：纯 Rust 编码 + 调色板量化（解码走 MF SourceReader，不碰 FF）
 gif = "0.13"
 color_quant = "1.1"
 

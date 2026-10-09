@@ -1,14 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import styles from "../Settings.module.css";
 
-/** 归一化组合键用于冲突比较（修饰键顺序固定，主键小写） */
-function normalizeCombo(combo: string): string {
-  const order = ["ctrl", "alt", "shift", "meta"];
-  const parts = combo.toLowerCase().split("+").filter(Boolean);
-  const mods = order.filter((m) => parts.includes(m));
-  const keys = parts.filter((p) => !order.includes(p));
-  return [...mods, ...keys].join("+");
-}
+import { formatHotkey, normalizeHotkeyCombo, hotkeyMainKey } from "@/lib/utils";
+export { formatHotkey } from "@/lib/utils";
 
 /** 允许作为「单键」注册的全局快捷键白名单：全部是不参与文字输入的功能键/系统键。
  *  Snipaste/PixPin 截图默认 F1 就是这个模型。裸字母/数字会劫持所有应用里的打字输入，
@@ -18,25 +12,6 @@ const SAFE_SINGLE_KEYS = new Set([
   "f13", "f14", "f15", "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23", "f24",
   "printscreen", "scrolllock", "pause",
 ]);
-
-/** 将组合键格式化为易读形式：ctrl+shift+k → Ctrl + Shift + K */
-export function formatHotkey(combo: string): string {
-  if (!combo || !combo.trim()) return "未设置";
-  const modLabels: Record<string, string> = {
-    ctrl: "Ctrl", alt: "Alt", shift: "Shift", meta: "Win",
-    printscreen: "PrtSc", scrolllock: "ScrollLock", pause: "Pause",
-  };
-  return combo
-    .split("+")
-    .filter(Boolean)
-    .map((p) => {
-      const low = p.toLowerCase();
-      if (modLabels[low]) return modLabels[low];
-      if (/^f\d{1,2}$/i.test(low)) return low.toUpperCase();
-      return p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1);
-    })
-    .join(" + ");
-}
 
 /**
  * 快捷键录制器
@@ -77,7 +52,7 @@ export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false
       if (!recording) return;
       e.preventDefault();
       e.stopPropagation();
-      const rawKey = e.key;
+      const rawKey = hotkeyMainKey(e);
       // Esc = 退出录制
       if (rawKey === "Escape" || rawKey === "Esc") {
         setRecording(false);
@@ -122,7 +97,7 @@ export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false
       // 会劫持系统功能——一律拒绝，必须加 Ctrl/Alt/Win。
       if (!parts.some((p) => p === "ctrl" || p === "alt" || p === "meta")) {
         if (!SAFE_SINGLE_KEYS.has(mappedKey)) {
-          showHint("字母/数字单键会劫持输入 · 请加 Ctrl/Alt/Win 或选 F1-F24 / PrtSc");
+          showHint(`字母/数字单键会劫持输入 · 请加 ${formatHotkey("ctrl+alt+meta").split(" + ").join("/")} 或选 F1-F24`);
           return;
         }
       }
@@ -131,7 +106,7 @@ export function HotkeyRecorder({ value, onChange, taken = [], allowClear = false
       const combo = parts.join("+");
 
       // 与其他快捷键冲突时拒绝
-      if (taken.some((t) => t && normalizeCombo(t) === normalizeCombo(combo))) {
+      if (taken.some((t) => t && normalizeHotkeyCombo(t) === normalizeHotkeyCombo(combo))) {
         showHint("与其他快捷键冲突");
         return;
       }

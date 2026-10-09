@@ -165,6 +165,7 @@ export function recOpenFile(path: string): Promise<void> {
 export interface RecKeyframeIndex {
   durationMs: number;
   keyframesMs: number[];
+  warning?: string | null;
 }
 
 /** 预览窗数据（rec_preview_take 一次性消费）。 */

@@ -93,7 +93,7 @@ export function RcSessionView({
   useEffect(() => {
     if (fitDowngradeTick > 0) say("1:1 在全屏会超出屏幕，已切回「适应」", "info");
   }, [fitDowngradeTick, say]);
-  const { audioOn, toggleAudio } = useRcSessionAudio(session.id, say);
+  const { audioOn, toggleAudio } = useRcSessionAudio(session.id, say, rc.status?.peer_audio?.err);
   const prefs = useRcSessionPrefs({
     sessionId: session.id,
     quality,

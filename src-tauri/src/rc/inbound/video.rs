@@ -4,12 +4,12 @@ use super::*;
 
 /// 编码标准决策（纯函数，规则 11.1：判据两处调用必收口）。
 /// 档位自带 HEVC 偏好（uhd60）优先于显式 SetCodec；AV1 只在显式选择时启用。
-/// （Windows 宿主专属：VideoCodec 属编码器域，mobile 无推流管线不编译）
-#[cfg(target_os = "windows")]
+/// 编码标准属于跨平台协议；执行硬件编码的管线仍按平台编译。
 pub(in crate::rc) fn want_stream_codec(
     profile_hevc: bool,
     codec: &crate::rc::stream_cfg::StreamCodec,
-) -> VideoCodec {
+) -> crate::rc::video_params::VideoCodec {
+    use crate::rc::video_params::VideoCodec;
     use crate::rc::stream_cfg::StreamCodec;
     if profile_hevc {
         return VideoCodec::Hevc;
@@ -24,7 +24,7 @@ pub(in crate::rc) fn want_stream_codec(
 #[cfg(test)]
 mod want_codec_tests {
     use super::want_stream_codec;
-    use crate::rc::encode_h264::VideoCodec;
+    use crate::rc::video_params::VideoCodec;
     use crate::rc::stream_cfg::StreamCodec;
 
     #[test]
@@ -55,10 +55,8 @@ use crate::rc::pace::{auto_key_due, want_fps_for, AUTO_KEY_MIN_GAP_MS};
 /// 所以「写完一帧用了多久」就是积压的直观读数。单帧写 ≥`MELT_SLOW_MS` → 熔断：
 /// 只弃大 P 帧（小帧是窄管上唯一能穿过的），关键帧照发（写耗时顺便当水位
 /// 探针）；某次写入变快 = 队列已排干 → 退出。
-#[cfg(target_os = "windows")]
 pub(crate) const MELT_SLOW_MS: u64 = 1500;
 /// 一帧在这个时间内写完 = 队列已排干，退出熔断恢复产帧。
-#[cfg(target_os = "windows")]
 pub(crate) const MELT_EXIT_MS: u64 = 80;
 /// 熔断期只弃**大** P 帧，小帧照发（2026-10-03 09:52 中继会话教训）：
 /// 窄管路径上写一帧的时间下限就是帧的传输时间，阈值太低会把唯一能穿过
@@ -70,7 +68,6 @@ pub(crate) const MELT_DROP_MIN_BYTES: u64 = 32 * 1024;
 /// 已入队字节无法丢弃，光弃新帧只能停止加量、不能清账；重建把旧流连同
 /// 积压整段丢弃，延迟上界 = 重开周期内新积的量。5s：一次 GOP + 数帧的
 /// 观察窗，短于它会把「写一帧的正常传输时间」误判成持续拥塞。
-#[cfg(target_os = "windows")]
 pub(crate) const MELT_REBUILD_AFTER_MS: u128 = 5_000;
 
 /// 熔断判定对本帧的动作。
@@ -313,6 +310,14 @@ impl InboundVideo {
             my_id,
             send,
             enc,
+            #[cfg(target_os="macos")]
+            mac_video:Arc::new(std::sync::Mutex::new(crate::rc::mac_video::Encoder::default())),
+            #[cfg(target_os="macos")]
+            mac_video_retry:None,
+            #[cfg(target_os="macos")]
+            mac_video_seq:0,
+            #[cfg(target_os="macos")]
+            mac_video_codec:"H.264".into(),
             #[cfg(target_os = "windows")]
             dxgi: crate::rc::dxgi::DxgiPool::new(),
             #[cfg(target_os = "windows")]
@@ -333,7 +338,7 @@ impl InboundVideo {
             dgram_allowed: false,
             peer_video_plane,
             peer_media_plane,
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows",target_os="macos"))]
             media_pipe: None,
             #[cfg(target_os = "windows")]
             stream_melt: false,
@@ -454,7 +459,10 @@ impl InboundVideo {
     /// mobile 宿主没有硬编管线，恒 JPEG（相关字段在这个 cfg 下根本不存在）。
     #[cfg(not(target_os = "windows"))]
     pub(in crate::rc) fn pipeline_label(&self) -> String {
-        "JPEG".to_string()
+        #[cfg(target_os="macos")]
+        {if self.tick_jpeg {"JPEG".to_string()} else {format!("{} (VideoToolbox)",self.mac_video_codec)}}
+        #[cfg(not(target_os="macos"))]
+        {"JPEG".to_string()}
     }
 
     /// 探针（2026-09-21）：组装汇总行的运行时上下文——档位 / 节奏 / 实际管线。
@@ -755,11 +763,10 @@ impl InboundVideo {
                 }
             }
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = opts;
-            Step::FallThrough
-        }
+        #[cfg(target_os="macos")]
+        { self.try_mac_video(opts).await }
+        #[cfg(not(any(target_os="windows",target_os="macos")))]
+        {let _=opts;Step::FallThrough}
     }
 
     /// 推送 H.264 包（CPU/GPU 两路共用）。

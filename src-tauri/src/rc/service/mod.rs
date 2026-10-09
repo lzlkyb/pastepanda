@@ -334,23 +334,23 @@ pub struct RcService {
     // ── G3 音频 ──
     /// 发起端：音频收流状态（cfg + 待取包）。accept_uni 的音频流写入，
     /// `rc_drain_audio` 命令取走。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows",target_os="macos"))]
     audio_rx: Mutex<super::audio::AudioRx>,
     /// 被控端：对端申请了系统声音（Request.audio）。false = 旧对端 / 对端关声音。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os="windows",target_os="macos"))]
     audio_peer_wants: std::sync::atomic::AtomicBool,
     /// 被控端：**对端**会话中开关的镜像（对端 AudioOn(false) 置位；worker 每轮读）。
     ///
     /// ❗ 名字叫 muted，语义其实是「对端此刻想不想要」——**不是**「本机给不给」。
     /// 本机自己的意愿在 [`audio_local_mute`](Self::audio_local_mute)：两者都与
     /// `audio_peer_wants` 相与（见 `audio_wanted`），任一为否即不出声。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os="windows",target_os="macos"))]
     audio_muted: std::sync::atomic::AtomicBool,
     /// 被控端：**本机**静音（被控者自己在横幅上关的）。一票否决——对端开着也不出声。
     ///
     /// **跨会话保持**：这是隐私意愿，不做自动回退（关了就是关了，下次会话仍是关），
     /// 只有被控者自己再点开才恢复；不落盘，重启应用回到默认「可被听」。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os="windows",target_os="macos"))]
     audio_local_mute: std::sync::atomic::AtomicBool,
     /// 发起端：从对端 `host_audio` 帧收到的**对方主机侧音频状态**（G3-B/C）。
     /// None = 还没收到（旧对端不发这条帧）。
@@ -644,13 +644,13 @@ impl RcService {
             media_state: Mutex::new(media_control::MediaState::default()),
             link: LinkState::new(),
             pressed: std::sync::Mutex::new(super::pressed::Pressed::new()),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows",target_os="macos"))]
             audio_rx: Mutex::new(super::audio::AudioRx::default()),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os="windows",target_os="macos"))]
             audio_peer_wants: std::sync::atomic::AtomicBool::new(false),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os="windows",target_os="macos"))]
             audio_muted: std::sync::atomic::AtomicBool::new(false),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os="windows",target_os="macos"))]
             audio_local_mute: std::sync::atomic::AtomicBool::new(false),
             peer_host_audio: Mutex::new(None),
             spk_mute_by_peer: std::sync::atomic::AtomicBool::new(false),

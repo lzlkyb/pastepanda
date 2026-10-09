@@ -930,3 +930,70 @@ export function clampRcFloatingMousePosition(x: number, y: number, width: number
     y: Math.max(minY, Math.min(Math.max(minY, height - 88), y)),
   };
 }
+
+const HOTKEY_ALIASES: Record<string, string> = { control: "ctrl", option: "alt", command: "meta", cmd: "meta", super: "meta", win: "meta" };
+/** Canonical modifier aliases for conflict detection. */
+export function normalizeHotkeyCombo(combo: string): string {
+  const parts = combo.toLowerCase().split("+").map((p) => HOTKEY_ALIASES[p.trim()] ?? p.trim()).filter(Boolean);
+  const order = ["ctrl", "alt", "shift", "meta"];
+  return [...order.filter((m) => parts.includes(m)), ...parts.filter((p) => !order.includes(p))].join("+");
+}
+export function formatHotkey(combo: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  if (!combo?.trim()) return "未设置";
+  const mac = /mac/i.test(platform);
+  const labels: Record<string, string> = {
+    ctrl: mac ? "Control" : "Ctrl", alt: mac ? "Option" : "Alt", shift: "Shift", meta: mac ? "Command" : "Win",
+    printscreen: "PrtSc", scrolllock: "ScrollLock", pause: "Pause",
+  };
+  return combo.split("+").map((p) => p.trim()).filter(Boolean).map((p) => {
+    const key = HOTKEY_ALIASES[p.toLowerCase()] ?? p.toLowerCase();
+    return labels[key] ?? (/^f\d{1,2}$/i.test(key) || key.length === 1 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1));
+  }).join(" + ");
+}
+/** Modified shortcuts use physical letter/digit codes, including Option-generated glyphs. */
+export function hotkeyMainKey(event: { key: string; code: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean }, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  if (/mac/i.test(platform) && (event.ctrlKey || event.altKey || event.metaKey)) {
+    if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+    if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  }
+  return event.key;
+}
+
+/** Search handlers accept Command on Mac and Control elsewhere. */
+export function primarySearchShortcut(platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  return formatHotkey(/mac/i.test(platform) ? "meta+f" : "ctrl+f", platform).replace(/ \+ /g, "+");
+}
+
+/** A configured empty string disables the shortcut; never substitute a default badge. */
+export function toolShortcutLabel(
+  key: string,
+  fallback: string | undefined,
+  config: { sequential_hotkey?: string; rec_hotkey?: string },
+  platform = typeof navigator === "undefined" ? "" : navigator.platform,
+): string | undefined {
+  const raw = key === "sequential" ? config.sequential_hotkey
+    : key === "screenrec" ? config.rec_hotkey : fallback;
+  const selected = raw ?? fallback;
+  if (!selected?.trim()) return undefined;
+  return formatHotkey(selected, platform).replace(/ \+ /g, "+");
+}
+
+/** Claude Desktop 的探测和写入使用同一平台路径。 */
+export function claudeDesktopPaths(platform = typeof navigator === "undefined" ? "" : navigator.platform) {
+  const detectPath = /mac/i.test(platform)
+    ? "~/Library/Application Support/Claude"
+    : "~/AppData/Roaming/Claude";
+  return { detectPath, configPath: `${detectPath}/claude_desktop_config.json` };
+}
+
+/** Mac capture pixels use primary density; a spanning WebView can have a different backing DPR. */
+export function capturePixelRatio(
+  physicalWidth: number | undefined,
+  cssWidth = typeof window === "undefined" ? 0 : window.innerWidth,
+  backingRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+  platform = typeof navigator === "undefined" ? "" : navigator.platform,
+): number {
+  const ratio = Number(physicalWidth) / cssWidth;
+  return /Mac/i.test(platform) && Number.isFinite(ratio) && ratio > 0 && cssWidth > 0
+    ? ratio : backingRatio;
+}

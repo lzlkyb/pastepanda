@@ -7,14 +7,22 @@ use super::*;
 
 #[test]
 fn 流头编解对称() {
-    let cfg = AudioCfg { sr: 48000, ch: 2, asc: vec![0x12, 0x10], br: 128 };
+    let cfg = AudioCfg {
+        sr: 48000,
+        ch: 2,
+        asc: vec![0x12, 0x10],
+        br: 128,
+    };
     let buf = encode_stream_header(&cfg);
     let (got, used) = try_parse_stream_header(&buf).expect("应识别为音频流");
     assert_eq!(got, cfg);
     assert_eq!(used, buf.len());
     // 非音频流（旧版本对端的未知流）认不出
     assert!(try_parse_stream_header(b"XXXXXXXX").is_none());
-    assert!(try_parse_stream_header(&buf[..buf.len() - 1]).is_none(), "截断不误判");
+    assert!(
+        try_parse_stream_header(&buf[..buf.len() - 1]).is_none(),
+        "截断不误判"
+    );
 }
 
 #[test]
@@ -72,7 +80,12 @@ fn asc构造_对拍已知值() {
 #[test]
 fn 收流队列_满则丢最旧() {
     let mut rx = AudioRx::default();
-    rx.begin(AudioCfg { sr: 48000, ch: 2, asc: vec![1, 2], br: 128 });
+    rx.begin(AudioCfg {
+        sr: 48000,
+        ch: 2,
+        asc: vec![1, 2],
+        br: 128,
+    });
     for i in 0..(QUEUE_CAP as u64 + 5) {
         rx.push(i, vec![i as u8]);
     }
@@ -85,7 +98,12 @@ fn 收流队列_满则丢最旧() {
 fn 收流队列_新流清空旧包() {
     let mut rx = AudioRx::default();
     rx.push(1, vec![1]);
-    rx.begin(AudioCfg { sr: 44100, ch: 2, asc: vec![9], br: 96 });
+    rx.begin(AudioCfg {
+        sr: 44100,
+        ch: 2,
+        asc: vec![9],
+        br: 96,
+    });
     assert!(rx.queue.is_empty(), "换流不能把上一条流的残包播出来");
     assert_eq!(rx.cfg.as_ref().unwrap().sr, 44100);
 }
@@ -93,7 +111,12 @@ fn 收流队列_新流清空旧包() {
 #[test]
 fn 收流队列_reset清干净() {
     let mut rx = AudioRx::default();
-    rx.begin(AudioCfg { sr: 48000, ch: 2, asc: vec![1], br: 128 });
+    rx.begin(AudioCfg {
+        sr: 48000,
+        ch: 2,
+        asc: vec![1],
+        br: 128,
+    });
     rx.push(3, vec![7]);
     rx.reset();
     assert!(rx.cfg.is_none() && rx.queue.is_empty());
@@ -104,6 +127,7 @@ fn 收流队列_reset清干净() {
 /// 这条是整个 G3 里唯一「真开 COM + MF + 收件箱 MFT 编出字节」的证据。
 /// 顺带把**编码器延迟**量出来（收件箱 AAC 有 MDCT 前瞻，前几帧不出包）——
 /// 这是估算「声音总延迟」时不能漏的一段。
+#[cfg(target_os = "windows")]
 #[test]
 fn aac编码器_开得起来且出帧() {
     let mut enc = AacEncoder::open(48000).expect("收件箱 AAC 编码器应能打开");
@@ -111,7 +135,10 @@ fn aac编码器_开得起来且出帧() {
     assert_eq!(enc.cfg().br, BITRATE_BPS / 1000);
 
     // 不满一帧（1024 采样/声道 = 2048 个 i16）不提交，蓄在池子里
-    assert!(enc.encode(&vec![0i16; 1000]).expect("不足一帧不应报错").is_empty());
+    assert!(enc
+        .encode(&vec![0i16; 1000])
+        .expect("不足一帧不应报错")
+        .is_empty());
 
     const PROBE_FRAMES: usize = 10;
     let frame = vec![0i16; AAC_SAMPLES_PER_FRAME * CHANNELS as usize];
@@ -190,7 +217,11 @@ async fn 音频队列满则丢最旧保最新_关闭仍被生产侧感知() {
     let AudioOut::Pkt { pts_ms, .. } = first else {
         panic!("应是 Pkt");
     };
-    assert_eq!(pts_ms, 1, "丢的必须是最旧的 0，不是最新的 {}", AUDIO_CHAN_CAP);
+    assert_eq!(
+        pts_ms, 1,
+        "丢的必须是最旧的 0，不是最新的 {}",
+        AUDIO_CHAN_CAP
+    );
     // 关闭发送端再排干（❗ recv 只在通道关闭后才返回 None，边开着边排干会
     // 等出一个永久挂起——第一次写这个循环时就挂住了测试进程）。
     // 最后一条必须是最新包：它才是「要新鲜」的那条。
@@ -230,4 +261,38 @@ async fn 发送端全部丢弃后消费端排干才返回None() {
         other => panic!("排干前不该是 None：{other:?}"),
     }
     assert!(rx.recv().await.is_none(), "排干后才是 None");
+}
+
+#[tokio::test]
+async fn queue_preserves_configuration_under_pressure_and_clears_old_epoch() {
+    let (tx, mut rx) = audio_channel();
+    let dropped = std::sync::atomic::AtomicU64::new(0);
+    let cfg = AudioCfg {
+        sr: 48000,
+        ch: 2,
+        asc: asc_for(48000, 2).unwrap(),
+        br: 128,
+    };
+    assert!(try_push_audio(&tx, AudioOut::Cfg(cfg.clone()), &dropped));
+    for pts in 0..(AUDIO_CHAN_CAP as u64 + 10) {
+        assert!(try_push_audio(
+            &tx,
+            AudioOut::Pkt {
+                pts_ms: pts,
+                data: vec![1]
+            },
+            &dropped
+        ));
+    }
+    assert_eq!(rx.len(), AUDIO_CHAN_CAP);
+    assert!(matches!(rx.recv().await, Some(AudioOut::Cfg(_))));
+    assert!(try_push_audio(&tx, AudioOut::Cfg(cfg), &dropped));
+    assert_eq!(rx.len(), 1);
+    assert!(try_push_audio(
+        &tx,
+        AudioOut::Error("codec failed".into()),
+        &dropped
+    ));
+    assert_eq!(rx.len(), 1);
+    assert!(matches!(rx.recv().await, Some(AudioOut::Error(_))));
 }

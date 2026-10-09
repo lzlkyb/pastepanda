@@ -865,8 +865,8 @@ fn 守卫_会话防休眠六处接线成对() {
     );
     let cmd = include_str!("../../commands/rc.rs");
     assert!(
-        cmd.contains("#[cfg(target_os = \"windows\")]") && cmd.contains("会话防休眠只支持 Windows 被控端"),
-        "非 Windows 必须**明确报错**，静默成功会让开关切到永远不生效的假状态"
+        cmd.contains("会话防休眠只支持 Windows 或 Mac 被控端"),
+        "不支持的宿主必须明确报错，Windows 与 Mac 使用各自电源守卫"
     );
     let ts_cmd = include_str!("../../../../src/lib/api/rcCommands.ts");
     assert!(

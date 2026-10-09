@@ -385,3 +385,17 @@ fn test_w1_同一批增量重放不生冲突副本() {
 
     let _ = std::fs::remove_dir_all(&p.root);
 }
+
+#[test]
+fn unix_references_preserve_boundaries_and_exclude_remote_urls(){
+    for prefix in ["file:///Users/Name%20Space/app","file:////Users/Name Space/app","/home/user/app"] {
+        let content=format!("中文<img src=\"{prefix}/images/{HASH}.png\">![x]({prefix}/images/{HASH}.png)");
+        assert_eq!(scan_local_refs(&content).len(),1);let portable=to_portable(&content);
+        assert_eq!(portable,format!("中文<img src=\"pp-asset:{HASH}.png\">![x](pp-asset:{HASH}.png)"));
+    }
+    for prefix in ["https://example.com","//example.com","file://server/app","https://example.com/a"] {
+        let content=format!("<img src=\"{prefix}/images/{HASH}.png\">");assert!(scan_local_refs(&content).is_empty());assert_eq!(to_portable(&content),content);
+    }
+    let images=Path::new("/Users/Name Space/app/images");let original=format!("<img src=\"file:////Users/Name Space/app/images/{HASH}.png\">");
+    assert_eq!(to_local(&to_portable(&original),images),original);
+}

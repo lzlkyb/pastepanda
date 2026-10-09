@@ -148,14 +148,17 @@ export function WindowEditorSection({
               detail={<>
                 <p>将 PastePanda 注册为 .md 文件的打开方式，并引导你在系统设置中确认为默认程序。</p>
                 <p>📌 <b>生效后</b>：双击任意 .md 文件，直接用 PastePanda 全屏编辑器打开</p>
-                <p>📌 开启后会打开系统「默认应用」设置页并定位到 PastePanda，点击 .md 一行选择 PastePanda 即可</p>
+                <p>📌 Windows 开启后会打开系统「默认应用」设置页并定位到 PastePanda，点击 .md 一行选择 PastePanda 即可</p>
+                <p>Mac 开启后设为默认程序，关闭后恢复开启前的默认程序。</p>
                 <p>⚠️ Windows 不允许应用静默设为默认，需手动确认一次</p>
               </>}
             />
           </div>
           <div className={`${styles.sRowDesc}`}>
             {mdAssoc === "default" ? "已是 .md 默认打开方式 ✓"
+              : mdAssoc === "available" ? "开启后，双击 .md 文件使用 PastePanda 编辑"
               : mdAssoc === "registered" ? "已注册打开方式，尚未设为默认"
+              : mdAssoc === "unsupported" ? "此平台暂未提供文件关联，请在应用内打开文件"
               : mdAssoc === "loading" ? "检测中…"
               : "双击 .md 文件直接用 PastePanda 编辑"}
           </div>
@@ -166,11 +169,11 @@ export function WindowEditorSection({
           </button>
         )}
         <button
-          className={`${styles.sToggle} ${mdAssoc !== "unregistered" && mdAssoc !== "loading" ? styles.on : styles.off}`}
-          disabled={mdAssocBusy || mdAssoc === "loading"}
-          onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "loading")}>
+          className={`${styles.sToggle} ${(mdAssoc === "default" || mdAssoc === "registered") ? styles.on : styles.off}`}
+          disabled={mdAssocBusy || mdAssoc === "loading" || mdAssoc === "unsupported"}
+          onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "available" || mdAssoc === "loading")}>
           <span className={styles.sToggleThumb} />
-          <span className={styles.sToggleLabel}>{mdAssoc !== "unregistered" && mdAssoc !== "loading" ? "开" : "关"}</span>
+          <span className={styles.sToggleLabel}>{(mdAssoc === "default" || mdAssoc === "registered") ? "开" : "关"}</span>
         </button>
       </div>
       <NoteTemplateRows config={config} updateAndSave={updateAndSave} />

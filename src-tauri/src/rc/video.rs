@@ -287,6 +287,8 @@ pub struct DirtyRect {
 
 /// 自适应质量状态（被控端每会话一份）。
 pub struct EncoderState {
+    #[cfg(target_os="macos")]
+    mac_capture: Option<crate::rc::mac_capture::Capture>,
     quality: u8,
     last_rgb: Option<(u32, u32, Vec<u8>)>,
     frame_idx: u32,
@@ -309,6 +311,8 @@ impl EncoderState {
 
     pub fn with_profile(profile: EncodeProfile, virtual_screen: bool) -> Self {
         Self {
+            #[cfg(target_os="macos")]
+            mac_capture: None,
             quality: profile.q_default,
             last_rgb: None,
             frame_idx: 0,
@@ -321,6 +325,10 @@ impl EncoderState {
         }
     }
 
+    #[cfg(target_os="macos")]
+    pub(crate) fn suspend_capture(&mut self) {
+        self.mac_capture.take();self.last_rgb=None;self.frame_idx=0;
+    }
     pub fn quality(&self) -> u8 {
         self.quality
     }

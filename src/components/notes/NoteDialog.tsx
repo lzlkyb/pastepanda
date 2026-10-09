@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 /**
  * 转为笔记 / 编辑笔记弹窗（知识库 A 阶段 · 规划 §8.1 3️⃣，设计稿 design/kb-a-note-dialog.html §2）。
  *
@@ -137,7 +138,7 @@ function NoteDialogInner({
               type="button"
               className={styles.headerFindBtn}
               onClick={handleFind}
-              title="查找 Ctrl+F"
+              title={`查找 ${primarySearchShortcut()}`}
               aria-label="查找"
             >
               <Search size={13} />

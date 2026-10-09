@@ -88,7 +88,12 @@ pub fn is_valid_target(hwnd: isize, own_pid: u32) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn is_valid_target(target: isize, own_pid: u32) -> bool {
+    crate::macos::valid_target(target, own_pid)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn is_valid_target(_hwnd: isize, _own_pid: u32) -> bool {
     false
 }

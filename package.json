@@ -35,7 +35,11 @@
     "lint:ui:dump": "node scripts/ui-rules/dump-counters.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,json}\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "macos:check": "node scripts/macos-dev.mjs check",
+    "macos:test:native": "node scripts/macos-native-check.mjs",
+    "macos:dev": "node scripts/macos-dev.mjs dev",
+    "macos:build": "node scripts/macos-dev.mjs build"
   },
   "lint-staged": {
     "src/**/*.{ts,tsx}": [

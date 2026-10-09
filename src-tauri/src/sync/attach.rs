@@ -94,6 +94,12 @@ static LOCAL_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("图片引用正则写错了")
 });
 
+// Unix paths must begin at a content boundary. Matching any slash would turn
+// https://host/images/... into a local attachment. file://remote hosts are excluded.
+static UNIX_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?i)(^|["'(\s>])((?:file:/{3,4}|/[^/])[^"'()<>\[\]\r\n]*?/images/([0-9a-f]{32})\.([a-z0-9]{1,5}))"#).expect("Unix 图片引用正则写错了")
+});
+
 /// 便携引用（`pp-asset:<hash>.<ext>`）。
 static PORTABLE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)pp-asset:([0-9a-f]{32})\.([a-z0-9]{1,5})").expect("便携引用正则写错了")
@@ -117,12 +123,40 @@ impl AssetRef {
 ///
 /// 用 `BTreeMap` 而不是 `Vec`：同一张图被一篇笔记引用多次很常见，
 /// 而且有序输出让清单可重现（测试好写）。
+fn local_refs(content: &str) -> Vec<(usize, usize, AssetRef)> {
+    let mut refs: Vec<_> = LOCAL_REF_RE
+        .captures_iter(content)
+        .map(|c| {
+            let span = c.get(0).unwrap();
+            (
+                span.start(),
+                span.end(),
+                AssetRef {
+                    hash: c[1].to_ascii_lowercase(),
+                    ext: c[2].to_ascii_lowercase(),
+                },
+            )
+        })
+        .chain(UNIX_REF_RE.captures_iter(content).map(|c| {
+            let span = c.get(2).unwrap();
+            (
+                span.start(),
+                span.end(),
+                AssetRef {
+                    hash: c[3].to_ascii_lowercase(),
+                    ext: c[4].to_ascii_lowercase(),
+                },
+            )
+        }))
+        .collect();
+    refs.sort_by_key(|r| (r.0, r.1));
+    refs.dedup_by_key(|r| (r.0, r.1));
+    refs
+}
 pub fn scan_local_refs(content: &str) -> Vec<AssetRef> {
-    let mut set: BTreeMap<String, AssetRef> = BTreeMap::new();
-    for c in LOCAL_REF_RE.captures_iter(content) {
-        let hash = c[1].to_ascii_lowercase();
-        let ext = c[2].to_ascii_lowercase();
-        set.insert(hash.clone(), AssetRef { hash, ext });
+    let mut set = BTreeMap::new();
+    for (_, _, asset) in local_refs(content) {
+        set.insert(asset.hash.clone(), asset);
     }
     set.into_values().collect()
 }
@@ -140,9 +174,19 @@ pub fn scan_portable_refs(content: &str) -> Vec<AssetRef> {
 
 /// 本机绝对路径 → 便携引用。导出时用。
 pub fn to_portable(content: &str) -> String {
-    LOCAL_REF_RE
-        .replace_all(content, format!("{}$1.$2", PORTABLE_SCHEME).as_str())
-        .into_owned()
+    let mut output = String::new();
+    let mut cursor = 0;
+    for (start, end, asset) in local_refs(content) {
+        if start < cursor {
+            continue;
+        }
+        output.push_str(&content[cursor..start]);
+        output.push_str(PORTABLE_SCHEME);
+        output.push_str(&asset.file_name());
+        cursor = end;
+    }
+    output.push_str(&content[cursor..]);
+    output
 }
 
 /// 便携引用 → 本机绝对路径。导入前在暂存目录里用。

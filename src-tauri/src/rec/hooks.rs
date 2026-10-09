@@ -28,29 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 /// 录制期事件（坐标 = 桌面绝对物理像素，与 DXGI 指针 `PtrMeta` 同参照系）。
-#[derive(Debug, Clone)]
-pub enum RecEvent {
-    Click { x: i32, y: i32, button: MouseBtn },
-    Key { combo: String },
-    Mark,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MouseBtn {
-    Left,
-    Right,
-    Middle,
-}
-
-impl MouseBtn {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            MouseBtn::Left => "left",
-            MouseBtn::Right => "right",
-            MouseBtn::Middle => "middle",
-        }
-    }
-}
+pub use super::event_types::{RecEvent, MouseBtn};
 
 // ── 纯函数：连击去重 / 按键分类（无环境，可单测）────────────────────────
 

@@ -4,10 +4,17 @@ use super::*;
 
 /// 抓屏并编码（带脏矩形与自适应）。按 profile 选虚拟屏或主屏。
 pub fn capture_and_encode(state: &mut EncoderState) -> Result<Encoded, String> {
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows",target_os="macos")))]
     {
         let _ = state;
         Err("远程画面目前仅支持 Windows".into())
+    }
+    #[cfg(target_os="macos")]
+    {
+        let ts=chrono::Utc::now().timestamp_millis();let start=std::time::Instant::now();
+        let (w,h,rgba)=capture_mac_rgba(state)?;
+        let capture_ms=start.elapsed().as_millis().min(u16::MAX as u128) as u16;
+        let mut output=encode_rgba_ts(state,w,h,rgba,ts)?;output.frame.cap_ms=capture_ms;Ok(output)
     }
     #[cfg(target_os = "windows")]
     {
@@ -312,4 +319,14 @@ fn crop_rgb(rgb: &[u8], w: u32, h: u32, r: DirtyRect) -> Result<Vec<u8>, String>
         out[dst..dst + n].copy_from_slice(&rgb[src..src + n]);
     }
     Ok(out)
+}
+
+#[cfg(target_os="macos")]
+pub(crate) fn capture_mac_rgba(state:&mut EncoderState)->Result<(u32,u32,Vec<u8>),String>{
+    let fps=crate::rc::video_params::mac_capture_fps(state.profile.interval_ms);
+    if state.mac_capture.as_ref().is_none_or(|c|!c.matches(state.monitor,state.virtual_screen,fps)){
+        state.mac_capture=None;
+        state.mac_capture=Some(crate::rc::mac_capture::Capture::start(state.monitor,state.virtual_screen,fps)?);
+    }
+    state.mac_capture.as_mut().unwrap().frame()
 }

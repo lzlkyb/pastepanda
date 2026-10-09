@@ -78,8 +78,8 @@ fn normalize_hotkey(s: &str) -> String {
             match p.as_str() {
                 "ctrl" | "control" => "Ctrl".to_string(),
                 "shift" => "Shift".to_string(),
-                "alt" => "Alt".to_string(),
-                "meta" | "super" | "cmd" => "Meta".to_string(),
+                "alt" | "option" => "Alt".to_string(),
+                "meta" | "super" | "cmd" | "command" | "win" => "Meta".to_string(),
                 // 功能键
                 k if k.starts_with("f") && k.len() >= 2 => {
                     let mut c = p.chars();
@@ -397,14 +397,14 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
 
     // 屏幕录制。统一入口 rec_toggle 已含「录制中再按 = 停止」分支（rec/mod.rs）。
     // 只 emit 不做事会导致录制状态判定分裂，直接调 rec 模块（同截图热键直调 open_screenshot_window）。
-    // rec 模块 Windows 专属（lib.rs cfg(windows)），非桌面/非 Windows 下热键注册保留但回调空转。
+    // Windows 和 Mac 桌面共享入口，各平台会话负责采集与编码。
     if config.screen_record.trim().is_empty() {
         log::info!("[HotkeyManager] 录屏热键已禁用（留空），跳过注册");
     } else if let Ok(shortcut) = parse_shortcut(&config.screen_record) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 log::info!("[HotkeyManager] 录屏热键触发");
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 crate::rec::open_selector_window(app);
             }
         }) {
@@ -426,7 +426,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_pause) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     let st = crate::rec::session::status();
                     if st.recording {
@@ -455,7 +455,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_stop) {
         match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     if crate::rec::session::status().recording {
                         if let Err(e) = crate::rec::session::stop(false) {
@@ -482,7 +482,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_mark) {
         match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     if crate::rec::session::status().recording {
                         crate::rec::session::send_mark();

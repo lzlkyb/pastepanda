@@ -7,7 +7,7 @@
 //! 分辨率缩放走「高度上限」而非固定宽：竖屏 / 超宽屏按高度钳制等比缩，
 //! 宽高最后对齐偶数（H.264/HEVC 宏块要求，NV12 同）。
 
-use crate::rc::encode_h264::{bitrate_for_width, fps_bitrate_factor, VideoCodec};
+use crate::rc::video_params::{bitrate_for_width, fps_bitrate_factor, VideoCodec};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecQuality {

@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 /**
  * JSON 类型专属：
  *   - jsonLinter：@codemirror/lint 行内诊断（波浪线 + gutter 标记 + 悬停提示）
@@ -111,7 +112,7 @@ export function JsonFormatBar({ bridge }: { bridge: ShellBridge }) {
 
   return (
     <>
-      <TextBtn icon={<Search size={13} />} label="查找" title="查找 Ctrl+F" onClick={openSearch} />
+      <TextBtn icon={<Search size={13} />} label="查找" title={`查找 ${primarySearchShortcut()}`} onClick={openSearch} />
       <div className={styles.fmtSep} />
       <TextBtn icon={<Zap size={13} />} label="格式化" title="格式化 JSON" onClick={() => apply("format")} />
       <TextBtn icon={<Package size={13} />} label="压缩" title="压缩为单行" onClick={() => apply("compress")} />
