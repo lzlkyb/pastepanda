@@ -51,4 +51,38 @@ describe("pre-push 两份钩子等价", () => {
       expect(s, `${name} 用了 --max-workers，vitest 4 的 CLI 不认这个键`).not.toMatch(/--max[-_]workers/);
     }
   });
+
+  // 2026-10-09：master 开了 enforce_admins + required status checks（Rust/Frontend Tests），
+  // 「全绿才可合」的裁判已经从本地钩子搬到 GitHub 那边了。钩子再跑一遍全量等于同一套测试付两遍
+  // （本地 566s + CI 12m），而它的副作用是别人的在途文件在给本次 push 判分。
+  // 于是按被推的目标分档：只有推 master 或 tag 才付全量。
+  // 这段断言钉的是「分档真的存在且顺序对」，删掉任何一句都会让文档变成假话。
+  it("按被推目标分档，全量只在推 master / tag 时跑", () => {
+    for (const [name, s] of [[".husky", husky], [".githooks", plain]] as const) {
+      const at = (needle: string) => {
+        const i = s.indexOf(needle);
+        expect(i, `${name} 缺这句：${needle}`).toBeGreaterThan(-1);
+        return i;
+      };
+      // 判档器是收口的纯函数，不是钩子里现写的一段 case
+      const decide = at("prePushTier.mjs");
+      // 失败要往重的方向掉：GUI 客户端不给 stdin 时读不到 ref，绝不能因此跳过全量
+      const failSafe = at('MODE="full"');
+      expect(failSafe, `${name} 的 MODE 初值不是 full（读不到 ref 时会静默走轻档）`).toBeLessThan(decide);
+      // 顺序必须是：判档 → 轻档也跑的守卫 → 全量闸 → vitest/cargo
+      const secretGuard = at("check_no_plaintext_secrets.sh");
+      const gate = at('if [ "$MODE" = "full" ]');
+      const vitest = at("npx vitest --run");
+      const cargo = at("cd src-tauri && cargo test");
+      expect(secretGuard, `${name} 的密钥守卫被关进全量闸里了，轻档会跳过`).toBeGreaterThan(decide);
+      expect(gate, `${name} 没有全量闸`).toBeGreaterThan(secretGuard);
+      expect(vitest, `${name} 的 vitest 不在全量闸之后`).toBeGreaterThan(gate);
+      expect(cargo, `${name} 的 cargo test 不在全量闸之后`).toBeGreaterThan(vitest);
+      // tsc 必须待在闸外：CI 的 frontend-test 只有 `npx vitest run`，而 vitest 只剥类型不校验，
+      // 把它关进 full 就等于「特性分支的 push 谁都不查类型」——只有 release 构建才会第一次发现。
+      const tsc = at("npx tsc --noEmit");
+      expect(tsc, `${name} 的 tsc 被关进全量闸里了，轻档就不查类型`).toBeLessThan(gate);
+      expect(tsc, `${name} 的 tsc 跑在判档之前（读不到 stdin 时无从知道该不该跑）`).toBeGreaterThan(decide);
+    }
+  });
 });

@@ -174,8 +174,24 @@ cargo check --manifest-path src-tauri/Cargo.toml   # 记得先设 LIBCLANG_PATH
 cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/几何单测）
 ```
 
-> pre-push hook 会自动跑完整测试。**整轮耗时自 2026-10-09 起由钩子自己打印**（每段一行 `耗时 X：N s（累计 M s）`），
+> pre-push hook 会跑守卫，**是否跑全量测试取决于被推的目标**（分档见下表）。**整轮耗时自 2026-10-09 起由钩子自己打印**（每段一行 `耗时 X：N s（累计 M s）`），
 > 文档不再抄常数——过去两次抄成假数：写「约 3 分钟」时实测 25 分钟，写「22.2 分钟」时第一段已经被删掉了。
+>
+> **2026-10-09 起钩子按「这次 push 改不改别人拉到的东西」分两档**。判据收口在 `scripts/prePushTier.mjs`（纯函数，用例 `src/__tests__/prePushTier.test.ts`），
+> 钩子里的顺序由 `src/__tests__/prePushHookParity.test.ts` 钉住：
+>
+> | 档 | 触发条件 | 跑什么 | 钩子自报耗时（本机实测） |
+> |---|---|---|---|
+> | `light` | 被推的**远端** ref 只是特性分支（`fix/** feature/** chore/** agent/** docs/**`） | 密钥守卫 + `npx tsc --noEmit` | **48s**（判档 1s / 守卫 12s / tsc 35s；tsc 冷启动另一次量到 **73s**） |
+> | `full` | 远端 ref 是 `refs/heads/master`，或掺了任何 `refs/tags/*`；以及**读不到 stdin / node 不可用 / ref 行读不懂** | 上面两项 + 全量 Vitest + `cargo test` | **566s**（分档之前每一笔 push 都是这个档） |
+>
+> 分档的理由不是「本地慢所以省掉」，而是**裁判换了地方**：master 现在有 `enforce_admins=true` + required status checks
+> （`Rust Tests` / `Frontend Tests`，§3.8），PR 合入前 GitHub 已经跑过同一套全量；特性分支再本地跑第二遍是同一套测试付两遍，
+> 而钩子判的是**整棵工作树**——别人的在途文件在给本次 push 判分（§3.7）。兜底方向一律是 `full`：判档器看不懂就得多跑。
+>
+> 🔴 `tsc` 故意留在轻档里，别顺手归进 full：`npx vitest` 只**剥**类型不校验类型，而 CI 的 frontend-test 只有 `npx vitest run` 一步，
+> 全仓唯一会跑 `tsc` 的地方就是这个钩子（`npm run build` 只在发版构建里跑）。归进 full 等于「特性分支的类型错误没人查，直到发版才第一次爆」。
+
 >
 > 三段的可复现口径（2026-10-09 三次 push 的钩子自报数；**这台机器上 Vitest 那一段能差 5 倍**，所以只能按档读，不能当一个数）：
 > 密钥守卫 **7–9s**；前端 Vitest **100.68s / 269.43s / 517.46s**（同一套 392 文件 / 4186 用例，三档都全绿——差别全在机器上有没有别的会话在跑）；
@@ -280,7 +296,7 @@ git commit          # 完成合并提交
 4. 想放弃本次合并：`git merge --abort` 回到 pull 前状态。
 
 **本项目注意点：**
-- pre-push hook 自动跑完整测试（三段：密钥守卫 + vitest + cargo test，每段耗时由钩子自己打印，口径见 §2.7）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
+- pre-push hook 跑密钥守卫 + `tsc`（恒跑），**全量 vitest / cargo 只在推 master 或 tag 时跑**；推特性分支时全量由 PR 的 CI 判（分档与耗时见 §2.7）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
 - 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`，外加两个**只追加型汇聚点**——`src/lib/utils.ts`（900+ 行；工作树里是 941 行 CRLF + 33 行裸 LF 的混合行尾，仓库没有 `.gitattributes`，谁编辑都可能翻出整片伪冲突）和 `.gitignore`。动这些文件前先 `git pull`，尽量只改自己负责的区段。
 - 🔴 最坏的一类冲突不是「两人改了同一段」，而是 **add/add：两人各自发明了一个同名 helper**。2026-10-09 的 `feature/kynnzhou-dev`（macOS 原生支持）上，基点只有 `scan_local_refs()`，master 侧和 macOS 侧分别写出私有 `fn local_refs()`，返回类型却是 `(usize, usize, AssetRef)` 与 `(Range<usize>, AssetRef)` 两套——git 只能报 content conflict，语义上等于两个人不知道对方存在。防法两条：① 动手前先 `git grep` 同名函数与同职责实现（AGENTS 规则 11.1）；② **要改共享函数的签名/语义，先在主干单独提一小笔**，再让功能分支 merge 主干，冲突就从「整段实现」缩成「一行签名」。
 - 本地 dev 跑着时 pull 一般无影响（Vite HMR 热更新）；若 pull 改了 Rust 后端需重启 dev。
@@ -305,7 +321,7 @@ git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
 
 - 提交前先 `git status` 看清归属，**只 `git add` 自己改的文件**；禁止 `git add -A` / `git commit -a`。
 - `pre-commit` 里的 `lint-staged` 会 stash 整个工作树：别人正在写时提交，可能把他们的在途改动卷进你的提交、或从他们手底下抽走。
-- `pre-push` 跑的是**整棵工作树**的 `vitest` + `cargo test`。树里只要有他人未完成的改动，这次 push 就会被他们的代码判红——先确认树干净（或等他们那批落地）再 push。
+- `pre-push` 的两段恒跑检查都看**整棵树**：`tsc --noEmit` 编全部 `src/`，密钥守卫扫全部被追踪文件。所以他人未完成的改动照样能让轻档 push 变红，只是不再需要他们的测试全绿（2026-10-09 分档前还要连 `vitest` + `cargo test` 一起判）。推 master / tag 那档不变，仍然判整棵树的测试——树不干净就别发版。
 
 ### 3.8 master 保护规则（2026-10-09 起真生效）
 
@@ -325,7 +341,7 @@ git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
 3. **新功能先出方案/设计稿**（AGENTS 规则 1、4），目标文件接近 300 行就新建文件而不是追加（规则 7）。
 4. 验证分档，别每步全量：
    - 改完就跑：`npx tsc --noEmit`、`npx vitest run <相关测试文件>`；Rust 侧 `cargo test <module>::`；UI 改动加 `npm run lint:ui`（diff 作用域 ~0.7s）+ `npm run lint:css`。
-   - 全量三段只在 push 前付一次（耗时由钩子自报，口径见 §2.7）。
+   - 全量三段（守卫 + vitest + cargo）**不再在特性分支 push 前付**：轻档只跑守卫 + `tsc`（实测 48s），全量由 PR 的 CI 判——它已经是合入 master 的硬门槛（§3.8）。只有推 master / tag 那一档还在本地跑全量（566s），口径见 §2.7。
    - 不在开发中跑裸 `npm run lint`（全量 eslint 本机 60–90s，挂进钩子必然被 `--no-verify` 绕过；pre-commit 已用 lint-staged 只跑改动文件）。
 5. 归属隔离（§3.7）：每次提交前 `git status` 判归属，只 `git add` 自己改的路径；别人的未跟踪文档一律不碰、不 `git stash`、不 `git add -A`。树上别人只剩未跟踪文件时再提交，避开 lint-staged 的整树 stash。
 6. 提交粒度：一个 bug 一笔、一个功能语义单元一笔、纯文档单独一笔。攒到一个完整可交付状态再 push。
