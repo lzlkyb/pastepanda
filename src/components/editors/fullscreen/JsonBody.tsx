@@ -1,4 +1,4 @@
-import { primarySearchShortcut } from "@/lib/utils";
+import { primarySearchShortcut, validateJson, jsonValidationLabel } from "@/lib/utils";
 /**
  * JSON 类型专属：
  *   - jsonLinter：@codemirror/lint 行内诊断（波浪线 + gutter 标记 + 悬停提示）
@@ -18,30 +18,6 @@ import styles from "../FullscreenEditor.module.css";
 
 // ─── 校验（与 JsonEditor 规则一致：提取 WebView2 错误行号）───
 
-interface JsonValidation {
-  valid: boolean;
-  line?: number;
-  message?: string;
-  value?: unknown;
-}
-
-function validateJson(text: string): JsonValidation {
-  try {
-    return { valid: true, value: JSON.parse(text) };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const lineMatch = msg.match(/\(line (\d+)/);
-    let line: number | undefined;
-    if (lineMatch) {
-      line = Number(lineMatch[1]);
-    } else {
-      const posMatch = msg.match(/position (\d+)/);
-      if (posMatch) line = text.slice(0, Number(posMatch[1])).split("\n").length;
-    }
-    return { valid: false, line, message: msg };
-  }
-}
-
 // ─── 行内诊断（@codemirror/lint）─────────────────────────
 // JSON.parse 只报第一个错误，故诊断数组最多一条；
 // 错误位置优先取 "position N"，其次按行号定位行首。
@@ -49,25 +25,12 @@ function validateJson(text: string): JsonValidation {
 export const jsonLinter = linter((view: EditorView): Diagnostic[] => {
   const text = view.state.doc.toString();
   if (!text.trim()) return [];
-  try {
-    JSON.parse(text);
-    return [];
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    let pos: number | null = null;
-    const posMatch = msg.match(/position (\d+)/);
-    if (posMatch) {
-      pos = Number(posMatch[1]);
-    } else {
-      const lineMatch = msg.match(/\(line (\d+)/);
-      if (lineMatch) {
-        const ln = Math.max(1, Math.min(Number(lineMatch[1]), view.state.doc.lines));
-        pos = view.state.doc.line(ln).from;
-      }
-    }
-    if (pos === null || pos > view.state.doc.length) return [];
-    return [{ from: pos, to: Math.min(pos + 1, view.state.doc.length), severity: "error", message: msg }];
-  }
+  const validation = validateJson(text);
+  if (validation.valid) return [];
+  const line = validation.line ? Math.max(1, Math.min(validation.line, view.state.doc.lines)) : undefined;
+  const from = validation.position ?? (line ? view.state.doc.line(line).from : 0);
+  const to = validation.position !== undefined || line ? Math.min(from + 1, text.length) : text.length;
+  return [{ from, to, severity: "error", message: validation.message ?? "JSON 格式错误" }];
 });
 
 // ─── 格式栏 ─────────────────────────────────────────────
@@ -119,17 +82,17 @@ export function JsonFormatBar({ bridge }: { bridge: ShellBridge }) {
       {isArray && (
         <TextBtn icon={<Database size={13} />} label="SQL IN" title="转换为 SQL IN 并复制" onClick={copySqlIn} />
       )}
-      {validation.valid ? (
-        <span className={`${styles.validBadge} ${styles.validOk}`} title="JSON 格式正确">
-          ✓ 有效
+      {validation.valid || !text.trim() ? (
+        <span className={`${styles.validBadge} ${styles.validOk}`} title={text.trim() ? "JSON 格式正确" : "输入 JSON 后开始校验"}>
+          {jsonValidationLabel(text, validation)}
         </span>
       ) : (
         <button
           className={`${styles.validBadge} ${styles.validBad} ${styles.validBadgeBtn}`}
-          title={`${validation.message ?? "JSON 无效"}（点击跳转到错误行）`}
+          title={`${validation.message ?? "JSON 无效"}${validation.line ? "（点击跳转到错误行）" : ""}`}
           onClick={() => validation.line && gotoLine(validation.line)}
         >
-          ✕ 第 {validation.line ?? "?"} 行错误 · 跳转
+          {jsonValidationLabel(text, validation)}{validation.line ? " · 跳转" : ""}
         </button>
       )}
     </>

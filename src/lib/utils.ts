@@ -960,8 +960,27 @@ export function hotkeyMainKey(event: { key: string; code: string; ctrlKey: boole
 }
 
 /** Search handlers accept Command on Mac and Control elsewhere. */
+export function primaryShortcutLabel(key: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  return formatHotkey(`${/mac/i.test(platform) ? "meta" : "ctrl"}+${key}`, platform).replace(/ \+ /g, "+");
+}
+
 export function primarySearchShortcut(platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
-  return formatHotkey(/mac/i.test(platform) ? "meta+f" : "ctrl+f", platform).replace(/ \+ /g, "+");
+  return primaryShortcutLabel("f", platform);
+}
+
+/** Window commands accept both Control and Command; global bindings remain physical. */
+export function primaryModifierHeld(event: { ctrlKey: boolean; metaKey?: boolean }): boolean {
+  return event.ctrlKey || !!event.metaKey;
+}
+
+/** Undefined may use a default; a configured empty binding is disabled. */
+export function activeConfiguredHotkey(value: string | undefined, fallback?: string): string | undefined {
+  return (value ?? fallback)?.trim() || undefined;
+}
+
+export function configuredShortcutLabel(value: string | undefined, fallback: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  const combo = activeConfiguredHotkey(value, fallback);
+  return combo ? formatHotkey(combo, platform).replace(/ \+ /g, "+") : "已禁用";
 }
 
 /** A configured empty string disables the shortcut; never substitute a default badge. */
@@ -973,8 +992,9 @@ export function toolShortcutLabel(
 ): string | undefined {
   const raw = key === "sequential" ? config.sequential_hotkey
     : key === "screenrec" ? config.rec_hotkey : fallback;
-  const selected = raw ?? fallback;
-  if (!selected?.trim()) return undefined;
+  const selected = activeConfiguredHotkey(raw, fallback);
+  if (!selected) return undefined;
+  if (key === "diffedit") return primaryShortcutLabel("shift+d", platform);
   return formatHotkey(selected, platform).replace(/ \+ /g, "+");
 }
 
@@ -996,4 +1016,24 @@ export function capturePixelRatio(
   const ratio = Number(physicalWidth) / cssWidth;
   return /Mac/i.test(platform) && Number.isFinite(ratio) && ratio > 0 && cssWidth > 0
     ? ratio : backingRatio;
+}
+
+/** WebKit may omit JSON error positions. Preserve the error without inventing a line. */
+export function validateJson(text: string): { valid: boolean; line?: number; position?: number; message?: string; value?: unknown } {
+  try {
+    return { valid: true, value: JSON.parse(text) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const positionMatch = message.match(/position (\d+)/);
+    const lineMatch = message.match(/\(line (\d+)/);
+    const position = positionMatch ? Math.min(text.length, Number(positionMatch[1])) : undefined;
+    const line = lineMatch ? Number(lineMatch[1]) : position !== undefined ? text.slice(0, position).split("\n").length : undefined;
+    return { valid: false, position, line, message };
+  }
+}
+
+export function jsonValidationLabel(text: string, validation: ReturnType<typeof validateJson>): string {
+  if (!text.trim()) return "等待输入";
+  if (validation.valid) return "✓ 有效";
+  return validation.line ? `✕ 第 ${validation.line} 行错误` : "✕ JSON 格式错误";
 }

@@ -1,4 +1,4 @@
-import { primarySearchShortcut } from "@/lib/utils";
+import { primaryShortcutLabel, primarySearchShortcut } from "@/lib/utils";
 /**
  * Markdown 类型专属格式栏（稿子 P0-5 收束版）。
  *
@@ -80,8 +80,8 @@ export function MarkdownFormatBar({ bridge }: { bridge: ShellBridge }) {
       </button>
       <div className={styles.fmtSep} />
       {/* 高频字形直达 cluster（稿子 demo：B I S </>） */}
-      <FmtBtn icon={<Bold size={13} />} title="粗体 Ctrl+B" onClick={() => insertFormat("**", "**")} />
-      <FmtBtn icon={<Italic size={13} />} title="斜体 Ctrl+I" onClick={() => insertFormat("*", "*")} />
+      <FmtBtn icon={<Bold size={13} />} title={`粗体 ${primaryShortcutLabel("b")}`} onClick={() => insertFormat("**", "**")} />
+      <FmtBtn icon={<Italic size={13} />} title={`斜体 ${primaryShortcutLabel("i")}`} onClick={() => insertFormat("*", "*")} />
       <FmtBtn icon={<Strikethrough size={13} />} title="删除线" onClick={() => insertFormat("~~", "~~")} />
       <FmtBtn icon={<Code size={13} />} title="行内代码" onClick={() => insertFormat("`", "`")} />
       <div className={styles.fmtSep} />

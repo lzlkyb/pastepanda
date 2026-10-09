@@ -15,6 +15,7 @@
 }
 
 .headerTitle {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -94,6 +95,7 @@
 }
 
 .headerIcons {
+  flex-shrink: 0;
   display: flex;
   gap: 2px;
   align-items: center;

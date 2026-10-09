@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { X, Copy, Download, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { ActionBtn } from "./editorBits";
 import { useToast } from "@/components/Toast";
-import { errText } from "@/lib/utils";
+import { primaryShortcutLabel, errText } from "@/lib/utils";
 
 /**
  * 二维码双向编辑器（Tier2 · 复用 QRCodeDialog 的 qrcode 生成 + ScreenshotOverlay 的 jsqr 解码）：
@@ -229,7 +229,7 @@ export function QREditor({ initialText, onClose }: { initialText: string; onClos
                 tabIndex={0}
               >
                 <ImageIcon size={20} style={{ marginBottom: 6 }} />
-                <div>点击选择图片 / 拖拽到此处 / 直接粘贴（Ctrl+V）</div>
+                <div>{`点击选择图片 / 拖拽到此处 / 直接粘贴（${primaryShortcutLabel("v")}）`}</div>
                 <div style={{ fontSize: 10, opacity: 0.8 }}>支持 PNG · JPG · WEBP · BMP</div>
               </div>
               <textarea

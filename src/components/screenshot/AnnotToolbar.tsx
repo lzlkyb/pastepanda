@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 标注态主工具栏（= 微信截图「已确认选区」后那条栏）。
  *
@@ -197,8 +198,8 @@ export function AnnotToolbar({
         ? `文字识别失败 · 点击重试${ocrErr ? `（${ocrErr}）` : ""}`
         : ocrStatus === "done"
           ? ocrOpen
-            ? "收起文字面板（Ctrl+R）"
-            : `查看 ${ocrLines} 行文字（Ctrl+R）· 按 T 直接复制全文`
+            ? `收起文字面板（${primaryShortcutLabel("r")}）`
+            : `查看 ${ocrLines} 行文字（${primaryShortcutLabel("r")}）· 按 T 直接复制全文`
           : "图中未识别到文字";
 
   // 长截图不可用的两个原因必须分开写文案。
@@ -272,7 +273,7 @@ export function AnnotToolbar({
       <button
         type="button"
         className={`tool dim tb-undo${canUndo ? "" : " disabled"}`}
-        data-tip={canUndo ? "撤销（Ctrl+Z）" : "没有可撤销的操作"}
+        data-tip={canUndo ? `撤销（${primaryShortcutLabel("z")}）` : "没有可撤销的操作"}
         aria-disabled={!canUndo}
         onClick={() => canUndo && onUndo()}
       >
@@ -282,7 +283,7 @@ export function AnnotToolbar({
       <button
         type="button"
         className={`tool dim tb-redo${canRedo ? "" : " disabled"}`}
-        data-tip={canRedo ? "重做（Ctrl+Y）" : "没有可重做的操作"}
+        data-tip={canRedo ? `重做（${primaryShortcutLabel("y")}）` : "没有可重做的操作"}
         aria-disabled={!canRedo}
         onClick={() => canRedo && onRedo()}
       >
@@ -340,7 +341,7 @@ export function AnnotToolbar({
 
       {/* 三个主力出口。以前全藏在那个无标签的「⋯」后面，而贴图 / AI 是本产品的主力能力。
           行业里保存/贴图一律在主栏（QQ / 微信 / PixPin），不藏二级菜单。 */}
-      <button type="button" className="tool exit-save" data-tip="保存为图片文件（Ctrl+S）" onClick={onSave}>
+      <button type="button" className="tool exit-save" data-tip={`保存为图片文件（${primaryShortcutLabel("s")}）`} onClick={onSave}>
         <span className="ic">{SAVE_ICON}</span>
         <span className="lb">保存</span>
       </button>

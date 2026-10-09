@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 设置页「系统与编辑」分区（2026-09-29 分区重排 方案A；原名「窗口与编辑器」，6 字会被
  * 左菜单截成省略号，见 `meta.ts` 的宽度约束）。
@@ -116,7 +117,7 @@ export function WindowEditorSection({
         </select>
       </div>
       <ToggleRow icon="💾" hue="save" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
-        tooltip="开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 Ctrl+S"
+        tooltip={`开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 ${primaryShortcutLabel("s")}`}
         detailTitle="编辑器自动保存"
         detail={<>
           <p>在全屏 Markdown 编辑器中编辑时，停止输入约 1 秒后自动保存内容。</p>

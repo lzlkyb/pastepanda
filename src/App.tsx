@@ -1,3 +1,4 @@
+import { primaryModifierHeld, primaryShortcutLabel, configuredShortcutLabel, activeConfiguredHotkey } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -869,7 +870,7 @@ function App() {
     if (history.length > 0 && historyLenRef.current === 0 && !loading) {
       const timer = setTimeout(() => {
         if (shouldShow("first_copy")) {
-          toast(`📋 已自动保存到 PastePanda，${config.hotkey || "Ctrl+Alt+V"} 随时唤出`, "success", 4000);
+          toast(activeConfiguredHotkey(config.hotkey, "ctrl+alt+v") ? `📋 已自动保存到 PastePanda，${configuredShortcutLabel(config.hotkey, "ctrl+alt+v")} 随时唤出` : "📋 已自动保存到 PastePanda，可从托盘打开", "success", 4000);
           markShown("first_copy");
         }
       }, 500);
@@ -888,7 +889,7 @@ function App() {
         if (!daysSinceInstall) {
           localStorage.setItem("pastepanda_install_day", String(now));
         } else if (now - daysSinceInstall >= 3) {
-          toast(`💡 试试 ${config.sequential_hotkey || "Ctrl+Alt+Q"} 依次粘贴，逐条粘贴超方便`, "info", 4000);
+          toast(activeConfiguredHotkey(config.sequential_hotkey, "ctrl+alt+q") ? `💡 试试 ${configuredShortcutLabel(config.sequential_hotkey, "ctrl+alt+q")} 依次粘贴` : "💡 在工具页打开依次粘贴，可逐条粘贴文本", "info", 4000);
           markShown("seq_paste_tip");
         }
       }
@@ -980,7 +981,7 @@ function App() {
 
     const action = resolveKeyAction({
       key: e.key,
-      ctrlKey: e.ctrlKey,
+      ctrlKey: primaryModifierHeld(e),
       shiftKey: e.shiftKey,
       targetTagName: (e.target as HTMLElement)?.tagName ?? "",
       targetContentEditable: (e.target as HTMLElement)?.isContentEditable ?? false,
@@ -1534,13 +1535,13 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
   const allShortcuts = useMemo(() => {
     const dblDesc = config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览 / 编辑";
     return [
-      { desc: "唤出 / 隐藏窗口", keys: config.hotkey || "Ctrl+Alt+V" },
-      { desc: "依次粘贴", keys: config.sequential_hotkey || "Ctrl+Alt+Q" },
-      { desc: "全选", keys: config.select_all_hotkey || "Ctrl+A" },
-      { desc: "粘贴第 N 条", keys: "Ctrl+Alt+1~9" },
-      { desc: "收集模式 开/关", keys: config.stack_toggle_hotkey || "ctrl+alt+k" },
-      { desc: "粘贴最近收集的内容", keys: config.stack_paste_hotkey || "ctrl+alt+p" },
-      { desc: "快捷粘贴面板", keys: config.quick_paste_hotkey || "alt+v" },
+      { desc: "唤出 / 隐藏窗口", keys: configuredShortcutLabel(config.hotkey, "ctrl+alt+v") },
+      { desc: "依次粘贴", keys: configuredShortcutLabel(config.sequential_hotkey, "ctrl+alt+q") },
+      { desc: "全选", keys: primaryShortcutLabel("a") },
+      { desc: "粘贴第 N 条", keys: configuredShortcutLabel("ctrl+alt+1~9", "") },
+      { desc: "收集模式 开/关", keys: configuredShortcutLabel(config.stack_toggle_hotkey, "ctrl+alt+k") },
+      { desc: "粘贴最近收集的内容", keys: configuredShortcutLabel(config.stack_paste_hotkey, "ctrl+alt+p") },
+      { desc: "快捷粘贴面板", keys: configuredShortcutLabel(config.quick_paste_hotkey, "alt+v") },
       { desc: "上下导航", keys: "↑ / ↓" },
       { desc: "首尾跳转", keys: "Home / End" },
       { desc: "快速预览", keys: "Space" },
@@ -1548,14 +1549,14 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: dblDesc, keys: "双击卡片" },
       { desc: "右键编辑内容", keys: "右键菜单" },
       { desc: "删除选中", keys: "Delete" },
-      { desc: "置顶 / 取消", keys: "Ctrl+D" },
-      { desc: "撤销删除", keys: "Ctrl+Z" },
-      { desc: "打开设置", keys: "Ctrl+S" },
-      { desc: "打开帮助", keys: "Ctrl+H" },
+      { desc: "置顶 / 取消", keys: primaryShortcutLabel("d") },
+      { desc: "撤销删除", keys: primaryShortcutLabel("z") },
+      { desc: "打开设置", keys: primaryShortcutLabel("s") },
+      { desc: "打开帮助", keys: primaryShortcutLabel("h") },
       { desc: "显示此面板", keys: "? 或 Shift+/" },
       { desc: "关闭此面板", keys: "Esc" },
     ];
-  }, [config.hotkey, config.sequential_hotkey, config.select_all_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey, config.quick_paste_hotkey]);
+  }, [config.hotkey, config.sequential_hotkey, config.double_click_action, config.stack_toggle_hotkey, config.stack_paste_hotkey, config.quick_paste_hotkey]);
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return allShortcuts;

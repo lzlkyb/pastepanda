@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 工具栏的动作按钮——**两套布局共用这一份**，不拿容器与定位。
  *
@@ -20,11 +21,13 @@ export function ToolActions({ a }: { a: ChromeActions }) {
         <span className={styles.tbLbl}>导入</span>
       </button>
       <span className={styles.divider} />
-      <button className={styles.toolBtn} onClick={a.undo} disabled={!a.canUndo} title="撤销 (Ctrl+Z)">
+      <button className={styles.toolBtn} onClick={a.undo} disabled={!a.canUndo} title={`撤销 (${primaryShortcutLabel("z")})`}>
         <Undo2 size={15} />
+        <span className={styles.tbLbl}>撤销</span>
       </button>
-      <button className={styles.toolBtn} onClick={a.redo} disabled={!a.canRedo} title="重做 (Ctrl+Shift+Z)">
+      <button className={styles.toolBtn} onClick={a.redo} disabled={!a.canRedo} title={`重做 (${primaryShortcutLabel("shift+z")})`}>
         <Redo2 size={15} />
+        <span className={styles.tbLbl}>重做</span>
       </button>
       <span className={styles.divider} />
       <div className={styles.layoutWrap}>

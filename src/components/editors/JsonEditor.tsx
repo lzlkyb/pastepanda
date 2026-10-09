@@ -1,3 +1,4 @@
+import { validateJson, jsonValidationLabel } from "@/lib/utils";
 import { useState, useMemo } from "react";
 import { Zap, Package, Copy, ChevronDown, ChevronUp, Settings2 } from "lucide-react";
 import { useEditorCore } from "./useEditorCore";
@@ -6,33 +7,6 @@ import { MetaBar, TransformToolbar, OriginalDiff, ToolBtn, FullscreenLaunchButto
 import { useToast } from "@/components/Toast";
 import { parseJsonArray, pickDefaultField, pluckField, toSqlIn } from "@/lib/jsonToolbox";
 import type { EditorProps } from "@/lib/editorRegistry";
-
-interface JsonValidation {
-  valid: boolean;
-  /** 错误行号（1 起，解析失败时尽力提取） */
-  line?: number;
-  message?: string;
-  value?: unknown;
-}
-
-/** 校验 JSON 并从错误消息提取行号（WebView2: "... at position 42 (line 4 column 5)"） */
-function validateJson(text: string): JsonValidation {
-  try {
-    return { valid: true, value: JSON.parse(text) };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const lineMatch = msg.match(/\(line (\d+)/);
-    let line: number | undefined;
-    if (lineMatch) {
-      line = Number(lineMatch[1]);
-    } else {
-      // 旧格式兜底："... at position 42" → 按换行数推算行号
-      const posMatch = msg.match(/position (\d+)/);
-      if (posMatch) line = text.slice(0, Number(posMatch[1])).split("\n").length;
-    }
-    return { valid: false, line, message: msg };
-  }
-}
 
 /**
  * SQL IN 智能结果条（方案 C）：
@@ -150,9 +124,9 @@ export function JsonEditor({ item, registerActions }: EditorProps) {
         charCount={charCount}
         isModified={isModified}
         status={
-          validation.valid
-            ? <span className="json-valid-badge">✓ 有效</span>
-            : <span className="json-invalid-badge">✕ 第 {validation.line ?? "?"} 行错误</span>
+          <span className={validation.valid || !text.trim() ? "json-valid-badge" : "json-invalid-badge"} title={text.trim() ? validation.message : "输入 JSON 后开始校验"}>
+            {jsonValidationLabel(text, validation)}
+          </span>
         }
         badge="🔧 JSON"
         extra={<FullscreenLaunchButton itemId={item.id} text={text} contentType="json" />}

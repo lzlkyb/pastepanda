@@ -13,7 +13,7 @@ import { useAppStore } from "@/stores/appStore";
 import { sequentialPaste } from "@/lib/api";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
-import { formatHotkey } from "@/components/settings/HotkeyRecorder";
+import { configuredShortcutLabel, activeConfiguredHotkey } from "@/lib/utils";
 import styles from "./SequentialPasteDialog.module.css";
 
 export function SequentialPasteDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -110,7 +110,7 @@ export function SequentialPasteDialog({ open, onClose }: { open: boolean; onClos
               {/* 底栏 */}
               <div className={styles.footer}>
                 <span className={styles.hotkey}>
-                  <kbd>{formatHotkey(hotkey || "ctrl+alt+q")}</kbd> 快速粘贴
+                  {activeConfiguredHotkey(hotkey, "ctrl+alt+q") ? <><kbd>{configuredShortcutLabel(hotkey, "ctrl+alt+q")}</kbd> 快速粘贴</> : "全局快捷键已禁用，可点击粘贴当前"}
                 </span>
                 <span className={styles.actions}>
                   <button className={styles.btnReset} onClick={() => resetSeqPointer()} disabled={total === 0}>

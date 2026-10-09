@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 import { useCallback, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { HistoryItem } from "@/stores/appStore";
@@ -135,7 +136,7 @@ export function StackQueue({
       )}
       <div className={styles.queue} ref={scrollRef}>
         {cells.length === 0 ? (
-          <span className={styles.queueEmpty}>暂无收集 · 按 Ctrl+C 开始</span>
+          <span className={styles.queueEmpty}>{`暂无收集 · 按 ${primaryShortcutLabel("c")} 开始`}</span>
         ) : (
           <div
             className={measurable ? styles.queueTrack : styles.queueTrackFlow}

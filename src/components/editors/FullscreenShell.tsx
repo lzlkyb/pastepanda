@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * FullscreenShell —— 全屏编辑器的「通用外壳」复用层。
  *
@@ -220,7 +221,7 @@ export function FullscreenShell({
             <button
               className={`${styles.tbBtn} ${styles.tbBtnPrimary}`}
               onClick={() => void handleSave()}
-              title="保存 Ctrl+S"
+              title={`保存 ${primaryShortcutLabel("s")}`}
             >
               <Save size={14} />
               <span>保存</span>
@@ -271,7 +272,7 @@ export function FullscreenShell({
           ConfirmDialog 把 onCancel 同时绑在遮罩点击 / 标题栏 ✕ / 取消按钮（还带 autoFocus）三处，
           若 onCancel 也执行 onClose，用户点遮罩、点 ✕、直接回车都会丢弃编辑，
           守卫等于没有出路——正是它本来要防的「编辑静默丢失」。
-          保存入口由工具栏「保存」按钮和 Ctrl+S 承担，不放进这个二选一里。 */}
+          保存入口由工具栏「保存」按钮和 ${primaryShortcutLabel("s")} 承担，不放进这个二选一里。 */}
       {showConfirmClose && (
         <ConfirmDialog
           open={showConfirmClose}
