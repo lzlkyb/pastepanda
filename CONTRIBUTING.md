@@ -201,18 +201,29 @@ cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/�
 
 ### 3.1 分支命名
 
-从 `master` 拉分支，命名带类型前缀（CI 只对以下前缀跑测试）：
+从 `master` 拉分支，命名带类型前缀。**哪些前缀有 CI 由 `.github/workflows/test.yml` 的 `push.branches` 单独决定**——不在名单里的分支推上去一次都不跑，所以改这里必须同步改那边：
 
 ```
-feature/xxx   新功能
-fix/xxx       bug 修复
-refactor/xxx  重构
-docs/xxx      文档
+feature/xxx          新功能            ✅ 在 CI 名单
+fix/xxx              bug 修复          ✅ 在 CI 名单
+refactor/xxx         重构              ✅ 在 CI 名单
+chore/xxx            构建/依赖/脚本     ✅ 在 CI 名单
+agent/<会话标识>/xxx  AI 会话开的分支    ✅ 在 CI 名单
+docs/xxx             纯文档            ❌ 不跑 CI（本地 lint 即可，故意不加）
 ```
 
 ```bash
 git checkout -b feature/my-feature
 ```
+
+**`agent/` 前缀是干什么的**：同一台机器上常并行多个开发会话（见 §3.7），过去只能靠 `git status` 猜归属。把会话标识写进分支名，归属就进了 git 本身，而且每条分支都自动享受一次 CI 验证——这比给每个会话开一棵 `git worktree` 便宜得多（不多花磁盘、不重编 cargo target）。参照做法：cc-switch 的 100+ 分支里就有 `agent/*`、`claude/*`、`codex/*` 三套 AI 命名空间。
+
+**外部贡献的规矩**（本仓第一笔外部贡献 `feature/kynnzhou-dev` 之后定）：
+
+- 用 `fix/issue-<编号>` 或 `feature/<功能>`，**先开 Issue 讨论**再写代码；一个 Issue 对应一个 PR。
+- 保持追平：每天 `git merge origin/master` 一次，别把冲突攒到合并前一次性解（`strict=true` 只保证「合并前必须追平」，不保证「攒着的 34 笔能干净合」）。
+- 要改**共享函数的签名或语义**，先在主干单独提一小笔，再让功能分支 merge 主干——冲突就从「整段实现」缩成「一行签名」（教训见 §3.5 的 `local_refs` add/add）。
+- 合入后删分支。反面例子：cc-switch 攒着 100+ 条未清理分支。
 
 ### 3.2 开发顺序（项目硬性流程）
 
@@ -267,7 +278,8 @@ git commit          # 完成合并提交
 
 **本项目注意点：**
 - pre-push hook 自动跑完整测试（三段：密钥守卫 + vitest + cargo test，每段耗时由钩子自己打印，口径见 §2.7）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
-- 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`——动这些文件前先 `git pull`，尽量只改自己负责的区段。
+- 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`，外加两个**只追加型汇聚点**——`src/lib/utils.ts`（900+ 行；工作树里是 941 行 CRLF + 33 行裸 LF 的混合行尾，仓库没有 `.gitattributes`，谁编辑都可能翻出整片伪冲突）和 `.gitignore`。动这些文件前先 `git pull`，尽量只改自己负责的区段。
+- 🔴 最坏的一类冲突不是「两人改了同一段」，而是 **add/add：两人各自发明了一个同名 helper**。2026-10-09 的 `feature/kynnzhou-dev`（macOS 原生支持）上，基点只有 `scan_local_refs()`，master 侧和 macOS 侧分别写出私有 `fn local_refs()`，返回类型却是 `(usize, usize, AssetRef)` 与 `(Range<usize>, AssetRef)` 两套——git 只能报 content conflict，语义上等于两个人不知道对方存在。防法两条：① 动手前先 `git grep` 同名函数与同职责实现（AGENTS 规则 11.1）；② **要改共享函数的签名/语义，先在主干单独提一小笔**，再让功能分支 merge 主干，冲突就从「整段实现」缩成「一行签名」。
 - 本地 dev 跑着时 pull 一般无影响（Vite HMR 热更新）；若 pull 改了 Rust 后端需重启 dev。
 
 **防冲突日常姿势：** 开工前先 `git pull`；小步提交、频繁 push；分支做自己的事，合入前再 pull 一次 master。
@@ -295,6 +307,19 @@ git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
 ### 3.8 master 保护规则的真话
 
 仓库里确实配了「需 1 个 approval + required status checks（`Rust Tests` / `Frontend Tests`，strict）+ 禁 force push / 禁删分支」，但 **`enforce_admins` 是关的**：管理员直推 master 不受这些约束。所以「CI 全绿才可合」目前靠本地 pre-push 和人自觉，不是 GitHub 强制——历史改动全部直推 master，没有留下分支与 PR 记录。同理，`.github/CODEOWNERS` 在「Require review from Code Owners」勾选前不产生任何阻塞。
+
+### 3.9 日常开发节拍（同时有新功能在途 + bug 要修时）
+
+1. **先 bug，后新功能。** bug 修常常落在汇聚点文件上（`utils.ts` / `sync/attach.rs` / `lib.rs`），新功能也常碰同一批。先把 bug 落定并推出去，新功能的改动面就变成"单侧新增"，不会再叠出 §3.5 那种 add/add。
+2. **bug 必须先变红**（AGENTS 规则 23）：改前红、改后绿，两份输出留在手上。做不到稳定红的时序类，用「把延时注入制造该状态的那一层」或静态守卫取证，**不许用重跑/加压当验收**。
+3. **新功能先出方案/设计稿**（AGENTS 规则 1、4），目标文件接近 300 行就新建文件而不是追加（规则 7）。
+4. 验证分档，别每步全量：
+   - 改完就跑：`npx tsc --noEmit`、`npx vitest run <相关测试文件>`；Rust 侧 `cargo test <module>::`；UI 改动加 `npm run lint:ui`（diff 作用域 ~0.7s）+ `npm run lint:css`。
+   - 全量三段只在 push 前付一次（耗时由钩子自报，口径见 §2.7）。
+   - 不在开发中跑裸 `npm run lint`（全量 eslint 本机 60–90s，挂进钩子必然被 `--no-verify` 绕过；pre-commit 已用 lint-staged 只跑改动文件）。
+5. 归属隔离（§3.7）：每次提交前 `git status` 判归属，只 `git add` 自己改的路径；别人的未跟踪文档一律不碰、不 `git stash`、不 `git add -A`。树上别人只剩未跟踪文件时再提交，避开 lint-staged 的整树 stash。
+6. 提交粒度：一个 bug 一笔、一个功能语义单元一笔、纯文档单独一笔。攒到一个完整可交付状态再 push。
+7. 三件不自动做的事：版本号（规则 2）、`npx tauri build`（规则 3）、把「欠真机点验」当已完成——点验项一律写进 commit/PR 描述或 Issue。
 
 ---
 
@@ -418,6 +443,7 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 AGENTS.md �
 9. **直接推 `master` 禁止**：一律 feature/fix 分支 + PR。
 10. **git push 用 SSH**：本机 HTTPS 访问 GitHub 常超时，remote 应保持 `git@github.com:lzlkyb/pastepanda.git`。
 11. **AI 默认不提交**：未经你人工审查，不让 AI 自动 commit / push / tag。
+12. **修 bug 先让它变红**：每条修复都要有「改前红、改后绿」的用例，两份输出写进 commit/PR；**重跑至绿不算修复**。时序类不稳定就用延时注入制造该状态的那一层，或加静态守卫钉住机制（完整条文见 `AGENTS.md` 规则 23）。
 
 ---
 
