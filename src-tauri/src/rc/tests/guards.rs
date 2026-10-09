@@ -705,8 +705,11 @@ fn 守卫_媒体闸不阻塞生产者也不饿死控制面() {
         .expect("推流循环里没有光标遥测上报");
     let gate = run.find("match self.media_gate()").expect("推流循环没有问媒体闸");
     assert!(cursor < gate, "光标上报必须排在媒体闸之前，否则闸关闭期间远端指针冻结");
+    // Match the entire pause/continue statement before cursor reporting while
+    // allowing rustfmt to wrap it; whitespace must not decide the wiring check.
+    let before_cursor: String = run[..cursor].chars().filter(|c| !c.is_whitespace()).collect();
     assert!(
-        run.find("if self.svc.media_paused() { continue; }").unwrap() < cursor,
+        before_cursor.contains("ifself.svc.media_paused(){continue;}"),
         "隐私暂停必须先于光标上报（暂停期连指针形状都不算可看）"
     );
 }
