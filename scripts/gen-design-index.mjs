@@ -239,7 +239,7 @@ L.push(
 L.push("");
 L.push("## 这份目录是什么");
 L.push("");
-L.push("PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再写代码**」（`claude.md:12` 硬性规则）。");
+L.push("PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再写代码**」（`AGENTS.md` 规则 12）。");
 L.push(
   "`design/` 就是这条流程的沉淀地：每份 HTML 都能直接在浏览器打开，基于真实组件而来，不是通用模板。",
 );
