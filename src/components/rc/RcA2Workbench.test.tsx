@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type { RcHistoryItem, RcTargetDevice } from "@/lib/api/rc";
@@ -479,6 +479,37 @@ describe("RcA2DeviceDetail", () => {
     expect(screen.getByRole("button", { name: /管理此设备/ }).getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("保存进行中时按钮是 disabled，抢跑的第二次点击不生效（机理用例，不依赖机器负载）", async () => {
+    // 这条是上面那条红的**机理**钉子：promise 由测试自己控制落地时机，所以任何机器上都会踩进
+    // 「savingName=true」那个窗口。React 不给 disabled 的 button 派发 click ⇒ 连点＝只发一次改名。
+    let settle: (ok: boolean) => void = () => {};
+    const onRename = vi.fn(
+      () =>
+        new Promise<boolean>((res) => {
+          settle = res;
+        }),
+    );
+    renderDetail({ onRename });
+
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), {
+      target: { value: "书房电脑" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    await waitFor(() => expect(onRename).toHaveBeenCalledTimes(1));
+
+    const busy = screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement;
+    expect(busy.disabled, "保存进行中必须禁用，否则用户连点就是重复请求").toBe(true);
+    fireEvent.click(busy);
+    expect(onRename).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle(false);
+    });
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("textbox", { name: "设备备注名" }), "失败要留在编辑态").toBeTruthy();
+  });
+
   it("设备详情保留改名能力，失败时不退出编辑", async () => {
     const onRename = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     renderDetail({ onRename });
@@ -488,11 +519,24 @@ describe("RcA2DeviceDetail", () => {
       target: { value: "书房电脑" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
-    await waitFor(() => expect(onRename).toHaveBeenCalledWith("peer-a", "书房电脑"));
+    await waitFor(() => expect(onRename).toHaveBeenCalledTimes(1));
+    // 🔴 第二次点击必须等上一次保存**落地**（按钮从 disabled 变回可用）：旧写法等的是
+    //    「onRename 已被调用」，那只证明 promise 开始了、不证明它结束了，于是抢跑的点击
+    //    可能落在 disabled 窗口里被吞掉（机理见上一条用例）。
+    //    ⚠ 这条红的**复现条件我不掌握**：CI run 37869837616（2026-10-09，该用例耗时 3060ms）判红过，
+    //    而删掉这段等待的变异体在本机三种档位下都没红（单文件 threads 3/3、rc 目录 262 条、
+    //    近全量 2971 条）。所以修法依据是「等状态落地再点」的通用口径＋上一条机理用例，
+    //    不是「本机复现过」——别把它读成已证实的因果链。
+    const saveBtn = await waitFor(() => {
+      const b = screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement;
+      expect(b.disabled, "上一次改名仍在进行中").toBe(false);
+      return b;
+    });
     expect(screen.getByRole("textbox", { name: "设备备注名" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    fireEvent.click(saveBtn);
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull());
+    expect(onRename).toHaveBeenCalledTimes(2);
   });
 
   it("纯同步设备只给完成远程配对与入站允许动作", () => {
