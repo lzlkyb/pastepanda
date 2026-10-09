@@ -1,7 +1,8 @@
 //! 屏幕录制（本地写 MP4，与 rc/ 的网络推流管线平行）。
 //!
-//! - `quality` 档位表（纯函数）；`sink` MF SinkWriter mux；`session` 采集会话；
-//!   `commands` Tauri 命令。本模块 **Windows 桌面专属**（依赖 DXGI/MF）。
+//! - `quality` 档位表（纯函数）；`timeline` 视频时间轴（墙钟槽 + 静止补帧）；
+//!   `sink` MF SinkWriter mux；`session` 采集会话；`commands` Tauri 命令。
+//!   本模块 **Windows 桌面专属**（依赖 DXGI/MF）。
 //! - 窗口两个：`rec-select`（全屏透明覆盖层：预览 → 确认条 → 倒计时 → 录制中红框，
 //!   录制中整窗鼠标穿透）＋ `rec-control`（置顶小条：REC / 计时 / 停止，可拖动）。
 //! - 窗口机制照抄截图窗（screenshot.rs）：运行时创建、物理像素定位、前端 ready
@@ -18,6 +19,7 @@ pub mod quality;
 pub mod scan;
 pub mod session;
 pub mod sink;
+pub mod timeline;
 pub mod trim;
 
 use std::sync::atomic::{AtomicU64, Ordering};

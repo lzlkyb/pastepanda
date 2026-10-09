@@ -188,8 +188,9 @@ fn open_chain(
 
 impl H264SessionEncoder {
     /// 设定下一帧的时间戳（ms，编码器内部单调时间轴）。推流侧由 media_flow 按
-    /// 帧龄驱动；**录屏（rec/）按提交帧号驱动**（`已提交帧数 × 1000 / fps`）——
-    /// 不驱动它 at_ms 恒 0，整条视频时间轴塌在 0 上（2026-10-06 三期 P0）。
+    /// 帧龄驱动；**录屏（rec/）按 rec/timeline.rs 的墙钟槽驱动**（静止段也在补帧，
+    /// 所以每格都有时间戳）——不驱动它 at_ms 恒 0，整条视频时间轴塌在 0 上
+    /// （2026-10-06 三期 P0）。
     pub fn set_capture_at(&mut self, at_ms: i64) {
         self.next_capture_at = at_ms;
     }
