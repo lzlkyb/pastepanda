@@ -46,4 +46,13 @@ mod tests {
         o.click_highlight = true;
         assert!(validate(&o, (0, 0, 1920, 1080)).is_ok());
     }
+    #[test]
+    fn unsupported_recording_os_is_rejected_before_privacy_preflight() {
+        let native = include_str!("../macos/recording.m");
+        let start = native.split("int32_t pp_rec_start(").nth(1).unwrap();
+        assert!(start.find("@available(macOS 13.0").unwrap()
+            < start.find("CGPreflightScreenCaptureAccess").unwrap(),
+            "macOS 12 must get unsupported, not an instruction to re-authorize recording");
+    }
+
 }

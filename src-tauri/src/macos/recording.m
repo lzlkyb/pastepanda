@@ -225,8 +225,8 @@ static PPRecorder *recorder(uint64_t token) {
 int32_t pp_rec_start(uint64_t token,const uint8_t *json,size_t length,PPRecordCallback callback,PPEventCallback eventCallback) {
     if(!token || !json || !callback || length>65536) return 1;
     if(NSThread.isMainThread) return 9;
-    if(!CGPreflightScreenCaptureAccess()) return 2;
     if(@available(macOS 13.0,*)) {
+        if(!CGPreflightScreenCaptureAccess()) return 2;
         @autoreleasepool {
             NSDictionary *cfg=[NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:json length:length] options:0 error:nil];
             if(![cfg isKindOfClass:NSDictionary.class] || ![cfg[@"path"] isKindOfClass:NSString.class]) return 1;
