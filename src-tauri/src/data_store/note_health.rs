@@ -188,7 +188,7 @@ impl DataStore {
                 .prepare(
                     "SELECT id, title, LENGTH(content) FROM notes
                      WHERE deleted_at IS NULL AND LENGTH(content) < ?1
-                     ORDER BY LENGTH(content), title LIMIT ?2",
+                     ORDER BY LENGTH(content), title, rowid LIMIT ?2",
                 )
                 .map_err(|e| e.to_string())?;
             let rows = st
@@ -228,7 +228,7 @@ impl DataStore {
                 .prepare(
                     "SELECT id, title FROM notes
                      WHERE deleted_at IS NULL AND folder_id IS NULL AND source_agent != ''
-                     ORDER BY created_at, title LIMIT ?1",
+                     ORDER BY created_at, title, rowid LIMIT ?1",
                 )
                 .map_err(|e| e.to_string())?;
             let rows = st

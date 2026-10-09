@@ -50,6 +50,9 @@ mod tests_qa;
 // 库体检（N3）的用例。
 #[cfg(test)]
 mod tests_health;
+// 排序确定性守卫（时间戳粒度导致的平手 → 分页重复/跌页）
+#[cfg(test)]
+mod tests_ordering;
 // 每日整理（H3）的用例。
 #[cfg(test)]
 mod tests_daily;

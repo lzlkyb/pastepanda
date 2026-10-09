@@ -62,7 +62,7 @@ impl DataStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, name, items, created_at, used_at FROM stack_templates
-                 ORDER BY used_at IS NULL, used_at DESC, created_at DESC",
+                 ORDER BY used_at IS NULL, used_at DESC, created_at DESC, rowid DESC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt

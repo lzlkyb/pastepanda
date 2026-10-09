@@ -934,7 +934,7 @@ impl DataStore {
         let conn = self.lock_conn();
         let sql = format!(
             "SELECT {} FROM notes WHERE deleted_at IS NULL AND ({}) \
-             ORDER BY updated_ms",
+             ORDER BY updated_ms, id",
             NOTE_COLS,
             Self::since_or_buckets_clause("updated_ms", "id", buckets)
         );
@@ -1092,7 +1092,7 @@ impl DataStore {
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT {} FROM notes WHERE deleted_at IS NULL AND auto_deposited = 1 \
-                 ORDER BY updated_at DESC LIMIT ?1",
+                 ORDER BY updated_at DESC, rowid DESC LIMIT ?1",
                 NOTE_COLS
             ))
             .map_err(|e| e.to_string())?;
@@ -1697,7 +1697,7 @@ impl DataStore {
         let conn = self.lock_conn();
         let sql = format!(
             "SELECT note_id, tombstone_ms, local_ms FROM note_tombstones \
-             WHERE ({}) ORDER BY local_ms",
+             WHERE ({}) ORDER BY local_ms, note_id",
             Self::since_or_buckets_clause("local_ms", "note_id", buckets)
         );
         let mut st = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -2375,7 +2375,7 @@ impl DataStore {
         // ❗ 这只是 AM-9 的**破同分**那一半：它只在 score 完全相等时生效，
         //   不改变任何当前能分出高下的结果，所以不需要 AM-5 基准。
         //   真正的多信号加权（连同「排序收口到 Rust」那次重构）仍卡在 AM-5 之后。
-        sql.push_str(" ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0), notes.updated_ms DESC LIMIT ?");
+        sql.push_str(" ORDER BY bm25(notes_fts, 10.0, 1.0, 0.0), notes.updated_ms DESC, notes.rowid DESC LIMIT ?");
         params.push(Box::new(limit));
 
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;

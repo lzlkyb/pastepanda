@@ -152,11 +152,11 @@ impl InboxViewOpts {
             "recent" => "h.time DESC, h.rowid DESC",
             // recopy_count 是 2026-09-01 刚落的列（A-44），刚开始累加时全部为 0，
             // 此时此排序等于按时间倒序——这不是 bug，是数据还没长出来。
-            "recopy" => "COALESCE(h.recopy_count, 0) DESC, h.time DESC",
+            "recopy" => "COALESCE(h.recopy_count, 0) DESC, h.time DESC, h.rowid DESC",
             // 默认：信号最强优先 → 同分时粘贴过的往前（`↩A-28`）→ 再同分按时间倒序。
             // 最后那道是为了**结果稳定**：不加的话同分行的相对顺序由 SQLite 自由安排，
             // 分页时会出现同一条重复 / 跌页。
-            _ => "hit DESC, pasted DESC, h.time DESC",
+            _ => "hit DESC, pasted DESC, h.time DESC, h.rowid DESC",
         }
     }
 

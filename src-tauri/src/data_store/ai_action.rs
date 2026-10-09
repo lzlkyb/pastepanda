@@ -80,7 +80,7 @@ impl DataStore {
             .prepare(
                 "SELECT id, name, description, icon, template, max_tokens,
                         content_types, enabled, sort_order, created_at, updated_at
-                 FROM ai_custom_actions ORDER BY sort_order ASC, created_at ASC",
+                 FROM ai_custom_actions ORDER BY sort_order ASC, created_at ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
