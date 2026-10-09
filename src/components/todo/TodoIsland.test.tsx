@@ -336,9 +336,13 @@ describe("TodoIsland 舞台机", () => {
         : Promise.resolve(null),
     );
     const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
-    expect(container.textContent).toContain("到点了");
-    expect(container.textContent).toContain("回邮件给张工");
+    // pill is also the initial stage before the asynchronous snapshot arrives.
+    // Wait for the reminder itself so this guard cannot inspect the empty state.
+    await waitFor(() => {
+      expect(container.textContent).toContain("到点了");
+      expect(container.textContent).toContain("回邮件给张工");
+    });
+    expect(rootEl(container).getAttribute("data-st")).toBe("pill");
     // 胶囊 32px 高只装得下一句话：下一条待办不许跟着拼上来
     expect(container.textContent).not.toContain("交材料");
   });

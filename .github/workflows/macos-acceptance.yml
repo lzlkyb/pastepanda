@@ -1,0 +1,58 @@
+name: macOS architecture regression
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feature/kynnzhou-dev']
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/macos-*.mjs'
+      - '.github/workflows/macos-acceptance.yml'
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/macos-*.mjs'
+      - '.github/workflows/macos-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Verify runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          sw_vers
+      - name: Native fixture probes and Rust regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          export CARGO_TARGET_DIR="$PWD/src-tauri/target-macos"
+          npm run macos:test:native 2>&1 | tee native-probes.log
+          cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | tee rust-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-regression-${{ matrix.runner }}
+          path: |
+            native-probes.log
+            rust-tests.log

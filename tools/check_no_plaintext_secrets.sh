@@ -24,7 +24,8 @@ SRC="$ROOT/src-tauri/src"
 SELF="$(basename "$0")"
 
 # 排除构建产物与依赖（否则扫 node_modules / target 会慢到不可用）
-EX=(--exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git
+EX=(--exclude-dir=node_modules --exclude-dir=target --exclude-dir=target-macos
+    --exclude-dir=target-android --exclude-dir=.cache --exclude-dir=.git
     --exclude-dir=dist --exclude-dir=__pycache__ --exclude-dir=design)
 # 测试桩里的假 key 是正当的（不能因为它们报红）
 EX_TEST=(--exclude-dir=__tests__ --exclude-dir=tests --exclude="*.test.ts"
