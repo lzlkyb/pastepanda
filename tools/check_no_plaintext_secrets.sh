@@ -60,17 +60,22 @@ if ! git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
   echo "❌ 排除名单自检需要 git：本脚本必须在仓库内运行（否则下面这条断言会静默失效）"
   exit 1
 fi
+# 自检只做「一次 git ls-files + 一次 grep」：名单拼成一个 (a|b|c)/ 的或运算，不按名字各起进程。
+# 也不要写成「读进变量再 printf 给 grep」——Git Bash 展开两千多行的大字符串反而更慢
+# （本机三组交替对照：按名字起 git ≈3.6–4.5s，读进变量再筛 ≈4.3–6.2s）。
+EX_RX=""
 for d in "${EX[@]}"; do
   case "$d" in --exclude-dir=*) ;; *) continue ;; esac
   name="${d#--exclude-dir=}"
-  rx="${name//./\\.}"
-  bad=$(git -C "$ROOT" ls-files | grep -E "(^|/)$rx/" || true)
-  if [ -n "$bad" ]; then
-    echo "❌ 排除名单失效：--exclude-dir=$name 下面有被 git 追踪的文件，扫不到它们＝真失明"
-    printf '%s\n' "$bad" | head -20
-    exit 1
-  fi
+  [ -n "$EX_RX" ] && EX_RX="$EX_RX|"
+  EX_RX="$EX_RX${name//./\\.}"
 done
+bad="$(git -C "$ROOT" ls-files | grep -E "(^|/)($EX_RX)/" || true)"
+if [ -n "$bad" ]; then
+  echo "❌ 排除名单失效：下面这些被 git 追踪的文件落在排除目录里，扫不到它们＝真失明"
+  printf '%s\n' "$bad" | head -20
+  exit 1
+fi
 echo "  ✓ 排除名单自检通过（每个排除目录下 0 个被追踪文件）"
 # 测试桩里的假 key 是正当的（不能因为它们报红）
 EX_TEST=(--exclude-dir=__tests__ --exclude-dir=tests --exclude="*.test.ts"
