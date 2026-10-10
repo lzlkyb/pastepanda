@@ -8,7 +8,9 @@ import {
   MANIFEST_BRANCH,
   MANIFEST_DIR,
   addArgs,
+  DEFAULT_GITEE_REPO,
   githubGitUrl,
+  parseArgs,
   planFiles,
   publishManifestBranch,
   pushArgs,
@@ -93,6 +95,28 @@ describe("三段验证的判定", () => {
   it("等待档总时长 ≥ 实测最坏传播（4 分钟），否则会把成功判成失败", () => {
     const total = DEFAULT_RETRY_WAITS.reduce((a, b) => a + b, 0);
     expect(total, `重试只等 ${total}s，raw 传播实测见过 4 分钟 ⇒ 会把已经推好的通道报成失败`).toBeGreaterThanOrEqual(240);
+  });
+});
+
+describe("命令行解析：空值不许当成仓库名", () => {
+  // CI 里 release.yml 写的是 `--gitee-repo $env:GITEE_REPOSITORY`；secret 未配时那是个**空串**，
+  // 会作为参数传进来。空串直接拿去拼 raw 地址 ⇒ 404 ⇒ 把一次已经 FF 成功的发布判成红。
+  it("--gitee-repo 传空回落到默认仓库", () => {
+    expect(parseArgs(["--file", "dist/updater-gitee.json", "--gitee-repo", ""]).giteeRepo).toBe(DEFAULT_GITEE_REPO);
+    expect(parseArgs(["--file", "dist/updater-gitee.json"]).giteeRepo).toBe(DEFAULT_GITEE_REPO);
+    expect(parseArgs(["--file", "dist/updater-gitee.json", "--gitee-repo"]).giteeRepo).toBe(DEFAULT_GITEE_REPO);
+  });
+
+  it("显式给了仓库就用它，别的开关互不串", () => {
+    const r = parseArgs(["--file", "a.json", "--file", "b.json", "--gitee-repo", "o/r", "--no-verify-readback"]);
+    expect(r.giteeRepo).toBe("o/r");
+    expect(r.files).toEqual(["a.json", "b.json"]);
+    expect(r.verify).toBe(false);
+    expect(parseArgs(["--dry-run"]).dryRun).toBe(true);
+  });
+
+  it("落空的 --file 会被 planFiles 拒掉，不是拼出 undefined 路径", () => {
+    expect(() => planFiles(parseArgs(["--file"]).files)).toThrow(/没有指定|形态/);
   });
 });
 

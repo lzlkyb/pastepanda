@@ -248,15 +248,28 @@ function localManifestVersion(src) {
   return j.version;
 }
 
-export async function main(argv = process.argv.slice(2)) {
+/**
+ * 命令行解析。空值一律回落到默认：CI 里 `$env:GITEE_REPOSITORY` 在 secret 未配时是**空串**，
+ * 它会被作为一个参数传进来。若直接当仓库名用，三段验证会去拼 `https://gitee.com//raw/...`
+ * ⇒ 404 ⇒ 把一次已经 FF 成功的发布判成红——正是本模块要治的「最后一步提前判红」。
+ */
+export function parseArgs(argv) {
   const files = [];
   for (let i = 0; i < argv.length; i++) if (argv[i] === "--file") files.push(argv[++i]);
-  const giteeRepo = argv.includes("--gitee-repo") ? argv[argv.indexOf("--gitee-repo") + 1] : DEFAULT_GITEE_REPO;
-  const verify = !argv.includes("--no-verify-readback");
-  const dryRun = argv.includes("--dry-run");
-  const repo = process.env.GH_REPO || DEFAULT_GH_REPO;
+  const at = argv.indexOf("--gitee-repo");
+  const giteeRepo = (at >= 0 ? argv[at + 1] : "") || DEFAULT_GITEE_REPO;
+  return {
+    files,
+    giteeRepo,
+    verify: !argv.includes("--no-verify-readback"),
+    dryRun: argv.includes("--dry-run"),
+  };
+}
 
+export async function main(argv = process.argv.slice(2)) {
+  const { files, giteeRepo, verify, dryRun } = parseArgs(argv);
   const planned = planFiles(files);
+  const repo = process.env.GH_REPO || DEFAULT_GH_REPO;
   info(`目标：${repo}@${MANIFEST_BRANCH}/${MANIFEST_DIR}/｜文件=${planned.map((p) => p.name).join(", ")}`);
   const token = ghToken();
   if (!token && !dryRun) throw new Error("拿不到 GitHub 令牌（CI 传 secrets.GITHUB_TOKEN，本地用 gh auth token）");
