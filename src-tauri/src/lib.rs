@@ -636,77 +636,7 @@ pub fn run() {
             let doc_capture_enabled = cache_patch.doc_capture.unwrap_or(true);
             // 全局热键配置（桌面专属：类型在 hotkey_manager，mobile 不编译）
             #[cfg(desktop)]
-            let hotkey_config = hotkey_manager::HotkeyConfig {
-                show_window: saved_config
-                    .get("hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+V")
-                    .to_string(),
-                seq_paste: saved_config
-                    .get("sequential_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+Q")
-                    .to_string(),
-                index_prefix: "Ctrl+Alt".to_string(),
-                stack_toggle: saved_config
-                    .get("stack_toggle_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+K")
-                    .to_string(),
-                stack_paste: saved_config
-                    .get("stack_paste_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+P")
-                    .to_string(),
-                quick_paste: saved_config
-                    .get("quick_paste_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Alt+V")
-                    .to_string(),
-                // 截图标注热键（v6.18 新增）；默认 Ctrl+Q（2 键，避开 QQ/微信截图热键占用）
-                screenshot: saved_config
-                    .get("screenshot_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Q")
-                    .to_string(),
-                // 今日速记（B2 #3 / D11）
-                daily_note: saved_config
-                    .get("daily_note_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+D")
-                    .to_string(),
-                // 待办岛唤起（critique P1-1）
-                todo_island: saved_config
-                    .get("todo_island_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Alt+T")
-                    .to_string(),
-                // 屏幕录制热键（R 键：Record）。上面已占 Ctrl+Alt+V/Q/K/P/D、Alt+V/T、Ctrl+Q，
-                // Ctrl+Alt+R 无冲突（设计稿 §1）。
-                screen_record: saved_config
-                    .get("rec_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+R")
-                    .to_string(),
-                // 录制中：暂停/继续（四期 1.1）。Ctrl+Alt+P 被 stack_paste 占，取 Space。
-                rec_pause: saved_config
-                    .get("rec_pause_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+Space")
-                    .to_string(),
-                // 录制中：停止并保存。默认留空（rec_hotkey 录制中本就是停止）。
-                rec_stop: saved_config
-                    .get("rec_stop_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                // 录制中：标记时刻（四期 1.3，写入 sidecar）。
-                rec_mark: saved_config
-                    .get("rec_mark_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+M")
-                    .to_string(),
-            };
+            let hotkey_config = hotkey_manager::HotkeyConfig::from_saved(&saved_config);
 
             // 开机自启对账（修复「自启有时候失效」）：条目只在设置开关切换那一刻写一次，
             // 被清理工具删值/重装换目录后不会自愈且界面仍显示已开启。启动时按配置核对：
