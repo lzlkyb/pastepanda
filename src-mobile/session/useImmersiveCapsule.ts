@@ -6,8 +6,9 @@ export const CAPSULE_TEACH_STORAGE_KEY = "pastepanda.session-tools-taught.v2";
 export type CapsulePhase = "idle" | "teaching" | "hint" | "done";
 
 /** Teach once per UI version. The visible tools handle remains available in every session. */
-export function useImmersiveCapsule({ keyboardOpen }: { keyboardOpen: boolean }) {
+export function useImmersiveCapsule({ keyboardOpen, attention = false }: { keyboardOpen: boolean; attention?: boolean }) {
   const landscape = useMobileLayout();
+  const [immersive, setImmersive] = useState(false);
   const [capsuleVisible, setCapsuleVisible] = useState(false);
   const [phase, setPhase] = useState<CapsulePhase>("idle");
   const phaseRef = useRef(phase);
@@ -15,7 +16,7 @@ export function useImmersiveCapsule({ keyboardOpen }: { keyboardOpen: boolean })
   const transition = useCallback((next: CapsulePhase) => { phaseRef.current = next; setPhase(next); }, []);
   useEffect(() => {
     if (!landscape) {
-      setCapsuleVisible(false);
+      setCapsuleVisible(false); setImmersive(false);
       if (entered.current) transition("done");
       return;
     }
@@ -42,6 +43,12 @@ export function useImmersiveCapsule({ keyboardOpen }: { keyboardOpen: boolean })
     transition("done");
     setCapsuleVisible(value => !value);
   }, [transition]);
+  const enterImmersive = useCallback(() => {
+    transition("done"); setCapsuleVisible(false); setImmersive(true);
+  }, [transition]);
+  const reveal = useCallback(() => {
+    transition("done"); setImmersive(false); setCapsuleVisible(true);
+  }, [transition]);
   const dismissHint = useCallback(() => { if (phaseRef.current === "hint") transition("done"); }, [transition]);
-  return { landscape, capsuleVisible: keyboardOpen || capsuleVisible, phase, secondsLeft: CAPSULE_TEACH_SECONDS, toggle, endTeaching, dismissHint };
+  return { landscape, immersive: landscape && immersive && !keyboardOpen && !attention, enterImmersive, reveal, capsuleVisible: keyboardOpen || capsuleVisible, phase, secondsLeft: CAPSULE_TEACH_SECONDS, toggle, endTeaching, dismissHint };
 }

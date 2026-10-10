@@ -1,0 +1,8 @@
+.summary { width: 100%; min-height: 48px; display: flex; align-items: center; gap: 12px; margin-block: 8px 12px; padding: 12px; border: 0; border-radius: var(--mobile-radius-group); background: var(--card-bg); color: var(--text-primary); font: inherit; text-align: left; }
+.summary > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.summary svg { flex: none; color: var(--accent-strong); }
+.summary small { display: block; margin-top: 4px; color: var(--danger); font-size: var(--mobile-font-label); }
+.tasks { display: grid; gap: 8px; }
+.tasks button { min-height: 48px; border: 0; border-radius: 12px; padding: 12px; background: var(--section-bg); color: var(--text-primary); font: inherit; text-align: left; overflow-wrap: anywhere; }
+.tasks small { display: block; color: var(--text-secondary); font-size: var(--mobile-font-secondary); margin-top: 4px; line-height: 1.5; }
+.summary:active, .tasks button:active { background: var(--accent-light); }

@@ -135,7 +135,6 @@ export function RcMobileSession({
     if (keyboardOpen && (!canControl || !hasFrame || (pumpActive && !!frames.statusText))) toggleKeyboard();
   }, [keyboardOpen, canControl, hasFrame, pumpActive, frames.statusText, toggleKeyboard]);
 
-  const capsule = useImmersiveCapsule({ keyboardOpen: keyboardOpen || panelOpen || fileOpen || connectionOpen || feedbackOpen });
   const feedback = useMemo(
     () =>
       createTouchFeedback({
@@ -167,6 +166,7 @@ export function RcMobileSession({
     releaseKeys: mods.releaseAll,
     feedback,
   });
+  const capsule = useImmersiveCapsule({ keyboardOpen: keyboardOpen || panelOpen || fileOpen || connectionOpen || feedbackOpen || pointer.dragging || pointer.scrolling, attention: !!file?.asks.length || !!file?.error });
   const toggleTyping = () => {
     pointer.reset();
     toggleKeyboard();
@@ -237,7 +237,7 @@ export function RcMobileSession({
     clickEnabled={pointer.clickEnabled}
     onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />;
   return (
-    <div className={styles.root} data-landscape={capsule.landscape} data-keyboard={keyboardOpen}>
+    <div className={styles.root} data-landscape={capsule.landscape} data-keyboard={keyboardOpen} data-tools-expanded={capsule.capsuleVisible && !keyboardOpen} data-immersive={capsule.immersive}>
       {!capsule.landscape && <RcSessionHeader title={title} subtitle={subtitle} info={connection} onDetails={openConnection}
         onBack={() => setRequestEnd((n) => n + 1)} onScreen={openScreen} />}
 
@@ -292,7 +292,10 @@ export function RcMobileSession({
         onPointerMode={pointer.pickMode}
         mouseOpen={pointer.mouseOpen}
         onToggleMouse={pointer.toggleMouse}
-        onRevealTools={capsule.toggle}
+        onRevealTools={() => { pointer.reset(); capsule.toggle(); }}
+        immersive={capsule.immersive}
+        onImmersive={() => { pointer.reset(); capsule.enterImmersive(); }}
+        onRestoreTools={() => { pointer.reset(); capsule.reveal(); }}
         toolHint={capsule.phase === "hint"}
         onRevealPointer={pointer.reveal}
         requestEnd={requestEnd}

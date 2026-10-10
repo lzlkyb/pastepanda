@@ -28,9 +28,9 @@ vi.mock("./devices/RcDevicesView", () => ({ RcDevicesView: function DevicePage({
   </>;
 } }));
 vi.mock("./settings/RcSettingsView", () => ({ RcSettingsView: ({ pageNotice }: { pageNotice?: React.ReactNode }) => <>{pageNotice}<p>设置内容</p></> }));
-vi.mock("./knowledge/KnowledgeView", () => ({ KnowledgeView: function KnowledgePage() {
+vi.mock("./knowledge/KnowledgeView", () => ({ KnowledgeView: function KnowledgePage({ onTaskChange }: { onTaskChange?: (focused: boolean) => void }) {
   const [draft, setDraft] = useState("");
-  return <><p>知识库内容</p><input aria-label="知识库草稿" value={draft} onChange={event => setDraft(event.target.value)} /></>;
+  return <><p>知识库内容</p><button onClick={() => onTaskChange?.(true)}>进入阅读任务</button><button onClick={() => onTaskChange?.(false)}>返回知识库列表</button><input aria-label="知识库草稿" value={draft} onChange={event => setDraft(event.target.value)} /></>;
 } }));
 vi.mock("./session/RcMobileSession", () => ({ RcMobileSession: () => <p>远控内容</p> }));
 vi.mock("./devices/RcFilesView", () => ({ RcFilesView: function FilePage({ initialPeer, onStatus, pageNotice }: { initialPeer: string | null; onStatus?: (text: string | null, error?: boolean) => void; pageNotice?: React.ReactNode }) {
@@ -223,4 +223,17 @@ it("迟到旧分享和清理最新条目不抢当前页面，仅显式分享意�
   fireEvent.click(screen.getByRole("button", { name: "文件" }));
   inboxState.items = []; view.rerender(<App />);
   expect(screen.getByRole("region", { name: "文件" })).toBeTruthy();
+});
+
+it("内容任务隐藏主导航，返回恢复导航和原草稿，后台错误仍可见", () => {
+  const view = render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+  fireEvent.change(screen.getByLabelText("知识库草稿"), { target: { value: "保留输入" } });
+  fireEvent.click(screen.getByRole("button", { name: "进入阅读任务" }));
+  expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+  state.fileError = "传输失败"; view.rerender(<App />);
+  expect(screen.getByText("传输失败")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "返回知识库列表" }));
+  expect(screen.getByRole("navigation", { name: "主要导航" })).toBeTruthy();
+  expect((screen.getByLabelText("知识库草稿") as HTMLInputElement).value).toBe("保留输入");
 });

@@ -97,3 +97,8 @@
 :global(html[data-mobile-keyboard="true"]) .tabbar { display: none; }
 @keyframes pageIn { from { opacity: 0.6; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .pagePane { animation: none; } }
+
+.tabbar[hidden] { display: none; }
+.root[data-focused="true"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.root[data-focused="true"] .pane { grid-column: 1; grid-row: 1; }
+.root[data-focused="true"] .globalNotice { grid-column: 1; grid-row: 2; }

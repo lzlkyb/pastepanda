@@ -56,9 +56,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `mobile-touch-2026-10-02/` | 5 | 141 KB |  |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
 | `mobile-ui-unification-2026-10-09/` | 2 | 182 KB |  |
-| `*.html`（根目录） | 331 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 332 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（331 份，按主题分组）
+## 设计稿清单（332 份，按主题分组）
 
 ### 视觉与品牌（25）
 
@@ -420,13 +420,14 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`ui-1to1-restoration-draft`](./ui-1to1-restoration-draft.html) | 2026-08-06 | 91 KB |
 | [`search-box-unify`](./search-box-unify.html) | 2026-08-06 | 16 KB |
 
-### 未分类（41）
+### 未分类（42）
 
 *文件名没命中任何规则。给个更贴主题的文件名，或去脚本 `RULES` 里补一条。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`mobile-article-collection-2026-10-09`](./mobile-article-collection-2026-10-09.html) | — | 3 KB |
+| [`mobile-focus-upgrade-2026-10-10`](./mobile-focus-upgrade-2026-10-10.html) | — | 3 KB |
+| [`mobile-article-collection-2026-10-09`](./mobile-article-collection-2026-10-09.html) | 2026-10-10 | 3 KB |
 | [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | 2026-10-08 | 6 KB |
 | [`mobile-knowledge-collection-attachments-2026-10-08`](./mobile-knowledge-collection-attachments-2026-10-08.html) | 2026-10-08 | 8 KB |
 | [`mobile-commercial-upgrade-2026-10-07`](./mobile-commercial-upgrade-2026-10-07.html) | 2026-10-08 | 57 KB |
@@ -472,4 +473,4 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 ---
 
-_共 331 份设计稿。重新生成：`npm run gen:design-index`_
+_共 332 份设计稿。重新生成：`npm run gen:design-index`_

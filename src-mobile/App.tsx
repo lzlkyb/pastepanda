@@ -24,6 +24,7 @@ import styles from "./App.module.css";
 const DESTINATION_IDS = MOBILE_DESTINATIONS.map(({ id }) => id);
 
 export default function App() {
+  const [knowledgeTask, setKnowledgeTask] = useState(false);
   const [sandbox, setSandbox] = useState(false);
   const [filePeer, setFilePeer] = useState<string | null>(null);
   const [fileNotice, setFileNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -50,6 +51,7 @@ export default function App() {
     if (!openRequestId || activeSession || sandbox || seenShareRequest.current === openRequestId) return;
     seenShareRequest.current = openRequestId; selectTab("knowledge");
   }, [openRequestId, activeSession, sandbox, selectTab]);
+  const focused = tab === "knowledge" && knowledgeTask;
   const pending = session?.phase === "outbound_pending";
   const rcMessage = rc.error ? rcErrorText(rc.error) : null;
   const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
@@ -88,7 +90,7 @@ export default function App() {
           file={file}
         />
       )}
-      <div className={styles.root} hidden={sandbox || activeSession}>
+      <div className={styles.root} data-focused={focused} hidden={sandbox || activeSession}>
         <main className={styles.pane}>
           <div className={styles.tabContent}>
             {/* Keep one instance per destination: retain drafts, scroll and ongoing transfers. */}
@@ -125,7 +127,7 @@ export default function App() {
                     onStatus={onFileStatus}
                   />
                 )}
-                {id === "knowledge" && <KnowledgeView active={tab === id && !sandbox && !activeSession} pageNotice={tab === id ? pageNotice : undefined} inbox={knowledgeInbox} />}
+                {id === "knowledge" && <KnowledgeView active={tab === id && !sandbox && !activeSession} pageNotice={tab === id ? pageNotice : undefined} inbox={knowledgeInbox} onTaskChange={setKnowledgeTask} />}
                 {id === "settings" && (
                   <RcSettingsView
                     pageNotice={tab === id ? pageNotice : undefined}
@@ -173,9 +175,9 @@ export default function App() {
                 : fileNotice?.text}
             </MobileNotice>
           )}
-          {tab !== "settings" && <MobileUpdateBanner quiet={pending || fileFeedbackVisible} />}
+          {tab !== "settings" && !focused && <MobileUpdateBanner quiet={pending || fileFeedbackVisible} />}
         </div>
-        <nav className={styles.tabbar} aria-label="主要导航">
+        <nav hidden={focused} className={styles.tabbar} aria-label="主要导航">
           {MOBILE_DESTINATIONS.map(({ id, label, Icon }) => (
             <button
               key={id}

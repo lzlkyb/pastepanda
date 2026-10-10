@@ -59,14 +59,15 @@ it("reopening an unconsumed article share uses article preview again",async()=>{
   const baseline=vi.mocked(invoke).getMockImplementation()!;
   const task={id:"article",revision:1,url:source.items[0].text,title:"文章标题",author:"",html:"",body:"已取得的正文",remarks:"",folder_id:null,tag_ids:[],images:[],source_ids:[incoming.id],error:"",note_id:null,duplicate_note_id:null,saved_link_only:false,baseline_title:"",baseline_content:""};
   vi.mocked(invoke).mockImplementation(async(command,args)=>{
-    if(command==="mobile_article_begin")return task;
+    if(command==="mobile_article_begin" || command==="mobile_article_get")return task;
     if(command==="mobile_article_pending")return [task];
     return baseline(command,args);
   });
   render(<KnowledgeView active inbox={source}/>);
   await screen.findByRole("region",{name:"收藏文章"});
   fireEvent.click(screen.getByRole("button",{name:"返回"}));
-  fireEvent.click(await screen.findByRole("button",{name:"查看收集内容"}));
+  fireEvent.click(await screen.findByRole("button", { name: /待处理/ }));
+  fireEvent.click(await screen.findByRole("button",{name:/文章标题/}));
   await screen.findByRole("region",{name:"收藏文章"});
   expect(screen.queryByRole("dialog",{name:"收集内容预览"})).toBeNull();
   expect(source.acknowledge).not.toHaveBeenCalled();
@@ -136,7 +137,8 @@ it("a warm share remains reachable while writing and cannot replace the existing
   draft = { id: captureId, revision: 1, title: "已有记录", content: "正在写的内容" };
   const source = inbox();
   const page = render(<KnowledgeView active inbox={source} />);
-  fireEvent.click(await screen.findByRole("button", { name: "继续写" }));
+  fireEvent.click(await screen.findByRole("button", { name: /待处理/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^继续写/ }));
   page.rerender(<KnowledgeView active inbox={{ ...source, items: [incoming] }} />);
   fireEvent.click(screen.getByRole("button", { name: "查看收集内容" }));
   await screen.findByText("先处理正在写的记录");
@@ -152,7 +154,8 @@ it("picker binds its returned payload; failed acknowledgement never appends the 
   const source = inbox(); source.pickImages = vi.fn(() => new Promise<boolean>(done => { resolve = done; }));
   source.acknowledge = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const page = render(<KnowledgeView active inbox={source} />);
-  fireEvent.click(await screen.findByRole("button", { name: "继续写" }));
+  fireEvent.click(await screen.findByRole("button", { name: /待处理/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^继续写/ }));
   fireEvent.click(screen.getByRole("button", { name: "添加图片" }));
   page.rerender(<KnowledgeView active inbox={{ ...source, items: [incoming] }} />);
   expect(screen.queryByRole("dialog", { name: "收集内容预览" })).toBeNull();
@@ -176,9 +179,27 @@ it("acknowledgement can be retried after the imported capture has become a saved
   fireEvent.click(screen.getByRole("button", { name: "保存到手机" }));
   await screen.findByText("已保存到手机");
   fireEvent.click(screen.getByRole("button", { name: "返回" }));
-  fireEvent.click(await screen.findByRole("button", { name: "查看收集内容" }));
+  fireEvent.click(await screen.findByRole("button", { name: /待处理/ }));
+  fireEvent.click(await screen.findByRole("button", { name: /^查看收集内容/ }));
   fireEvent.click(screen.getByRole("button", { name: "重试清理收集状态" }));
   await waitFor(() => expect(source.acknowledge).toHaveBeenCalledTimes(2));
   expect(notes.filter(n => n.id === incoming.id)).toHaveLength(1);
   expect(screen.getByRole("heading", { name: "知识库" })).toBeTruthy();
+});
+
+it("从待处理继续草稿后返回，保留列表原滚动位置", async () => {
+  draft = { id: captureId, revision: 1, title: "未完草稿", content: "保留正文" };
+  const onTaskChange = vi.fn();
+  const { container } = render(<KnowledgeView active onTaskChange={onTaskChange} />);
+  await screen.findByRole("button", { name: /待处理/ });
+  const scroll = container.querySelector('[class*="scroll"]') as HTMLElement;
+  scroll.scrollTop = 221;
+  fireEvent.click(screen.getByRole("button", { name: /待处理/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^继续写/ }));
+  await screen.findByRole("textbox", { name: /^标题/ });
+  expect(onTaskChange).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", { name: "返回并保留草稿" }));
+  await screen.findByRole("button", { name: /待处理/ });
+  expect(scroll.scrollTop).toBe(221);
+  expect(onTaskChange).toHaveBeenLastCalledWith(false);
 });

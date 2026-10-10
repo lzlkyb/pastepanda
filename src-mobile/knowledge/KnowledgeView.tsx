@@ -4,6 +4,7 @@ import { mobileKnowledgeVisit } from "@/lib/api/mobileKnowledge";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileToast } from "../ui/MobileToast";
+import { KnowledgePending } from "./KnowledgePending";
 import { KnowledgeList } from "./KnowledgeList";
 import { KnowledgeFilters } from "./KnowledgeFilters";
 import { KnowledgeEditor } from "./KnowledgeEditor";
@@ -22,7 +23,7 @@ import { knowledgeArticleUrl } from "@/lib/utils";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./KnowledgeView.module.css";
 
-export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; pageNotice?: ReactNode; inbox?: ReturnType<typeof useKnowledgeInbox> }) {
+export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onTaskChange?: (focused: boolean) => void; active: boolean; pageNotice?: ReactNode; inbox?: ReturnType<typeof useKnowledgeInbox> }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [readerEpoch, setReaderEpoch] = useState(0);
   const [editing, setEditing] = useState(false);
@@ -35,6 +36,8 @@ export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; 
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftChoice, setDraftChoice] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
+  const [dismissedInboxNotice, setDismissedInboxNotice] = useState("");
+  useEffect(() => setDismissedInboxNotice(""), [inbox?.notice]);
   const [savedNotice, setSavedNotice] = useState<MobileFeedback | undefined>();
   const listScroll = useRef<HTMLDivElement>(null);
   const previousNote = useRef<string | null>(null);
@@ -45,20 +48,28 @@ export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; 
     setSavedNotice({ tone: "success", title }); setEditing(false); setMaintaining(false); setSelected(id); setReaderEpoch(v=>v+1);
     list.refresh(); void mobileKnowledgeVisit(id, 0).then(list.refresh).catch(() => undefined);
   });
+  const focused = !!selected || editing || maintaining || article.open;
+  useEffect(() => { onTaskChange?.(focused); }, [focused, onTaskChange]);
+  useEffect(() => () => onTaskChange?.(false), [onTaskChange]);
   const list = useKnowledgeList(active && !editing && !maintaining && !article.open, { query, view, folder_filter: folder, tag_ids: tag ? [tag] : [] });
   const resetScroll = () => { if (listScroll.current) listScroll.current.scrollTop = 0; savedScroll.current = 0; };
+  const rememberScroll = () => {
+    // Hidden list panes report zero: only capture while the list is the current task.
+    if (!focused) savedScroll.current = listScroll.current?.scrollTop ?? savedScroll.current;
+  };
   const open = (id: string) => {
-    savedScroll.current = listScroll.current?.scrollTop ?? savedScroll.current;
+    rememberScroll();
     previousNote.current = id; setSavedNotice(undefined); setSelected(id);
   };
   // Keep loaded pages/order on return; otherwise page two disappears and scroll is clamped.
   const back = () => { setSelected(null); setSavedNotice(undefined); };
   useLayoutEffect(() => {
-    if (selected || editing || !listScroll.current) return;
+    if (selected || editing || maintaining || article.open || !listScroll.current) return;
     listScroll.current.scrollTop = savedScroll.current;
     if (previousNote.current) [...listScroll.current.querySelectorAll<HTMLButtonElement>("[data-note-id]")].find(button => button.dataset.noteId === previousNote.current)?.focus({ preventScroll: true });
-  }, [selected, editing]);
+  }, [selected, editing, maintaining, article.open]);
   const start = async () => {
+    rememberScroll();
     if (draft.draft) { setDraftChoice(true); return; }
     if (await draft.begin()) { setEditing(true); setSelected(null); }
   };
@@ -68,7 +79,7 @@ export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; 
     setMaintaining(true); return true;
   };
   const collection = useKnowledgeCollection({ active, editing, maintaining, draft, edit, inbox, setEditing, setMaintaining, setSelected, onCaptured: id => {
-    setSavedNotice({ tone: "success", title: "已保存到手机" }); setSelected(id); list.refresh();
+    rememberScroll(); setSavedNotice({ tone: "success", title: "已保存到手机" }); setSelected(id); list.refresh();
     void mobileKnowledgeVisit(id, 0).then(list.refresh).catch(() => undefined);
   } });
   const { incoming, collectionTarget, appliedIncomingId, collecting, collectionError, pickImages, collect, chooseCollection, showCollection } = collection;
@@ -76,7 +87,7 @@ export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; 
     if (!active || article.open || !incoming || collectionTarget || appliedIncomingId || incoming.images.length || incoming.status !== "ready") return;
     const url = knowledgeArticleUrl(incoming.text);
     if (!url) return;
-    collection.close(); void article.begin(url, incoming);
+    rememberScroll(); collection.close(); void article.begin(url, incoming);
   }, [active, article, incoming, collectionTarget, appliedIncomingId, collection]);
   const collectionNotice = <>{collection.collectionSuccess && <MobileToast placement="flow" compact tone="success" title={collection.collectionSuccess} onDismiss={collection.dismissSuccess} />}{!!inbox?.items.length && <MobileNotice compact title={`有 ${inbox.items.length} 条待收集内容`} detail="当前输入仍保留。" action={<button className={ui.textButton} onClick={showCollection}>查看收集内容</button>} />}</>;
   const operationNotice: MobileFeedback | undefined = inbox?.error ? { tone: "error", title: "收集操作未能完成", detail: inbox.error } : inbox?.processing ? { tone: "pending", title: "正在整理分享内容…" } : inbox?.notice ? { tone: "info", title: "收集提示", detail: inbox.notice } : undefined;
@@ -86,24 +97,24 @@ export function KnowledgeView({ active, pageNotice, inbox }: { active: boolean; 
     <div className={styles.workspace} data-reading={!!selected} hidden={editing || maintaining}>
       <section className={styles.listPane} aria-label="知识库笔记列表">
         <header className={styles.head}><h1 data-mobile-page-title>知识库</h1>
-          <button className={ui.textButton} disabled={!draft.ready || draft.saving} onClick={() => setNewOpen(true)}><Plus size={20} aria-hidden="true" />新建</button>
+          <button className={ui.textButton} disabled={!draft.ready || draft.saving} onClick={() => { rememberScroll(); setNewOpen(true); }}><Plus size={20} aria-hidden="true" />新建</button>
         </header>
         <div className={styles.syncSummary}><KnowledgeSync active={active && !editing && !maintaining && !article.open} onChanged={list.refresh} /></div>
         <div className={styles.scroll} ref={listScroll}>
           {pageNotice}
           {article.error && !article.open && <MobileNotice compact tone="warning" title="待收集文章仍保留" detail={article.error} action={<button className={ui.textButton} onClick={() => void article.refresh()}>重新读取</button>} />}
-          {!!article.pending.length && <MobileNotice compact title={`有 ${article.pending.length} 条待收集文章`} action={<>{article.pending.map(task => <button key={task.id} className={ui.textButton} onClick={() => void article.begin(undefined, undefined, task.id)}>{task.title || "继续收藏文章"}</button>)}</>} />}
           {!draft.ready && draft.error && <MobileNotice error title="草稿暂时无法读取" detail={draft.error} action={<button className={ui.textButton} onClick={() => void draft.retryLoad()}>重新读取草稿</button>} />}
-          {draft.draft && <MobileNotice title="有一份未完成草稿" detail={draft.draft.title || "未命名记录"} action={<button className={ui.textButton} onClick={() => { setEditing(true); setSelected(null); }}>继续写</button>} />}
           {!edit.ready && edit.error && <MobileNotice error title="修改草稿暂时无法读取" detail={edit.error} action={<button className={ui.textButton} onClick={() => void edit.retryLoad()}>重新读取</button>} />}
-          {edit.draft && <MobileNotice title="有一份未完成的修改" detail={edit.draft.title} action={<button className={ui.textButton} onClick={() => setMaintaining(true)}>继续修改</button>} />}
           {inbox?.processing && <MobileNotice tone="pending" title="正在整理分享内容…" />}
           {inbox?.error && <MobileNotice error title="待收集内容暂不可用" detail={inbox.error} action={<button className={ui.textButton} onClick={() => void inbox.refresh()}>重新读取</button>} />}
-          {inbox?.notice && <MobileNotice title="收集提示" detail={inbox.notice} />}
-          {!!inbox?.items.length && <MobileNotice title={`有 ${inbox.items.length} 条待收集内容`} detail="先预览再继续记录，已有草稿会保留。" action={<button className={ui.textButton} onClick={showCollection}>查看收集内容</button>} />}
+          {inbox?.notice && dismissedInboxNotice !== inbox.notice && <MobileToast placement="flow" compact tone="info" title="收集提示" detail={inbox.notice} onDismiss={() => setDismissedInboxNotice(inbox.notice)} />}
+          <KnowledgePending active={active && !editing && !maintaining && !article.open} draftTitle={draft.draft?.title} editTitle={edit.draft?.title}
+            articles={article.pending} incoming={inbox?.items || []}
+            onDraft={() => { rememberScroll(); setEditing(true); setSelected(null); }} onEdit={() => { rememberScroll(); setMaintaining(true); }}
+            onArticle={id => { rememberScroll(); void article.begin(undefined, undefined, id); }} onIncoming={() => { rememberScroll(); showCollection(); }} />
           <KnowledgeList items={list.items} loading={list.loading} error={list.error} cancelled={list.cancelled} scrollElement={listScroll} onCancel={list.cancel} hasMore={list.hasMore} view={view} query={query} folder={folder} tag={tag} selected={selected}
             onQuery={value => { setQuery(value); resetScroll(); }} onView={value => { setView(value); resetScroll(); }} onFilter={() => setFilterOpen(true)}
-            onClear={clear} onOpen={open} onRetry={list.refresh} onMore={() => void list.more()} onNew={() => setNewOpen(true)} />
+            onClear={clear} onOpen={open} onRetry={list.refresh} onMore={() => void list.more()} onNew={() => { rememberScroll(); setNewOpen(true); }} />
         </div>
       </section>
       {selected && <div className={styles.readerPane}><KnowledgeReader key={`${selected}:${readerEpoch}`} noteId={selected} active={active && !editing && !maintaining && !incoming && !article.open} onBack={back} onOpenNote={open} onEdit={startEdit} onFillArticle={id => void article.begin(undefined, undefined, id)}

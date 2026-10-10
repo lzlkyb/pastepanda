@@ -1,6 +1,6 @@
 /* 远程画面优先；工具使用实底，避免叠加模糊和透明层。 */
 .root {
-  --session-rail-width: max(68px, 4.25rem);
+  --session-rail-width: max(56px, 3.5rem);
   position: fixed;
   top: var(--mobile-viewport-top, 0px);
   left: 0;
@@ -605,3 +605,16 @@
 .keyboardTop > button {
   flex: none;
 }
+
+.root[data-landscape="true"][data-tools-expanded="true"] { --session-rail-width: max(154px, 9.625rem); }
+.root[data-landscape="true"][data-tools-expanded="true"] .toolbarCapsule { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.root[data-landscape="true"][data-tools-expanded="true"] .mouseActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.root[data-landscape="true"][data-tools-expanded="true"] .landscapeTools { flex-direction: row; }
+.root[data-landscape="true"][data-immersive="true"] { --session-rail-width: 0px; grid-template-columns: minmax(0, 1fr); }
+.toolRail[hidden] { display: none; }
+.immersiveHandle { position: absolute; z-index: var(--mobile-layer-nav); bottom: max(8px, env(safe-area-inset-bottom, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); min-width: 48px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 12px; background: var(--card-bg); color: var(--accent-strong); font: inherit; font-size: var(--mobile-font-label); }
+.immersiveHandle:active { background: var(--accent-light); }
+.qualityChoices { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+.qualityDetails > summary { min-height: 48px; padding-block: 12px; color: var(--text-secondary); font-size: var(--mobile-font-secondary); cursor: pointer; }
+
+.root .toolbar[hidden] { display: none; }

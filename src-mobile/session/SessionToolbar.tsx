@@ -13,6 +13,9 @@ import styles from "./RcMobileSession.module.css";
 
 export type MobileKeyMode = "type" | "direct";
 export type SessionToolbarProps = {
+  immersive?: boolean;
+  onImmersive?: () => void;
+  onRestoreTools?: () => void;
   landscape: boolean;
   visible: boolean;
   keyboardOn: boolean;
@@ -122,7 +125,8 @@ export function SessionToolbar(props: SessionToolbarProps) {
   const cls = landscape ? [styles.toolbar, styles.toolbarCapsule, visible ? "" : styles.toolbarHidden].join(" ") : styles.toolbar;
   const hasSource = trail.length > 0 || !!externalBack.current;
   return <>
-    <div className={landscape ? styles.toolRail : styles.portraitTools}>
+    {landscape && props.immersive && <button type="button" className={styles.immersiveHandle} onClick={props.onRestoreTools}><ChevronDown size={18} aria-hidden="true" />工具</button>}
+    <div hidden={landscape && props.immersive} className={landscape ? styles.toolRail : styles.portraitTools}>
       <div className={landscape ? styles.toolRailScroll : styles.portraitTools}>
         {landscape && <div className={styles.landscapeTools}>
           {!keyboardOn && <button type="button" className={styles.toolHandle + (toolHint ? " " + styles.toolHandlePulse : "")}
@@ -143,8 +147,9 @@ export function SessionToolbar(props: SessionToolbarProps) {
           <button type="button" className={styles.tbBtn} onClick={() => openRoot("more")}><Ellipsis size={22} aria-hidden="true" /><span>更多</span></button>
           {!landscape && fileEntry}
         </nav>
-        {landscape && mouseAssist}
+        {landscape && visible && mouseAssist}
         {landscape && fileEntry}
+        {landscape && visible && !keyboardOn && props.onImmersive && <button type="button" className={styles.tbBtn} onClick={props.onImmersive}><Monitor size={20} aria-hidden="true" /><span>沉浸画面</span></button>}
       </div>
       {landscape && <button type="button" className={[styles.tbBtn, styles.railExit].join(" ")} onClick={requestExit}>
         <ArrowLeft size={20} aria-hidden="true" /><span>{waiting ? "取消申请" : "退出"}</span>

@@ -34,23 +34,25 @@ export function SessionToolbarPanels({ panel, onBack, onClose, onScreen, onExit,
   return <MobileSheet open={panel !== null && panel !== "mode"} title={title} onClose={onClose} onBack={onBack}
     description={panel === "end" && !waiting ? "结束会话后返回设备，电脑上的工作会继续保留。" : undefined} footer={footer}>
     {panel === "screen" && <div className={styles.panelActions}>
+      <h3 className={ui.sectionHeading}>画质</h3>
+      <div className={styles.qualityChoices} role="radiogroup" aria-label="画质">
+        {MOBILE_QUALITY_CYCLE.map(value => <MobileChoice key={value} value={value} checked={quality === value}
+          title={qualityLabel(value)} onSelect={() => onPickQuality(value)} />)}
+      </div>
       <button type="button" className={ui.secondary} onClick={() => { onResetZoom(); onClose(); }}>适应屏幕</button>
       <button type="button" className={ui.secondary} onClick={onToggleOrientation}>
         <RotateCw size={18} aria-hidden="true" />{landscape ? "切换到竖屏" : "切换到横屏"}
       </button>
       <button type="button" className={ui.secondary} onClick={() => { onRevealPointer?.(); onClose(); }}>回到指针</button>
-      <h3 className={ui.sectionHeading}>画质</h3>
+      <details className={styles.qualityDetails}><summary>画质策略与操作手势</summary>
       <p className={styles.panelHint}>选「清晰 / 均衡 / 流畅」会锁档并关闭电脑自动档；点「自动」恢复。</p>
       {!quality && <p className={styles.panelHint}>当前电脑画质尚未确认，选择档位后等待电脑确认。</p>}
       {quality === "auto" && <p className={styles.panelHint}>电脑正按网络状况自动换档。</p>}
       {quality && quality !== "auto" && <p className={styles.panelHint}>已锁档「{qualityLabel(quality)}」：电脑自动档已关闭，点「自动」恢复。</p>}
-      <div className={styles.panelActions} role="radiogroup" aria-label="画质">
-        {MOBILE_QUALITY_CYCLE.map(value => <MobileChoice key={value} value={value} checked={quality === value}
-          title={qualityLabel(value)} onSelect={() => onPickQuality(value)} />)}
-      </div>
       <p className={styles.panelHint}>{pointerMode === "pad" || pointerMode === "floating"
         ? "画面手势调整本地视野；用触控板或控制柄操作电脑。"
         : "双指捏合缩放画面，双指移动滚动电脑页面。"}</p>
+      </details>
     </div>}
     {panel === "more" && <div className={styles.panelActions}>
       {onConnectionDetails && <button type="button" className={ui.secondary} onClick={onConnection}>连接详情</button>}
