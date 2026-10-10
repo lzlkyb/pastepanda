@@ -10,6 +10,9 @@ export function useMobileViewport() {
     const viewport = window.visualViewport;
     const update = () => {
       const height = viewport?.height ?? window.innerHeight;
+      // CSS viewport media queries may keep the full height while the IME is
+      // open. Sheets must budget against the same visible height as toolbars.
+      root.dataset.mobileShortViewport = height <= 560 ? "true" : "false";
       root.style.setProperty("--mobile-viewport-height", `${height}px`);
       root.style.setProperty("--mobile-viewport-top", `${viewport?.offsetTop ?? 0}px`);
       const focused = document.activeElement?.matches("input,textarea,[contenteditable=true]");
@@ -32,6 +35,7 @@ export function useMobileViewport() {
       root.style.removeProperty("--mobile-viewport-top");
       delete root.dataset.mobileLayout;
       delete root.dataset.mobileKeyboard;
+      delete root.dataset.mobileShortViewport;
     };
   }, [landscape]);
 }

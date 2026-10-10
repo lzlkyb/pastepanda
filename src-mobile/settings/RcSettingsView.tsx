@@ -141,7 +141,7 @@ export function RcSettingsView({
       <MobileUpdateSection />
       <p className={styles.footer}>PastePanda · 安全连接，随身使用</p>
       <MobileSheet open={active && panel === "pointer"} title="操作习惯"
-        description="选择后续会话的默认方式。触控板为初始默认，当前会话也可以单独切换。"
+        description="触控板为初始默认。这里或会话中切换方式，都会记为这部手机下次连接的默认选择。"
         onClose={() => setPanel(null)}
         footer={pointerResult && <MobileNotice compact tone={pointerResult.error ? "error" : "success"} title={pointerResult.title} />}>
         <div className={styles.choices} role="radiogroup" aria-label="默认操作方式">
@@ -171,13 +171,19 @@ export function RcSettingsView({
             <strong>触控板模式（默认）</strong>单指划动移动指针，点按点击指针所在位置，连续点按两次可双击。
           </p>
           <p>
-            <strong>直接点击模式</strong>点击画面中的目标即可操作。在会话工具栏的「触控板／直接点击」中切换模式。
+            <strong>直接点击模式</strong>点击画面中的目标即可操作。点会话工具栏中的当前操作方式（如「触控板」），可以切换四种模式。
           </p>
           <p>
-            <strong>长按</strong>唤出右键菜单；长按后移动可拖动。
+            <strong>独立触控板模式</strong>在独立触控区域划动移动指针，点按点击指针处。画面区域只调整手机中的视野，右键、拖拽和滚动使用辅助按钮。
           </p>
           <p>
-            <strong>双指移动</strong>滚动电脑页面；双指捏合调整手机中的画面大小。
+            <strong>浮动鼠标模式</strong>拖动控制柄定位，指针显示在手指上方。点击、右键、拖拽和滚动使用辅助按钮；画面手势只调整手机中的视野。
+          </p>
+          <p>
+            <strong>长按（触控板与直接点击）</strong>长按松手唤出右键菜单；长按后移动可拖动。
+          </p>
+          <p>
+            <strong>双指移动与缩放</strong>触控板、直接点击模式下，双指移动滚动电脑页面；独立触控板、浮动鼠标模式下，画面上的双指移动只调整本地视野。双指捏合调整手机中的画面大小。
           </p>
           <p>
             <strong>键盘与横屏</strong>

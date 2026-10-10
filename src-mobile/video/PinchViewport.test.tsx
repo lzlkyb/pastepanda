@@ -24,3 +24,13 @@ it("键盘或旋转改变视野后重新约束，适应屏幕恢复原点", () =
   act(() => ref.current!.reset());
   expect(wrapper.style.transform).toBe("translate(0px, 0px) scale(1)");
 });
+
+it("宽图放大后不能被拖出视野，图框边界不包含object-fit留白", () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const viewport = createRef<PinchViewportHandle>(), surface = createRef<HTMLElement>();
+  const content = {current:{w:1200,h:120}};
+  const view = render(<PinchViewport ref={viewport} surfaceRef={surface} contentSize={content}><span>宽图</span></PinchViewport>);
+  surface.current!.getBoundingClientRect = () => ({left:0,top:0,width:300,height:200}) as DOMRect;
+  act(() => viewport.current!.applyPinch(4,0,-10000,150,100));
+  expect(view.container.querySelector("span")!.parentElement!.style.transform).toBe("translate(-450px, -300px) scale(4)");
+});

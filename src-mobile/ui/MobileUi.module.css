@@ -151,6 +151,7 @@
   pointer-events: none;
 }
 .sheet {
+  translate: var(--mobile-back-offset, 0px) 0;
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -183,7 +184,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 48px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -199,6 +200,7 @@
   transform: none;
 }
 .sheetHead {
+  touch-action: none;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -207,12 +209,17 @@
   margin: 0 0 16px;
 }
 .sheetTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--mobile-title-size);
   font-weight: 650;
   margin: 0;
   line-height: 1.4;
+  max-height: calc(var(--mobile-viewport-height, 100dvh) * 0.25);
+  overflow-y: auto;
 }
 .closeButton {
+  flex: none;
   min-height: 48px;
   border: 0;
   padding: 8px 0 8px 10px;
@@ -224,26 +231,34 @@
   font-size: var(--mobile-font-label);
 }
 .sheetBody {
+  flex: 1 1 auto;
   margin-top: 12px;
-  min-height: 0;
+  /* Reserve reading space before long receipts/actions consume a short viewport. */
+  min-height: min(4rem, calc(var(--mobile-viewport-height, 100dvh) * 0.15));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .sheetFooter {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-height: min(4rem, calc(var(--mobile-viewport-height, 100dvh) * 0.2));
   margin-top: 12px;
-  max-height: min(160px, calc(var(--mobile-viewport-height, 100dvh) * 0.4));
+  max-height: min(160px, calc(var(--mobile-viewport-height, 100dvh) * 0.25));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.sheetFooter:empty { display: none; }
 .sheetActions {
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-height: 48px;
+  max-height: calc(var(--mobile-viewport-height, 100dvh) * 0.35);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }
-.sheetActions > button { flex: 1 1 120px; margin-top: 0; }
+.sheetActions > button { flex: 1 0 120px; min-width: 0; margin-top: 0; }
 :global(html[data-mobile-layout="landscape"]) .subtitle { display: none; }
 :global(html[data-mobile-layout="landscape"]) .pageHead { min-height: 48px; padding-top: 0; align-items: center; }
 /* 横屏面板独立滚动，标题和关闭入口始终留在可视窗口内。 */
@@ -253,7 +268,7 @@
   right: max(8px, env(safe-area-inset-right, 0px));
   top: calc(var(--mobile-viewport-top, 0px) + max(8px, env(safe-area-inset-top, 0px)));
   bottom: auto;
-  width: min(380px, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
+  width: min(28rem, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 16px));
   height: calc(var(--mobile-viewport-height, 100dvh) - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px)));
   max-height: none;
   padding: 0 16px 16px;
@@ -261,9 +276,23 @@
   margin: 0;
 }
 :global(html[data-mobile-layout="landscape"]) .sheetHead { margin-bottom: 8px; }
+:global(html[data-mobile-layout="landscape"]) .dragHandle { display: none; }
+:global(html[data-mobile-layout="landscape"]) .sheetHead { margin-top: 8px; }
 :global(html[data-mobile-layout="landscape"]) .sheetBody { margin-top: 8px; }
 :global(html[data-mobile-layout="landscape"]) .empty { padding-top: 16px; }
-.sheet > .description { flex-shrink: 0; }
+/* Short portrait/IME windows cannot afford a separate handle plus large gaps. */
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheet {
+  max-height: calc(var(--mobile-viewport-height, 100dvh) - env(safe-area-inset-top, 0px) - 8px);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .dragHandle { display: none; }
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheetHead { margin-top: 8px; margin-bottom: 0; }
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheetBody,
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheetFooter,
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheetActions { margin-top: 8px; }
+:global(html[data-mobile-layout="portrait"][data-mobile-short-viewport="true"]) .sheetFooter {
+  min-height: min(3rem, calc(var(--mobile-viewport-height, 100dvh) * 0.15));
+}
 .primary,
 .secondary,
 .danger,

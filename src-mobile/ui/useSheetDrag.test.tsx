@@ -122,3 +122,30 @@ it("短距离快速下甩关闭，停留后松手只回弹", () => {
   });
   expect(h.close).toHaveBeenCalledTimes(1);
 });
+
+it("页头轻点不收起，关闭按钮不被拖动捕获", () => {
+  const h = setup();
+  const header = document.createElement("header");
+  header.setPointerCapture = vi.fn();
+  const title = document.createElement("h2"); header.append(title);
+  act(() => {
+    h.result.current.onPointerDown({ ...h.event(0), currentTarget: header, target: title });
+    h.result.current.onPointerUp({ ...h.event(0), currentTarget: header, target: title });
+  });
+  expect(h.close).not.toHaveBeenCalled();
+  const button = document.createElement("button"); header.append(button);
+  act(() => h.result.current.onPointerDown({ ...h.event(0), currentTarget: header, target: button }));
+  expect(header.setPointerCapture).toHaveBeenCalledTimes(1);
+});
+
+it("原生返回开始取消正在拖动的面板，不执行关闭", () => {
+  const h = setup();
+  act(() => {
+    h.result.current.onPointerDown(h.event(100));
+    h.result.current.onPointerMove(h.event(150));
+    window.dispatchEvent(new Event("mobile-interaction-cancel"));
+  });
+  act(() => h.clock.advance(1200));
+  expect(h.sheet.style.getPropertyValue("--mobile-sheet-offset")).toBe("0px");
+  expect(h.close).not.toHaveBeenCalled();
+});

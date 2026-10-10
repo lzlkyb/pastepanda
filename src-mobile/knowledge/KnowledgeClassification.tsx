@@ -30,10 +30,10 @@ export function KnowledgeClassification({ open, folder, tags, onClose, onApply }
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [open, folder, tags, retry]);
-  return <MobileSheet open={open} title="文件夹与标签" onClose={onClose} footer={<>
-    {error && <MobileNotice error title="分类条件未能读取" detail={error} action={<button className={ui.textButton} onClick={() => setRetry(v => v + 1)}>重新读取</button>} />}
-    <button className={ui.primary} disabled={loading || !!error} onClick={() => onApply(selectedFolder, selectedTags)}>应用到草稿</button>
-  </>}>
+  return <MobileSheet open={open} title="文件夹与标签" onClose={onClose}
+    footer={error && <MobileNotice compact error title="分类条件未能读取" detail={error} />}
+    actions={error ? <button className={ui.primary} onClick={() => setRetry(v => v + 1)}>重新读取</button>
+      : <button className={ui.primary} disabled={loading} onClick={() => onApply(selectedFolder, selectedTags)}>应用到草稿</button>}>
     {loading && <MobileNotice tone="pending" title="正在读取分类…" />}
     <label className={styles.label} htmlFor="edit-folder">文件夹</label>
     <select id="edit-folder" className={styles.input} value={selectedFolder || ""} disabled={loading || !!error} onChange={e => setFolder(e.target.value || null)}>

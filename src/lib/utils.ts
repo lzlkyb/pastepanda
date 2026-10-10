@@ -931,10 +931,12 @@ export function rcDeviceTypeLabel(os?: string | null): string {
   return { phone: "手机", tablet: "平板", computer: "电脑", unknown: "设备" }[rcDeviceKind(os)];
 }
 
-/** Keep the local remote-screen viewport reachable, including after rotation/keyboard resize. */
-export function clampRcViewportOffset(offset: number, size: number, scale: number): number {
-  if (scale <= 1) return size * (1 - scale) / 2;
-  return Math.max(size * (1 - scale), Math.min(0, offset));
+/** Constrain actual content, excluding centered object-fit padding, after zoom or viewport resize. */
+export function clampRcViewportOffset(offset: number, size: number, scale: number, fittedSize = size): number {
+  const inset = (size - fittedSize) / 2;
+  const scaled = fittedSize * scale;
+  if (scaled <= size) return (size - scaled) / 2 - inset * scale;
+  return Math.max(size - (inset + fittedSize) * scale, Math.min(0 - inset * scale, offset));
 }
 /** 控制柄及邻近按钮留在可见区域；远端指针独立移动，仍可到达电脑画面边缘。 */
 export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number, controlWidth = 208, controlHeight = 116) {
@@ -1080,4 +1082,38 @@ export function knowledgeAssetErrorText(error: unknown) {
     io: "图片未能保存，请检查手机存储空间后重试。",
   };
   return messages[code] || "图片未能取得，请重试。正文与已有内容仍保留。";
+}
+
+/** Recognize a shared link without turning an ordinary long note into an article import. */
+export function knowledgeArticleUrl(text: string): string | null {
+  if (text.length > 4000 || text.trim().split("\n").length > 4) return null;
+  const matches = text.match(/https?:\/\/[^\s<>]+/gi) || [];
+  if (matches.length !== 1) return null;
+  try {
+    const raw = text.trim() === matches[0] ? matches[0] : matches[0].replace(/[。，；！？)）]+$/, "");
+    const url = new URL(raw);
+    if (url.username || url.password || url.href.length > 2048) return null;
+    return url.href;
+  } catch { return null; }
+}
+
+/** Only map the server-authorized pending image; unrelated article links stay untouched. */
+export function knowledgeArticleImageIndex(images: { url: string; local: string | null }[], src: string): number {
+  return images.findIndex(image => image.url === src || image.local === src);
+}
+
+/** Article failures use the same visible feedback without exposing transport/SQL diagnostics. */
+export function knowledgeArticleErrorText(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  if (/这篇文章已收藏/.test(raw)) return "这篇文章已经收藏过，请查看已有笔记。本次输入仍保留。";
+  if (/原笔记已被修改/.test(raw)) return "原笔记已被修改，未覆盖正文或备注。请查看已有笔记。";
+  if (/原笔记已删除|原笔记已不可用/.test(raw)) return "原笔记已不在本机，请返回知识库核对后再收藏。";
+  if (/收集.*已更新|图片已经变化|文章收集已更新/.test(raw)) return "内容已更新，请重新读取后重试。当前内容仍保留。";
+  if (/已有20条|分享过多/.test(raw)) return "待收集文章较多，请先保存已有内容后再收藏。";
+  if (/已有文章|已有图片/.test(raw)) return "正在处理其他收藏，请稍后重试。";
+  if (/抓取失败|页面返回 HTTP|读取页面失败|重定向|可读正文|正文.*不可用/.test(raw)) return "暂时无法取得可读正文。请重试、查看原文，或仅存链接。";
+  if (/内网|本地.*地址/.test(raw)) return "此处只支持公开文章链接，不支持本机或内网地址。";
+  if (/图片.*限制|128张|分辨率|正文.*过长|文章.*过长/.test(raw)) return "内容或配图超出手机处理限制。链接和已有内容仍保留，可先仅存链接。";
+  if (/图片.*(?:读取|不可用|中断|变化)/.test(raw)) return "这张图片暂时无法读取，可以重试或查看原文。正文仍保留。";
+  return knowledgeErrorText(error);
 }

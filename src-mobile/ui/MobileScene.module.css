@@ -1,0 +1,2 @@
+.scene { min-height: 0; min-width: 0; translate: var(--mobile-back-offset, 0px) 0; }
+.scene[hidden] { display: none; }

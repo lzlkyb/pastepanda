@@ -3,15 +3,13 @@ import { rcDisplayName } from "@/lib/rcDevice";
 import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, FolderDown, FolderOpen, FolderUp } from "lucide-react";
-import { isTerminal } from "@/lib/rcFile";
 import { MobileChoice } from "../ui/MobileChoice";
 import { RcChannelNotice } from "./RcChannelNotice";
 import { permissionErrorInfo } from "@/lib/utils";
 import { useRcFile } from "@/hooks/useRcFile";
 import { useRcFileStore } from "@/stores/rcFileStore";
 import type { UseRc } from "@/hooks/useRc";
-import { RcFileTaskList } from "./RcFileTaskList";
-import { RcMobileFileAsks } from "./RcMobileFileAsks";
+import { RcFileRecords } from "./RcFileRecords";
 import { useMobileFileSend } from "./useMobileFileSend";
 import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
@@ -105,6 +103,7 @@ export function RcFilesView({
         action={<button className={ui.textButton} onClick={() => void rc.refreshTargets()}>重试</button>} />}
       {visibleFileError && visibleFileError !== (visibleAction ? actionErr : null) && rcErrorText(visibleFileError) !== directory.error && <MobileNotice error title="文件操作未能完成" detail={rcErrorText(visibleFileError)} />}
       <div className={styles.fileLayout}>
+      <RcFileRecords file={file} receiveDir={receiveDir} active={active} />
       <section className={styles.fileControls} aria-label="文件传输">
       <RcChannelNotice rc={rc} />
       {targets.length === 0 ? (
@@ -195,24 +194,7 @@ export function RcFilesView({
         查看接收位置
       </button>
       </section>
-      <section className={styles.fileRecords} aria-label="传输记录与请求">
-      {file.asks.length > 0 && <div className={ui.sectionHead}>待接收请求</div>}
-      <RcMobileFileAsks file={file} receiveDir={receiveDir} active={active} />
-      <div className={ui.sectionHead}>
-        <span>传输记录</span>
-        {file.tasks.length > 0 && (
-          <button className={ui.textButton} disabled={file.busy || !file.tasks.some(t => isTerminal(t.state))} onClick={() => void file.clearFinished()}>
-            清除已结束记录
-          </button>
-        )}
-      </div>
-      <p className={ui.hint}>只清除记录，不删除已接收文件。</p>
-      {file.tasks.length > 0 ? (
-        <RcFileTaskList tasks={file.tasks} rateOf={file.rateOf} onCancel={(id) => void file.cancel(id)} />
-      ) : (
-        <p className={ui.hint}>还没有传输记录。发送或接收文件后，可以在这里查看进度。</p>
-      )}
-      </section>
+
       </div>
       <MobileSheet open={active && choosePeer} title="选择设备" onClose={() => setChoosePeer(false)}>
         <div className={styles.peerPick} role="radiogroup" aria-label="选择设备">

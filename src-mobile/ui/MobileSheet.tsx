@@ -12,10 +12,14 @@ export function MobileSheet({
   description,
   onClose,
   onBack,
+  closeDisabled = false,
+  closeBusyLabel = "保存中",
   backPriority = 10,
   children,
   footer,
   actions,
+  bodyClassName,
+  contentClassName,
 }: {
   open: boolean;
   title: string;
@@ -23,15 +27,20 @@ export function MobileSheet({
   onClose: () => void;
   /** Return to the source step; close remains an explicit exit from the whole flow. */
   onBack?: () => void;
+  /** A non-interruptible commit must not advertise an active close/drag control. */
+  closeDisabled?: boolean;
+  closeBusyLabel?: string;
   backPriority?: number;
   children: ReactNode;
   /** Operation results remain visible while the controls scroll on short screens. */
   footer?: ReactNode;
   /** Primary actions stay reachable independently of long feedback on short screens. */
   actions?: ReactNode;
+  bodyClassName?: string;
+  contentClassName?: string;
 }) {
   const landscape = useMobileLayout();
-  const back = onBack ?? onClose;
+  const back = () => { if (!closeDisabled) (onBack ?? onClose)(); };
   const { present, sheetRef, ...dragEvents } = useSheetDrag(open, back, landscape);
   const saved = useRef({ title, description, children, footer, actions });
   const restoreFocus = useRef<HTMLElement | null>(null);
@@ -52,7 +61,7 @@ export function MobileSheet({
   }, [present]);
   const content = open ? { title, description, children, footer, actions } : saved.current;
   const descriptionId = useId();
-  useMobileBack(open, back, true, backPriority);
+  useMobileBack(open, back, true, backPriority, sheetRef);
   return (
     <Dialog.Root
       open={open}
@@ -66,34 +75,38 @@ export function MobileSheet({
           <Dialog.Content
             forceMount
             ref={sheetRef}
-            className={styles.sheet}
+            className={`${styles.sheet} ${contentClassName ?? ""}`}
             aria-describedby={content.description ? descriptionId : undefined}
+            aria-busy={closeDisabled || undefined}
+            onEscapeKeyDown={event => { if (closeDisabled) event.preventDefault(); }}
+            onPointerDownOutside={event => { if (closeDisabled) event.preventDefault(); }}
             onOpenAutoFocus={() => {
               restoreFocus.current = document.activeElement as HTMLElement;
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               if (!document.querySelector('[role="dialog"][data-state="open"]') && restoreFocus.current?.isConnected)
-                restoreFocus.current.focus();
+                if (!restoreFocus.current.closest('[hidden],[inert],[aria-hidden="true"]')) restoreFocus.current.focus({ preventScroll: true });
             }}
           >
-            <button type="button" className={styles.dragHandle} aria-label={landscape ? "向右拖动或点击收起面板" : "向下拖动或点击收起面板"} {...dragEvents}>
+            <button type="button" disabled={closeDisabled} className={styles.dragHandle} aria-label={landscape ? "向右拖动或点击收起面板" : "向下拖动或点击收起面板"} {...(closeDisabled ? {} : dragEvents)}>
               <span aria-hidden="true" />
             </button>
-            <header className={styles.sheetHead}>
-              {onBack && <button type="button" className={styles.textButton} onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />返回</button>}
+            <header className={styles.sheetHead} {...(closeDisabled ? {} : dragEvents)}>
+              {onBack && <button type="button" disabled={closeDisabled} className={styles.textButton} onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />返回</button>}
               <Dialog.Title className={styles.sheetTitle}>{content.title}</Dialog.Title>
-              <button type="button" className={styles.closeButton} onClick={onClose}>
+              <button type="button" disabled={closeDisabled} aria-label={closeDisabled ? `${closeBusyLabel}，暂不能关闭` : undefined} className={styles.closeButton} onClick={onClose}>
                 <X size={18} aria-hidden="true" />
-                <span>{onBack ? "关闭全部" : "关闭"}</span>
+                <span>{closeDisabled ? closeBusyLabel : onBack ? "关闭全部" : "关闭"}</span>
               </button>
             </header>
+            <div className={`${styles.sheetBody} ${bodyClassName ?? ""}`}>
             {content.description && (
               <Dialog.Description id={descriptionId} className={styles.description}>
                 {content.description}
               </Dialog.Description>
             )}
-            <div className={styles.sheetBody}>{content.children}</div>
+            {content.children}</div>
             {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
             {content.actions && <div className={styles.sheetActions}>{content.actions}</div>}
           </Dialog.Content>

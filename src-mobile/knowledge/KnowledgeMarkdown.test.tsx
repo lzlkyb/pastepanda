@@ -8,6 +8,17 @@ vi.mock("@/lib/api/mobileKnowledge", () => ({ mobileKnowledgeImage: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("手机阅读安全与原位反馈", () => {
+  it("文章缺图只补齐已登记的图片，失败可原位重试，不自动打开外部网页", async () => {
+    const onLink=vi.fn(), recover=vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const src="https://example.test/article.png";
+    const {container}=render(<KnowledgeMarkdown content={`![文章配图](${src})`} onLink={onLink} articleImages={[src]} onArticleImage={recover} />);
+    expect(container.querySelector("img")).toBeNull(); expect(recover).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"补齐这张图片"}));
+    await screen.findByText("未能补齐，可以重试。正文仍保留。");
+    fireEvent.click(screen.getByRole("button",{name:"补齐这张图片"}));
+    await screen.findByText("图片已保存到原笔记");
+    expect(recover).toHaveBeenCalledWith(src); expect(onLink).not.toHaveBeenCalled();
+  });
   it("HTML和危险链接不能发请求、创建按钮或执行脚本", () => {
     const onLink = vi.fn();
     const { container } = render(<KnowledgeMarkdown content={'<img src="https://tracking.test/a" onerror="alert(1)">\n<script>alert(1)</script>\n\n[x](javascript:alert%281%29)\n\n[file](file:///private/data)'} onLink={onLink} />);

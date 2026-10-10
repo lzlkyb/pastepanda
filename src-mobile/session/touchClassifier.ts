@@ -84,6 +84,8 @@ export class TouchClassifier {
     private readonly clock: ClassifierClock,
     /** 与长按充能同一窗口：充能前抬起都算点按（生产接线也传 LONG_PRESS_MS）。 */
     private readonly tapMaxMs = LONG_PRESS_MS,
+    /** Local image navigation has no mouse-button ownership and must remain pinchable. */
+    private readonly longPress = true,
   ) {}
 
   down(id: number, x: number, y: number): void {
@@ -106,7 +108,7 @@ export class TouchClassifier {
     this.sy = y;
     this.t0 = this.clock.now();
     this.dragId = id;
-    this.chargeTimer = this.clock.schedule(() => {
+    if (this.longPress) this.chargeTimer = this.clock.schedule(() => {
       this.chargeTimer = null;
       if (this.st === "pending") {
         this.st = "charged";

@@ -1,0 +1,20 @@
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
+import { mobileKnowledgeFolders, mobileKnowledgeTags } from "@/lib/api/mobileKnowledge";
+import { KnowledgeClassification } from "./KnowledgeClassification";
+vi.mock("@/lib/api/mobileKnowledge", () => ({ mobileKnowledgeFolders: vi.fn(), mobileKnowledgeTags: vi.fn() }));
+vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ children, footer, actions }: { children: ReactNode; footer: ReactNode; actions: ReactNode }) => <aside>{children}<div data-testid="feedback">{footer}</div><div data-testid="actions">{actions}</div></aside> }));
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+it("分类读取失败时重试固定在操作区，成功后应用也在操作区", async () => {
+  vi.mocked(mobileKnowledgeFolders).mockRejectedValueOnce(new Error("无法读取"));
+  vi.mocked(mobileKnowledgeTags).mockResolvedValue([]);
+  const apply = vi.fn(); render(<KnowledgeClassification open folder={null} tags={[]} onClose={vi.fn()} onApply={apply} />);
+  const retry = await screen.findByRole("button", { name: "重新读取" });
+  expect(screen.getByTestId("actions").contains(retry)).toBe(true);
+  expect(screen.queryByRole("button", { name: "应用到草稿" })).toBeNull();
+  vi.mocked(mobileKnowledgeFolders).mockResolvedValue([]); fireEvent.click(retry);
+  const save = await screen.findByRole("button", { name: "应用到草稿" });
+  expect(screen.getByTestId("actions").contains(save)).toBe(true);
+  fireEvent.click(save); expect(apply).toHaveBeenCalledWith(null, []);
+});

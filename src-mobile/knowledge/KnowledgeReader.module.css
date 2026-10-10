@@ -1,10 +1,6 @@
 .reader { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; container-name: knowledge-reader; background: var(--card-bg); color: var(--text-primary); }
+.reader { translate: var(--mobile-back-offset, 0px) 0; position: relative; z-index: 1; }
 .header { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border-color); flex: none; }
-.headerTitle { flex: 1; min-width: 0; text-align: center; font-size: var(--mobile-font-secondary); color: var(--text-secondary); }
-@container knowledge-reader (max-width: 20rem) {
-  .headerTitle { display: none; }
-  .header { justify-content: space-between; }
-}
 .reader button, .sheetActions button { min-height: 48px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--section-bg); color: var(--text-primary); font: inherit; font-size: var(--mobile-font-body); cursor: pointer; overflow-wrap: anywhere; }
 .reader button:active, .sheetActions button:active { background: var(--accent-light); }
 .reader button:disabled, .sheetActions button:disabled { opacity: .55; cursor: default; }
@@ -15,12 +11,19 @@
 .article h1 { font-size: 1.6em; line-height: 1.3; margin: 8px 0 24px; }
 .meta { font-size: var(--mobile-font-secondary); color: var(--text-secondary); line-height: 1.6; margin: 0 0 8px; overflow-wrap: anywhere; }
 .tags { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent-strong); font-size: var(--mobile-font-secondary); }
-.footer { flex: none; display: flex; flex-direction: column; max-height: 45%; padding: 8px 16px; border-top: 1px solid var(--border-color); }
-/* Keep feedback with its action, but let long details scroll on short/large-type screens. */
-.footer > :not(.footerActions) { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; }
-.footerActions { flex: none; display: flex; gap: 12px; }
-.footerActions button { flex: 1; }
-.footerActions button[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-light); }
+/* The controls and their result stay together; long feedback can scroll on short screens. */
+.headerTools { display: flex; justify-content: flex-end; gap: 8px; flex: 1; min-width: 0; }
+.headerTools button { min-width: 48px; }
+.header button { white-space: nowrap; overflow-wrap: normal; background: transparent; }
+.headerTools button[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-light); }
+.actionFeedback { flex: 0 1 auto; min-height: 0; max-height: 30%; overflow-y: auto; overscroll-behavior: contain; padding: 8px 12px; }
+.actionFeedback > section { margin: 0; }
+@container knowledge-reader (max-width: 32.5rem) {
+  .header { gap: 4px; padding-inline: 8px; }
+  .headerTools { gap: 4px; }
+  .headerTools button { flex-direction: column; gap: 4px; padding: 4px 8px; font-size: var(--mobile-font-label); }
+  .header > button { padding-inline: 8px; }
+}
 .sheetActions { display: flex; flex-direction: column; gap: 8px; }
 .sheetActions button { justify-content: flex-start; text-align: left; flex-wrap: wrap; }
 .sheetActions button small { display: block; width: 100%; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
@@ -49,7 +52,7 @@
 .markdown :global(.kb-image) { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; background: var(--section-bg); border-radius: 12px; padding: 16px; margin: 16px 0; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
 .markdown :global(.kb-image img) { display: block; max-width: 100%; height: auto; border-radius: 8px; }
 .markdown :global(.kb-image [hidden]) { display:none; }
-@media (orientation: landscape) and (max-height: 500px) { .header { padding-block: 0; } .scroll { padding: 12px 20px; } .footer { padding: 4px 12px; } }
+@media (orientation: landscape) and (max-height: 500px) { .header { padding-block: 0; } .scroll { padding: 12px 20px; } }
 @media (min-width: 700px) { .scroll { padding: 24px 32px; } }
 
 /* Once decoded, the picture is the target; recovery controls belong to missing-image state. */

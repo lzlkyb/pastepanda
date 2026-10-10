@@ -23,6 +23,11 @@ export function patchAndroidManifest(manifest) {
   if (!/<service\b[^>]*android:name\s*=\s*["'](?:\.RcSessionForegroundService|com\.pastepanda\.app\.RcSessionForegroundService)["']/.test(manifest)) {
     manifest = manifest.replace(/([ \t]*)<\/application>/, `${service}\n$1</application>`);
   }
+  // Opt this activity into Android 13+ callbacks, including regenerated older templates.
+  manifest = manifest.replace(/<activity\b[^>]*android:name=["'](?:\.MainActivity|com\.pastepanda\.app\.MainActivity)["'][^>]*>/, tag => {
+    if (/android:enableOnBackInvokedCallback\s*=/.test(tag)) return tag.replace(/android:enableOnBackInvokedCallback\s*=\s*["'][^"']*["']/, 'android:enableOnBackInvokedCallback="true"');
+    return tag.replace(/\/?>$/, end => ` android:enableOnBackInvokedCallback="true"${end}`);
+  });
   if (!manifest.includes('knowledge-share-inbox')) {
     const filter = `<!-- knowledge-share-inbox: explicit system sharing, no clipboard scanning -->
             <intent-filter>
@@ -49,10 +54,18 @@ export function patchAndroidManifest(manifest) {
 /** gen/android/app/build.gradle.kts 不在版本控制里，`tauri android init` 重新生成后
  *  也不会带 androidx.core——ApkInstallerPlugin 的 FileProvider 编译需要它。幂等补一行。 */
 export function patchAndroidGradle(gradle) {
-  if (/androidx\.core[:/]/.test(gradle)) return gradle;
   const anchor = gradle.match(/.*implementation\("androidx\.appcompat:appcompat[^"]*"\).*/);
   if (!anchor) throw new Error("build.gradle.kts 里找不到 appcompat 依赖行，无法注入 androidx.core");
-  return gradle.replace(anchor[0], `${anchor[0]}\n    implementation("androidx.core:core:1.13.1")`);
+  if (!/androidx\.core[:/]/.test(gradle)) gradle = gradle.replace(anchor[0], `${anchor[0]}\n    implementation("androidx.core:core:1.13.1")`);
+  // Predictive callbacks require Activity 1.8+; retain newer generated dependencies.
+  if (/implementation\("androidx\.activity:activity-ktx:[^"]*"\)/.test(gradle)) {
+    gradle = gradle.replace(/implementation\("androidx\.activity:activity-ktx:([^".]*)\.([^".]*)\.([^"]*)"\)/, (line, major, minor, patch) => {
+      const current = [Number(major), Number(minor), Number(patch)];
+      if (current[0] > 1 || (current[0] === 1 && (current[1] > 10 || (current[1] === 10 && current[2] >= 1)))) return line;
+      return 'implementation("androidx.activity:activity-ktx:1.10.1")';
+    });
+  } else gradle = gradle.replace(anchor[0], `${anchor[0]}\n    implementation("androidx.activity:activity-ktx:1.10.1")`);
+  return gradle;
 }
 
 /** Android 不能执行应用可写目录的文件；原生承载随 APK 从 nativeLibraryDir 运行。 */
@@ -79,7 +92,7 @@ export async function prepareAndroid(root) {
   const patched = patchAndroidManifest(manifest);
   const java = path.join(main, "java/com/pastepanda/app");
   await mkdir(java, { recursive: true });
-  for (const name of ["MainActivity.kt", "RcSessionDisplay.kt", "RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt", "KnowledgeShareStore.kt", "KnowledgeSharePlugin.kt", "ReceivedFileActions.kt"]) {
+  for (const name of ["MainActivity.kt", "RcSessionDisplay.kt", "RcKeepalivePlugin.kt", "RcSessionForegroundService.kt", "ApkInstallerPlugin.kt", "IrohNetworkPlugin.kt", "KnowledgeShareStore.kt", "KnowledgeSharePlugin.kt", "ReceivedFileActions.kt", "MobileInteractionPlugin.kt"]) {
     await copyFile(path.join(root, "src-tauri/android", name), path.join(java, name));
   }
   if (patched !== manifest) await writeFile(manifestPath, patched, "utf8");

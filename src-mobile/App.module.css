@@ -16,7 +16,6 @@
   overscroll-behavior-y: contain;
   padding: env(safe-area-inset-top, 0px) max(var(--mobile-page-inset), env(safe-area-inset-right, 0px)) 24px max(var(--mobile-page-inset), env(safe-area-inset-left, 0px));
   touch-action: pan-y pinch-zoom;
-  animation: pageIn 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 .pagePane[hidden] { display: none; }
 .pagePane[hidden] * { animation-play-state: paused; }
@@ -95,5 +94,8 @@
   .pagePane > div { max-width: 1040px; }
 }
 :global(html[data-mobile-keyboard="true"]) .tabbar { display: none; }
-@keyframes pageIn { from { opacity: 0.6; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .pagePane { animation: none; } }
+
+.tabbar[hidden] { display: none; }
+.root[data-focused="true"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.root[data-focused="true"] .pane { grid-column: 1; grid-row: 1; }
+.root[data-focused="true"] .globalNotice { grid-column: 1; grid-row: 2; }

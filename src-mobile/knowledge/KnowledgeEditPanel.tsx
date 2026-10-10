@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
@@ -21,7 +21,8 @@ export function KnowledgeEditPanel({ edit, active, onBack, onSaved, onPickImages
   const [conflictOpen, setConflictOpen] = useState(false);
   const [previewFeedback, setPreviewFeedback] = useState(false);
   const leave = () => { void edit.flush().then(onBack).catch(() => undefined); };
-  useMobileBack(active && !preview && !classification && !conflictOpen, leave, true);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useMobileBack(active && !preview && !classification && !conflictOpen, leave, true, 0, rootRef);
   useEffect(() => { if (edit.conflict) setConflictOpen(true); }, [edit.conflict]);
   if (!edit.draft) return null;
   const readonly = edit.saving || edit.locked;
@@ -29,7 +30,7 @@ export function KnowledgeEditPanel({ edit, active, onBack, onSaved, onPickImages
     const result = await edit.save(copy);
     if (result) onSaved(result.note.id, result.copied, result.relinked);
   };
-  return <KnowledgeEditorShell heading="修改笔记" idPrefix="knowledge-edit" title={edit.draft.title} content={edit.draft.content}
+  return <KnowledgeEditorShell rootRef={rootRef} heading="修改笔记" idPrefix="knowledge-edit" title={edit.draft.title} content={edit.draft.content}
     readonly={readonly} saving={edit.saving} status={edit.status || "输入会保留为本机修改草稿。"}
     saveLabel={edit.saving ? "正在保存…" : edit.locked ? "重试核对保存" : "保存修改到手机"}
     onBack={leave} onPreview={() => setPreview(true)} onTitle={value => edit.update("title", value)} onContent={value => edit.update("content", value)}

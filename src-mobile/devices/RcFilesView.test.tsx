@@ -240,3 +240,22 @@ it("通道关闭时先恢复，不打开文件选择器或发请求", async () =
   await waitFor(() => expect(enable).toHaveBeenCalledWith(true));
   expect(api.pull).not.toHaveBeenCalled();
 });
+
+it("在途和失败任务优先且可见，成功和取消记录折叠但不改写状态", async () => {
+  const base = { peer: "pc-1", peer_name: "电脑", dir: "recv", size: 1000, offset: 0, done: 400, started_ms: 0, updated_ms: 0 };
+  snapshotFor({ asks: [], tasks: [
+    { ...base, id: "done", name: "成功.pdf", state: "done" },
+    { ...base, id: "cancel", name: "取消.pdf", state: "canceled" },
+    { ...base, id: "failed", name: "失败.pdf", state: "failed", error: "连接中断" },
+    { ...base, id: "run", name: "传输.pdf", state: "transferring" },
+  ] });
+  renderView([TARGET]);
+  const failed = await screen.findByText("失败.pdf");
+  expect(failed.closest("details")).toBeNull();
+  expect(screen.getByText("传输.pdf").closest("details")).toBeNull();
+  const ended = screen.getByText("成功.pdf").closest("details")!;
+  expect(ended.open).toBe(false);
+  expect(screen.getByText("取消.pdf").closest("details")).toBe(ended);
+  expect(ended.textContent).toContain("已取消");
+  expect(screen.getByText("正在传输 · 1")).toBeTruthy();
+});

@@ -5,16 +5,20 @@ import { escapeHtml } from "@/lib/markdown/html";
 import { copyToClipboard } from "@/lib/utils";
 import { useKnowledgeImages } from "./useKnowledgeImages";
 import styles from "./KnowledgeReader.module.css";
+const EMPTY_ARTICLE_IMAGES: string[] = [];
 
 export type KnowledgeHeading = { id: string; text: string; depth: number };
-export function KnowledgeMarkdown({ content, onLink, onHeadings, active = true, onMissingImage, onImage }: {
+export function KnowledgeMarkdown({ content, onLink, onHeadings, active = true, onMissingImage, onImage, articleImages = EMPTY_ARTICLE_IMAGES, onArticleImage }: {
   content: string; active?: boolean;
   onLink: (url: string, internal: boolean) => void;
   onHeadings?: (headings: KnowledgeHeading[]) => void;
   onMissingImage?: (src: string, reload: () => void) => void;
   onImage?: (src: string, alt: string) => void;
+  articleImages?: string[];
+  onArticleImage?: (src: string) => Promise<boolean>;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const supportsMissingImage = !!onMissingImage, supportsImage = !!onImage, supportsArticleImage = !!onArticleImage;
   const rendered = useMemo(() => {
     const headings: KnowledgeHeading[] = [];
     const parser = new Marked({ gfm: true, breaks: true });
@@ -36,14 +40,15 @@ export function KnowledgeMarkdown({ content, onLink, onHeadings, active = true, 
       link({ href, tokens }) { return `<a href="${escapeHtml(href)}">${this.parser.parseInline(tokens)}</a>`; },
       image({ href, text }) {
         const online = /^https?:\/\//i.test(href);
-        return `<span class="kb-image"><strong>${escapeHtml(text || "图片")}</strong><span>${online ? "外部图片，需要联网查看" : "本机图片"}</span><button type="button" ${online ? "data-external-image" : "data-local-image"}="${escapeHtml(href)}">${online ? "打开外部图片" : "加载本机图片"}</button>${!online && onMissingImage ? `<button type="button" hidden data-fetch-image="${escapeHtml(href)}">取得缺少的图片</button>` : ""}${!online && onImage ? `<button type="button" hidden data-view-image>查看图片</button>` : ""}<span class="kb-image-result" role="status"></span></span>`;
+        const recoverable = articleImages.includes(href) && supportsArticleImage;
+        return `<span class="kb-image"><strong>${escapeHtml(text || "图片")}</strong><span>${online ? recoverable ? "配图尚未保存到手机" : "外部图片，需要联网查看" : "本机图片"}</span><button type="button" ${online ? recoverable ? "data-article-image" : "data-external-image" : "data-local-image"}="${escapeHtml(href)}">${online ? recoverable ? "补齐这张图片" : "打开外部图片" : "加载本机图片"}</button>${!online && (supportsMissingImage || recoverable) ? `<button type="button" hidden data-fetch-image="${escapeHtml(href)}">取得缺少的图片</button>` : ""}${!online && supportsImage ? `<button type="button" hidden data-view-image>查看图片</button>` : ""}<span class="kb-image-result" role="status"></span></span>`;
       },
     } });
     return { html: DOMPurify.sanitize(parser.parse(content, { async: false }) as string, {
       ALLOWED_TAGS: ["p", "br", "strong", "em", "del", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "pre", "code", "hr", "table", "thead", "tbody", "tr", "th", "td", "div", "section", "header", "span", "button"],
-      ALLOWED_ATTR: ["href", "id", "class", "type", "role", "tabindex", "hidden", "aria-label", "data-wiki", "data-copy-code", "data-external-image", "data-local-image", "data-fetch-image", "data-view-image"],
+      ALLOWED_ATTR: ["href", "id", "class", "type", "role", "tabindex", "hidden", "aria-label", "data-wiki", "data-copy-code", "data-external-image", "data-local-image", "data-fetch-image", "data-view-image", "data-article-image"],
     }), headings };
-  }, [content, !!onMissingImage, !!onImage]);
+  }, [content, supportsMissingImage, supportsImage, articleImages, supportsArticleImage]);
   const markup = useMemo(() => ({ __html: rendered.html }), [rendered]);
   // Callback is consumed by the parent after mounting the rendered article.
   useEffect(() => onHeadings?.(rendered.headings), [rendered, onHeadings]);
@@ -51,6 +56,16 @@ export function KnowledgeMarkdown({ content, onLink, onHeadings, active = true, 
 
   return <div ref={root} className={styles.markdown} dangerouslySetInnerHTML={markup} onClick={async event => {
     const target = event.target as HTMLElement;
+    const recover = target.closest<HTMLButtonElement>("[data-article-image],[data-fetch-image]");
+    const recoverySource = recover?.dataset.articleImage || recover?.dataset.fetchImage;
+    if (recover && recoverySource && articleImages.includes(recoverySource) && onArticleImage) {
+      recover.disabled = true;
+      const result = recover.closest(".kb-image")?.querySelector(".kb-image-result");
+      if (result) result.textContent = "正在补齐这张图片…";
+      const ok = await onArticleImage(recoverySource);
+      if (root.current?.contains(recover)) { recover.disabled = false; if (result) result.textContent = ok ? "图片已保存到原笔记" : "未能补齐，可以重试。正文仍保留。"; }
+      return;
+    }
     const image = target.closest<HTMLImageElement>("img");
     if (image && onImage) { onImage(image.src, image.alt); return; }
     const view = target.closest<HTMLButtonElement>("[data-view-image]");

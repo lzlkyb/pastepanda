@@ -1112,14 +1112,23 @@ impl DataStore {
                 continue;
             };
             let like_pattern = format!("%{}%", escape_like_pattern(file_name));
+            // Keep the pin lock through deletion: publishing cannot start between
+            // checking an in-flight article download and removing its shared file.
+            let image_pins = super::mobile_article::article_image_pins();
+            if image_pins.contains_key(file_name) { continue; }
             let still_referenced: bool = conn
                 .query_row(
                     "SELECT EXISTS(
                         SELECT 1 FROM history
                         WHERE (type = 'image' AND content = ?1)
                            OR (type = 'rich' AND content LIKE ?2 ESCAPE '\\')
+                    ) OR EXISTS(
+                        SELECT 1 FROM mobile_article_assets a
+                        JOIN mobile_article_tasks t ON t.id=a.task_id
+                        WHERE a.filename=?3 AND (t.note_id IS NULL
+                            OR EXISTS(SELECT 1 FROM notes n WHERE n.id=t.note_id))
                     )",
-                    params![path.as_str(), like_pattern],
+                    params![path.as_str(), like_pattern, file_name],
                     |row| row.get::<_, i32>(0),
                 )
                 .map(|n| n != 0)

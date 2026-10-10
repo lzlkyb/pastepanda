@@ -331,6 +331,7 @@ pub fn run() {
         // （FileProvider 拉起系统安装器），桌面 no-op。见 commands::update_android 注释。
         .plugin(commands::update_android::init())
         .plugin(commands::mobile_knowledge_share::init())
+        .plugin(commands::mobile_interaction::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
             // 🔴 硬编诊断 P1：Tauri 插件链已装、业务子系统尚未初始化。
@@ -1450,6 +1451,16 @@ pub fn run() {
             commands::note_count_expired,
             commands::note_get,
             commands::mobile_knowledge_list,
+            commands::mobile_article_begin,
+            commands::mobile_article_get,
+            commands::mobile_article_pending,
+            commands::mobile_article_discard,
+            commands::mobile_article_for_note,
+            commands::mobile_article_put,
+            commands::mobile_article_ack_sources,
+            commands::mobile_article_save,
+            commands::mobile_article_fetch,
+            commands::mobile_article_image_fetch,
             commands::mobile_knowledge_image,
             commands::mobile_knowledge_meta,
             commands::mobile_knowledge_set_common,
@@ -1467,6 +1478,8 @@ pub fn run() {
             commands::mobile_knowledge_asset_fetch,
             commands::mobile_knowledge_asset_cancel,
             commands::mobile_knowledge_share_list,
+            commands::mobile_interaction_set,
+            commands::mobile_interaction_haptic,
             commands::mobile_knowledge_share_ack,
             commands::mobile_knowledge_share_pick_images,
             commands::mobile_knowledge_share_send,
