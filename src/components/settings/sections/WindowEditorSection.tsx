@@ -74,11 +74,11 @@ export function WindowEditorSection({
           <p>⚠️ 关闭后需手动点击 X 隐藏窗口</p>
         </>}
       />
-      <ToggleRow icon="🚀" hue="system" label="开机自启" desc="Windows 启动时自动运行" value={config.auto_startup}
+      <ToggleRow icon="🚀" hue="system" label="开机自启" desc="登录系统后自动运行" value={config.auto_startup}
         tooltip="开机后自动在后台运行，托盘图标常驻"
         detailTitle="开机自启"
         detail={<>
-          <p>Windows 启动时自动运行 PastePanda。</p>
+          <p>登录系统后自动运行 PastePanda。</p>
           <p>📌 启动后自动最小化到托盘，不影响开机速度</p>
           <p>💡 <b>推荐开启</b>，不用担心忘记启动</p>
         </>}
@@ -97,7 +97,7 @@ export function WindowEditorSection({
               detailTitle="托盘右键菜单"
               detail={<>
                 <p>右键点击托盘图标时弹出的菜单样式，切换后立即生效，无需重启。</p>
-                <p>📌 <b>原生菜单（推荐）</b>：由 Windows 系统渲染，任何缩放/DPI/主题下都能显示，粘贴成功或失败会闪一下托盘图标角标</p>
+                <p>📌 <b>原生菜单（推荐）</b>：由系统提供菜单，粘贴成功或失败会闪一下托盘图标角标</p>
                 <p>📌 <b>自绘弹窗</b>：应用内的玻璃弹窗样式，最近记录带图片缩略图</p>
                 <p>⚠️ 若曾遇到「右键托盘没有反应/菜单显示不出」，切换为原生菜单可彻底避开</p>
               </>}
