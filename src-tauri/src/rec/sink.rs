@@ -116,6 +116,9 @@ pub struct RecSink {
     /// 12 帧的前向窗口（靠「下一帧时间戳」倒推上一帧时长），第 13 帧起
     /// WriteSample 直接报 0xC00D36C9「媒体示例没有持续时间」——一二期没炸
     /// 是因为时间轴塌在 0（delta=0 可平凡推导），三期修好时间轴后必然踩中。
+    /// ⚠️ 我们给的这个值只是**下限**：相邻样本之间有空隙时（静止期不落样就是这种），
+    /// MF 把空隙写进前一个样本的 stts duration，实测覆盖本值（见探针 1 的 90000/30000
+    /// = 3000ms）。所以「不补帧会不会缩短轨长」的答案是不会，但「不给 duration」会。
     video_frame_t100: i64,
     com_owned: bool,
     /// 已写入的音频样本数（finalize 诊断用：0 = 音轨零样本，见 finalize）。
@@ -490,14 +493,15 @@ mod tests {
         );
     }
 
-    // ── 探针 2（「时间轴卡死」的成品验收）：拿**生产同款**时间轴（rec/timeline）
-    // 驱动真编码器写 20 秒，画面只在每 2 秒变一次、其余静止段按 HOLD_MIN_INTERVAL
-    // 的节奏补帧——产物时长必须仍是 20 秒。旧口径（提交帧数×帧长、静止段不落样）
-    // 在这串样本上只写出 11×33=363ms 的轨（60 秒会话改前实测 966ms）。样本数会明显
-    // 低于 CFR 格子数，这是有意的：补帧不重新编码，时长靠时间戳，逐格重编的代价见
-    // 下面 `补帧开销_静态逐格重编`。 ──
+    // ── 探针 2（「时间轴卡死」成品验收，二改：静止期不落样）：拿**生产同款**时间轴
+    // （rec/timeline）驱动真编码器写 20 秒，画面每 2 秒才变一次，静止圈什么都不提交
+    // ——成品时长必须仍是 20 秒，且样本只剩真帧那十几个。两条断言各挡一种回归：
+    // ① 旧口径（提交帧数×帧长）在这串样本上只写出 11×33=363ms 的轨（60 秒会话改前
+    // 实测 966ms）；② 过去的 ~500ms 补帧能过时长断言，却白重编（改前实测 42 个样本）。
+    // 「不补也不缩短」的前提 = MF 把空隙写进**前一个样本**的 stts duration（探针 1）。
+    // 逐格重编的代价另见下面 `补帧开销_静态逐格重编`。 ──
     #[test]
-    fn 静止补帧_容器时长跟住墙钟() {
+    fn 静止期不落样_容器时长跟住墙钟() {
         use crate::rec::timeline::VideoAxis;
         let (fps, secs) = (30u32, 20i64);
         let mut axis = VideoAxis::new(fps);
@@ -507,22 +511,20 @@ mod tests {
         for k in 0..(secs * i64::from(fps) + 6) {
             el = k * 33;
             if k % 60 == 0 {
-                let (holds, at) = axis.arrive(el, k > 0);
-                stamps.extend(holds);
-                stamps.push(at);
-            } else {
-                stamps.extend(axis.fill_holds(el, true));
+                stamps.push(axis.arrive(el));
             }
+            // 静止圈（else 分支的去处）什么都不提交：空隙由前一个样本的 stts
+            // duration 覆盖，见上面探针 1 与 rec/timeline.rs 顶部
         }
         // 与生产同款的收尾尾格（session.rs 收尾第一步）
         stamps.extend(axis.tail_hold(el, true));
         let want = stamps[stamps.len() - 1];
         let reported = axis.duration_ms();
-        let Some((samples, dur)) = 容器时长实测(&stamps, "cfr") else {
+        let Some((samples, dur)) = 容器时长实测(&stamps, "idle") else {
             return; // 无硬件编码器：轴本身由 timeline.rs 的单测覆盖
         };
         println!(
-            "补帧成品实测：输入格子数={} 写入样本数={samples} 最后时间戳={want}ms \
+            "静止期不落样成品实测：提交时间戳数={} 写入样本数={samples} 最后时间戳={want}ms \
              容器时长={dur}ms rec-done 口径={reported}ms",
             stamps.len()
         );
@@ -534,6 +536,15 @@ mod tests {
         assert!(
             dur.abs_diff(reported) <= 100,
             "rec-done 报 {reported}ms 而成品 {dur}ms——用户看到的时长与文件对不上"
+        );
+        // 静止期不许落补帧：轨长由时间戳跳格保证——MF 把空隙写进**前一个样本**的
+        // stts duration（本机实测：t=132ms 的样本在 stts 里拿到 90000/30000=3000ms，
+        // 见 `稀疏时间戳_容器时长跟时间戳不跟帧数`），所以不补不会缩短，补了只是白重编。
+        // 上界 = 真帧 11 格 + 尾格 1 + 同槽顺延余量 2。
+        assert!(
+            samples <= 14,
+            "静止段还在落补帧：{secs} 秒会话、画面每 2 秒才变一次，样本数应≈12，实测 {samples}\
+             （= 每隔一段时间就把上一格画面重编一遍，静屏持续吃 CPU，而时长本就靠时间戳）"
         );
     }
 
@@ -595,10 +606,12 @@ mod tests {
         Some((samples, super::super::scan::mp4_duration_ms(&path).expect("moov 必须带 mvhd")))
     }
 
-    /// 补帧的真实开销（规则 8：先测再写结论，不进 CI）。本机跑法：
+    /// 「如果静止期补帧要付多少」的复核依据（规则 8：先测再写结论，不进 CI）——
+    /// 生产已改成静止期不落样（见 `静止期不落样_容器时长跟住墙钟`），这组数字就是
+    /// 不补的理由：每格都要真编一遍上一画面。本机跑法：
     /// `cargo test --lib 补帧开销 -- --ignored --nocapture`
     #[test]
-    #[ignore = "900 帧 1080p 真编码，只本机量补帧开销"]
+    #[ignore = "900 帧 1080p 真编码，只本机量静止重编开销"]
     fn 补帧开销_静态逐格重编() {
         use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
         unsafe {
