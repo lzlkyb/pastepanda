@@ -1,0 +1,11 @@
+{
+  "version": "7.2.11",
+  "notes": "### 新增\n- **录屏可以标记关键时刻并导出 GIF**：录制中会自动记录点击与按键（只记录按键组合与命名键，不记录输入内容）、点击处烧入涟漪提示，`Ctrl+Alt+M` 可随时打标记；配合与视频天然对齐的事件列表，回看时能直接跳到关键时刻，也可把选中的片段导出 GIF。\n- **录屏无损裁剪 + 裁剪前预览**：按关键帧对齐做无损裁剪，裁完先看再保存。\n- **电脑上可直接拿到手机 App**：「设置 → 关于与更新」新增手机 App 卡片，「同步与互联」也加了入口，扫码即可下载，扫码前能看到当前可用于手机下载的架构。\n- **手机上也能管理知识库**：在手机上可浏览、收集、编辑笔记，可从系统分享菜单直接投喂，图片按需取回。\n- **更新可「跳过此版本」**：手机端收到新版本时可以只跳过这一个版本，之后也能取消跳过。\n\n### 改进\n- **安装包瘦身约 8MB**：远程互联用到的中继组件不再整体打进安装包，改为需要时按需下载并校验，装完之后仍然可用。\n- **远程连接过程看得见**：连接建立改为分阶段显示进度；走了中继时详情面板会说明原因，画质被锁在低档时会自动建议切回直连、切回成功给出提示；状态徽章在连接过程中就显示实际走的哪条路径。\n- **手机更新提示更好读**：更新提醒改成发行说明式半屏，能看清这个版本改了什么再决定；检查更新的节奏与桌面一致。\n- **录制中新增体积实时显示与停止录制热键**，长录制不再需要猜文件大小。\n- **国内更新通道能自己修**：镜像通道缺文件或清单过期时，程序会定时自检并重建，不再长期卡在「检查更新没有反应」。\n\n### 修复\n- **录屏停止后保存失败（两类报错码）全部修好**：静音录制、以及带音轨录制在停止保存时都会崩掉的问题已修复，现在都能正常出片。\n- **区域录制时鼠标指针位置错位**：录制指定区域时，画面里的光标会偏到别处，现已按区域偏移修正。",
+  "pub_date": "2026-10-08T17:45:25.552Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUdWhSYVMrYXlqdjJPV1lxVlBHQWNUZU9zYnFOYTdXVStDeHd4OHU0czI5RnZWaGRLZ3ZJUjJOSFNWTkZweGc2VUl2cXBzNjVYV1ZEdHRtenNBY0FCZ3c1anJxZjh0clFRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxNDgxNTIwCWZpbGU6UGFzdGVQYW5kYV83LjIuMTFfeDY0LXNldHVwLmV4ZQl2ZXJzaW9uOjcuMi4xMQprdXNOZUhPODVCUnJ5ckRRVFNab1N4K3NvM1lyNy9LUGxFdk1qYzdmTDBxd0hsQUdpWmM0YXhPZmlWaDQ1WWUySE8rbXd4T09hTGg1SVJoeXhCMHhBZz09Cg==",
+      "url": "https://gitee.com/lzul/pastepanda/releases/download/v7.2.11/PastePanda_7.2.11_x64-setup.exe"
+    }
+  }
+}
