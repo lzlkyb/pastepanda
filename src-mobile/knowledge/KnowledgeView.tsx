@@ -22,6 +22,7 @@ import { KnowledgeArticleView } from "./KnowledgeArticleView";
 import { knowledgeArticleUrl } from "@/lib/utils";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./KnowledgeView.module.css";
+import { useTaskScene } from "../ui/MobileScene";
 
 export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onTaskChange?: (focused: boolean) => void; active: boolean; pageNotice?: ReactNode; inbox?: ReturnType<typeof useKnowledgeInbox> }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -49,6 +50,8 @@ export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onT
     list.refresh(); void mobileKnowledgeVisit(id, 0).then(list.refresh).catch(() => undefined);
   });
   const focused = !!selected || editing || maintaining || article.open;
+  const taskRoot = useRef<HTMLDivElement>(null);
+  useTaskScene(taskRoot, article.open ? "article" : maintaining ? "edit" : editing ? "new" : selected ? `read:${selected}` : "list", active);
   useEffect(() => { onTaskChange?.(focused); }, [focused, onTaskChange]);
   useEffect(() => () => onTaskChange?.(false), [onTaskChange]);
   const list = useKnowledgeList(active && !editing && !maintaining && !article.open, { query, view, folder_filter: folder, tag_ids: tag ? [tag] : [] });
@@ -92,7 +95,7 @@ export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onT
   const collectionNotice = <>{collection.collectionSuccess && <MobileToast placement="flow" compact tone="success" title={collection.collectionSuccess} onDismiss={collection.dismissSuccess} />}{!!inbox?.items.length && <MobileNotice compact title={`有 ${inbox.items.length} 条待收集内容`} detail="当前输入仍保留。" action={<button className={ui.textButton} onClick={showCollection}>查看收集内容</button>} />}</>;
   const operationNotice: MobileFeedback | undefined = inbox?.error ? { tone: "error", title: "收集操作未能完成", detail: inbox.error } : inbox?.processing ? { tone: "pending", title: "正在整理分享内容…" } : inbox?.notice ? { tone: "info", title: "收集提示", detail: inbox.notice } : undefined;
   const clear = () => { setQuery(""); setFolder("all"); setTag(""); resetScroll(); };
-  return <div className={styles.root}>
+  return <div ref={taskRoot} className={styles.root} data-mobile-task-root>
     <div className={styles.root} hidden={article.open}>
     <div className={styles.workspace} data-reading={!!selected} hidden={editing || maintaining}>
       <section className={styles.listPane} aria-label="知识库笔记列表">

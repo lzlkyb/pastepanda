@@ -20,7 +20,8 @@ export function KnowledgeArticleView({ article, active }: { article: ReturnType<
   const duplicate = task?.duplicate_note_id || (task?.note_id && !task.saved_link_only ? task.note_id : null);
   const missing = task?.images.filter(image => !image.local).length || 0;
   const close = () => { ++clipboardEpoch.current; void article.close(); };
-  useMobileBack(active, close);
+  const rootRef = useRef<HTMLElement>(null);
+  useMobileBack(active, close, false, 0, rootRef);
   const read = (text: string) => {
     ++clipboardEpoch.current;
     const link = knowledgeArticleUrl(text);
@@ -40,7 +41,7 @@ export function KnowledgeArticleView({ article, active }: { article: ReturnType<
     try { await openUrl(href); setLinkFeedback("已交给浏览器打开"); }
     catch (cause) { setLinkFeedback(knowledgeErrorText(cause)); }
   };
-  return <section className={styles.root} aria-label="收藏文章">
+  return <section ref={rootRef} className={styles.root} aria-label="收藏文章">
     <header className={styles.head}><button className={ui.textButton} disabled={article.saving} onClick={close}><ArrowLeft size={20} aria-hidden="true" />返回</button><h1>{task?.body ? "文章预览" : "收藏文章"}</h1></header>
     <div className={styles.layout}>
       <div className={styles.scroll}>

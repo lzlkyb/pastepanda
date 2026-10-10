@@ -931,10 +931,12 @@ export function rcDeviceTypeLabel(os?: string | null): string {
   return { phone: "手机", tablet: "平板", computer: "电脑", unknown: "设备" }[rcDeviceKind(os)];
 }
 
-/** Keep the local remote-screen viewport reachable, including after rotation/keyboard resize. */
-export function clampRcViewportOffset(offset: number, size: number, scale: number): number {
-  if (scale <= 1) return size * (1 - scale) / 2;
-  return Math.max(size * (1 - scale), Math.min(0, offset));
+/** Constrain actual content, excluding centered object-fit padding, after zoom or viewport resize. */
+export function clampRcViewportOffset(offset: number, size: number, scale: number, fittedSize = size): number {
+  const inset = (size - fittedSize) / 2;
+  const scaled = fittedSize * scale;
+  if (scaled <= size) return (size - scaled) / 2 - inset * scale;
+  return Math.max(size - (inset + fittedSize) * scale, Math.min(0 - inset * scale, offset));
 }
 /** 控制柄及邻近按钮留在可见区域；远端指针独立移动，仍可到达电脑画面边缘。 */
 export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number, controlWidth = 208, controlHeight = 116) {

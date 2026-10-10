@@ -151,6 +151,7 @@
   pointer-events: none;
 }
 .sheet {
+  translate: var(--mobile-back-offset, 0px) 0;
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -183,7 +184,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 48px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -199,6 +200,7 @@
   transform: none;
 }
 .sheetHead {
+  touch-action: none;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -207,6 +209,8 @@
   margin: 0 0 16px;
 }
 .sheetTitle {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--mobile-title-size);
   font-weight: 650;
   margin: 0;
@@ -261,6 +265,8 @@
   margin: 0;
 }
 :global(html[data-mobile-layout="landscape"]) .sheetHead { margin-bottom: 8px; }
+:global(html[data-mobile-layout="landscape"]) .dragHandle { display: none; }
+:global(html[data-mobile-layout="landscape"]) .sheetHead { margin-top: 8px; }
 :global(html[data-mobile-layout="landscape"]) .sheetBody { margin-top: 8px; }
 :global(html[data-mobile-layout="landscape"]) .empty { padding-top: 16px; }
 .sheet > .description { flex-shrink: 0; }

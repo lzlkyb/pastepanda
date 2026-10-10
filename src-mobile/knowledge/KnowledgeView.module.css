@@ -51,3 +51,9 @@
 :global(html[data-mobile-layout="landscape"]) .textarea { min-height: 8rem; }
 
 .syncSummary { flex: none; max-height: 30%; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--mobile-page-inset); }
+.root[data-preview-source="true"] .workspace { position: relative; }
+.root[data-preview-source="true"] { position: relative; }
+/* The inert native preview may reveal the source visually; React's hidden state stays untouched. */
+.root[data-preview-source="true"] > .root[hidden] { display: block !important; position: absolute; inset: 0; }
+.root[data-preview-source="true"] .workspace[hidden] { display: grid !important; position: absolute; inset: 0; }
+.root[data-preview-source="true"] .workspace[data-reading="true"] .listPane { display: flex; position: absolute; inset: 0; pointer-events: none; }

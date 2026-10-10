@@ -42,8 +42,10 @@ export const PinchViewport = forwardRef<
     children: React.ReactNode;
     /** 手势附着面（未 transform），指针事件监听在这里。 */
     surfaceRef: React.RefObject<HTMLElement | null>;
+    /** Optional natural dimensions for images centered with object-fit: contain. */
+    contentSize?: React.RefObject<{ w: number; h: number }>;
   }
->(function PinchViewport({ children, surfaceRef }, ref) {
+>(function PinchViewport({ children, surfaceRef, contentSize }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const scale = useRef(1);
@@ -54,8 +56,10 @@ export const PinchViewport = forwardRef<
     const el = wrapperRef.current;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!el || !rect) return;
-    tx.current = clampRcViewportOffset(tx.current, rect.width, scale.current);
-    ty.current = clampRcViewportOffset(ty.current, rect.height, scale.current);
+    const content = contentSize?.current;
+    const fit = content && content.w > 0 && content.h > 0 ? Math.min(rect.width / content.w, rect.height / content.h) : 0;
+    tx.current = clampRcViewportOffset(tx.current, rect.width, scale.current, fit && content ? content.w * fit : rect.width);
+    ty.current = clampRcViewportOffset(ty.current, rect.height, scale.current, fit && content ? content.h * fit : rect.height);
     el.style.transform = `translate(${tx.current}px, ${ty.current}px) scale(${scale.current})`;
     containerRef.current?.dispatchEvent(new Event(VIEWPORT_CHANGED));
   };

@@ -15,3 +15,4 @@
 .feedback > :not(:empty) { margin-bottom: 8px; }
 :global(html[data-mobile-layout="landscape"]) .head { padding-block: 4px; }
 :global(html[data-mobile-layout="landscape"]) .textarea { min-height: 8rem; }
+.root { translate: var(--mobile-back-offset, 0px) 0; position: relative; z-index: 1; background: var(--mobile-surface); }

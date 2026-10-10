@@ -1,16 +1,17 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ArrowLeft, Folder, ImagePlus } from "lucide-react";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./KnowledgeEditorShell.module.css";
 
 /** Shared visual workspace; each draft model still owns its save/retention semantics. */
-export function KnowledgeEditorShell({ heading, idPrefix, title, content, titleOptional, readonly, saving, status, saveLabel, feedback, onBack, onPreview, onTitle, onContent, onClassification, onPickImages, onSave, children }: {
+export function KnowledgeEditorShell({ heading, idPrefix, title, content, titleOptional, readonly, saving, status, saveLabel, feedback, onBack, onPreview, onTitle, onContent, onClassification, onPickImages, onSave, children, rootRef }: {
   heading: string; idPrefix: string; title: string; content: string; titleOptional?: boolean;
   readonly: boolean; saving: boolean; status: string; saveLabel: string; feedback?: ReactNode;
   onBack: () => void; onPreview: () => void; onTitle: (value: string) => void; onContent: (value: string) => void;
   onClassification: () => void; onPickImages?: () => void; onSave: () => void; children?: ReactNode;
+  rootRef?: RefObject<HTMLDivElement | null>;
 }) {
-  return <div className={styles.root}>
+  return <div ref={rootRef} className={styles.root}>
     <header className={styles.head}>
       <button className={ui.textButton} aria-label="返回并保留草稿" disabled={saving} onClick={onBack}><ArrowLeft size={20} aria-hidden="true" /></button>
       <h1>{heading}</h1><button className={ui.textButton} onClick={onPreview}>预览</button>

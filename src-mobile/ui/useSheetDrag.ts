@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { createMobileSpring, type MobileSpring } from "./mobileSpring";
 
-/** Only the handle drags; body scrolling must never dismiss a sheet. */
+/** The header owns dragging; interactive controls and body scrolling stay independent. */
 export function useSheetDrag(open: boolean, onClose: () => void, sideways = false) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const spring = useRef<MobileSpring | null>(null);
@@ -16,6 +16,7 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
     moved: number;
     time: number;
     velocity: number;
+    tapCloses: boolean;
   } | null>(null);
   const releaseVelocity = useRef<number | undefined>(undefined);
   const closing = useRef(false);
@@ -78,18 +79,23 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
     const hidden = () => {
       if (document.hidden) cancel();
     };
+    const nativeBack = () => { cancel(); if (open) spring.current?.set(0); };
     window.addEventListener("blur", cancel);
+    window.addEventListener("mobile-interaction-cancel", nativeBack);
     document.addEventListener("visibilitychange", hidden);
     return () => {
       window.removeEventListener("blur", cancel);
+      window.removeEventListener("mobile-interaction-cancel", nativeBack);
       document.removeEventListener("visibilitychange", hidden);
     };
-  }, [present, cancel]);
+  }, [present, cancel, open]);
   return {
     present,
     sheetRef,
-    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
       if (!open || active.current || event.button !== 0) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("button,a,input,textarea,select,[contenteditable=true]") && target.closest("button") !== event.currentTarget) return;
       const current = ensureSpring()?.stop().position ?? 0;
       active.current = {
         id: event.pointerId,
@@ -100,11 +106,12 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
         moved: 0,
         time: event.timeStamp,
         velocity: 0,
+        tapCloses: !event.currentTarget.tagName || event.currentTarget.tagName === "BUTTON" || event.currentTarget.hasAttribute("data-mobile-drag-handle"),
       };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* System cancellation still releases the drag. */ }
       sheetRef.current?.setAttribute("data-dragging", "true");
     },
-    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
       const drag = active.current;
       if (!drag || drag.id !== event.pointerId) return;
       const position = sideways ? event.clientX : event.clientY;
@@ -117,7 +124,7 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
       drag.moved = Math.max(drag.moved, Math.abs(position - drag.start), Math.abs(cross - drag.crossStart));
       spring.current?.set(distance);
     },
-    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerUp: (event: PointerEvent<HTMLElement>) => {
       const drag = active.current;
       if (!drag || drag.id !== event.pointerId) return;
       const position = sideways ? event.clientX : event.clientY;
@@ -128,7 +135,9 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
       active.current = null;
       sheetRef.current?.removeAttribute("data-dragging");
       spring.current?.set(distance);
-      if (distance > 80 || (distance > 16 && velocity > 600) || moved < 4) {
+      const extent = sideways ? sheetRef.current?.offsetWidth : sheetRef.current?.offsetHeight;
+      const threshold = extent ? Math.max(48, Math.min(128, extent * 0.2)) : 80;
+      if (distance > threshold || (distance > 16 && velocity > 600) || (drag.tapCloses && moved < 4)) {
         releaseVelocity.current = velocity;
         setDismissRequest(request => request + 1);
         onClose();
@@ -136,8 +145,8 @@ export function useSheetDrag(open: boolean, onClose: () => void, sideways = fals
     },
     onPointerCancel: cancel,
     onLostPointerCapture: cancel,
-    onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-      if (event.detail === 0) { setDismissRequest(request => request + 1); onClose(); }
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      if (event.currentTarget.tagName === "BUTTON" && event.detail === 0) { setDismissRequest(request => request + 1); onClose(); }
     },
   };
 }

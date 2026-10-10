@@ -18,6 +18,7 @@ import { useMobileAppearance } from "./ui/useMobileAppearance";
 import { useMobileViewport } from "./ui/useMobileViewport";
 import { MOBILE_DESTINATIONS, type MobileDestination } from "./ui/mobileDestinations";
 import { useMobileNavigation } from "./ui/useMobileNavigation";
+import { MobileScene } from "./ui/MobileScene";
 import ui from "./ui/MobileUi.module.css";
 import styles from "./App.module.css";
 
@@ -95,13 +96,11 @@ export default function App() {
           <div className={styles.tabContent}>
             {/* Keep one instance per destination: retain drafts, scroll and ongoing transfers. */}
             {MOBILE_DESTINATIONS.map(({ id, label }) => (
-              <section
+              <MobileScene
                 key={id}
                 className={`${styles.pagePane} ${id === "knowledge" ? styles.knowledgePane : ""}`}
-                hidden={tab !== id}
-                aria-label={label}
-                aria-hidden={tab !== id || sandbox || activeSession}
-                inert={tab !== id || sandbox || activeSession}
+                label={label}
+                active={tab === id && !sandbox && !activeSession}
               >
                 {id === "devices" && (
                   <RcDevicesView
@@ -139,7 +138,7 @@ export default function App() {
                     onErrorScopeChange={settingsErrorScope}
                   />
                 )}
-              </section>
+              </MobileScene>
             ))}
           </div>
         </main>

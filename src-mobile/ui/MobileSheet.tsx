@@ -16,6 +16,8 @@ export function MobileSheet({
   children,
   footer,
   actions,
+  bodyClassName,
+  contentClassName,
 }: {
   open: boolean;
   title: string;
@@ -29,6 +31,8 @@ export function MobileSheet({
   footer?: ReactNode;
   /** Primary actions stay reachable independently of long feedback on short screens. */
   actions?: ReactNode;
+  bodyClassName?: string;
+  contentClassName?: string;
 }) {
   const landscape = useMobileLayout();
   const back = onBack ?? onClose;
@@ -52,7 +56,7 @@ export function MobileSheet({
   }, [present]);
   const content = open ? { title, description, children, footer, actions } : saved.current;
   const descriptionId = useId();
-  useMobileBack(open, back, true, backPriority);
+  useMobileBack(open, back, true, backPriority, sheetRef);
   return (
     <Dialog.Root
       open={open}
@@ -66,7 +70,7 @@ export function MobileSheet({
           <Dialog.Content
             forceMount
             ref={sheetRef}
-            className={styles.sheet}
+            className={`${styles.sheet} ${contentClassName ?? ""}`}
             aria-describedby={content.description ? descriptionId : undefined}
             onOpenAutoFocus={() => {
               restoreFocus.current = document.activeElement as HTMLElement;
@@ -74,13 +78,13 @@ export function MobileSheet({
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               if (!document.querySelector('[role="dialog"][data-state="open"]') && restoreFocus.current?.isConnected)
-                restoreFocus.current.focus();
+                if (!restoreFocus.current.closest('[hidden],[inert],[aria-hidden="true"]')) restoreFocus.current.focus({ preventScroll: true });
             }}
           >
             <button type="button" className={styles.dragHandle} aria-label={landscape ? "向右拖动或点击收起面板" : "向下拖动或点击收起面板"} {...dragEvents}>
               <span aria-hidden="true" />
             </button>
-            <header className={styles.sheetHead}>
+            <header className={styles.sheetHead} {...dragEvents}>
               {onBack && <button type="button" className={styles.textButton} onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />返回</button>}
               <Dialog.Title className={styles.sheetTitle}>{content.title}</Dialog.Title>
               <button type="button" className={styles.closeButton} onClick={onClose}>
@@ -93,7 +97,7 @@ export function MobileSheet({
                 {content.description}
               </Dialog.Description>
             )}
-            <div className={styles.sheetBody}>{content.children}</div>
+            <div className={`${styles.sheetBody} ${bodyClassName ?? ""}`}>{content.children}</div>
             {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
             {content.actions && <div className={styles.sheetActions}>{content.actions}</div>}
           </Dialog.Content>

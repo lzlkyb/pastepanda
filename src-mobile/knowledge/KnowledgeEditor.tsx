@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { copyToClipboard } from "@/lib/utils";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { KnowledgeClassification } from "./KnowledgeClassification";
@@ -20,11 +20,12 @@ export function KnowledgeEditor({ draft, active, onBack, onSaved, onPickImages, 
   const [copyResult, setCopyResult] = useState<boolean | null>(null);
   const [previewLink, setPreviewLink] = useState(false);
   const leave = () => { setPreview(false); void draft.flush().then(onBack).catch(() => undefined); };
+  const rootRef = useRef<HTMLDivElement>(null);
   // A failed flush keeps the editor open; keep its back layer until leaving succeeds.
-  useMobileBack(active && !preview && !classification, leave, true);
+  useMobileBack(active && !preview && !classification, leave, true, 0, rootRef);
   if (!draft.draft) return null;
   const readonly = draft.saving || draft.locked;
-  return <KnowledgeEditorShell heading="新建笔记" idPrefix="knowledge" title={draft.draft.title} content={draft.draft.content} titleOptional
+  return <KnowledgeEditorShell rootRef={rootRef} heading="新建笔记" idPrefix="knowledge" title={draft.draft.title} content={draft.draft.content} titleOptional
     readonly={readonly} saving={draft.saving} status={draft.status || "输入会保存为本机草稿。"}
     saveLabel={draft.saving ? "正在保存…" : draft.error ? "重试保存到手机" : "保存到手机"}
     onBack={leave} onPreview={() => setPreview(true)} onTitle={value => draft.update("title", value)} onContent={value => draft.update("content", value)}

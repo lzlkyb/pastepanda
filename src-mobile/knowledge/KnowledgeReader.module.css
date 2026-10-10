@@ -1,4 +1,5 @@
 .reader { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; container-name: knowledge-reader; background: var(--card-bg); color: var(--text-primary); }
+.reader { translate: var(--mobile-back-offset, 0px) 0; position: relative; z-index: 1; }
 .header { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border-color); flex: none; }
 .reader button, .sheetActions button { min-height: 48px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--section-bg); color: var(--text-primary); font: inherit; font-size: var(--mobile-font-body); cursor: pointer; overflow-wrap: anywhere; }
 .reader button:active, .sheetActions button:active { background: var(--accent-light); }

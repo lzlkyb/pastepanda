@@ -63,3 +63,4 @@
     animation: none;
   }
 }
+.toastHost[hidden], .flowHost[hidden] { display: none; }

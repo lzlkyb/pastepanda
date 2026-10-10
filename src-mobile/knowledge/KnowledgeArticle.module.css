@@ -20,3 +20,4 @@
 .feedback { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; }.buttons { flex:none; display:flex; flex-direction:column; gap:4px; }
 @container article-capture (min-width:520px) and (max-height:500px) { .layout { flex-direction:row; }.scroll { padding:8px 16px 16px; }.actions { flex:0 0 clamp(184px,11.5rem,45%); max-height:none; padding:12px; justify-content:flex-end; background:var(--section-bg); }.head { padding-block:0; }.article h2 { font-size:1.4em; } }
 @container article-capture (max-height:430px) and (max-width:519px) { .actions { padding:4px 12px; }.buttons { flex-direction:row; }.buttons>button { flex:1; }.head { padding-block:0; } }
+.root { translate: var(--mobile-back-offset, 0px) 0; position: relative; z-index: 1; }

@@ -7,6 +7,7 @@ import { useTouchGestures } from "./useTouchGestures";
 import { POINTER_MODES, type PointerMode } from "./pointerModes";
 import { LONG_PRESS_MS } from "./touchConstants";
 import { readPointerPreference, savePointerPreference } from "./pointerPreference";
+import { mobileHaptic } from "../ui/nativeInteraction";
 
 export type { PointerMode } from "./pointerModes";
 
@@ -136,6 +137,7 @@ export function useSessionPointer({
         setCharging(false);
         if (!relative) locate(x, y, false);
         click(2);
+        if (canControl) mobileHaptic("ready");
       },
       onDragStart: (x, y) => {
         if (localView || !canControl || dragOwner.current || scrolling) return;
@@ -146,6 +148,7 @@ export function useSessionPointer({
           setDragging(true);
           setCharging(false);
           feedback.charge("drag", p.clientX, p.clientY);
+          mobileHaptic("ready");
         }
       },
       onDragMove: move,
@@ -209,10 +212,12 @@ export function useSessionPointer({
     };
     window.addEventListener("blur", reset);
     window.addEventListener("orientationchange", reset);
+    window.addEventListener("mobile-interaction-cancel", reset);
     document.addEventListener("visibilitychange", hidden);
     return () => {
       window.removeEventListener("blur", reset);
       window.removeEventListener("orientationchange", reset);
+      window.removeEventListener("mobile-interaction-cancel", reset);
       document.removeEventListener("visibilitychange", hidden);
     };
   }, [reset]);
@@ -245,6 +250,7 @@ export function useSessionPointer({
     pickMode: (next: PointerMode) => {
       reset();
       setMode(next);
+      if (next !== mode) mobileHaptic("confirm");
       try {
         savePointerPreference(next);
         setHintTone("success");

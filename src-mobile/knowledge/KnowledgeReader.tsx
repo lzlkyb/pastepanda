@@ -27,6 +27,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
   const { note, meta, setMeta, loading, error, missing, newer } = reading;
   const articleReading = useKnowledgeArticleReading(noteId, active, note?.content || "", reading.reload);
   const article = useRef<HTMLDivElement>(null);
+  const preview = useRef<HTMLElement>(null);
   const restored = useRef<string | null>(null);
   const request = useRef(0);
   const linkRequest = useRef(0);
@@ -44,7 +45,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
   const reloadImage = useRef<(() => void) | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [localImageCount, setLocalImageCount] = useState(0);
-  useMobileBack(active && !sheet && !asset && !image, onBack);
+  useMobileBack(active && !sheet && !asset && !image, onBack, false, 0, preview);
   useEffect(() => {
     ++request.current; ++linkRequest.current; restored.current = null; setSheet(null); setFeedback(initialNotice || null); setHeadings([]);
     setLinkFeedback(null); setTargets([]); setUrl(""); setCopyBusy(false); setCommonBusy(false); setLinkBusy(false);
@@ -136,7 +137,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
     finally { if (token === request.current) setActionBusy(false); }
   };
 
-  return <section className={styles.reader} aria-label="笔记全文">
+  return <section ref={preview} className={styles.reader} aria-label="笔记全文">
     <header className={styles.header}>
       <button type="button" onClick={() => { reading.savePosition(); onBack(); }}><ArrowLeft size={20} aria-hidden="true" /><span>返回</span></button>
       <div className={styles.headerTools}>

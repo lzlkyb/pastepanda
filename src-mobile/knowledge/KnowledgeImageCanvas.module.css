@@ -1,0 +1,11 @@
+.body { flex: 1; display: flex; overflow: hidden; }
+.root { min-width: 0; min-height: 0; width: 100%; height: 100%; display: flex; flex-direction: column; }
+.root[data-error="true"] { overflow-y: auto; }
+.root[data-error="true"] > section { flex: none; }
+.canvas { flex: 1; min-height: 0; }
+.image { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hint { color: var(--text-secondary); font-size: var(--mobile-font-label); line-height: 1.5; margin: 8px 0; }
+.tools { display: flex; gap: 8px; width: 100%; }
+.tools > button { flex: 1; min-width: 48px; white-space: nowrap; }
+@media (max-height: 400px) { :global(html[data-mobile-layout="landscape"]) .hint { display: none; } }
+.imageSheet[role="dialog"] { height: calc(var(--mobile-viewport-height, 100dvh) * 0.8); }
