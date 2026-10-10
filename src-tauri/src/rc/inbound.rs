@@ -59,6 +59,14 @@ pub(super) struct InboundVideo {
     /// 输入与画面共用的发送半流（对端收到的一切都从这里出去）。
     pub(super) send: Arc<tokio::sync::Mutex<iroh::endpoint::SendStream>>,
     pub(super) enc: Arc<std::sync::Mutex<super::video::EncoderState>>,
+    #[cfg(target_os="macos")]
+    pub(super) mac_video:Arc<std::sync::Mutex<super::mac_video::Encoder>>,
+    #[cfg(target_os="macos")]
+    pub(super) mac_video_retry:Option<std::time::Instant>,
+    #[cfg(target_os="macos")]
+    pub(super) mac_video_seq:u32,
+    #[cfg(target_os="macos")]
+    pub(super) mac_video_codec:String,
     /// 本会话连接句柄：数据报读取（鼠标低延迟通道）与 QUIC stats 采样都要用。
     pub(super) conn: iroh::endpoint::Connection,
     #[cfg(target_os = "windows")]
@@ -111,7 +119,7 @@ pub(super) struct InboundVideo {
     /// 抢同一把发送锁；false = 旧版对端，视频留在会话半流（历史形态）。
     pub(super) peer_video_plane: bool,
     pub(super) peer_media_plane: bool,
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows",target_os="macos"))]
     pub(super) media_pipe: Option<media_pipe::MediaPipe>,
     /// 🔴 视频专属 uni 流（仅 `peer_video_plane` 时使用）：只由推流任务写，
     /// **不与任何任务共锁**——这是「视频写不再阻塞 pong」的物理基础。
@@ -525,7 +533,7 @@ pub(super) async fn handle_inbound_input(
                 Some("当前会话仅为「只看」，无法改对方主机声音".to_string())
             } else {
                 // 扬声器静音走 Windows 音频端点（mobile 宿主不存在，诚实回报不支持）
-                #[cfg(target_os = "windows")]
+                #[cfg(any(target_os="windows",target_os="macos"))]
                 { match super::audio::spk_mute_set(*on) {
                     Ok(actual) => {
                         // 记「对端操作过且未撤销」——横幅据此摆提示与恢复入口。
@@ -541,7 +549,7 @@ pub(super) async fn handle_inbound_input(
                         Some(format!("切换主机扬声器失败：{e}"))
                     }
                 } }
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(not(any(target_os="windows",target_os="macos")))]
                 { Some("本机无音频输出链路（宿主仅 Windows）".to_string()) }
             };
             // 回帧带**读回的真实值**（可能与我们请求的不同），发起端的按钮态以它为准。
@@ -735,11 +743,13 @@ pub(super) async fn handle_inbound_input(
 }
 
 // impl InboundVideo 的推流方法平移到子模块（硬编路径 / 运行循环）。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows",target_os="macos"))]
 mod media;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows",target_os="macos"))]
 mod media_pipe;
 mod video;
+#[cfg(target_os="macos")]
+mod mac_video;
 mod video_run;
 
 #[cfg(test)]

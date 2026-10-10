@@ -26,7 +26,7 @@ export function MetaBar({ lineCount, charCount, isModified, badge, status, extra
         <div className="code-meta-item"><span className="code-meta-label">字符</span><span className="code-meta-val">{charCount}</span></div>
         {isModified && <div className="code-meta-item" style={{ color: "var(--accent)" }}><span className="code-meta-label">状态</span><span className="code-meta-val">已修改</span></div>}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="code-meta-right">
         {status}
         <div className="code-type-badge">{badge}</div>
         {extra}

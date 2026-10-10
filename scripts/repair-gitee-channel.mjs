@@ -3,9 +3,11 @@
  * repair-gitee-channel.mjs — Gitee 更新通道的自检 + 自愈。
  *
  * 问题：客户端第 1 条更新源指向 `https://gitee.com/<repo>/raw/releases/latest/updater-gitee.json`，
- * 它落在 Gitee 上一条只放 manifest 的 orphan 分支 `releases`。发版 CI 每次重建它，但事后会消失
- * （v7.2.9 与 v7.2.10 的日志里都是 `[new branch]` —— 连续两次都从零建，说明上一版留下的已被删）。
- * 本脚本不追究「谁删的」，只做一件事：**发现读不到（或读到的是过期版本）就补回去**。
+ * 它落在 `releases` 分支的 latest/ 目录上。2026-10-10 定性：这条分支以前手工建在 **Gitee** 上，
+ * 而 Gitee 的「仓库镜像管理」同步 GitHub 的整个分支集合、并「删除在远程仓库中不存在的分支和标签」
+ * ⇒ 每推一次 GitHub 就剪一次，通道跟着 404（v7.2.9/v7.2.10 日志里连续两版都是 `[new branch]` 即此）。
+ * 现在分支建在 GitHub 上，manifest 也只推 GitHub（见 scripts/publish-manifest-branch.mjs），镜像替我们
+ * 搬到 Gitee。本脚本仍只做一件事：**发现 Gitee 读不到（或读到过期版本）就补回去**。
  *
  * 为什么能纯派生、不需要重新构建：
  *   Gitee 源和 GitHub 直连源用的是**同一个 exe、同一份 minisign 签名**，只有取文件那条 URL 的
@@ -13,10 +15,10 @@
  *   发布的 updater.json / apk-update.json 换 host，就是发版时生成的那份的等价物。
  *
  * 环境变量：
- *   GITEE_TOKEN       Gitee 写权限令牌（推送必需；DRY_RUN=1 时可省）
+ *   GITEE_TOKEN       可选，只用来提 Gitee API 配额（发行版附件清单）；**manifest 推送不再需要它**
  *   GITEE_REPOSITORY  默认 lzul/pastepanda —— 必须与客户端硬编码的仓库一致，脚本会打印它
  *   GH_REPO           默认 lzlkyb/pastepanda
- *   GH_TOKEN          可选，提升 api.github.com 配额
+ *   GH_TOKEN / GITHUB_TOKEN  GitHub 写令牌（推送必需；CI 用 secrets.GITHUB_TOKEN，本地留空则取 gh auth token）
  *   GH_TAG            可选，指定要恢复的 tag；留空 = GitHub 最新 Release
  *   DRY_RUN           =1 时只诊断 + 生成本地产物，不推送
  *
@@ -29,9 +31,13 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MANIFEST_BRANCH, giteeRawManifestUrl, publishManifestBranch, verifyChannel } from "./publish-manifest-branch.mjs";
+
+// 客户端读的那个地址由发布出口定义，这里只转发（三处各拼一遍是 2026-10-08 那类「修复在修没人读的路径」的源头）
+export { giteeRawManifestUrl };
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,8 +51,13 @@ const GH_TOKEN = (process.env.GH_TOKEN || "").trim();
 const DRY_RUN = process.env.DRY_RUN === "1" || process.env.DRY_RUN === "true";
 const GH_RELEASE_PREFIX = `https://github.com/${GH_REPO}/releases/download/`;
 
-/** 客户端读的那个地址（manifest 走 raw，小文件免登录；大文件走 releases/download 附件）。 */
-export const giteeRawManifestUrl = (repo, name) => `https://gitee.com/${repo}/raw/releases/latest/${name}`;
+/** GitHub 写令牌：CI 传 GITHUB_TOKEN，本地留空则取 gh 的登录态。 */
+function ghWriteToken() {
+  const fromEnv = (process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (fromEnv) return fromEnv;
+  const r = spawnSync("gh", ["auth", "token"], { encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : "";
+}
 
 // 客户端两个端点列表的第 1 条各读一份，两份都得活着
 export const TARGETS = [
@@ -201,15 +212,6 @@ export function assetVerdict({ status, inAssetList }) {
   return "unproven";
 }
 
-function git(args, label) {
-  const r = spawnSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) {
-    const out = `${r.stderr || ""}${r.stdout || ""}`.replace(/oauth2:[^@]+@/g, "oauth2:***@");
-    fail(`${label} 失败：\n${out.slice(0, 2000)}`);
-  }
-  return r.stdout || "";
-}
-
 async function main() {
   info(`GitHub 仓库：${GH_REPO}｜Gitee 仓库：${GITEE_REPO}（客户端硬编码的是后者，不一致就是镜像到了没人读的仓库）`);
 
@@ -308,13 +310,13 @@ async function main() {
     if (unproven.length) {
       fail(
         `${t.name}：探测 Gitee 附件时既没探到直链、也没拿到发行版清单（${unproven.join(", ")}）。\n` +
-          `  两种判法都缺证据，本轮不猜。等下一轮自愈（定时任务每 6 小时一次）。`,
+          `  两种判法都缺证据，本轮不猜。等下一轮自愈（定时档 17 与 47 分，一小时两次）。`,
       );
     }
     if (missing.length) {
       skipped.push(
         `${t.name}：manifest 指向的包不在 Gitee 发行版附件里（${missing.join(", ")}）。` +
-          `补救 = 重跑发版 CI 的「镜像发布产物到 Gitee」/ android.yml 的三源发布，或本地 tools/upload-exe-to-gitee.ps1 -Version ${expectedVersion}`,
+          `补救 = 重跑发版 CI 的「上传安装包到 Gitee 发行版」/ android.yml 的三源发布，或本地 tools/upload-exe-to-gitee.ps1 -Version ${expectedVersion}`,
       );
       continue;
     }
@@ -343,67 +345,33 @@ async function main() {
     info("DRY_RUN=1：诊断与产物已就绪，不推送。");
     return;
   }
-  if (!GITEE_TOKEN) fail("缺少 GITEE_TOKEN（推送需要它；只想看诊断用 DRY_RUN=1）");
-
-  // 4) 推上 releases 分支 latest/
-  //    镜像工作目录放在 dist/ 里（.gitignore 已忽略）：万一进程被中断留下目录，
-  //    也不会在共享工作树里长出一个没人认领的未跟踪文件夹。
-  const mirror = mkdtempSync(path.join(ROOT, "dist", "gitee-repair-mirror-"));
-  const giteeGit = `https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git`;
+  // 4) 提交到 GitHub 的 releases 分支
+  //    唯一出口是 scripts/publish-manifest-branch.mjs：只 FF 提交、只点名自己那几份文件、
+  //    不清空 latest/。以前这里手工推 Gitee 的孤儿分支，而镜像同步会剪「上游没有的分支」
+  //    ⇒ 修好一次、下一次 GitHub push 又剪掉一次（2026-10-10 定性）。
+  const ghToken = ghWriteToken();
+  if (!ghToken) fail("缺少 GitHub 写令牌（CI 用 secrets.GITHUB_TOKEN，本地用 gh auth token；只想看诊断用 DRY_RUN=1）");
+  let pushedSha;
   try {
-    const clone = spawnSync("git", ["clone", "--depth", "1", "--branch", "releases", giteeGit, mirror], { encoding: "utf8" });
-    if (clone.status !== 0) {
-      info("releases 分支不存在，clone 默认分支后建孤儿分支（与 release.yml 同一套做法）");
-      rmSync(mirror, { recursive: true, force: true });
-      git(["clone", "--depth", "1", giteeGit, mirror], "clone Gitee 默认分支");
-      git(["-C", mirror, "checkout", "--orphan", "releases"], "创建 releases 孤儿分支");
-      // unborn HEAD 上的 reset --hard 会清空索引：不清的话，孤儿分支会把 master 的全部
-      // 源码一起提交进去（发版 CI 里那句 reset 就是干这个的）。
-      git(["-C", mirror, "reset", "--hard"], "清空孤儿分支索引");
-    }
-    const latest = path.join(mirror, "latest");
-    mkdirSync(latest, { recursive: true });
-    for (const b of built) writeFileSync(path.join(latest, b.name), readFileSync(path.join(outDir, b.name), "utf8"), "utf8");
-
-    git(["-C", mirror, "add", "-A", "latest"], "git add latest");
-    const commit = spawnSync("git", ["-C", mirror, "-c", "user.email=ci@pastepanda.local", "-c", "user.name=pastepanda-ci", "commit", "-m", `release: repair Gitee channel manifests for ${tag}`], { encoding: "utf8" });
-    const commitOut = `${commit.stdout || ""}${commit.stderr || ""}`;
-    if (commit.status !== 0 && !/nothing to commit/.test(commitOut)) {
-      fail(`git commit 失败：\n${commitOut.slice(0, 1500)}`);
-    }
-    if (/nothing to commit/.test(commitOut) && branchExists) {
-      info("内容与分支上的一致（nothing to commit），跳过 push，直接进回读验证");
-    } else {
-      let push = spawnSync("git", ["-C", mirror, "push", "origin", "releases"], { encoding: "utf8" });
-      if (push.status !== 0) {
-        info("第一次 push 失败，按既有经验用 postBuffer + --no-thin 重试");
-        push = spawnSync("git", ["-C", mirror, "-c", "http.postBuffer=524288000", "push", "--no-thin", "origin", "releases"], { encoding: "utf8" });
-        if (push.status !== 0) {
-          fail(`git push 两次都失败：\n${`${push.stderr}${push.stdout}`.replace(/oauth2:[^@]+@/g, "oauth2:***@").slice(0, 2000)}`);
-        }
-      }
-      ok(`已推送 releases/latest/（${built.map((b) => b.name).join(", ")}）`);
-    }
-  } finally {
-    // 临时 clone 的 .git/config 里带着 token，用完即删
-    rmSync(mirror, { recursive: true, force: true });
+    pushedSha = publishManifestBranch({
+      repo: GH_REPO,
+      token: ghToken,
+      files: built.map((b) => path.join(outDir, b.name)),
+      identity: { email: "ci@pastepanda.local", name: "pastepanda-ci" },
+    }).sha;
+  } catch (e) {
+    fail(`提交到 GitHub ${MANIFEST_BRANCH} 分支失败：${e?.message ?? e}`);
   }
 
-  // 5) 回读验证：推上去 ≠ 客户端读得到（Gitee 新建分支的 raw CDN 有传播延迟）
+  // 5) 三段验证：GitHub sha → Gitee 分支 sha → Gitee raw 读得到且版本对
+  //    推上去 ≠ 客户端读得到；卡在哪一段就打印哪一段，不再一句「读不到」把三种成因混成一团。
   //    built 里只会是不健康的这几份（健康的上面已 continue，不拿新内容去覆盖正在工作的 manifest）
-  for (const b of built) {
-    let got = null;
-    for (let i = 1; i <= 5; i++) {
-      const r = await getJson(giteeRawManifestUrl(GITEE_REPO, b.name), 1);
-      got = r.body?.version ?? null;
-      if (got === expectedVersion) break;
-      info(`回读 ${b.name}：第 ${i}/5 次读到 ${got ?? "读不到"}，${i < 5 ? `${i * 20}s 后重试` : "放弃"}`);
-      if (i < 5) await sleep(i * 20000);
-    }
-    if (got !== expectedVersion) {
-      fail(`回读 ${b.name} 失败：最终读到 ${got ?? "读不到"}，期望 ${expectedVersion}（分支存在=${branchExists}；可能是 raw CDN 未生效，或分支又被删了）`);
-    }
-    ok(`回读通过：${giteeRawManifestUrl(GITEE_REPO, b.name)} → version=${got}`);
+  const expectedVersions = {};
+  for (const b of built) expectedVersions[b.name] = expectedVersion;
+  try {
+    await verifyChannel({ ghRepo: GH_REPO, giteeRepo: GITEE_REPO, pushedSha, expected: expectedVersions });
+  } catch (e) {
+    fail(`三段验证未通过（分支存在=${branchExists}）：${e?.message ?? e}`);
   }
   note(`Gitee 通道已恢复到 ${tag}（${built.map((b) => b.name).join(", ")}）`);
 }

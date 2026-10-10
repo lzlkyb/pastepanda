@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 图文混排（rich）富文本编辑器 —— 基于 Tiptap 的所见即所得编辑。
  *
@@ -181,14 +182,14 @@ export function RichContentEditor({
       {editable && (
         <div className={styles.toolbar} role="toolbar" aria-label="格式工具栏">
           <ToolBtn
-            title="加粗 (Ctrl+B)"
+            title={`加粗 (${primaryShortcutLabel("b")})`}
             active={editor.isActive("bold")}
             onClick={() => editor.chain().focus().toggleBold().run()}
           >
             <Bold size={14} />
           </ToolBtn>
           <ToolBtn
-            title="斜体 (Ctrl+I)"
+            title={`斜体 (${primaryShortcutLabel("i")})`}
             active={editor.isActive("italic")}
             onClick={() => editor.chain().focus().toggleItalic().run()}
           >
@@ -217,7 +218,7 @@ export function RichContentEditor({
             <ListOrdered size={14} />
           </ToolBtn>
           <span className={styles.toolSep} />
-          <ToolBtn title="插入图片（也可直接 Ctrl+V 粘贴）" onClick={() => fileInputRef.current?.click()}>
+          <ToolBtn title={`插入图片（也可直接 ${primaryShortcutLabel("v")} 粘贴）`} onClick={() => fileInputRef.current?.click()}>
             <ImagePlus size={14} />
           </ToolBtn>
           <input

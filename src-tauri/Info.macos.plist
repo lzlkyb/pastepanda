@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>NSMicrophoneUsageDescription</key><string>开启录屏麦克风时，将你的声音与系统声音一起录入本地录像。</string>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>Markdown document</string>
+<key>CFBundleTypeRole</key><string>Editor</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string></array>
+<key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string></array>
+</dict></array>
+<key>UTImportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>
+<key>UTTypeDescription</key><string>Markdown document</string>
+<key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+<key>UTTypeTagSpecification</key><dict>
+<key>public.filename-extension</key><array><string>md</string><string>markdown</string></array>
+<key>public.mime-type</key><string>text/markdown</string>
+</dict></dict></array>
+</dict></plist>

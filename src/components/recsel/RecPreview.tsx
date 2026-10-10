@@ -10,6 +10,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   recKeyframes,
+  recOpenFile,
   recReveal,
   recTrim,
   type RecKeyframeIndex,
@@ -19,6 +20,7 @@ import {
 import { snapTrimRange, type TrimRange } from "./trimSnap";
 
 function fmtTime(ms: number): string {
+  if (ms > 0 && ms < 1000) return `${(ms / 1000).toFixed(2)} 秒`;
   const s = Math.max(0, Math.round(ms / 1000));
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
@@ -41,6 +43,7 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
   const [currentMs, setCurrentMs] = useState(0);
   const [metaDur, setMetaDur] = useState(0); // <video> 元数据时长（关键帧扫描的兜底）
   const [saving, setSaving] = useState(false);
+  const [videoErr, setVideoErr] = useState<string | null>(null);
   const [saved, setSaved] = useState<RecTrimResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -86,7 +89,7 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) void v.play().catch(() => {});
+    if (v.paused) void v.play().catch(() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。"));
     else v.pause();
   }, []);
 
@@ -193,6 +196,7 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
+        onError={() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。") }
         onLoadedMetadata={(e) => setMetaDur(e.currentTarget.duration * 1000)}
       />
 
@@ -256,10 +260,10 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
           <>
             <span className="rec-pv-range">
               {sel
-                ? `保留 ${fmtTime(sel.inMs)} – ${fmtTime(sel.outMs)}（${Math.round((sel.outMs - sel.inMs) / 1000)}s）${aligned ? " · ✓ 已对齐" : ""}`
+                ? `保留 ${fmtTime(sel.inMs)} – ${fmtTime(sel.outMs)}（${fmtTime(sel.outMs - sel.inMs)}）${aligned ? " · ✓ 已对齐" : ""}`
                 : canTrim
                   ? "拖动手柄选保留段"
-                  : "录制太短（无可对齐关键帧），仅可播放"}
+                  : kfErr ? "无法读取裁剪时间轴" : kf ? "录制太短（无可对齐关键帧）" : "正在读取裁剪时间轴…"}
             </span>
             <button type="button" className="rec-pv-btn" disabled={!sel} onClick={() => setSel(null)}>
               重置
@@ -271,9 +275,11 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
         )}
       </div>
 
-      {err || kfErr ? (
+      {videoErr ? <button type="button" className="rec-pv-btn" onClick={() => recOpenFile(data.path).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))}>用系统播放器打开</button> : null}
+
+      {err || kfErr || videoErr || kf?.warning ? (
         <div className="rec-pv-err" role="alert">
-          {err ?? kfErr}
+          {[err, kfErr, videoErr, kf?.warning].filter(Boolean).join("；")}
         </div>
       ) : null}
 

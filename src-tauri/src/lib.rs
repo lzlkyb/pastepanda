@@ -45,17 +45,22 @@ mod logging;
 pub mod markdown;
 mod mask;
 pub mod mcp;
+#[cfg(target_os = "macos")]
+mod macos;
 mod paste_engine;
 mod paste_target;
 // 贴图窗口整个建在 windows 原生 API 上（HWND/点击穿透/DWM），32 处原生调用，
 // 手机 RC 客户端无贴图概念——模块级门控，不为它逐点写 32 个空壳。
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
+mod pinned_window;
+#[cfg(target_os = "macos")]
+#[path = "macos/pinned.rs"]
 mod pinned_window;
 mod quick_paste;
 mod screenshot;
 // 屏幕录制（本地写 MP4）。依赖 DXGI/MF，Windows 桌面专属——与贴图（pinned_window）
 // 同样的门控思路，但不共用 cfg(desktop)：macOS/Linux 没有整条 Media Foundation 链。
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod rec;
 mod stack_hud;
 mod stack_hud_pos;
@@ -1329,49 +1334,49 @@ pub fn run() {
             screenshot::arm_longshot_guard,
             screenshot::disarm_longshot_guard,
             screenshot::longshot_heartbeat,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_toggle,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_start,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_stop,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_pause,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_status,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_virtual_screen,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_ready,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_close_windows,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_rerecord,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_take_rerecord,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_hud_take,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_list_files,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_delete_file,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_open_file,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_reveal,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_keyframes,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_trim,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_open_preview,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_preview_take,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_start,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_status,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_cancel,
             screenshot::snap_window_at,
             screenshot::enum_window_rects,
@@ -1648,8 +1653,16 @@ pub fn run() {
             commands::note_list_auto,
             commands::note_count_auto,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            match _event {
+                tauri::RunEvent::Opened { urls } => macos::open::open_documents(_app, urls),
+                tauri::RunEvent::Ready => macos::open::open_documents(_app, Vec::new()),
+                _ => {}
+            }
+        });
 }
 
 /// 窗口状态位的守卫：这套断言是防「有人顺手把 DECORATIONS 加回来」的。

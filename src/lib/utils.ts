@@ -946,6 +946,113 @@ export function clampRcFloatingMousePosition(x: number, y: number, width: number
   };
 }
 
+const HOTKEY_ALIASES: Record<string, string> = { control: "ctrl", option: "alt", command: "meta", cmd: "meta", super: "meta", win: "meta" };
+/** Canonical modifier aliases for conflict detection. */
+export function normalizeHotkeyCombo(combo: string): string {
+  const parts = combo.toLowerCase().split("+").map((p) => HOTKEY_ALIASES[p.trim()] ?? p.trim()).filter(Boolean);
+  const order = ["ctrl", "alt", "shift", "meta"];
+  return [...order.filter((m) => parts.includes(m)), ...parts.filter((p) => !order.includes(p))].join("+");
+}
+export function formatHotkey(combo: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  if (!combo?.trim()) return "未设置";
+  const mac = /mac/i.test(platform);
+  const labels: Record<string, string> = {
+    ctrl: mac ? "Control" : "Ctrl", alt: mac ? "Option" : "Alt", shift: "Shift", meta: mac ? "Command" : "Win",
+    printscreen: "PrtSc", scrolllock: "ScrollLock", pause: "Pause",
+  };
+  return combo.split("+").map((p) => p.trim()).filter(Boolean).map((p) => {
+    const key = HOTKEY_ALIASES[p.toLowerCase()] ?? p.toLowerCase();
+    return labels[key] ?? (/^f\d{1,2}$/i.test(key) || key.length === 1 ? key.toUpperCase() : key.charAt(0).toUpperCase() + key.slice(1));
+  }).join(" + ");
+}
+/** Modified shortcuts use physical letter/digit codes, including Option-generated glyphs. */
+export function hotkeyMainKey(event: { key: string; code: string; ctrlKey: boolean; altKey: boolean; metaKey: boolean }, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  if (/mac/i.test(platform) && (event.ctrlKey || event.altKey || event.metaKey)) {
+    if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+    if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  }
+  return event.key;
+}
+
+/** Search handlers accept Command on Mac and Control elsewhere. */
+export function primaryShortcutLabel(key: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  return formatHotkey(`${/mac/i.test(platform) ? "meta" : "ctrl"}+${key}`, platform).replace(/ \+ /g, "+");
+}
+
+export function primarySearchShortcut(platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  return primaryShortcutLabel("f", platform);
+}
+
+/** Window commands accept both Control and Command; global bindings remain physical. */
+export function primaryModifierHeld(event: { ctrlKey: boolean; metaKey?: boolean }): boolean {
+  return event.ctrlKey || !!event.metaKey;
+}
+
+/** Undefined may use a default; a configured empty binding is disabled. */
+export function activeConfiguredHotkey(value: string | undefined, fallback?: string): string | undefined {
+  return (value ?? fallback)?.trim() || undefined;
+}
+
+export function configuredShortcutLabel(value: string | undefined, fallback: string, platform = typeof navigator === "undefined" ? "" : navigator.platform): string {
+  const combo = activeConfiguredHotkey(value, fallback);
+  return combo ? formatHotkey(combo, platform).replace(/ \+ /g, "+") : "已禁用";
+}
+
+/** A configured empty string disables the shortcut; never substitute a default badge. */
+export function toolShortcutLabel(
+  key: string,
+  fallback: string | undefined,
+  config: { sequential_hotkey?: string; rec_hotkey?: string },
+  platform = typeof navigator === "undefined" ? "" : navigator.platform,
+): string | undefined {
+  const raw = key === "sequential" ? config.sequential_hotkey
+    : key === "screenrec" ? config.rec_hotkey : fallback;
+  const selected = activeConfiguredHotkey(raw, fallback);
+  if (!selected) return undefined;
+  if (key === "diffedit") return primaryShortcutLabel("shift+d", platform);
+  return formatHotkey(selected, platform).replace(/ \+ /g, "+");
+}
+
+/** Claude Desktop 的探测和写入使用同一平台路径。 */
+export function claudeDesktopPaths(platform = typeof navigator === "undefined" ? "" : navigator.platform) {
+  const detectPath = /mac/i.test(platform)
+    ? "~/Library/Application Support/Claude"
+    : "~/AppData/Roaming/Claude";
+  return { detectPath, configPath: `${detectPath}/claude_desktop_config.json` };
+}
+
+/** Mac capture pixels use primary density; a spanning WebView can have a different backing DPR. */
+export function capturePixelRatio(
+  physicalWidth: number | undefined,
+  cssWidth = typeof window === "undefined" ? 0 : window.innerWidth,
+  backingRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+  platform = typeof navigator === "undefined" ? "" : navigator.platform,
+): number {
+  const ratio = Number(physicalWidth) / cssWidth;
+  return /Mac/i.test(platform) && Number.isFinite(ratio) && ratio > 0 && cssWidth > 0
+    ? ratio : backingRatio;
+}
+
+/** WebKit may omit JSON error positions. Preserve the error without inventing a line. */
+export function validateJson(text: string): { valid: boolean; line?: number; position?: number; message?: string; value?: unknown } {
+  try {
+    return { valid: true, value: JSON.parse(text) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const positionMatch = message.match(/position (\d+)/);
+    const lineMatch = message.match(/\(line (\d+)/);
+    const position = positionMatch ? Math.min(text.length, Number(positionMatch[1])) : undefined;
+    const line = lineMatch ? Number(lineMatch[1]) : position !== undefined ? text.slice(0, position).split("\n").length : undefined;
+    return { valid: false, position, line, message };
+  }
+}
+
+export function jsonValidationLabel(text: string, validation: ReturnType<typeof validateJson>): string {
+  if (!text.trim()) return "等待输入";
+  if (validation.valid) return "✓ 有效";
+  return validation.line ? `✕ 第 ${validation.line} 行错误` : "✕ JSON 格式错误";
+}
+
 /** Native collection returns verified portable refs; never interpolate arbitrary URI Markdown. */
 export function knowledgeCollectedContent(text: string, images: string[], existing = "") {
   const references = [...new Set(images)].filter(src => /^pp-asset:[a-f0-9]{32}\.(?:png|jpe?g|gif|webp|bmp|ico)$/i.test(src));

@@ -1,3 +1,5 @@
+import styles from "./ItemEditorDialog.module.css";
+import { primaryShortcutLabel } from "@/lib/utils";
 import { useRef, useState, useCallback, useEffect, Suspense, type ComponentType } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, ClipboardPaste, Bookmark } from "lucide-react";
@@ -145,7 +147,7 @@ function EditorShell({ def, item, onClose }: { def: ShellEditorDefinition; item:
 
             {/* Footer */}
             <div className="dialog-footer">
-              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Ctrl+Enter 保存 · Esc 取消</span>
+              <span className={styles.saveHint}>{primaryShortcutLabel("enter")} 保存 · Esc 取消</span>
               <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
                 {def.footer.map((action) => {
                   const btn = FOOTER_BTNS[action];

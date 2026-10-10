@@ -7,7 +7,7 @@ import os from "os";
 // 自带几百个测试）；design/ 是 HTML 设计稿目录，里面的 motion.test.cjs 之类
 // 是稿件脚本不是本仓测试。vitest 默认只排 node_modules/dist，不排它们会把
 // 无关文件扫进本仓 run，pre-push 直接被判挂。
-const GENERIC_EXCLUDE = ["**/node_modules/**", "**/dist/**", "**/.cache/**", "design/**"];
+const GENERIC_EXCLUDE = ["**/node_modules/**", "**/dist/**", "**/.cache/**", "**/target/**", "**/target-macos/**", "**/target-macos-intel/**", "**/target-android/**", "design/**"];
 
 // 并发上限的内存档，理由见下面 test.maxWorkers。
 const MAX_WORKERS = 10;
@@ -52,6 +52,9 @@ const DOM_NEEDED_TS: string[] = [
   "src/__tests__/storageMigration.test.ts",
   "src/__tests__/theme.test.ts",
   "src/__tests__/useFirstTimeTip.test.ts",
+  "src/hooks/useRcAudio.test.ts",
+  "src/hooks/useRcSessionAudio.test.ts",
+  "src/lib/rcAudio.test.ts",
   "src/hooks/useRcBackgroundPause.test.ts",
   "src/hooks/useRcClipboardAuto.test.ts",
   "src/hooks/useRcFrames.gate.test.ts",

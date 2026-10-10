@@ -42,6 +42,13 @@ afterEach(async () => {
   // 长截图是本文件里唯一带长异步链的流程：采样循环 → 恢复窗口 → 合成 → OCR。
   // 不在这里排空的话，上一条用例遗留的收尾会在下一条 beforeEach 重置计数器**之后**才落地，
   // 被记到新计数器上 —— 表现为"只恢复一次"莫名其妙数到 2。先 flush 再卸载，归属就对了。
+  // A sampling loop may still be sleeping after an early-return assertion.
+  // Wait for its actual restoration before resetting IPC counters for the next case.
+  await env.emitBackend(LONGSHOT_CONTROL, "abort");
+  for (let i = 0; i < 60 && env.countInvoke("hide_screenshot_window") > env.countInvoke("show_screenshot_window"); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await flush(2);
+  }
   await flush(4);
   cleanup();
   cleanupShotEnv();

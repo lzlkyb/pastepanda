@@ -363,6 +363,7 @@ describe("TodoIsland 舞台机", () => {
     );
     const container = await renderIslandLoaded((c) => expect(c.textContent).toContain("到点了"));
     expect(container.textContent).toContain("回邮件给张工");
+    expect(rootEl(container).getAttribute("data-st")).toBe("pill");
     // 胶囊 32px 高只装得下一句话：下一条待办不许跟着拼上来（正断言在上面先证明数据已落地，
     // 否则空态首帧会让这条负断言「假通过」）
     expect(container.textContent).not.toContain("交材料");

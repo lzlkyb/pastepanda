@@ -1,0 +1,97 @@
+name: macOS architecture regression
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feature/kynnzhou-dev']
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/macos-*.mjs'
+      - 'scripts/macos-av1/**'
+      - 'scripts/macos-av1-sources.json'
+      - 'scripts/*updater*.mjs'
+      - '.github/workflows/macos-acceptance.yml'
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/macos-*.mjs'
+      - 'scripts/macos-av1/**'
+      - 'scripts/macos-av1-sources.json'
+      - 'scripts/*updater*.mjs'
+      - '.github/workflows/macos-acceptance.yml'
+permissions:
+  contents: read
+jobs:
+  updater-key:
+    if: github.repository == 'lzlkyb/pastepanda' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Verify existing updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: node scripts/check-updater-key.mjs
+  backend:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Verify runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          sw_vers
+      - name: Build and independently decode software AV1 fixtures
+        env:
+          EXPECTED_ARCH: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake nasm
+          python3 -m pip install --target .cache/av1-decoder imageio-ffmpeg==0.6.0
+          node scripts/macos-av1-build.mjs --arch "$EXPECTED_ARCH" 2>&1 | tee av1-build.log
+          export PASTEPANDA_AV1_DECODER="$(PYTHONPATH="$PWD/.cache/av1-decoder" python3 -c 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())')"
+          npm run macos:av1:test 2>&1 | tee av1-fixtures.log
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          export CARGO_TARGET_DIR="$PWD/src-tauri/target-macos"
+          PASTEPANDA_TEST_AV1=1 cargo test --manifest-path src-tauri/Cargo.toml macos::av1::tests 2>&1 | tee av1-rust.log
+      - name: Native fixture probes and Rust regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          export CARGO_TARGET_DIR="$PWD/src-tauri/target-macos"
+          npm run macos:test:native 2>&1 | tee native-probes.log
+          PASTEPANDA_TEST_AV1=1 cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | tee rust-tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-regression-${{ matrix.runner }}
+          path: |
+            native-probes.log
+            rust-tests.log
+            av1-build.log
+            av1-fixtures.log
+            av1-rust.log

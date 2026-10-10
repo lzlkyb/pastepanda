@@ -9,17 +9,19 @@
  * `close()`，WebView 一直活着——不门住就是 25 次/秒的隐藏 IPC 空转。恢复可见后
  * 重建 player 继续播（旧游标/解码器在隐藏期已作废，重建比续接干净）。
  */
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useWindowVisible } from "@/hooks/useWindowVisible";
 import { rcDrainAudio } from "@/lib/api/rc";
 import { RcAudioPlayer } from "@/lib/rcAudio";
 
-export function useRcAudio(sessionId: string, on: boolean) {
+export function useRcAudio(sessionId: string, on: boolean, onError?: (message: string) => void) {
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
   const visible = useWindowVisible();
   useEffect(() => {
-    if (!on || !visible) return;
-    const player = new RcAudioPlayer();
+    if (!sessionId || !on || !visible) return;
     let alive = true;
+    const player = new RcAudioPlayer((message) => { if (alive) onErrorRef.current?.(message); });
     const tick = () => {
       if (!alive) return;
       void rcDrainAudio()

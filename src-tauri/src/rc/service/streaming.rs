@@ -93,11 +93,14 @@ impl RcService {
                     ));
                 }
             }
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(target_os="macos")]
             {
-                let _ = min_hz;
-                return Err(format!("{quality} 档仅支持 Windows"));
+                let opts=self.stream_opts_snapshot();
+                let(hz,high)=crate::rc::mac_video::scope_support(opts.monitor,opts.virtual_screen);
+                if high==0 || hz<min_hz {return Err(format!("{quality} 档需要单屏纹理采集、硬件 H.264 编码和 ≥{min_hz}Hz 刷新率；当前 {hz}Hz"));}
             }
+            #[cfg(not(any(target_os="windows",target_os="macos")))]
+            {let _=min_hz;return Err(format!("{quality} 档需要支持硬件编码的电脑"));}
         }
         // Q4：uhd60 要求 HEVC 硬编——4K60 的 H.264 需要 L5.2（多数解码端跑不动
         // 或兼容性差），HEVC L5.1 即覆盖且同画质省一半带宽。没有 HEVC MFT 就
@@ -113,10 +116,10 @@ impl RcService {
                     return Err("本机没有硬件 HEVC 编码器，4K60 档不可用（H.264 无法稳定 4K60）".into());
                 }
             }
-            #[cfg(not(target_os = "windows"))]
-            {
-                return Err("4K60 档仅支持 Windows".into());
-            }
+            #[cfg(target_os="macos")]
+            {if !crate::rc::mac_video::hardware_available(true){return Err("本机没有可用硬件 HEVC 编码器，4K60 档不可用".into());}}
+            #[cfg(not(any(target_os="windows",target_os="macos")))]
+            {return Err("4K60 档需要支持硬件编码的电脑".into());}
         }
         self.stream.set_quality(quality)?;
         // 🔴 复测 B（2026-10-06）的教训：这条路径是全仓唯一能在会话中关掉自动档的

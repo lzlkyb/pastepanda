@@ -52,10 +52,10 @@ pub async fn capture_screen() -> Result<ScreenCapture, String> {
             .await
             .map_err(|e| format!("截图任务失败: {e}"))?
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Err("截图功能目前仅支持 Windows".to_string())
-    }
+    #[cfg(target_os = "macos")]
+    { tokio::task::spawn_blocking(crate::macos::screen::capture_screen).await.map_err(|e|format!("截图任务失败: {e}"))? }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { Err("当前平台尚未支持截图".into()) }
 }
 
 /// 捕获屏幕上的一个矩形区域（物理像素，屏幕坐标）。
@@ -136,11 +136,10 @@ pub async fn capture_region(
             }
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (app, x, y, w, h);
-        Err("截图功能目前仅支持 Windows".to_string())
-    }
+    #[cfg(target_os = "macos")]
+    { let _=app; tokio::task::spawn_blocking(move || crate::macos::screen::capture(x,y,w,h)).await.map_err(|e|format!("截图任务失败: {e}"))? }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=(app,x,y,w,h); Err("当前平台尚未支持截图".into()) }
 }
 
 #[cfg(target_os = "windows")]
@@ -290,7 +289,9 @@ pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
     Ok(ctx.list)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> { crate::macos::screen::monitors() }
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn list_monitors() -> Result<Vec<MonitorInfo>, String> {
     Err("多屏枚举目前仅支持 Windows".into())
 }
@@ -597,7 +598,11 @@ pub fn open_screenshot_window(app: &AppHandle) {
         // 常驻窗口可能跨越显示器/DPI 变化（隐藏期间虚拟屏参数可能变），
         // show 前按当前虚拟屏重设尺寸与位置（物理像素），避免错位/残留尺寸。
         let (w, h, x, y) = virtual_screen_metrics();
+        #[cfg(target_os="macos")]
+        let _=crate::macos::screen::place_window(&window,x,y,w.max(1) as u32,h.max(1) as u32);
+        #[cfg(not(target_os="macos"))]
         let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+        #[cfg(not(target_os="macos"))]
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         let _ = window.show();
         let _ = window.set_focus();
@@ -747,8 +752,12 @@ fn create_window(app: &AppHandle) {
                 // 在 show() 之前改完，用户看不到中间那一帧。
                 // 用物理坐标而不是在 builder 里除以 scale_factor：build 前拿不到目标
                 // 显示器的 scale，且多屏混合 DPI 时没有单一 scale 可用，物理坐标唯一。
-                let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
-                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                #[cfg(target_os="macos")]
+        let _=crate::macos::screen::place_window(&window,x,y,w.max(1) as u32,h.max(1) as u32);
+        #[cfg(not(target_os="macos"))]
+        let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
+                #[cfg(not(target_os="macos"))]
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 let _ = window.show();
                 let _ = window.set_focus();
                 log::info!(
@@ -806,7 +815,11 @@ fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+fn virtual_screen_metrics() -> (i32,i32,i32,i32) {
+    crate::macos::screen::desktop().map(|m|(m.w,m.h,m.x,m.y)).unwrap_or((0,0,0,0))
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
     (1920, 1080, 0, 0)
 }
@@ -850,10 +863,10 @@ pub fn get_cursor_pos() -> (i32, i32) {
         }
         (pt.x, pt.y)
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        (0, 0)
-    }
+    #[cfg(target_os = "macos")]
+    { crate::macos::screen::cursor() }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { (0,0) }
 }
 
 /// 截图自动框选光标所在窗口的开关（设置页可关，默认开）
@@ -1295,12 +1308,18 @@ pub async fn open_longshot_status(
 
     // 窗口建好后才能读 scale_factor，拿它把逻辑尺寸换算成物理尺寸，
     // 才能与选区（物理像素）做相交判断。
+    #[cfg(target_os="macos")]
+    let scale=crate::macos::screen::primary_scale();
+    #[cfg(not(target_os="macos"))]
     let scale = window.scale_factor().unwrap_or(1.0);
     let pw = (LONGSHOT_W * scale).round() as i32;
     let ph = (LONGSHOT_H * scale).round() as i32;
 
     match pick_status_pos((x, y, w, h), (scx, scy, scw, sch), pw, ph, 16) {
         Some((px, py)) => {
+            #[cfg(target_os="macos")]
+            let _=crate::macos::screen::position_window(&window,px,py);
+            #[cfg(not(target_os="macos"))]
             let _ = window.set_position(tauri::PhysicalPosition::new(px, py));
             let _ = window.show();
             log::info!("[Screenshot] 长截图状态窗 @({},{}) {}x{}", px, py, pw, ph);
@@ -1959,7 +1978,7 @@ pub fn open_pinned_edit(app: tauri::AppHandle, path: String) {
 
 /// 吸附矩形（物理像素，虚拟屏幕坐标）。
 /// 字段都是单词，目前不受命名影响；加上 rename_all 是为了以后添多词字段时不再踩同一个坑。
-#[derive(serde::Serialize, Clone, Copy, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapRect {
     pub x: i32,
@@ -2092,11 +2111,10 @@ pub async fn snap_window_at(
         {
             snap_window_impl(&app, x, y)
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = (&app, x, y);
-            Ok(None)
-        }
+        #[cfg(target_os = "macos")]
+        { let _=app; crate::macos::screen::window_at(x,y) }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        { let _=(&app,x,y); Ok(None) }
     })
     .await
     .map_err(|e| format!("吸附窗口失败: {e}"))?
@@ -2118,12 +2136,10 @@ pub async fn enum_window_rects(
         {
             unsafe { enum_window_rects_impl(&app, &window) }
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = &app;
-            let _ = &window;
-            Ok(Vec::new())
-        }
+        #[cfg(target_os = "macos")]
+        { let _=(&app,&window); crate::macos::screen::window_rects() }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        { let _=(&app,&window); Ok(Vec::new()) }
     })
     .await
     .map_err(|e| format!("枚举窗口矩形失败: {e}"))?
@@ -2933,6 +2949,7 @@ mod snap_tests {
 /// `force_input = true` 时直接用 SendInput：部分应用（游戏、某些自绘制控件）只认
 /// 真实输入设备事件、不响应 PostMessage，前端发现画面没动时会带着这个标志重试一帧，
 /// 避免把「注入方式不被接受」误判成「已滚到底」。
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn send_mouse_wheel(
     x: i32,
@@ -2949,11 +2966,8 @@ pub fn send_mouse_wheel(
             send_wheel_via_post(x, y, delta).or_else(|_| send_wheel_via_input(x, y, delta))
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (x, y, delta, force_input);
-        Err("长截图功能目前仅支持 Windows".to_string())
-    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=(x,y,delta,force_input); Err("当前平台尚未支持长截图滚动".into()) }
 }
 
 /// 不动光标的滚轮注入：把 WM_MOUSEWHEEL 直接 Post 给坐标下的窗口。
@@ -3285,6 +3299,7 @@ pub fn get_scroll_range(x: i32, y: i32) -> Result<Option<ScrollRangeOut>, String
 /// 用它一次性把画面推到目标位置。放在后端循环而不是前端调 N 次：
 /// 一是省 N-1 轮 IPC，二是两条注入路径（WM_VSCROLL / WM_MOUSEWHEEL）能成对地发，
 /// 不会因为前端分次调用而错开。
+#[cfg(not(target_os = "macos"))]
 #[tauri::command]
 pub fn scroll_longshot(
     x: i32,
@@ -3347,11 +3362,8 @@ pub fn scroll_longshot(
             }
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (x, y, delta, force_input, repeat);
-        Err("长截图功能目前仅支持 Windows".to_string())
-    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=(x,y,delta,force_input,repeat); Err("当前平台尚未支持长截图滚动".into()) }
 }
 
 #[cfg(test)]
@@ -3706,4 +3718,20 @@ mod encode_bench {
 
         println!("\n参考：截图窗打开是即时路径，用户可感知阈值约 300ms（含 grab {grab_ms:.0}ms）");
     }
+}
+
+// Native activation waits on AppKit; keep it off the UI/IPC thread on macOS.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn send_mouse_wheel(x:i32,y:i32,delta:i32,force_input:Option<bool>)->Result<(),String> {
+    let _=force_input;
+    tokio::task::spawn_blocking(move || crate::macos::scroll::scroll(x,y,delta,None))
+        .await.map_err(|e|format!("滚动任务失败: {e}"))?
+}
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn scroll_longshot(x:i32,y:i32,delta:i32,force_input:Option<bool>,repeat:Option<i32>)->Result<(),String> {
+    let _=force_input;
+    tokio::task::spawn_blocking(move || crate::macos::scroll::scroll(x,y,delta,repeat))
+        .await.map_err(|e|format!("滚动任务失败: {e}"))?
 }

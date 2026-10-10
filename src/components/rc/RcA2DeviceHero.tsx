@@ -88,6 +88,7 @@ export function RcA2DeviceHero({
               autoFocus
               onChange={(event) => onDraftName(event.target.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                 if (event.key === "Enter") onSaveName();
                 if (event.key === "Escape") onEditCancel();
               }}

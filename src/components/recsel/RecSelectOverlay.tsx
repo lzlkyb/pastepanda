@@ -1,3 +1,4 @@
+import { capturePixelRatio } from "@/lib/utils";
 /**
  * RecSelectOverlay — 录屏选区覆盖层（全屏透明窗，rec.html 入口）。
  *
@@ -23,17 +24,19 @@
  * 画质声音浮层在 RecSettingsCluster，矩形工具在 snap。
  */
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   recCloseWindows,
   recGetScreen,
   recReady,
   recStart,
+  recStop,
   recTakeRerecord,
   type RecQualityKey,
   type RecScreenInfo,
 } from "@/lib/api/rec";
+import { startRecordingWithWatchdog } from "@/lib/recStartGuard";
 import { recQualityOf, type RecQualityItem } from "@/lib/recQuality";
 import { normalizeEven, type Rect } from "./snap";
 import { ConfirmBar, CountdownOverlay, PreviewBar, recTargetReadout, TargetFrames } from "./RecOverlayParts";
@@ -66,7 +69,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
       if (new URLSearchParams(window.location.search).get("mode") === "rerecord") {
         void recTakeRerecord().then((plan) => {
           if (!plan) return;
-          const dpr = window.devicePixelRatio || 1;
+          const dpr = capturePixelRatio(s.width);
           setQuality(recQualityOf(plan.quality));
           setSysAudio(plan.sysAudio);
           setMicAudio(plan.micAudio);
@@ -80,7 +83,8 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
           setPhase("countdown");
         });
       }
-    }).catch(() => {
+    }).catch((error) => {
+      void emit("rec-failed", { message: String(error), hud: false });
       // 几何都拿不到 = 覆盖层完全无法工作。不能留一个「看不见但吃点击」的
       // 透明全屏窗，直接自关（用户重按热键即可重试）。
       void recCloseWindows();
@@ -93,8 +97,10 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     // hook 返回值的稳定性，须显式列出
   }, [config, setRect]);
 
-  /** 当前生效的选区（CSS 坐标）。预览态/未落子 = 整屏（遮罩零面积 = 不压暗，设计稿 §1）。 */
-  const dpr = window.devicePixelRatio || 1;
+  /** 当前生效的选区（CSS 坐标）。预览态/未落子 = 整屏（遮罩零面积 = 不压暗，设计稿 §1）。
+   *  screen 是物理像素，÷dpr 转 CSS；dpr 统一走 capturePixelRatio（多屏混合缩放取屏参，
+   *  不用 window.devicePixelRatio——那只是当前窗所在屏的比值）。 */
+  const dpr = capturePixelRatio(screen?.width);
   const fullscreen: Rect | null = screen
     ? { x: 0, y: 0, w: screen.width / dpr, h: screen.height / dpr }
     : null;
@@ -140,10 +146,9 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     if (!screen || !activeRect) return;
     try {
       // CSS → 物理：后端吃虚拟屏物理像素（宽高对齐偶数，编码器 4:2:0 要求）。
-      // 8s 看门狗：rec_start 万一在后端卡住（任何未知原因），不能把用户冻死在
-      // 倒计时层——恢复交互报错，重试 / 重画 / Esc 全部可用。
-      await Promise.race([
-        recStart({
+      // 超时的 invoke 仍会运行；先请求停止保存，避免留下后台录制。
+      await startRecordingWithWatchdog(
+        () => recStart({
           x: screen.originX + Math.round(activeRect.x * dpr),
           y: screen.originY + Math.round(activeRect.y * dpr),
           w: Math.max(16, Math.round(activeRect.w * dpr) & ~1),
@@ -152,8 +157,8 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
           sysAudio,
           micAudio,
         }),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("启动录制超时，请重试")), 8000)),
-      ]);
+        () => recStop(false),
+      );
       // 整窗鼠标穿透：录制中画面零遮挡，出口只剩控制条（独立窗）。
       // 🔴 此后本窗的一切收尾归后端（session::start 的权威收尾）——
       // 这里不再有 failed 态，异步失败连着本窗销毁一起发生。

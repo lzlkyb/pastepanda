@@ -19,6 +19,8 @@ import {
   type RecFileMeta,
 } from "@/lib/api/rec";
 import styles from "./RecRecentList.module.css";
+import { useAppStore } from "@/stores/appStore";
+import { toolShortcutLabel } from "@/lib/utils";
 import tbStyles from "../ToolboxView.module.css";
 
 function fmtSize(bytes: number): string {
@@ -33,6 +35,8 @@ function fmtDur(ms: number | null): string {
 }
 
 export function RecRecentList() {
+  const recordingKey = useAppStore((s) => s.config.rec_hotkey);
+  const recordingLabel = toolShortcutLabel("screenrec", undefined, { rec_hotkey: recordingKey });
   const [items, setItems] = useState<RecFileMeta[] | null>(null);
   const [actErr, setActErr] = useState<string | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
@@ -51,8 +55,10 @@ export function RecRecentList() {
   useEffect(() => {
     load();
     const un = listen("rec-done", load);
+    const changed = listen("rec-files-changed", load);
     return () => {
       void un.then((f) => f());
+      void changed.then((f) => f());
     };
   }, [load]);
 
@@ -107,7 +113,7 @@ export function RecRecentList() {
         <div className={styles.empty}>
           还没有录制。
           <br />
-          按 <kbd>Ctrl+Alt+R</kbd> 或点上方「屏幕录制」开始第一段。
+          {recordingLabel ? <>按 <kbd>{recordingLabel}</kbd> 或</> : null}点击上方「屏幕录制」开始第一段。
         </div>
       </div>
     );

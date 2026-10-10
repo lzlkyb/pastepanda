@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { appDataDir, join } from "@tauri-apps/api/path";
+import { configuredShortcutLabel, primaryShortcutLabel } from "@/lib/utils";
+import { useState, useEffect } from "react";
 import { ChevronRight } from "lucide-react";
 import { AppConfig } from "@/stores/appStore";
 import helpStyles from "../Help.module.css";
@@ -7,9 +9,7 @@ import helpStyles from "../Help.module.css";
 
 function KeyCaps({ value }: { value: string }) {
   const parts = value.split("+").map((p) => {
-    const t = p.trim();
-    if (t.length === 1) return t.toUpperCase();
-    return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+    return p.trim();
   });
   return (
     <span className={helpStyles.hKey}>
@@ -51,12 +51,12 @@ function Collapse({ icon, title, defaultOpen, children }: {
   const [open, setOpen] = useState(defaultOpen ?? false);
   return (
     <div className={`${helpStyles.collapse}${open ? ` ${helpStyles.collapseOpen}` : ""}`}>
-      <div className={helpStyles.collapseHeader} onClick={() => setOpen(!open)}>
+      <button type="button" className={helpStyles.collapseHeader} aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>{icon}</span>
         <span>{title}</span>
         <ChevronRight size={11} className={helpStyles.collapseArrow} />
-      </div>
-      <div className={helpStyles.collapseBody}>
+      </button>
+      <div className={helpStyles.collapseBody} inert={!open} aria-hidden={!open}>
         <div className={helpStyles.collapseInner}>{children}</div>
       </div>
     </div>
@@ -81,29 +81,29 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
 /* ─── 静态数据 ─── */
 
 const QUICK_STEPS = [
-  { icon: "📋", title: "复制内容", desc: "在任意应用中 Ctrl+C，PastePanda 自动记录" },
-  { icon: "⌨️", title: "热键唤出", desc: "Ctrl+Alt+V 打开窗口，搜索或浏览历史" },
+  { icon: "📋", title: "复制内容", desc: "使用系统复制快捷键，PastePanda 自动记录" },
+  { icon: "⌨️", title: "热键唤出", desc: "按已配置的唤出热键，或从托盘打开窗口" },
   { icon: "🚀", title: "粘贴到目标", desc: "选中记录按 Enter，直接粘贴到前台应用" },
 ];
 
 const FEATURES = [
-  { icon: "📋", bg: "linear-gradient(135deg,#3B82F6,#0078D4)", name: "剪贴板历史", desc: "自动记录文本/图片/文件，拼音搜索 + 类型筛选 + 标签分类", path: "主界面自动展示" },
-  { icon: "📚", bg: "linear-gradient(135deg,#8B5CF6,#5856D6)", name: "粘贴栈", desc: "连续收集多条内容，再逐条或全部粘贴到目标窗口", path: "Ctrl+Alt+K 开启 → 复制多条 → Ctrl+Alt+P 粘贴" },
-  { icon: "🔀", bg: "linear-gradient(135deg,#F59E0B,#D97706)", name: "变换枢纽", desc: "41 种变换按内容类型智能推荐：编解码 / SQL / 日志 / 文本 / 配置", path: "右键记录 → 变换" },
-  { icon: "🖥️", bg: "linear-gradient(135deg,#10B981,#059669)", name: "全屏编辑器", desc: "CodeMirror 多语法高亮 + Markdown 实时预览 + 行号", path: "右键 → 全屏编辑 / 双击记录" },
-  { icon: "🔄", bg: "linear-gradient(135deg,#EC4899,#BE185D)", name: "配置工具箱", desc: "Properties/YAML/JSON 互转 + 跨格式语义对比 + 批量替换", path: "顶栏工具箱 → 配置转换 / 配置对比" },
-  { icon: "🔡", bg: "linear-gradient(135deg,#06B6D4,#0891B2)", name: "编码转换", desc: "自动检测 GBK/Big5/Shift_JIS 等编码，一键转 UTF-8", path: "顶栏工具箱 → 编码转换" },
-  { icon: "📤", bg: "linear-gradient(135deg,#84CC16,#65A30D)", name: "数据导出", desc: "历史记录导出为 Excel / CSV / JSON，支持筛选后导出", path: "顶栏工具箱 → 导出" },
-  { icon: "🌐", bg: "linear-gradient(135deg,#6366F1,#4F46E5)", name: "剪贴板同步", desc: "同一局域网内 AES-256-GCM 加密同步文本/图片/文件", path: "设置 → 剪贴板同步 → 开启" },
-  { icon: "📝", bg: "linear-gradient(135deg,#F97316,#EA580C)", name: "片段库", desc: "常用文本模板 + 动态变量（日期/剪贴板/UUID）", path: "顶栏工具箱 → 片段库" },
-  { icon: "🔤", bg: "linear-gradient(135deg,#EF4444,#DC2626)", name: "正则替换", desc: "粘贴时自动应用正则规则（去空行/脱敏/URL解码等）", path: "设置 → 正则规则 → 启用" },
+  { icon: "📋", name: "剪贴板历史", desc: "自动记录文本/图片/文件，拼音搜索 + 类型筛选 + 标签分类", path: "主界面自动展示" },
+  { icon: "📚", name: "粘贴栈", desc: "连续收集多条内容，再逐条或全部粘贴到目标窗口", path: "主界面收集模式 → 复制多条 → 粘贴栈" },
+  { icon: "🔀", name: "变换枢纽", desc: "41 种变换按内容类型智能推荐：编解码 / SQL / 日志 / 文本 / 配置", path: "右键记录 → 变换" },
+  { icon: "🖥️", name: "全屏编辑器", desc: "CodeMirror 多语法高亮 + Markdown 实时预览 + 行号", path: "右键 → 全屏编辑 / 双击记录" },
+  { icon: "🔄", name: "配置工具箱", desc: "Properties/YAML/JSON 互转 + 跨格式语义对比 + 批量替换", path: "右键记录 → 变换；工具 → 配置对比" },
+  { icon: "🔡", name: "编码转换", desc: "检测并批量转换文本文件编码，自动保留备份", path: "工具 → 编码转换；文本编解码在右键记录 → 变换" },
+  { icon: "📤", name: "数据导出", desc: "历史记录导出为 Excel / CSV / JSON，支持筛选后导出", path: "设置 → 数据管理 → 导出" },
+  { icon: "🌐", name: "剪贴板同步", desc: "同一局域网内 AES-256-GCM 加密同步文本/图片/文件", path: "设置 → 同步与互联 → 剪贴板同步" },
+  { icon: "📝", name: "片段库", desc: "常用文本模板 + 动态变量（日期/剪贴板/UUID）", path: "工具 → 片段库" },
+  { icon: "🔤", name: "正则替换", desc: "粘贴时自动应用正则规则（去空行/脱敏/URL解码等）", path: "设置 → 正则规则 → 启用" },
 ];
 
 const FAQ_ITEMS = [
   { q: "全局热键不生效？", a: "检查热键是否被其他软件（输入法、截图工具等）占用。打开设置 → 快捷键 → 唤出窗口，重新绑定一个不冲突的组合。留空表示禁用该热键。" },
-  { q: "数据存储在哪里？", a: "所有数据保存在 %APPDATA%/PastePanda/pastepanda.db（SQLite 数据库）。卸载时不会自动删除，可手动备份或清理。" },
+  { q: "数据存储在哪里？", a: "数据库位于应用的实际数据目录，请通过数据管理备份。" },
   { q: "为什么某些复制内容没有出现？", a: "敏感内容防护会自动跳过匹配密钥/凭证模式的剪贴板内容（如 API Key、密码）。可在设置 → 复制与粘贴 → 敏感内容防护中关闭此功能。" },
-  { q: "局域网同步连不上？", a: "确认两台设备在同一子网内，Windows 防火墙已放行 PastePanda，且两端设置了相同的同步密钥。同步使用 UDP 广播发现 + TCP 传输。" },
+  { q: "局域网同步连不上？", a: "确认两台设备在同一子网内，两台电脑的防火墙均允许 PastePanda 通信，且两端设置了相同的同步密钥。同步使用 UDP 广播发现 + TCP 传输。" },
   { q: "怎么迁移数据到新电脑？", a: "在旧电脑打开设置 → 数据管理 → 导出（JSON），将文件拷贝到新电脑后导入。图片/文件类记录需要手动迁移对应文件。" },
   { q: "变换枢纽没有推荐任何变换？", a: "变换推荐依赖内容分类引擎的特征识别。过短的文本（少于几个字符）可能无法识别类型，此时可手动通过右键菜单 → 变换 选择需要的操作。" },
 ];
@@ -111,11 +111,17 @@ const FAQ_ITEMS = [
 /* ─── 主组件 ─── */
 
 export function HelpTabContent({ config }: { config: AppConfig; appName: string; appVersion: string }) {
-  const hotkeyShow = (config.hotkey as string) || "ctrl+alt+v";
-  const hotkeySeq = (config.sequential_hotkey as string) || "ctrl+alt+q";
-  const hotkeyStackToggle = (config.stack_toggle_hotkey as string) || "ctrl+alt+k";
-  const hotkeyStackPaste = (config.stack_paste_hotkey as string) || "ctrl+alt+p";
-  const hotkeyQuickPaste = (config.quick_paste_hotkey as string) || "alt+v";
+  const [databasePath, setDatabasePath] = useState("正在读取实际数据目录…");
+  useEffect(() => {
+    let active = true;
+    void appDataDir().then(dir => join(dir, "clipboard.db")).then(path => { if (active) setDatabasePath(path); }).catch(() => { if (active) setDatabasePath("无法读取数据目录，请到设置 → 数据管理检查备份"); });
+    return () => { active = false; };
+  }, []);
+  const hotkeyShow = configuredShortcutLabel(config.hotkey, "ctrl+alt+v");
+  const hotkeySeq = configuredShortcutLabel(config.sequential_hotkey, "ctrl+alt+q");
+  const hotkeyStackToggle = configuredShortcutLabel(config.stack_toggle_hotkey, "ctrl+alt+k");
+  const hotkeyStackPaste = configuredShortcutLabel(config.stack_paste_hotkey, "ctrl+alt+p");
+  const hotkeyQuickPaste = configuredShortcutLabel(config.quick_paste_hotkey, "alt+v");
 
   return (
     <div className={helpStyles.helpRoot}>
@@ -139,7 +145,7 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
           {FEATURES.map((f) => (
             <div key={f.name} className={helpStyles.featCard}>
               <div className={helpStyles.featTop}>
-                <span className={helpStyles.featIcon} style={{ background: f.bg }}>{f.icon}</span>
+                <span className={helpStyles.featIcon}>{f.icon}</span>
                 <span className={helpStyles.featName}>{f.name}</span>
               </div>
               <div className={helpStyles.featDesc}>{f.desc}</div>
@@ -153,10 +159,10 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
           <SubTitle>全局热键</SubTitle>
           <KeyRow desc="唤出 / 隐藏窗口" value={hotkeyShow} />
           <KeyRow desc="依次粘贴（逐条文本）" value={hotkeySeq} />
-          <KeyRow desc="索引粘贴第 N 条（栈内走队列）" value="Ctrl+Alt+1~9" isStatic />
+          <KeyRow desc="索引粘贴第 N 条（栈内走队列）" value={configuredShortcutLabel("ctrl+alt+1~9", "")} isStatic />
           <KeyRow desc="收集模式 开/关" value={hotkeyStackToggle} />
           <KeyRow desc="粘贴收集内容（栈顶）" value={hotkeyStackPaste} />
-          <KeyRow desc="快捷粘贴面板（类 Win+V）" value={hotkeyQuickPaste} />
+          <KeyRow desc="快捷粘贴面板" value={hotkeyQuickPaste} />
 
           <SubTitle>窗口内</SubTitle>
           <KeyRow desc="上下导航" value="↑ / ↓" isStatic />
@@ -165,19 +171,19 @@ export function HelpTabContent({ config }: { config: AppConfig; appName: string;
           <KeyRow desc="快速预览" value="Space" isStatic />
           <KeyRow desc="删除" value="Delete" isStatic />
           <KeyRow desc="转为知识库笔记" value="N" isStatic />
-          <KeyRow desc="置顶 / 取消置顶" value="Ctrl+D" />
-          <KeyRow desc="撤销删除" value="Ctrl+Z" />
-          <KeyRow desc="全选" value="Ctrl+A" />
-          <KeyRow desc="多选" value="Ctrl+Click" isStatic />
+          <KeyRow desc="置顶 / 取消置顶" value={primaryShortcutLabel("d")} />
+          <KeyRow desc="撤销删除" value={primaryShortcutLabel("z")} />
+          <KeyRow desc="全选" value={primaryShortcutLabel("a")} />
+          <KeyRow desc="多选" value={primaryShortcutLabel("Click")} isStatic />
           <KeyRow desc="范围选择" value="Shift+Click" isStatic />
-          <KeyRow desc="打开设置" value="Ctrl+S" />
+          <KeyRow desc="打开设置" value={primaryShortcutLabel("s")} />
           <KeyRow desc="分层关闭 / 隐藏窗口" value="Escape" isStatic />
         </Collapse>
 
         {/* ── 常见问题 ── */}
         <Collapse icon="❓" title="常见问题">
           {FAQ_ITEMS.map((f) => (
-            <FaqItem key={f.q} question={f.q} answer={f.a} />
+            <FaqItem key={f.q} question={f.q} answer={f.q === "数据存储在哪里？" ? `数据库为 ${databasePath}（SQLite）。卸载应用不会自动删除数据，请通过数据管理备份。` : f.q === "局域网同步连不上？" ? "确认两台设备在同一局域网，系统防火墙允许 PastePanda 通信，再检查两端同步配置和设备关系。" : f.a} />
           ))}
         </Collapse>
       </div>

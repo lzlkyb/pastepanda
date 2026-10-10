@@ -29,6 +29,9 @@ import {
 } from "@/lib/toolboxUsage";
 import { RecRecentList } from "@/components/recsel/RecRecentList";
 import styles from "./ToolboxView.module.css";
+import { useAppStore } from "@/stores/appStore";
+import { blocksPageShortcuts, isConfirmLayerPresent } from "@/lib/modalLayers";
+import { primarySearchShortcut, toolShortcutLabel } from "@/lib/utils";
 
 function ToolCard({
   tool,
@@ -74,6 +77,7 @@ function ToolCard({
 }
 
 export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
+  const config = useAppStore((s) => s.config);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
   const [recentKeys, setRecentKeys] = useState<ToolKey[]>(() => loadRecent());
@@ -86,6 +90,7 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
   /** Ctrl+F / `/` 聚焦筛选（与设置页同一心智；组件只在工具模式挂载） */
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
+      if (blocksPageShortcuts() || isConfirmLayerPresent()) return;
       const t = e.target as HTMLElement | null;
       const inField =
         !!t &&
@@ -109,8 +114,11 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
   }, []);
 
   const scopedGroups = useMemo(
-    () => filterGroupsByCategory(TOOLBOX_GROUPS, category),
-    [category],
+    () => filterGroupsByCategory(TOOLBOX_GROUPS, category).map((group) => ({
+      ...group,
+      items: group.items.map((tool) => ({ ...tool, shortcut: toolShortcutLabel(tool.key, tool.shortcut, config) })),
+    })),
+    [category, config],
   );
 
   const heroes = useMemo(
@@ -187,7 +195,7 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onSearchKeyDown}
-          placeholder="筛选工具…  Ctrl+F"
+          placeholder={`筛选工具…  ${primarySearchShortcut()}`}
           aria-label="筛选工具"
         />
         <div className={styles.chips} role="group" aria-label="工具分类">

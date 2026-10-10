@@ -4,7 +4,8 @@ use super::media::MediaWriter;
 use std::sync::atomic::AtomicU64;
 
 enum Payload {
-    H264 { p: crate::rc::encode_h264::H264Packet, sq: u32, ts: i64, cap: u16, enc: u16, codec: String },
+    #[cfg(any(target_os="windows",target_os="macos"))]
+    H264 { p: crate::rc::video_params::VideoPacket, sq: u32, ts: i64, cap: u16, enc: u16, codec: String },
     Jpeg(crate::rc::video::Encoded),
 }
 struct Job { generation: u64, queued: std::time::Instant, started_ms: u64, payload: Payload }
@@ -53,6 +54,7 @@ impl MediaPipe {
                     _ = worker_reset.notified() => { writer.discard_media_stream("generation-replaced-during-write"); true }
                     result = async {
                         match job.payload {
+                            #[cfg(any(target_os="windows",target_os="macos"))]
                             Payload::H264 { p, sq, ts, cap, enc, codec } =>
                                 writer.send_via_video_plane(&p, sq, ts, cap, enc, &codec, job.started_ms).await,
                             Payload::Jpeg(frame) => writer.send_jpeg_plane(&frame, job.started_ms).await,
@@ -134,11 +136,12 @@ impl InboundVideo {
         }
     }
 
-    pub(super) async fn send_via_video_plane(&mut self, p: &crate::rc::encode_h264::H264Packet,
+    #[cfg(any(target_os="windows",target_os="macos"))]
+    pub(super) async fn send_via_video_plane(&mut self, p: &crate::rc::video_params::VideoPacket,
         sq: u32, ts: i64, cap: u16, enc: u16, codec: &str) -> bool {
         self.ensure_media_pipe();
         self.media_pipe.as_ref().unwrap().send(Payload::H264 {
-            p: crate::rc::encode_h264::H264Packet { at_ms: p.at_ms, data: p.data.clone(), key: p.key, width: p.width, height: p.height },
+            p: crate::rc::video_params::VideoPacket { at_ms: p.at_ms, data: p.data.clone(), key: p.key, width: p.width, height: p.height },
             sq, ts, cap, enc, codec: codec.to_owned(),
         }, self.media_started_ms()).await
     }
@@ -180,10 +183,9 @@ mod tests {
     #[tokio::test]
     async fn pause_invalidates_queued_frame_even_when_resumed_before_worker_runs() {
         let (mut pipe, mut rx) = pipe();
-        assert!(pipe.send(Payload::H264 {
-            p: crate::rc::encode_h264::H264Packet { at_ms: 0, data: vec![1], key: true, width: 2, height: 2 },
-            sq: 0, ts: 0, cap: 0, enc: 0, codec: "h264".into(),
-        }, 0).await);
+        assert!(pipe.send(Payload::Jpeg(crate::rc::video::Encoded {
+            rect:None,refine:false,frame:crate::rc::video::VideoFrame{width:2,height:2,jpeg:vec![1],at_ms:0,full:true,rect:None,codec:crate::rc::video::FrameCodec::Jpeg,key:true,cap_ms:0,enc_ms:0}
+        }), 0).await);
         pipe.set_paused(true);
         pipe.set_paused(false);
         let job = rx.recv().await.unwrap();

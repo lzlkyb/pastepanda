@@ -35,9 +35,13 @@ function useVersionStatus() {
         return { label: "就绪", cls: "latest", dotCls: "green" };
       case "error":
         return { label: "错误", cls: "update", dotCls: "orange" };
+      case "uptodate":
+        return { label: "已是最新", cls: "latest", dotCls: "green" };
+      case "skipped":
+        return { label: `v${update?.version ?? "?"} 已跳过`, cls: "unchecked", dotCls: "muted" };
       case "idle":
       default:
-        return { label: "已是最新", cls: "latest", dotCls: "green" };
+        return { label: "尚未检查", cls: "unchecked", dotCls: "muted" };
     }
   }, [status, update]);
 }

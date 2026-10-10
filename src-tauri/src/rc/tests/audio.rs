@@ -1,6 +1,6 @@
 // ── G3 音频：三因子与跨会话保持 ───────────────────────────────────────
 
-#![cfg(target_os = "windows")]
+#![cfg(any(target_os = "windows", target_os = "macos"))]
 
 use super::store;
 use crate::rc::service::{PeerHostAudio, RcService};
@@ -63,7 +63,10 @@ fn 本机静音跨会话保持() {
 #[test]
 fn 对端音频状态随会话收口作废() {
     let svc = RcService::new(store());
-    assert!(svc.peer_host_audio().is_none(), "默认没收到过（旧对端也恒 None）");
+    assert!(
+        svc.peer_host_audio().is_none(),
+        "默认没收到过（旧对端也恒 None）"
+    );
 
     svc.set_peer_host_audio(PeerHostAudio {
         local_mute: true,
@@ -74,7 +77,10 @@ fn 对端音频状态随会话收口作废() {
     assert!(got.local_mute && got.spk_mute);
 
     svc.audio_reset();
-    assert!(svc.peer_host_audio().is_none(), "会话收口要清，否则串到下一场");
+    assert!(
+        svc.peer_host_audio().is_none(),
+        "会话收口要清，否则串到下一场"
+    );
 }
 
 /// G3-C：「对端静音了本机扬声器」的标记同样只属于本会话。
@@ -96,4 +102,24 @@ fn 对端静音标记只由对端动作驱动且随会话清掉() {
     svc.set_spk_muted_by_peer(true);
     svc.audio_reset();
     assert!(!svc.spk_muted_by_peer(), "会话收口该清（那是本会话的事实）");
+}
+
+#[test]
+fn an_expired_audio_worker_cannot_mute_a_new_or_missing_session() {
+    let svc = RcService::new(store());
+    svc.audio_set_peer_wants(true);
+    svc.inner.lock().unwrap().session = Some(crate::rc::session::Session {
+        id: "new-session".into(),
+        peer: "peer".into(),
+        peer_name: "电脑".into(),
+        display_name: String::new(),
+        capability: crate::rc::protocol::Capability::View,
+        phase: crate::rc::protocol::SessionPhase::InboundActive,
+        started_ms: 0,
+        started_mono: 0,
+        granted: true,
+        bg_since_mono: 0,
+    });
+    assert!(!svc.set_audio_muted_for_session("expired", true));
+    assert!(svc.audio_wanted());
 }

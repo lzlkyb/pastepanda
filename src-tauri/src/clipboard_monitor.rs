@@ -14,11 +14,11 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::collections::VecDeque;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::sync::Condvar;
 
 // ─── 自动标签写入：channel + 单 worker（B-01 修复） ───────────────────────
@@ -478,7 +478,7 @@ fn hash8(hash: &str) -> &str {
 // ═══════════════════════════════════════════════════════════════
 
 /// 捕获队列上限：极端突发（>32 条未处理）时丢弃最旧，保证最新复制的时效性
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 const CAPTURE_QUEUE_CAP: usize = 32;
 
 /// 防抖定时器 ID：合并单次复制触发的多次 WM_CLIPBOARDUPDATE 通知
@@ -490,7 +490,7 @@ const TIMER_DEBOUNCE: usize = 1;
 const TIMER_FALLBACK: usize = 2;
 
 /// Stage 1 捕获结果 — 内容与来源信息已就绪，等待工作线程做重处理
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 enum CapturedItem {
     Text {
         text: String,
@@ -543,13 +543,13 @@ enum CapturedItem {
 }
 
 /// 有界捕获队列（满则丢最旧）+ Condvar 唤醒工作线程
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 struct CaptureQueue {
     inner: Mutex<VecDeque<CapturedItem>>,
     condvar: Condvar,
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 impl CaptureQueue {
     fn new() -> Self {
         Self {
@@ -599,7 +599,7 @@ impl CaptureQueue {
 use crate::hashing::md5_hex;
 // 图片本地化已移到 `crate::html_images`（剪贴板采集与 URL 抓取两条路径共用，规则 #11）
 // 本函数里只有 windows 采集路径用到；其余平台不 import 免生 unused 警告
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use crate::html_images::{localize_html_images, IMG_SRC_RE};
 
 /// 读取 bool 配置缓存（锁中毒时回退 false）
@@ -1398,7 +1398,7 @@ fn capture_foreground_source(app_handle: &AppHandle) -> (String, Option<PathBuf>
 
 /// Stage 2（工作线程）：重处理——图标提取、敏感过滤、拼音、智能合并、
 /// 入库、前端推送、局域网同步。与消息循环解耦，处理延迟不再占用捕获窗口。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn worker_loop(
     queue: &CaptureQueue,
     running: &AtomicBool,
@@ -1500,7 +1500,7 @@ fn worker_loop(
 
 /// 提取来源图标（工作线程用：按捕获阶段保存的 exe 路径提取，
 /// 首次 ~50ms、缓存命中 <1ms，不阻塞捕获）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn extract_source_icon(app_handle: &AppHandle, exe_path: &Option<PathBuf>) -> Option<String> {
     exe_path.as_ref().and_then(|p| {
         app_handle
@@ -1513,7 +1513,7 @@ fn extract_source_icon(app_handle: &AppHandle, exe_path: &Option<PathBuf>) -> Op
 ///
 /// 三项类型相近（`String` / `Option<PathBuf>` / `String`），散在参数表尾**极易传错顺序**；
 /// 收成结构体后由调用点说明每个值是什么。函数内首行解构，故正文完全不用改。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 struct CaptureMeta {
     source_title: String,
     exe_path: Option<PathBuf>,
@@ -1521,7 +1521,7 @@ struct CaptureMeta {
 }
 
 /// 处理捕获的文本条目（逻辑与轮询版一致：U36 过滤 → 智能合并 → 入库 → 自动标签 → 推送 → LAN）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn process_text(
     app_handle: &AppHandle,
     sensitive_cache: &std::sync::RwLock<bool>,
@@ -1638,7 +1638,7 @@ fn process_text(
 }
 
 /// 处理捕获的图片条目（逻辑与轮询版一致：保存 PNG → 入库 → 推送 → LAN）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn process_image(
     app_handle: &AppHandle,
     rgba: Vec<u8>,
@@ -1792,7 +1792,7 @@ fn process_image(
 
 /// V4 截图记忆：图片入库时若已有 OCR 缓存（截图标注识别过），把识别全文写入
 /// 内容记忆摘要，使语义检索（"那张图的字"）能命中图片记录。失败仅 warn，不阻断采集。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn ensure_image_ocr_memory(
     store: &crate::data_store::DataStore,
     history_id: &str,
@@ -1811,7 +1811,7 @@ fn ensure_image_ocr_memory(
 
 /// 处理捕获的图文混排富文本条目（阶段1：入库验证采集管道能跑通，
 /// 内容完整性、图片清理、展示层留待阶段 2/3/4）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn process_rich(
     app_handle: &AppHandle,
     sensitive_cache: &std::sync::RwLock<bool>,
@@ -1915,7 +1915,7 @@ fn process_rich(
 /// 处理捕获的文档条目（P1：Word/Excel/网页等"有结构无图片"的文本复制）。
 /// 模板同 process_rich，两处差异：① type/content_type 为 "doc"；
 /// ② 对纯文本副本跑分类器派生自动标签（链接/代码/邮箱等），另加"文档"类型标签。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn process_doc(
     app_handle: &AppHandle,
     sensitive_cache: &std::sync::RwLock<bool>,
@@ -2022,7 +2022,7 @@ fn process_doc(
 }
 
 /// 处理捕获的文件列表条目（逻辑与轮询版一致：逐文件入库 → 推送 → LAN）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn process_files(
     app_handle: &AppHandle,
     paths: Vec<String>,
@@ -2112,7 +2112,7 @@ fn process_files(
 // 此分支仅保证跨平台可编译）
 // ═══════════════════════════════════════════════════════════════
 
-#[cfg(all(desktop, not(target_os = "windows")))]
+#[cfg(all(desktop, not(any(target_os = "windows", target_os = "macos"))))]
 fn run_polling_listener(
     running: Arc<AtomicBool>,
     app_handle: AppHandle,
@@ -2304,7 +2304,7 @@ fn get_foreground_window_info(_app_handle: &tauri::AppHandle) -> (String, Option
 
 /// 判断 CF_HTML 片段里是否确实带内嵌图片（用于决定是否走图文混排采集路径，
 /// 避免把绝大多数"纯文本也带 CF_HTML"的普通复制误判为富文本）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn html_fragment_has_image(fragment: &str) -> bool {
     IMG_SRC_RE.is_match(fragment)
 }
@@ -2318,7 +2318,7 @@ fn html_fragment_has_image(fragment: &str) -> bool {
 /// 而很多应用对前者的支持反而更差。
 ///
 /// 所以图文的定义是“既有图、又有文”；只有图没有文的落回图片分支。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn html_fragment_has_text(fragment: &str) -> bool {
     !html_fragment_to_plain_text_fallback(fragment).is_empty()
 }
@@ -2332,7 +2332,7 @@ fn html_fragment_has_text(fragment: &str) -> bool {
 ///    需要剪贴板纯文本足够长才计入——否则聊天短句里带一个链接会被误判；
 /// 3. 片段去标签后的文本与剪贴板纯文本大致一致，防止个别应用写出的
 ///    怪异 CF_HTML（内容与纯文本对不上）被当文档入库。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn detect_doc_fragment(fragment: &str, plain_text: &str) -> bool {
     const MAX_FRAGMENT_BYTES: usize = 200 * 1024;
     if fragment.len() > MAX_FRAGMENT_BYTES {
@@ -2374,7 +2374,7 @@ fn detect_doc_fragment(fragment: &str, plain_text: &str) -> bool {
 
 /// 粗粒度判断两段文本是否"大致同一内容"：去掉全部空白后，短者长度需达到
 /// 长者的 50%，且短者开头一段须出现在长者中（doc 门控用，防怪异 CF_HTML 入库）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn text_substantially_matches(a: &str, b: &str) -> bool {
     let na: String = a.chars().filter(|c| !c.is_whitespace()).collect();
     let nb: String = b.chars().filter(|c| !c.is_whitespace()).collect();
@@ -2418,11 +2418,11 @@ fn text_substantially_matches(a: &str, b: &str) -> bool {
 static HTML_TAG_STRIP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]*>").unwrap());
 
 /// 数字字符实体 &#NNN; / &#xHH;（用于 html_fragment_to_plain_text_fallback 补齐解码）
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 static NUMERIC_ENTITY_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"&#(x?[0-9a-fA-F]+);").unwrap());
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 fn html_fragment_to_plain_text_fallback(fragment: &str) -> String {
     let no_tags = HTML_TAG_STRIP_RE.replace_all(fragment, " ");
     let decoded = no_tags
@@ -3154,4 +3154,13 @@ mod tests {
         assert_eq!(patch.skip_sensitive, Some(false));
         assert_eq!(patch.excluded_apps, None);
     }
+}
+
+#[cfg(target_os = "macos")]
+#[path = "macos/clipboard.rs"]
+mod macos_listener;
+
+#[cfg(target_os = "macos")]
+fn run_polling_listener(running: Arc<AtomicBool>, app: AppHandle, suppress: Arc<PasteSuppress>, strip: Arc<std::sync::RwLock<bool>>) {
+    macos_listener::run(running, app, suppress, strip);
 }

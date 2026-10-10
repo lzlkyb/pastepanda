@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 全屏编辑器状态栏（纯展示）
  *
@@ -61,9 +62,9 @@ export function SaveBadge({
   // 保存中（写盘段）用户又打了字的话，写盘完成前先报「保存中」，落回什么由写盘结果决定。
   const badge = autoSaveError
     ? {
-        text: "自动保存失败 · Ctrl+S 重试",
+        text: `自动保存失败 · ${primaryShortcutLabel("s")} 重试`,
         cls: styles.saveBadgeFailed,
-        title: "自动保存写盘失败，改动还在编辑器里。点击本徽章或按 Ctrl+S 重试，或另存为其他路径",
+        title: `自动保存写盘失败，改动还在编辑器里。点击本徽章或按 ${primaryShortcutLabel("s")} 重试，或另存为其他路径`,
       }
     : isSaving
       ? { text: "保存中…", cls: styles.saveBadgeSaving, title: "正在写入磁盘" }
