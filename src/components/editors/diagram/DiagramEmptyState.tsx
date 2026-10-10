@@ -1,6 +1,7 @@
 /**
  * 空画布引导（从 DiagramCanvas 拆出，规则 #7）。
  */
+import { primaryShortcutLabel } from "@/lib/utils";
 import { FileCode, Plus } from "lucide-react";
 import styles from "../DiagramCanvas.module.css";
 
@@ -31,9 +32,9 @@ export function DiagramEmptyState({ onImport, onAddNode }: { onImport: () => voi
         </button>
       </div>
       <div className={styles.emptyHint}>
-        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销</span>
+        <span><kbd>{primaryShortcutLabel("z")}</kbd> 撤销</span>
         <span><kbd>Delete</kbd> 删除</span>
-        <span><kbd>Ctrl</kbd>+<kbd>D</kbd> 复制</span>
+        <span><kbd>{primaryShortcutLabel("d")}</kbd> 复制</span>
         <span><kbd>F</kbd> 适配</span>
         <span><kbd>L</kbd> 布局</span>
       </div>
