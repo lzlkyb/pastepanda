@@ -92,7 +92,7 @@ const FEATURES = [
   { icon: "🔀", name: "变换枢纽", desc: "41 种变换按内容类型智能推荐：编解码 / SQL / 日志 / 文本 / 配置", path: "右键记录 → 变换" },
   { icon: "🖥️", name: "全屏编辑器", desc: "CodeMirror 多语法高亮 + Markdown 实时预览 + 行号", path: "右键 → 全屏编辑 / 双击记录" },
   { icon: "🔄", name: "配置工具箱", desc: "Properties/YAML/JSON 互转 + 跨格式语义对比 + 批量替换", path: "右键记录 → 变换；工具 → 配置对比" },
-  { icon: "🔡", name: "编码转换", desc: "Base64 / URL / Unicode 编解码，结果可直接复制", path: "工具 → 编码转换" },
+  { icon: "🔡", name: "编码转换", desc: "检测并批量转换文本文件编码，自动保留备份", path: "工具 → 编码转换；文本编解码在右键记录 → 变换" },
   { icon: "📤", name: "数据导出", desc: "历史记录导出为 Excel / CSV / JSON，支持筛选后导出", path: "设置 → 数据管理 → 导出" },
   { icon: "🌐", name: "剪贴板同步", desc: "同一局域网内 AES-256-GCM 加密同步文本/图片/文件", path: "设置 → 同步与互联 → 剪贴板同步" },
   { icon: "📝", name: "片段库", desc: "常用文本模板 + 动态变量（日期/剪贴板/UUID）", path: "工具 → 片段库" },

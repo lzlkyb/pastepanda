@@ -3,6 +3,7 @@ import { X, Copy, Download, Image as ImageIcon, ClipboardPaste } from "lucide-re
 import { ActionBtn } from "./editorBits";
 import { useToast } from "@/components/Toast";
 import { primaryShortcutLabel, errText } from "@/lib/utils";
+import { useQrCanvas } from "@/hooks/useQrCanvas";
 
 /**
  * 二维码双向编辑器（Tier2 · 复用 QRCodeDialog 的 qrcode 生成 + ScreenshotOverlay 的 jsqr 解码）：
@@ -11,7 +12,6 @@ import { primaryShortcutLabel, errText } from "@/lib/utils";
  *  - 生成：文本/URL → QR（qrcode.toCanvas，全程本地）
  *  - 识图：选图/拖拽/粘贴图片 → jsQR 解码出文本（全程本地，不上云）
  */
-const MAX_QR_BYTES = 2000;
 const MAX_DEC_SIDE = 1600;
 
 function extToMime(p: string): string {
@@ -42,10 +42,8 @@ async function decodeBitmap(bmp: ImageBitmap): Promise<string | null> {
 export function QREditor({ initialText, onClose }: { initialText: string; onClose: () => void }) {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
   const [text, setText] = useState(initialText);
-  const [ready, setReady] = useState(false);
-  const [genError, setGenError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { ready, error: genError, empty, textBytes, tooLong, retry } = useQrCanvas(canvasRef, text, 240, mode === "encode");
   const { toast } = useToast();
 
   // 识图状态
@@ -54,29 +52,6 @@ export function QREditor({ initialText, onClose }: { initialText: string; onClos
   const [decodeError, setDecodeError] = useState("");
 
   const isUrl = /^https?:\/\//i.test(text.trim());
-  const textBytes = new TextEncoder().encode(text).length;
-  const tooLong = textBytes > MAX_QR_BYTES;
-
-  // 生成二维码（镜像 QRCodeDialog）
-  useEffect(() => {
-    if (mode !== "encode") return;
-    let cancelled = false;
-    setReady(false);
-    setGenError(false);
-    import("qrcode").then((QRCode) => {
-      if (cancelled || !canvasRef.current) return;
-      QRCode.toCanvas(canvasRef.current, text, {
-        width: 240, margin: 2,
-        color: { dark: "#0F172A", light: "#FFFFFF" },
-        errorCorrectionLevel: "M",
-      }, (err) => {
-        if (cancelled) return;
-        if (err) { setGenError(true); return; }
-        setReady(true);
-      });
-    }).catch(() => { if (!cancelled) setGenError(true); });
-    return () => { cancelled = true; };
-  }, [text, retryKey, mode]);
 
   // Esc 关闭
   useEffect(() => {
@@ -207,11 +182,11 @@ export function QREditor({ initialText, onClose }: { initialText: string; onClos
               />
               <div className="qr-canvas-wrap">
                 <canvas ref={canvasRef} className="qr-canvas" style={{ opacity: ready ? 1 : 0 }} />
-                {!ready && !genError && <div className="qr-loading">生成中…</div>}
+                {!ready && !genError && <div className="qr-loading">{empty ? "等待文本内容" : "生成中…"}</div>}
                 {genError && (
                   <div className="qr-error">
                     <div className="qr-error-msg">{tooLong ? `文本过长（${textBytes} 字节），超出二维码容量` : "生成失败"}</div>
-                    {!tooLong && <button className="qr-retry-btn" onClick={() => setRetryKey((k) => k + 1)}>重试</button>}
+                    {!tooLong && <button className="qr-retry-btn" onClick={retry}>重试</button>}
                   </div>
                 )}
               </div>
@@ -246,9 +221,9 @@ export function QREditor({ initialText, onClose }: { initialText: string; onClos
           )}
         </div>
 
-        <div className="dialog-footer">
+        <div className="dialog-footer editor-footer">
           <span>{mode === "encode" ? "实时生成 · Esc 关闭" : "本地识图 · Esc 关闭"}</span>
-          <div className="right">
+          <div className="editor-footer-actions">
             {mode === "encode" ? (
               <>
                 <ActionBtn icon={<Copy size={13} />} label="复制文本" onClick={copyText} />

@@ -102,7 +102,7 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         key: "encoding",
         icon: "🔤",
         name: "编码转换",
-        desc: "Base64 / URL / Unicode 编解码",
+        desc: "批量转换文本文件编码，自动备份",
         hue: "sky",
       },
       {

@@ -148,6 +148,24 @@
   width: 100%;
 }
 
+.editor-footer {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 20px; /* ui-rule-ok: 与原 dialog-footer 的 20px 横向内边距对齐。 */
+  flex-wrap: wrap;
+}
+
+.editor-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.editor-footer-actions > button { white-space: nowrap; }
+
 /* ===== 片段库 Header ===== */
 .snippets-header {
   padding: 10px 16px;
