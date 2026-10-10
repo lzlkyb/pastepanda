@@ -134,13 +134,14 @@ function prepareWorktree(url, dir) {
  * 主流程：clone → 复制指定文件 → 提交 → FF push → 返回新 sha。
  * `nothing to commit` 不算失败：内容与分支上的一致时直接进验证段。
  */
-export function publishManifestBranch({ repo, token, files, workDir, identity, dryRun = false }) {
+export function publishManifestBranch({ repo, token, files, workDir, identity, remote, dryRun = false }) {
   const planned = planFiles(files);
   if (dryRun) {
     planned.forEach((p) => info(`DRY_RUN：会把 ${p.src} → ${MANIFEST_DIR}/${p.name}`));
     return { sha: null, files: planned, dryRun: true };
   }
-  const url = githubGitUrl(repo, token);
+  // remote 只给「用本地 bare 仓库端到端彩排」的测试用；生产调用方一律走 repo + token。
+  const url = remote ?? githubGitUrl(repo, token);
   const dir = workDir ?? mkdtempSync(path.join(tmpdir(), "pp-manifest-branch-"));
   try {
     prepareWorktree(url, dir);
