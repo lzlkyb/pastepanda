@@ -256,7 +256,7 @@ git checkout -b feature/my-feature
 - 用 `fix/issue-<编号>` 或 `feature/<功能>`，**先开 Issue 讨论**再写代码；一个 Issue 对应一个 PR。
 - 保持追平：每天 `git merge origin/master` 一次，别把冲突攒到合并前一次性解（`strict=true` 只保证「合并前必须追平」，不保证「攒着的 34 笔能干净合」）。
 - 要改**共享函数的签名或语义**，先在主干单独提一小笔，再让功能分支 merge 主干——冲突就从「整段实现」缩成「一行签名」（教训见 §3.5 的 `local_refs` add/add）。
-- 合入后删分支。反面例子：cc-switch 攒着 100+ 条未清理分支。
+- 合入后分支会被自动删掉（见 §3.11），不用自己 `git push --delete`。反面例子：cc-switch 攒着 100+ 条未清理分支。
 
 ### 3.2 开发顺序（项目硬性流程）
 
@@ -378,6 +378,27 @@ GitHub 既不拦也不提示——ruleset 的 bypass 名单只认角色/团队/G
   `git init` 一个临时仓（放 `.cache/` 下，别污染树上别人的路径），`git -c user.email=<对方的> commit` 造一条他的提交当旧 tip，
   再 `--orphan` 造一条无关历史当新 tip，喂 `printf '<local-ref> <新sha> <remote-ref> <旧sha>\n' | node scripts/prePushTier.mjs`，
   期望 `light` + `exit=9`；同一目标改成 fast-forward 期望 `exit=0`。2026-10-09 六条场景（覆盖/ff/删他分支/删我分支/新分支/旧 tip 本地没有）全按预期。
+
+---
+
+### 3.11 合并即自动删除头分支（2026-10-10 起）
+
+仓库开关 `delete_branch_on_merge` 已开（回读：`gh api repos/lzlkyb/pastepanda --jq .delete_branch_on_merge` → `true`）。此后 PR **合入**的那一刻 GitHub 删掉头分支，谁都不必再手动 `git push --delete`——分支数量从此不随 PR 累积。
+
+三条边界，全是「以为它会、其实不会」：
+
+- **只在合并时触发**：关掉但不合并的 PR 不删；把开关打开**之前**就已合入的那些分支也不会被追溯删除，得自己 `git push --delete`（2026-10-10 已经这样清过一轮）。还没合并的分支本来就不在自动删除范围内，比如 `chore/macos-ci-check`——它会一直躺到被合并或被手删。
+- **只管本仓的分支**：贡献者从自己 fork 开 PR 时，头分支存在他的 fork 里，本仓这个开关删不到，由他自己清。目前唯一的外部协助者用的是同仓分支（`feature/kynnzhou-dev`），所以他的分支会在合入时被删。
+- **保护规则能豁免**：官方文档写明分支保护规则会阻止自动删除。想长期留着一条分支（比如还要复用的验证分支），给它加保护规则，而不是去找设置里的「保留名单」——没有这个东西。
+
+配套两条本地姿势（分支在远端消失后，本地那条同名分支照样躺着，`git push --force-with-lease` 会因为 lease 比对的远端 ref 已不存在而被拒）：
+
+```bash
+git config --global fetch.prune true   # 常驻：每次 fetch 顺手抹掉远端已不存在的分支
+git fetch origin --prune               # 一次性：被拒之后先跑这个再推
+```
+
+真删错了想找回：合并后的 PR 页面上有 **Restore branch**，本地那条分支还在的话直接 `git push -u origin <branch>` 重推也等价。
 
 ---
 
