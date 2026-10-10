@@ -23,23 +23,87 @@ import { describe, expect, it } from "vitest";
 const ROOT = path.resolve(__dirname, "../..");
 const read = (...p: string[]) => fs.readFileSync(path.join(ROOT, ...p), "utf8");
 
+/**
+ * 四、manifest 的出境路径只有一条：GitHub 的 `releases` 分支（2026-10-10 定性后新增）。
+ * 元凶实测：Gitee 的「仓库镜像管理」同步 GitHub 的整个分支集合，并「删除在远程仓库中不存在
+ * 的分支和标签」⇒ 手工建在 Gitee 上的孤儿分支每推一次 GitHub 就被剪一次（09:03:53Z 推 GitHub
+ * → 09:04:08Z 同步完成 → 两份 raw manifest 同时 404）。分支建到 GitHub 上之后镜像不但不再剪它，
+ * 还替我们搬到 Gitee（实测同步 4–11s，raw 边缘再 20–100s）。
+ * 所以这里钉的是：**任何一步都不许再往 Gitee 推 manifest**，也不许把「Gitee 写令牌」当 manifest
+ * 发布的前提；同时反向钉住「Gitee 的二进制附件那半边不能被顺手删掉」。
+ */
+describe("manifest 只从 GitHub 的 releases 分支出境", () => {
+  const release = read(".github", "workflows", "release.yml");
+  const apk = read("scripts", "publish-apk.mjs");
+  const repair = read("scripts", "repair-gitee-channel.mjs");
+  const pusher = read("scripts", "publish-manifest-branch.mjs");
+
+  // 「往 Gitee 推 releases 分支」的三种历史写法。它们一出现就意味着又回到手工孤儿分支。
+  const GITEE_MANIFEST_PUSH = [
+    /clone[^]{0,200}?--branch\s+releases[^]{0,200}?gitee\.com/i,
+    /giteeGit\b/,
+    /push[^]{0,80}?origin[^]{0,80}?releases/,
+  ];
+
+  it("三个发版入口都不许自己 clone/push Gitee 的 releases 分支", () => {
+    for (const [name, src] of [
+      ["release.yml", release],
+      ["publish-apk.mjs", apk],
+      ["repair-gitee-channel.mjs", repair],
+    ] as const) {
+      expect(src, `${name} 里又出现了直接推 Gitee manifest 分支的写法——那条分支会被镜像同步剪掉`).not.toMatch(/giteeGit/);
+      const giteeUrlLines = src
+        .split(/\r?\n/)
+        .filter((l) => /gitee\.com/.test(l) && /(clone|push|oauth2)/.test(l))
+        .filter((l) => /releases/.test(l) && !/releases\/download|releases\/tags|api\/v5|raw\//.test(l));
+      expect(giteeUrlLines, `${name} 里有把 git 远端指向 Gitee releases 分支的行：${giteeUrlLines.join(" | ")}`).toEqual([]);
+      for (const re of GITEE_MANIFEST_PUSH) expect(src, `${name} 命中 ${re}`).not.toMatch(re);
+    }
+  });
+
+  it("三个发版入口都收口到同一个发布出口", () => {
+    expect(release).toMatch(/node scripts\/publish-manifest-branch\.mjs/);
+    expect(apk).toMatch(/publish-manifest-branch\.mjs/);
+    expect(repair).toMatch(/publish-manifest-branch\.mjs/);
+    expect(pusher).toMatch(/export function publishManifestBranch/);
+  });
+
+  it("manifest 发布不许再要求 GITEE_TOKEN", () => {
+    const step = release.match(/- name: 发布 updater-gitee\.json[\s\S]*$/);
+    expect(step, "解析不到 release.yml 的 manifest 发布步骤").toBeTruthy();
+    expect(step![0], "GITEE_TOKEN 又变成 manifest 发布的前提（缺它只会让国内通道整个不发）").not.toMatch(/GITEE_TOKEN/);
+
+    expect(apk, "APK 侧的 manifest 提交又改回用 Gitee 令牌").toMatch(/publishManifestBranch\(\{[^}]*token: ghAuthToken\(\)/);
+    expect(repair, "repair 里还留着「缺 GITEE_TOKEN 就不推送」的旧闸").not.toMatch(/缺少 GITEE_TOKEN（推送需要它/);
+  });
+
+  it("反向红线：Gitee 的二进制附件那半边还在（不许为了让守卫变绿而删掉通道）", () => {
+    expect(release).toMatch(/attach_files/);
+    expect(apk).toMatch(/attach_files/);
+    expect(pusher, "唯一的出口里不该出现任何 Gitee 写地址").not.toMatch(/oauth2:.*gitee\.com/);
+  });
+});
+
 describe("桌面发版不许删掉手机端第 1 更新源", () => {
   const src = read(".github", "workflows", "release.yml");
+  const pusher = read("scripts", "publish-manifest-branch.mjs");
 
   it("latest/ 目录不许整份清空", () => {
     expect(src, "release.yml 又清空整个 latest/ 了——那会连手机端的 apk-update-gitee.json 一起删").not.toMatch(
       /Remove-Item\s+\$destDir/,
     );
-    expect(src).toMatch(/New-Item -ItemType Directory -Path \$destDir -Force/);
+    // 收口到唯一出口之后，wipe 的红线跟着搬进那个文件。
+    expect(pusher, "发布出口里出现了删整个 latest/ 目录的写法").not.toMatch(/rmSync\([^)]*latest/);
+    expect(pusher).toMatch(/mkdirSync\(path\.join\(dir, MANIFEST_DIR\), \{ recursive: true \}\)/);
   });
 
   it("自己那份必须显式覆盖，别靠「先删再放」", () => {
-    expect(src).toMatch(/Copy-Item dist\/updater-gitee\.json \$destDir\/ -Force/);
+    expect(pusher).toMatch(/copyFileSync\(p\.src, path\.join\(dir, MANIFEST_DIR, p\.name\)\)/);
   });
 
-  it("靶子仍在推 latest/（守卫不是靠删掉整段发版步骤才变绿的）", () => {
-    expect(src).toMatch(/git add -A latest/);
-    expect(src).toMatch(/releases 分支/);
+  it("靶子仍在发 manifest（守卫不是靠删掉整段发版步骤才变绿的）", () => {
+    expect(src).toMatch(/--file dist\/updater-gitee\.json/);
+    expect(src).toMatch(/publish-manifest-branch/);
   });
 });
 

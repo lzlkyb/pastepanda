@@ -3,28 +3,33 @@ run-name: Gitee 通道自愈${{ github.event.inputs.dry_run == 'true' && '（仅
 
 # 为什么需要这条独立工作流：
 #   客户端第 1 更新源是 https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json，
-#   它活在 Gitee 一条只放 manifest 的 orphan 分支 `releases` 上。发版 CI 每次重建它，但之后它会消失
-#   （v7.2.9 / v7.2.10 两次发版日志里都是 `[new branch]`），而客户端读不到第 1 源就逐级降级到
+#   它活在 `releases` 分支的 latest/ 目录上。而客户端读不到第 1 源就逐级降级到
 #   ghproxy → GitHub 直连，国内用户因此从「国内 CDN」掉回「国际线路」——就是安装包只有 10 KB/s 的来路。
 #   端点列表是编译进已发布二进制的，改 tauri.conf.json 救不了已经装上的用户，
 #   所以这里不改任何客户端代码，只保证**那个地址背后一直有个文件**。
+#
+# 2026-10-10 改道：`releases` 分支的**真身在 GitHub**，Gitee 那份由「仓库镜像管理」搬运。
+#   以前它手工建在 Gitee 上，而镜像同步会「删除在远程仓库中不存在的分支和标签」⇒ 每推一次
+#   GitHub 就剪一次（实测 09:03:53Z 推 GitHub → 09:04:08Z 同步完成 → 分支消失 → 两份 manifest 404）。
+#   于是修复动作变成「把 manifest 提交到 GitHub 的 releases 分支」，走 scripts/publish-manifest-branch.mjs，
+#   再按「GitHub sha → Gitee 分支 sha → raw 读得到」三段验证。
 #
 # 职责边界：只在「读不到 / 读到的是过期版本」时动作；内容全部从 GitHub 已发布的 Release 资产派生，
 #   不重新构建、不签名、不碰 GitHub Release，也不需要桌面/Android 构建环境。
 on:
   schedule:
-    # 🔴 2026-10-09 从「每 6 小时」提到「每 30 分钟」，三条实测依据：
-    #    ① Gitee 的 GitHub→Gitee 镜像同步只保 master，会剪掉 releases 分支，被剪窗口实测 ≤67 分钟
-    #       ⇒ 6 小时的档等于「第 1 源每天有一段长时间是 404」，国内用户掉回 ghproxy/GitHub；
+    # 🔴 档期形态有三条实测教训，改动前请先读：
+    #    ① 剪枝窗口实测 ≤67 分钟（改道前）⇒ 「每 6 小时一次」等于第 1 源每天长时间 404；
+    #       改道之后分支建在 GitHub 上不会再被剪，但镜像同步/raw 传播仍会短时失败，
+    #       所以这两档留着当心跳，不当唯一防线。
     #    ② GitHub 的 scheduler 会把 fire **延后几个小时**：10-08 的 18:17 档实际 23:19:54 才出 run。
     #       ⇒ 档期只能靠「一小时内多跑几次」兜住，不能指望某一次跑准。
-    #    ③ 🔴 分字段**不许写逗号列表**：`17,47 * * *` 被 GitHub 判 `invalid cron attribute`，
+    #    ③ 🔴 分字段**不许写逗号列表**：`17,47 * * * *` 被 GitHub 判 `invalid cron attribute`，
     #       整条工作流降级成「workflow file issue」——schedule 从此一次都不跑，而且
     #       本地 js-yaml / action-validator 全都说文件是好的，只有 GitHub 的 422 报错说了真话。
     #       要多档就写**多条 `- cron:`**（守卫：releaseCrossChannelGuards.test.ts）。
-    #    为什么不加 push 触发：剪枝发生在 push 之后约 16 分钟那次同步的**当时**，
-    #    由该次 push 触发的自愈跑在剪枝之前，等于白跑；只有下一轮定时接得住。
-    #    成本：健康时脚本秒退（两次 GET + 一次 ls-remote），本仓 public 不限分钟数。
+    #    为什么不加 push 触发：分支已在 GitHub 上，push 本身就是修复动作；再加 push 触发的自愈
+    #    只是重复劳动。成本：健康时脚本秒退（两次 GET + 一次 ls-remote），本仓 public 不限分钟数。
     - cron: "17 * * * *"
     - cron: "47 * * * *"
   workflow_dispatch:
@@ -34,7 +39,7 @@ on:
         required: false
         type: string
       dry_run:
-        description: "只诊断 + 生成本地产物，不推送 Gitee"
+        description: "只诊断 + 生成本地产物，不推送"
         type: boolean
         required: false
         default: false
@@ -42,14 +47,16 @@ on:
 jobs:
   repair:
     name: Probe · Derive · Repair manifests
-    # fork 上不必跑（GITEE_TOKEN 也拿不到）
+    # fork 上不必跑（GITEE_TOKEN / 写令牌都拿不到）
     if: github.repository == 'lzlkyb/pastepanda'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 20 = 附件存在性探测（几分钟）+ push（1 分钟）+ 三段验证等待档（最长 450s）
+    timeout-minutes: 20
     permissions:
-      contents: read
+      # 改道之后修复动作是往 GitHub 的 releases 分支提交，read 不够
+      contents: write
     concurrency:
-      # 两个 run 同时向 Gitee 同一条分支 push 会互相撞；排队而不是取消
+      # 两个 run 同时向 releases 分支 push 会互相撞（非 FF 被拒）；排队而不是取消
       group: gitee-channel-repair
       cancel-in-progress: false
 

@@ -299,7 +299,7 @@ jobs:
       #   现在：每个 git 调用后显式判 $LASTEXITCODE，失败就带原因 exit 1（步骤标红、
       #   一眼看得见），而 continue-on-error 保证它不拖累已发布的 GitHub Release。
       #   成功日志只在真推上去之后打印。
-      - name: 镜像发布产物到 Gitee（国内加速，可选）
+      - name: 上传安装包到 Gitee 发行版（国内加速，可选）
         shell: pwsh
         continue-on-error: true
         env:
@@ -331,131 +331,11 @@ jobs:
           $tag = "${{ github.ref_name }}"
           # 仓库路径不是秘密，打出来：客户端硬编码的地址与这个 secret 不一致时，
           # 镜像会"成功"到一个没人读的仓库，不打印根本无法发现。
-          Write-Host "目标 Gitee 仓库：$($env:GITEE_REPOSITORY)（分支 releases，目录 latest/）"
+          Write-Host "目标 Gitee 仓库：$($env:GITEE_REPOSITORY)（发行版附件 releases/download/{tag}/）"
 
           $giteeUrl = "https://oauth2:$($env:GITEE_TOKEN)@gitee.com/$($env:GITEE_REPOSITORY).git"
-          $mirrorDir = Join-Path $env:RUNNER_TEMP "gitee-mirror"
 
-          git clone --depth 1 --branch releases $giteeUrl $mirrorDir 2>&1 | Write-Host
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ℹ️ releases 分支不存在（首次发布），改为 clone 默认分支后建孤儿分支"
-            git clone --depth 1 $giteeUrl $mirrorDir 2>&1 | Write-Host
-            if ($LASTEXITCODE -ne 0) { Fail "clone Gitee 仓库失败（查 GITEE_TOKEN 是否有写权限、GITEE_REPOSITORY 路径是否正确）" }
-            if (-not (Test-Path $mirrorDir)) { Fail "clone 返回 0 但目录不存在：$mirrorDir" }
-            Push-Location $mirrorDir
-            git checkout --orphan releases 2>&1 | Write-Host
-            if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "创建 releases 孤儿分支失败" }
-            git reset --hard 2>&1 | Write-Host
-            Pop-Location
-          }
-          if (-not (Test-Path $mirrorDir)) { Fail "镜像工作目录不存在：$mirrorDir" }
-
-          # manifest（JSON 小文件）写进 latest/ 目录（raw 无需登录即可读）
-          # 🔴 不许整目录清空再放自己那一份：latest/ 里同时住着**手机端**的
-          #    apk-update-gitee.json（由 scripts/publish-apk.mjs 推上来）。原先这里
-          #    Remove-Item 后 `git add -A latest` 等于每次桌面发版都删掉手机的第 1 更新源，
-          #    手机用户当场回 404 掉到 ghproxy。留着旧那份才是对的：桌面先发、APK 后发是
-          #    常规顺序，旧 manifest 指向的仍是线上可下的版本。
-          $destDir = Join-Path $mirrorDir "latest"
-          New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-          Copy-Item dist/updater-gitee.json $destDir/ -Force -ErrorAction SilentlyContinue
-
-          # 体积和文件数必须打印：push 被重置时这是判断"是不是太大传不动"的唯一依据。
-          $files = @(Get-ChildItem $destDir -Recurse -File)
-          if ($files.Count -eq 0) { Fail "latest/ 里一个文件都没有（updater-gitee.json 没生成？）" }
-          $mb = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-          Write-Host ("待推送 latest/（manifest）：{0} 个文件，合计 {1:N2} MB" -f $files.Count, $mb)
-          $files | ForEach-Object { Write-Host ("  - {0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)) }
-
-          Push-Location $mirrorDir
-          git add -A latest 2>&1 | Write-Host
-          if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "git add 失败" }
-          git -c user.email="ci@pastepanda.local" -c user.name="pastepanda-ci" commit -m "release: mirror $tag to Gitee (latest)" 2>&1 | Write-Host
-          if ($LASTEXITCODE -ne 0) { Pop-Location; Fail "git commit 失败（内容与上一版完全相同时也会非零）" }
-
-          # 待传 pack 的真实体积（比文件体积更准：exe 几乎不可压缩）
-          Write-Host "--- git count-objects ---"
-          git count-objects -vH 2>&1 | Write-Host
-
-          # 诊断开关：只在这一步打开。
-          #   GIT_CURL_VERBOSE → HTTP 层细节，能看到连接在哪一步被重置；
-          #   GIT_TRACE        → git 内部子命令与耗时；
-          #   GIT_TRACE_CURL_NO_DATA → 只要头不要数据体，否则日志会被二进制淹没。
-          # token 在 URL 里，但 GITEE_TOKEN 是 secret，GitHub 会自动打码成 ***。
-          $env:GIT_CURL_VERBOSE = "1"
-          $env:GIT_TRACE = "1"
-          $env:GIT_TRACE_CURL_NO_DATA = "1"
-
-          # 第一次：原样推（保留现场，不动任何参数）。
-          # 耗时是关键区分信息：探针已测得 1KB 只需 20 秒、而 8MB 跑 25 分钟不完，
-          # 所以这里要把秒数、退出码、均速都打出来。
-          Write-Host "====== 第一次 push（默认参数） ======"
-          $sw = [System.Diagnostics.Stopwatch]::StartNew()
-          git push --progress --verbose origin releases 2>&1 | Write-Host
-          $pushCode = $LASTEXITCODE
-          $sw.Stop()
-          $sec1 = [int]$sw.Elapsed.TotalSeconds
-          Write-Host ("第一次 push：退出码 {0}，耗时 {1} 秒" -f $pushCode, $sec1)
-          if ($sec1 -gt 0) { Write-Host ("  均速约 {0:N0} KB/s" -f ($mb * 1024 / $sec1)) }
-
-          # 第二次（仅在失败时）：同时试两个针对 "RPC failed / curl 55" 的经典改法，
-          # 把它们放在同一次 run 里验证，省得为了试一个参数再发一版：
-          #   http.postBuffer=500MB → 不用 chunked 上传（很多反代处理不好 chunked）
-          #   --no-thin             → 不发 thin pack（部分服务端对 thin pack 会断连）
-          if ($pushCode -ne 0) {
-            Write-Host ""
-            Write-Host "====== 第二次 push（http.postBuffer=500MB + --no-thin） ======"
-            $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
-            git -c http.postBuffer=524288000 push --no-thin --progress --verbose origin releases 2>&1 | Write-Host
-            $pushCode2 = $LASTEXITCODE
-            $sw2.Stop()
-            $sec2 = [int]$sw2.Elapsed.TotalSeconds
-            Write-Host ("第二次 push：退出码 {0}，耗时 {1} 秒" -f $pushCode2, $sec2)
-            # annotation 会进入 run 的 annotations，可以不看完整日志就拿到关键数字
-            Write-Host ("::error title=Gitee 镜像诊断::pack={0:N2}MB files={1} push1_code={2} push1_sec={3} push2_code={4} push2_sec={5}" -f $mb, $files.Count, $pushCode, $sec1, $pushCode2, $sec2)
-            if ($pushCode2 -eq 0) {
-              Write-Host "✅ 第二次成功 —— 说明 postBuffer/--no-thin 能绕过这个问题，应该直接加到默认参数里"
-              $pushCode = 0
-            }
-          } else {
-            Write-Host ("::notice title=Gitee 镜像::推送成功 pack={0:N2}MB files={1} sec={2}" -f $mb, $files.Count, $sec1)
-          }
-          Pop-Location
-          if ($pushCode -ne 0) { Fail "git push 两次都失败（见上方 GIT_CURL_VERBOSE 输出：连接在哪一步被重置、传了多少字节）" }
-
-          Write-Host "✅ 已推送到 Gitee releases 分支：$tag"
-
-          # 推完验证客户端那个地址真的读得到——“推成功”不等于“能用”。
-          # 注意：releases 是镜像专用分支，每次发版覆盖 latest/；首次 push 时它是
-          # 全新分支，Gitee 的 raw CDN（raw.giteeusercontent.com）有传播延迟，push 完成
-          # 后立刻回源常会 404，过几十秒才生效。所以这里用重试退避而不是一棒打死——
-          # 真·文件缺失（路径错 / 仓库转私有）在多次重试后依然 404，那时才软失败。
-          # 探针已验：raw 会 302 跳到 raw.giteeusercontent.com，必须跟随重定向。
-          $raw = "https://gitee.com/$($env:GITEE_REPOSITORY)/raw/releases/latest/updater-gitee.json"
-          Write-Host "--- 验证 $raw ---"
-          $ok = $false
-          for ($i = 1; $i -le 4; $i++) {
-            try {
-              $resp = Invoke-WebRequest -Uri $raw -MaximumRedirection 5 -TimeoutSec 60 -UseBasicParsing
-              if ($resp.StatusCode -eq 200) {
-                Write-Host ("raw 返回 200，长度 {0} 字节（第 {1} 次尝试）" -f $resp.RawContentLength, $i)
-                $ok = $true
-                break
-              }
-              Write-Host ("raw 返回 {0}（第 {1} 次尝试），准备重试" -f $resp.StatusCode, $i)
-            } catch {
-              Write-Host ("raw 请求失败（第 {1} 次尝试）：{0}" -f $_, $i)
-            }
-            if ($i -lt 4) {
-              $wait = $i * 20
-              Write-Host ("等待 {0} 秒后重试（Gitee 新建分支 raw CDN 传播延迟）..." -f $wait)
-              Start-Sleep -Seconds $wait
-            }
-          }
-          if (-not $ok) { Fail "raw URL 多次重试后仍读不到（见上方最后几次尝试；推上去了但 CDN 尚未生效或文件确实缺失，客户端这次可能暂时用不了，稍后访问即可）" }
-          Write-Host "✅ raw URL 可读，国内加速通道本次确实生效"
-
-          # ── 二进制改走 Gitee 发行版（releases/download/{tag}）───
+          # ── 二进制走 Gitee 发行版（releases/download/{tag}）───
           # raw 对大文件要求登录（app 无登录态会被 403），发行版资源公开可下、无需登录，
           # 正好绕过。流程：推 tag → 取/建发行版 → 上传 exe+.sig → 验证可下载。
           Write-Host "--- 发布二进制到 Gitee 发行版（绕过 raw 登录墙）---"
@@ -525,3 +405,34 @@ jobs:
           }
           if (-not $binOk) { Fail "安装包未真正上传到 Gitee 发行版附件（exe 不在 .assets，国内下载加速未生效）" }
           Write-Host "✅ 发行版 .assets 含 exe，app 国内通道生效"
+
+      # ─── manifest 出境：GitHub 的 releases 分支（2026-10-10 改）───
+      # 这条分支以前是手工建在 **Gitee** 上的孤儿分支。Gitee 的「仓库镜像管理」同步的是 GitHub 的
+      # 整个分支集合，并按「删除在远程仓库中不存在的分支和标签」剪枝 ⇒ 每推一次 GitHub 就剪一次，
+      # 客户端第 1 更新源跟着 404（实测 09:03:53Z 推 GitHub → 09:04:08Z 同步完成 → 分支消失）。
+      # 现在分支建在 GitHub 上：镜像不会剪它，还会替我们搬到 Gitee（同步 4–11s，raw 边缘再 20–100s）。
+      # 顺序上放在二进制之后：manifest 一旦上线，里面那条 releases/download/{tag}/*.exe 必须已经可下。
+      - name: 发布 updater-gitee.json 到 GitHub releases 分支（Gitee 由镜像同步搬运）
+        shell: pwsh
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEE_REPOSITORY: ${{ secrets.GITEE_REPOSITORY }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          if (-not (Test-Path dist/updater-gitee.json)) {
+            Write-Host "⚠️ dist/updater-gitee.json 不存在（Gitee 镜像未配置或生成步骤被跳过），本次不发 manifest"
+            exit 0
+          }
+          if ([string]::IsNullOrWhiteSpace($env:GITEE_REPOSITORY)) {
+            Write-Host "❌ 缺 GITEE_REPOSITORY：客户端硬编码读的是那个 Gitee 仓库，没有它就没法验证搬运结果"
+            exit 1
+          }
+          # 这个脚本是唯一出口：FF 提交到 GitHub 的 releases/latest/，然后按
+          # 「GitHub sha → Gitee 分支 sha → raw 读得到」三段验证；卡在哪一段就打印哪一段。
+          node scripts/publish-manifest-branch.mjs --file dist/updater-gitee.json --gitee-repo $env:GITEE_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "❌ manifest 未确认到达 Gitee（第 1 更新源这次可能仍旧 404，自愈工作流会补）"
+            exit 1
+          }
+          Write-Host "✅ releases 分支已更新，Gitee 侧三份证据全绿"
