@@ -61,6 +61,35 @@ body {
   pointer-events: none;
 }
 
+/* 四条边的几何是常量，收进 CSS 而不是内联 style（U8） */
+.rec-edge-band.eb-t {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+}
+
+.rec-edge-band.eb-b {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+}
+
+.rec-edge-band.eb-l {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+}
+
+.rec-edge-band.eb-r {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+}
+
 /* ===== 录制中：--danger 语义色 + 呼吸脉动 ===== */
 .rec-rect.recording {
   outline: 2px solid var(--danger);
@@ -159,10 +188,15 @@ body {
   background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
 }
 
+/* 🔴 这里原来写的是 `overflow: hidden`（为了给四档做圆角裁切）。它把「画质」四档的
+ * **焦点环整圈裁掉**了：全局兜底是 `outline:2px solid; outline-offset:2px`
+ * （globals.css:107，零特异性），贴在容器边线上的按钮按下 Tab 后一点指示都没有
+ * ——违反 WCAG 2.2 AA / 2.4.7，也是本表面唯一一条从没进过扫描域的判据
+ * （六主题横扫量的是四组文字/底色，不含焦点可见性）。圆角改由首尾两颗按钮自己收，
+ * 观感与裁切前一致。守卫：recGlassContrastGuard.test.ts 钉住「.rec-seg 不得再出现 overflow」。 */
 .rec-seg {
   display: inline-flex;
   border-radius: 8px;
-  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--shot-bar-text) 18%, transparent);
 }
 
@@ -174,6 +208,17 @@ body {
   padding: 4px 8px;
   cursor: pointer;
   font-family: inherit;
+}
+
+/* 容器不再 overflow:hidden（裁切会连 Tab 焦点环一起裁掉，违反 WCAG 2.4.7），
+ * 圆角改由首尾两颗按钮自己承担。8px 与容器同档；更圆只会让底色往内收、不伸出 1px 边框外，
+ * 所以不需要 7px 这种「减掉边框」的中间值。 */
+.rec-seg button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.rec-seg button:last-child {
+  border-radius: 0 8px 8px 0;
 }
 
 .rec-seg button + button {
@@ -200,8 +245,12 @@ body {
   background: transparent;
 }
 
+/* 音源关闭态：它照样可点（点下去就开），不是 disabled，所以字色仍受 AA 正文 4.5:1 管。
+ * 40% 弱态在 6 个主题里全部不过（3.30 / 3.27 / 2.55 / 2.55 / 2.34 / 2.42）。
+ * 提到 72% 后最差档 5.81；「关着」的观感改由**边框压暗 + 无高亮底**承担，不靠把字调虚。 */
 .rec-snd.off {
-  color: color-mix(in srgb, var(--shot-bar-text) 40%, transparent);
+  color: color-mix(in srgb, var(--shot-bar-text) 72%, transparent);
+  border-color: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
 }
 
 .rec-snd.on {
@@ -238,7 +287,29 @@ body {
 /* 倒计时层本体 pointer-events:none（不挡选区预览），取消按钮单独放开 */
 .rec-countdown button {
   pointer-events: auto;
-  color: #fff; /* ui-rule-ok: 同在倒计时层内，不随主题反色 */
+}
+
+/* 「取消」与「将录制」改穿玻璃底（2026-10-10 审查 P2 的实测缺口）。
+ * 改前是 `color:#fff` 直接压在 rgba(10,14,24,.28) 的**半透明**层上，底下是用户桌面：
+ * 两套对比度算法量的都是玻璃条（近不透明），这一对谁都没量过，白壁纸上大概率塌——
+ * 而它是这一态唯一的鼠标逃生口。现在字色/底色都来自令牌，量得到也不随壁纸翻车。 */
+.rec-count-cancel,
+.rec-count-target {
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--shot-bar-text);
+  background: var(--shot-bar-bg);
+  border: 1px solid var(--shot-bar-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-count-cancel {
+  pointer-events: auto;
+  /* 倒计时里它是唯一的鼠标逃生口（§17），命中区给足：8px 16px */
+  padding: 8px 16px;
+  cursor: pointer;
 }
 
 /* ===== 控制条窗（rec-control.html）===== */
@@ -551,9 +622,15 @@ body {
   pointer-events: none;
 }
 
-/* 提示条内的动作链接（「整屏 →」兜底按钮，方案 A） */
+/* 条内的动作链接（甲案后只剩「✕ 退出」，「整屏 →」随预览态给终点一起退役）。
+ * 🔴 字色不能用裸 `var(--accent)`：那是「边框/底色」档的强度，压在半透明玻璃上
+ * 四个浅色主题实测只有 4.10 / 3.77 / 3.27 / 3.01（AA 正文要求 ≥4.5）。
+ * 拉向本主题玻璃自己的字色 `--shot-bar-text` 是唯一两头都对的修法——它在浅色主题
+ * 是深字（把 accent 压暗）、在暗主题是浅字（把 accent 提亮）；而直觉方案换
+ * `--accent-solid` 会把两个暗主题从 6.49/6.16 拉到 3.95/4.06，改一个坏两个。
+ * 数字由 src/__tests__/recGlassContrastGuard.test.ts 现算，6 个主题各钉一条。 */
 .rec-glass-lnk {
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
   cursor: pointer;
   padding: 0 4px;
   border: none;
@@ -564,7 +641,94 @@ body {
 }
 
 .rec-glass-lnk:hover {
+  color: color-mix(in srgb, var(--accent) 55%, var(--shot-bar-text));
+}
+
+/* ===== ⋯ 设置浮层（甲案 §2）：容器沿用 .rec-glass 的玻璃语言，只改排布。
+ * 它是玻璃条的子元素，靠条定位（条贴屏顶时翻到下方），左右钳在屏内。 ===== */
+.rec-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  white-space: normal;
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.rec-pop.below {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.rec-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rec-pop-row .lbl {
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+  min-width: 34px;
+}
+
+/* 目标读数与 ⋯ 徽标：条上的等宽数字，扫一眼就知道「将录谁」「什么档」 */
+.rec-readout,
+.rec-badge {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 读数即控制（2026-10-10 审查 P1，规则 17）：目标是一扇窗时读数变成按钮，
+ * 点它 = 放弃窗口改录整屏。字色沿用 .rec-glass-lnk 的同一档表达式（实测 8.267 / 8.088 /
+ * 6.449 / 6.098 / 4.978 / 4.819，六主题最差 4.819，过 AA），边框只是把「这段文字可点」
+ * 说出来，不额外造一档强调度。 */
+.rec-target-lnk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 12px;
   color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  /* 圆角与内距同 .rec-btn-ghost（同一条上的兄弟按钮），不另造一档 */
+  border-radius: 8px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.rec-target-lnk:hover {
+  color: color-mix(in srgb, var(--accent) 55%, var(--shot-bar-text));
+}
+
+.rec-target-lnk .rec-swap {
+  color: var(--shot-bar-text);
+  font-size: 11px;
+}
+
+/* 启动失败：这一句是「必须被看见」的，所以它用危险语义色打底，不再像改前那样
+ * 把后端原文塞进 .muted 弱字里（弱字 + 术语 = 用户既看不见也读不懂）。
+ * 实测（守卫同引擎，6 主题）：完整 `--danger` = 6.667 / 6.642 / 4.987×4，全过 AA；
+ * 25% 弱档 = 1.46~1.50，全不过。守卫 recGlassContrastGuard.test.ts 同时钉这两条，
+ * 后者是这批新增行自身的活性自检（全绿不等于判据有效，AGENTS 23）。 */
+.rec-err {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 读屏用的恒在 live 区域：视觉上收起来，结构上必须一直存在
+ * （带内容一起插入的 live 区域多数读屏不播报，见 RecSelectOverlay.tsx 同段注释）。 */
+.rec-sr-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* ===== 预览裁剪窗（rec-preview 窗；四期 1.4，§18 轻预览范式） ===== */
