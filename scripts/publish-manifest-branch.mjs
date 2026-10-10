@@ -41,8 +41,12 @@ export const MANIFEST_DIR = "latest";
 export const DEFAULT_GH_REPO = "lzlkyb/pastepanda";
 export const DEFAULT_GITEE_REPO = "lzul/pastepanda";
 
-/** 镜像同步 + raw 边缘传播的实测窗口：11s / 20–100s，最坏见过 4 分钟。 */
-export const DEFAULT_RETRY_WAITS = [30, 60, 90, 120, 150];
+/**
+ * 镜像同步 + raw 边缘传播的实测窗口：正常 11s / 20–100s。
+ * 累计上限取 630s 而不是 450s，依据是 2026-10-10 的探针：分支分叉后镜像把它强制对齐上游用了
+ * **260 秒**（240s 时还停在旧 sha）——「最坏 4 分钟」是手工观测推的，这条是量出来的，且更高。
+ */
+export const DEFAULT_RETRY_WAITS = [30, 60, 90, 120, 150, 180];
 
 const info = (m) => console.log(`\x1b[36m[manifest-branch]\x1b[0m ${m}`);
 const ok = (m) => console.log(`\x1b[32m[OK]\x1b[0m ${m}`);

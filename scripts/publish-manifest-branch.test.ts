@@ -92,9 +92,14 @@ describe("三段验证的判定", () => {
     expect(verifyVerdict({ ...base, ghSha: P, giteeSha: P, versions: { "updater-gitee.json": "7.2.11" } })).toBe("ok");
   });
 
-  it("等待档总时长 ≥ 实测最坏传播（4 分钟），否则会把成功判成失败", () => {
+  it("等待档总时长 ≥ 实测最坏传播的 2 倍，否则会把成功判成失败", () => {
+    // 2026-10-10 探针实测：分支分叉后镜像强制对齐用了 260s（240s 时 Gitee 还停在旧 sha）。
+    // 取 2 倍是因为探针只有一档样本，且「同步完成」之后还有 raw 边缘传播没算进来。
+    const MEASURED_WORST_PROPAGATION = 260;
     const total = DEFAULT_RETRY_WAITS.reduce((a, b) => a + b, 0);
-    expect(total, `重试只等 ${total}s，raw 传播实测见过 4 分钟 ⇒ 会把已经推好的通道报成失败`).toBeGreaterThanOrEqual(240);
+    expect(total, `重试只等 ${total}s，镜像强制对齐实测 260s ⇒ 会把已经推好的通道报成失败`).toBeGreaterThanOrEqual(
+      MEASURED_WORST_PROPAGATION * 2,
+    );
   });
 });
 
