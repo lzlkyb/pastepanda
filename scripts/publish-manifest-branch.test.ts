@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   DEFAULT_RETRY_WAITS,
   MANIFEST_BRANCH,
@@ -6,6 +10,7 @@ import {
   addArgs,
   githubGitUrl,
   planFiles,
+  publishManifestBranch,
   pushArgs,
   sanitizeRemote,
   verifyVerdict,
@@ -89,4 +94,115 @@ describe("三段验证的判定", () => {
     const total = DEFAULT_RETRY_WAITS.reduce((a, b) => a + b, 0);
     expect(total, `重试只等 ${total}s，raw 传播实测见过 4 分钟 ⇒ 会把已经推好的通道报成失败`).toBeGreaterThanOrEqual(240);
   });
+});
+
+/**
+ * 端到端彩排：上面的守卫只断言 argv 形态，这一段真的建仓库、真的 push。
+ *
+ * 为什么值得付这点 git 开销：CI 的前端/ Rust 两道闸都碰不到「对 GitHub releases 分支的 FF push」
+ * 本身，dry-run 又在 clone 之前就 return——于是这个模块最关键的两条红线（不 force、不清空对端）
+ * 只剩正则守卫。两条反例（`addArgs`→`-A`、去掉 `reset --hard`）在下面都会真变红，不是「形状像对」。
+ */
+describe("出境路径端到端（本地 bare 仓库）", () => {
+  const WHO = { email: "e2e@pastepanda.local", name: "e2e" };
+  let tmp: string;
+
+  function git(args: string[], cwd?: string) {
+    const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")} 失败：\n${r.stdout}${r.stderr}`);
+    return r.stdout.trim();
+  }
+
+  function writeJson(dir: string, name: string, body: unknown) {
+    fs.mkdirSync(dir, { recursive: true });
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, JSON.stringify(body, null, 2) + "\n", "utf8");
+    return p;
+  }
+
+  /** 建一个 bare 仓库，只在 `branch` 上放 files 这些内容。 */
+  function seedBare(label: string, branch: string, files: Record<string, string>) {
+    const bare = path.join(tmp, `${label}.git`);
+    git(["init", "-q", "--bare", `--initial-branch=${branch}`, bare]);
+    const work = path.join(tmp, `${label}-work`);
+    git(["init", "-q", "--initial-branch", branch, work]);
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = path.join(work, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content, "utf8");
+    }
+    git(["add", "-A"], work);
+    git(["-c", `user.email=${WHO.email}`, "-c", `user.name=${WHO.name}`, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "seed"], work);
+    git(["push", "-q", bare, `HEAD:refs/heads/${branch}`], work);
+    return bare;
+  }
+
+  beforeAll(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pp-manifest-egress-"));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it(
+    "分支已存在：FF 落地、父提交就是旧 tip、对端 manifest 一个字节没动",
+    () => {
+      const bare = seedBare("has-branch", MANIFEST_BRANCH, {
+        "latest/updater-gitee.json": JSON.stringify({ version: "7.2.10", note: "old-desktop" }) + "\n",
+        "latest/apk-update-gitee.json": JSON.stringify({ version: "7.2.10", url: "apk-old" }) + "\n",
+        "README.md": "分支说明\n",
+      });
+      const sha0 = git(["--git-dir", bare, "rev-parse", MANIFEST_BRANCH]);
+      const src = writeJson(path.join(tmp, "out1"), "updater-gitee.json", { version: "7.2.11", note: "new-desktop" });
+
+      const res = publishManifestBranch({ repo: "e2e/fixture", token: "", remote: bare, files: [src], identity: WHO });
+      expect(res.pushed).toBe(true);
+
+      expect(git(["--git-dir", bare, "rev-parse", MANIFEST_BRANCH]), "push 没生效").toBe(res.sha);
+      expect(git(["--git-dir", bare, "rev-parse", `${MANIFEST_BRANCH}^`]), "新提交的父不是旧 tip ⇒ 这不是 FF").toBe(sha0);
+      expect(
+        JSON.parse(git(["--git-dir", bare, "show", `${MANIFEST_BRANCH}:latest/updater-gitee.json`])).version,
+      ).toBe("7.2.11");
+      expect(
+        JSON.parse(git(["--git-dir", bare, "show", `${MANIFEST_BRANCH}:latest/apk-update-gitee.json`])).url,
+        "手机端第 1 更新源被这次桌面发版改掉了",
+      ).toBe("apk-old");
+      // 目录清单也是断言：多出一份/少一份都会红（`-A` 反例正是靠它抓住）
+      expect(
+        git(["--git-dir", bare, "ls-tree", "-r", "--name-only", MANIFEST_BRANCH])
+          .split(/\r?\n/)
+          .sort(),
+      ).toEqual(
+        ["latest/apk-update-gitee.json", "latest/updater-gitee.json", "README.md"].sort(),
+      );
+    },
+    120_000,
+  );
+
+  it(
+    "分支查无：从默认分支建孤儿分支，latest/ 外一份源码都不许跟进来",
+    () => {
+      const bare = seedBare("no-branch", "main", {
+        "src/app.ts": "export const x = 1;\n",
+        "package.json": "{}\n",
+      });
+      const verify = spawnSync("git", ["--git-dir", bare, "rev-parse", "--verify", `refs/heads/${MANIFEST_BRANCH}`], {
+        encoding: "utf8",
+      });
+      expect(verify.status, "fixture 本该只有 main，releases 查无才走重建臂").not.toBe(0);
+      const src = writeJson(path.join(tmp, "out2"), "apk-update-gitee.json", { version: "7.2.11", url: "apk-new" });
+
+      const res = publishManifestBranch({ repo: "e2e/fixture", token: "", remote: bare, files: [src], identity: WHO });
+      expect(res.pushed).toBe(true);
+      // 孤儿分支重建的正确形态：只有一笔提交，且树里只有我们要发的那份文件。
+      // 去掉 prepareWorktree 里的 reset --hard，这条会红——源码树会整份跟进 releases 分支。
+      expect(git(["--git-dir", bare, "rev-list", "--count", MANIFEST_BRANCH])).toBe("1");
+      expect(git(["--git-dir", bare, "ls-tree", "-r", "--name-only", MANIFEST_BRANCH])).toBe(
+        "latest/apk-update-gitee.json",
+      );
+      expect(git(["--git-dir", bare, "rev-parse", "main"]), "重建臂不该动默认分支").not.toBe(res.sha);
+    },
+    120_000,
+  );
 });
