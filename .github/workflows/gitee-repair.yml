@@ -50,8 +50,8 @@ jobs:
     # fork 上不必跑（GITEE_TOKEN / 写令牌都拿不到）
     if: github.repository == 'lzlkyb/pastepanda'
     runs-on: ubuntu-latest
-    # 20 = 附件存在性探测（几分钟）+ push（1 分钟）+ 三段验证等待档（最长 450s）
-    timeout-minutes: 20
+    # 25 = 附件存在性探测（几分钟）+ push（1 分钟）+ 三段验证等待档（最长 630s ≈ 10.5 分钟）
+    timeout-minutes: 25
     permissions:
       # 改道之后修复动作是往 GitHub 的 releases 分支提交，read 不够
       contents: write
