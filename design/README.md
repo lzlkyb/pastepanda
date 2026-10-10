@@ -56,9 +56,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `mobile-touch-2026-10-02/` | 5 | 141 KB |  |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
 | `mobile-ui-unification-2026-10-09/` | 2 | 182 KB |  |
-| `*.html`（根目录） | 334 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 335 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（334 份，按主题分组）
+## 设计稿清单（335 份，按主题分组）
 
 ### 视觉与品牌（25）
 
@@ -300,12 +300,13 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`doc-editor-preview`](./doc-editor-preview.html) | 2026-08-07 | 8 KB |
 | [`rich-content-card-editor`](./rich-content-card-editor.html) | 2026-08-06 | 8 KB |
 
-### 同步与更新（76）
+### 同步与更新（77）
 
 *设备同步/配对/冲突，以及自动更新、发版说明弹框、版本徽标。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`mobile-update-camera-focus-2026-10-10`](./mobile-update-camera-focus-2026-10-10.html) | — | 15 KB |
 | [`远程电脑-连接建立阶段化-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B%E9%98%B6%E6%AE%B5%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-07 近期 | 61 KB |
 | [`mobile-update-notes-sheet-2026-10-07`](./mobile-update-notes-sheet-2026-10-07.html) | 2026-10-07 近期 | 31 KB |
 | [`远程电脑-手机锁屏明示-S1-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%89%8B%E6%9C%BA%E9%94%81%E5%B1%8F%E6%98%8E%E7%A4%BA-S1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 25 KB |
@@ -426,8 +427,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`mobile-notice-exits-fix-2026-10-10`](./mobile-notice-exits-fix-2026-10-10.html) | — | 5 KB |
-| [`mobile-interaction-system-2026-10-10`](./mobile-interaction-system-2026-10-10.html) | — | 7 KB |
+| [`mobile-notice-exits-fix-2026-10-10`](./mobile-notice-exits-fix-2026-10-10.html) | 2026-10-10 | 5 KB |
+| [`mobile-interaction-system-2026-10-10`](./mobile-interaction-system-2026-10-10.html) | 2026-10-10 | 7 KB |
 | [`mobile-focus-upgrade-2026-10-10`](./mobile-focus-upgrade-2026-10-10.html) | 2026-10-10 | 3 KB |
 | [`mobile-article-collection-2026-10-09`](./mobile-article-collection-2026-10-09.html) | 2026-10-10 | 3 KB |
 | [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | 2026-10-08 | 6 KB |
@@ -475,4 +476,4 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 ---
 
-_共 334 份设计稿。重新生成：`npm run gen:design-index`_
+_共 335 份设计稿。重新生成：`npm run gen:design-index`_
