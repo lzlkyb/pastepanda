@@ -109,7 +109,7 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         key: "replace",
         icon: "🔁",
         name: "批量替换",
-        desc: "正则查找替换，支持多条规则",
+        desc: "批量替换文件内容，支持正则与备份",
         hue: "violet",
       },
       {
