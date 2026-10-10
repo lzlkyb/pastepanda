@@ -14,8 +14,6 @@ import { useMobileConnectionInfo } from "./useMobileConnectionInfo";
 import { rcConnectStage } from "./rcConnectStage";
 import { useDirectSwitchToast } from "./useDirectSwitchToast";
 import { useAutoSuggestToast } from "./useAutoSuggestToast";
-import { MobileToast } from "../ui/MobileToast";
-import ui from "../ui/MobileUi.module.css";
 import type { RcStatus } from "@/lib/api/rcTypes";
 import { useRcMobileInput } from "./useRcMobileInput";
 import { useModifierKeys } from "./useModifierKeys";
@@ -29,7 +27,7 @@ import { SessionToolbar, type MobileKeyMode } from "./SessionToolbar";
 import { ModifierKeyBar } from "./ModifierKeyBar";
 import { SessionFileRequests } from "./SessionFileRequests";
 import { SessionScreen } from "./SessionScreen";
-import { SessionFeedback } from "./SessionFeedback";
+import { SessionStatusFeedback, useAcknowledgedSendFailure } from "./SessionStatusFeedback";
 import type { RcFileView } from "@/hooks/useRcFile";
 import styles from "./RcMobileSession.module.css";
 
@@ -79,6 +77,8 @@ export function RcMobileSession({
   const [panelOpen, setPanelOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
+  const connectionBack = useRef<(() => void) | undefined>(undefined);
+  const screenBack = useRef<(() => void) | undefined>(undefined);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [requestEnd, setRequestEnd] = useState(0);
   const [requestScreen, setRequestScreen] = useState(0);
@@ -121,12 +121,8 @@ export function RcMobileSession({
     lastInputAt,
   });
   const mods = useModifierKeys({ sendKeyDown: input.sendKeyDown, sendKeyUp: input.sendKeyUp });
+  const sendFailure = useAcknowledgedSendFailure(pumpActive && input.sendFailed);
   modsComboRef.current = mods.releasePending;
-  // 发送失败横幅（规则 15.3）：失败点亮；用户关掉后，恢复成功→再次失败才重新出现。
-  const [sendFailAck, setSendFailAck] = useState(false);
-  useEffect(() => {
-    if (!input.sendFailed) setSendFailAck(false);
-  }, [input.sendFailed]);
   const { sendKeyDown, sendKeyUp, sendKeyPair, sendText, releaseAll } = input;
   const { keyboardOpen, toggleKeyboard } = useSoftKeyboardBridge({
     sendText,
@@ -166,7 +162,7 @@ export function RcMobileSession({
     contentRef,
     surfaceRef,
     viewportRef,
-    enabled: hasFrame && (!pumpActive || !frames.statusText) && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen,
+    enabled: hasFrame && (!pumpActive || !frames.statusText) && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen,
     canControl,
     releaseKeys: mods.releaseAll,
     feedback,
@@ -177,14 +173,18 @@ export function RcMobileSession({
   };
   const resetPointer = pointer.reset;
   const releaseModifiers = mods.releaseAll;
-  const openConnection = useCallback(() => {
+  const openConnection = useCallback((onBack?: () => void) => {
+    // Header/badge DOM handlers can pass a click event; only a route callback is a source.
+    connectionBack.current = typeof onBack === "function" ? onBack : undefined;
     resetPointer();
     if (keyboardOpen) toggleKeyboard();
     setConnectionOpen(true);
   }, [resetPointer, keyboardOpen, toggleKeyboard]);
   const closeConnection = useCallback(() => setConnectionOpen(false), []);
+  const openScreen = () => { screenBack.current = undefined; setRequestScreen(n => n + 1); };
   const connectionQuality = useCallback(() => {
     setConnectionOpen(false);
+    screenBack.current = () => { setConnectionOpen(true); };
     setRequestScreen((n) => n + 1);
   }, []);
 
@@ -226,28 +226,21 @@ export function RcMobileSession({
     void settings.pick("audio", "off");
   }, [pumpActive, sessionId, settings.pick]);
 
-  const mouseAssist = <MouseAssist visible={pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
+  const statusFeedback = <SessionStatusFeedback pointer={pointer} orient={orient} clipboard={clip} settings={settings}
+    directToast={directToast} autoSuggest={autoSuggest} feedbackOpen={feedbackOpen}
+    blocked={panelOpen || fileOpen || connectionOpen} onOpenChange={setFeedbackOpen} landscape={capsule.landscape}
+    sendFailed={sendFailure.visible} onSendFailDismiss={sendFailure.dismiss} statusText={pumpActive ? frames.statusText : undefined}
+    waitHint={frames.waitHint} hasFrame={hasFrame} keyboardOpen={keyboardOpen} toggleTyping={toggleTyping}
+    onScreen={openScreen} onMore={() => setRequestMore(n => n + 1)} onReturn={() => setRequestEnd(n => n + 1)} />;
+  const mouseAssist = <MouseAssist visible={pointer.mode !== "floating" && pointer.mouseOpen && !keyboardOpen && !panelOpen && !fileOpen && !connectionOpen && !feedbackOpen && canControl && hasFrame && (!pumpActive || !frames.statusText)}
     padOpen={pointer.padOpen} padRef={pointer.padRef} dragging={pointer.dragging} scrolling={pointer.scrolling}
+    clickEnabled={pointer.clickEnabled}
     onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />;
   return (
     <div className={styles.root} data-landscape={capsule.landscape} data-keyboard={keyboardOpen}>
       {!capsule.landscape && <RcSessionHeader title={title} subtitle={subtitle} info={connection} onDetails={openConnection}
-        onBack={() => setRequestEnd((n) => n + 1)} onScreen={() => setRequestScreen((n) => n + 1)} />}
+        onBack={() => setRequestEnd((n) => n + 1)} onScreen={openScreen} />}
 
-      <div className={styles.feedbackSlot}>
-        <SessionFeedback pointer={pointer} orient={orient} clipboard={clip}
-          blocked={panelOpen || fileOpen || connectionOpen} onOpenChange={setFeedbackOpen}
-          settings={settings.notices} onSettingDismiss={settings.dismiss}
-          onSettingOpen={(key) => {
-            if (key === "key_mode") { if (!keyboardOpen) toggleTyping(); return; }
-            if (keyboardOpen) toggleTyping();
-            if (key === "audio") setRequestMore(n => n + 1);
-            else setRequestScreen(n => n + 1);
-          }}
-          sendFailed={pumpActive && input.sendFailed && !sendFailAck}
-          onSendFailDismiss={() => setSendFailAck(true)}
-          />
-      </div>
       <div className={styles.controlArea} onPointerDownCapture={capsule.dismissHint}>
         <SessionScreen pointer={pointer} canControl={canControl} hasFrame={hasFrame}
           statusText={pumpActive ? frames.statusText : undefined} waitHint={frames.waitHint}
@@ -257,6 +250,8 @@ export function RcMobileSession({
           remoteShape={remoteCursor.shape} sandboxSize={pumpActive ? undefined : contentSize} />
         {(!capsule.landscape || pointer.padOpen) && mouseAssist}
       </div>
+
+      {statusFeedback}
 
       {
         <ModifierKeyBar
@@ -303,6 +298,8 @@ export function RcMobileSession({
         requestEnd={requestEnd}
         requestScreen={requestScreen}
         requestMore={requestMore}
+        waiting={status?.session?.phase === "idle" || status?.session?.phase === "outbound_pending"}
+        requestedScreenBack={screenBack.current}
         onConnectionDetails={openConnection}
         connectionEntry={<RcConnectionBadge info={connection} onOpen={openConnection} />}
         mouseAssist={capsule.landscape && !pointer.padOpen ? mouseAssist : undefined}
@@ -311,11 +308,7 @@ export function RcMobileSession({
         }}>文件{file.error ? " · 异常" : ` · ${file.asks.length}`}</button> : undefined}
       />
       {file && <SessionFileRequests file={file} open={fileOpen} onClose={() => setFileOpen(false)} />}
-      {directToast && <MobileToast tone="success" title={directToast.title} detail={directToast.detail} onDismiss={directToast.dismiss} />}
-      {autoSuggest && <MobileToast tone="info" title={autoSuggest.title} detail={autoSuggest.detail}
-        action={<button type="button" className={ui.textButton} onClick={autoSuggest.accept}>切回自动</button>}
-        onDismiss={autoSuggest.dismiss} />}
-      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onQuality={connectionQuality} />
+      <RcConnectionDetails open={connectionOpen} title={title} info={connection} quality={quality ?? "unknown"} onClose={closeConnection} onBack={connectionBack.current ? () => { closeConnection(); connectionBack.current?.(); } : undefined} onQuality={connectionQuality} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 感谢你参与 PastePanda 的开发！这是一份「协作者入职手册」——先读它，再动手。**人工开发与 AI Coding 都按本文件走。**
 
-**最优先的规则源是项目根目录的 [`claude.md`](claude.md)**，本文件是它的「快速上手版」。两者冲突时以 `claude.md` 为准；遇到本文件没覆盖的场景，去 `claude.md` 查。
+**最优先的规则源是项目根目录的 [`AGENTS.md`](AGENTS.md)**，本文件是它的「快速上手版」。两者冲突时以 `AGENTS.md` 为准；遇到本文件没覆盖的场景，去 `AGENTS.md` 查。
 
 ---
 
@@ -174,7 +174,59 @@ cargo check --manifest-path src-tauri/Cargo.toml   # 记得先设 LIBCLANG_PATH
 cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/几何单测）
 ```
 
-> pre-push hook 会自动跑完整测试（vitest + cargo test），约 3 分钟；push 时命令 timeout 请设 ≥300s。
+> pre-push hook 会跑守卫，**是否跑全量测试取决于被推的目标**（分档见下表）。**整轮耗时自 2026-10-09 起由钩子自己打印**（每段一行 `耗时 X：N s（累计 M s）`），
+> 文档不再抄常数——过去两次抄成假数：写「约 3 分钟」时实测 25 分钟，写「22.2 分钟」时第一段已经被删掉了。
+>
+> **2026-10-09 起钩子按「这次 push 改不改别人拉到的东西」分两档**。判据收口在 `scripts/prePushTier.mjs`（纯函数，用例 `src/__tests__/prePushTier.test.ts`），
+> 钩子里的顺序由 `src/__tests__/prePushHookParity.test.ts` 钉住：
+>
+> | 档 | 触发条件 | 跑什么 | 钩子自报耗时（本机实测） |
+> |---|---|---|---|
+> | `light` | 被推的**远端** ref 只是特性分支（`fix/** feature/** chore/** agent/** docs/**`） | 覆盖守卫 + 密钥守卫 + `npx tsc --noEmit` | **48s**（判档 1s / 守卫 12s / tsc 35s；tsc 冷启动另一次量到 **73s**） |
+> | `full` | 远端 ref 是 `refs/heads/master`，或掺了任何 `refs/tags/*`；以及**读不到 stdin / node 不可用 / ref 行读不懂** | 上面三项 + 全量 Vitest + `cargo test` | **566s**（分档之前每一笔 push 都是这个档） |
+>
+> 分档的理由不是「本地慢所以省掉」，而是**裁判换了地方**：master 现在有 `enforce_admins=true` + required status checks
+> （`Rust Tests` / `Frontend Tests`，§3.8），PR 合入前 GitHub 已经跑过同一套全量；特性分支再本地跑第二遍是同一套测试付两遍，
+> 而钩子判的是**整棵工作树**——别人的在途文件在给本次 push 判分（§3.7）。兜底方向一律是 `full`：判档器看不懂就得多跑。
+>
+> 判档器同时是**覆盖守卫**（`decideOwnership`，同一支脚本、同一次 stdin）：这次 push 若会把「不是本机身份写的提交」从远端某个分支上抹掉，
+> 脚本退出码 **9**、钩子在跑任何测试之前就拒绝（明细走 stderr，stdout 只留档位给 `$(...)` 收）。
+> 为什么装在钩子而不是 GitHub：**分支保护只装在 master 上，而 ruleset 的 bypass 名单只认角色/团队/GitHub App，做不到「拦管理员但放行写权限的协作者」**
+> （2026-10-09 逐条查证过，因此没有给 `feature/kynnzhou-dev` 加保护——加了会连协助者自己要求的 `strict=true` rebase 都推不动）。
+> 判据只用本地对象库、不联网：新分支和 fast-forward 不拦；旧 tip 本地没有 → **不拦**（不把「没 fetch 过」当罪证，git 的 `--force-with-lease` 是第二道闸）；
+> 删分支只看 **tip 作者**（分支历史必然从 master 继承别人的提交，按全集判等于永远删不掉自己的分支）。
+> 「本机身份」是一个**集合**：`git config user.email` + `dev@clipboard-manager.local`（AGENTS 21，改地址前的 616 笔），
+> 少列后者会让「rebase 自己 10-09 以前的分支」全部误判，而误判的出路是 `--no-verify`——那等于把守卫整个废掉。
+> 判红的用例在 `src/__tests__/prePushOwnership.test.ts`（注入假 repo，11 条）+ `prePushHookParity.test.ts` 钉接线顺序。
+>
+> 🔴 `tsc` 故意留在轻档里，别顺手归进 full：`npx vitest` 只**剥**类型不校验类型，而 CI 的 frontend-test 只有 `npx vitest run` 一步，
+> 全仓唯一会跑 `tsc` 的地方就是这个钩子（`npm run build` 只在发版构建里跑）。归进 full 等于「特性分支的类型错误没人查，直到发版才第一次爆」。
+> 这条断言两个方向都喂过反例（2026-10-09，都是我在当次改动的工作树上临时造的，仓里没有任何一笔提交处于过那个状态）：
+> ① 删掉 `npx tsc --noEmit` 这一行 → `at()` 报「缺这句」（这条调用本身是 `5d2b891` 随分档一起引入的，一直在闸外）。
+> ② 把它从恒跑区搬进 full 闸内部 → 判红 `expected 2972 to be less than 2940`。
+> 覆盖守卫同理：删掉拒绝块里的 `exit 9` → 只有新用例红，其余 5 条绿。
+
+>
+> 三段的可复现口径（2026-10-09 三次 push 的钩子自报数；**这台机器上 Vitest 那一段能差 5 倍**，所以只能按档读，不能当一个数）：
+> 密钥守卫 **7–9s**；前端 Vitest **100.68s / 269.43s / 517.46s**（同一套 392 文件 / 4186 用例，三档都全绿——差别全在机器上有没有别的会话在跑）；
+> Rust cargo test 主套 `2240 passed`，用例 70.18s、含增量编译的整段 112–154s。
+> ⇒ 钩子自报的整轮累计：**443s（`30eac55b`，那轮是我自己并行跑了另一个 vitest）→ 643s ≈ 10.7 分钟（`c0dc5fc6`，机器上另有会话在跑）**，
+> 两档之间没有任何一次是配置变了——所以「这一轮比上一轮慢」通常不是回归的证据。
+> **一次 push 请留 ≥1800s 的 timeout**：太短会在钩子跑完前被掐死、看起来像「测试挂了」；冷机器上第一段本来就是 cargo 全量编译。
+> 更早的 `b8a6a2e7` 那轮还没有计时，只能按三段相加**推算**约 3 分钟，别读成实测。
+>
+> 🔴 历史：旧的第一段（密钥守卫）4 趟全树 `grep -rn` ≈ 499s，占过整轮的四分之三。2026-10-09 合并成 2 趟（`LC_ALL=C`）后本机 263s，
+> 再剔掉 `target-android`(7.6G/16314 文件)、`gen`(2.8G)、`.cache` 三个**零个被追踪文件**的构建缓存目录后
+> **8–11s**（同一台机器、同一份判据连测两次 7.8s / 10.7s）。🔴 这个数字只随负载变：同一份脚本在有并发会话的机器上量到 **41s**，所以它是一段**区间**而不是一个常数——要复现请用「同一次条件下两档对照」，别拿单点外推。
+> 排除名单不是口头承诺：脚本开头会用 `git ls-files` 断言「每个排除目录下 0 个被追踪文件」，违反就判红；
+> `src/__tests__/secretGuardCanary.test.ts` 里备了 force-add 与「不在 git 仓库里跑」两个反例把它验过。
+> 同一次改动顺手补回一个真窟窿：旧名单里的 `design/` 下面有 312 个被追踪稿子，等于对整仓那两趟失明，已移出排除名单。
+>
+> 省一轮钩子的办法 historically 是：**分支和 tag 一次推**（`git push origin master v7.2.11`）——一次 push 只跑一遍 pre-push，
+> 而 `git push origin v7.2.11` 单独推标签**同样会跑完整钩子**，白等一整轮。
+> 🔴 2026-10-09 起这条**对发版不再适用**：master 开了 `enforce_admins`（见 §3.8），版本号提交必须走
+> `chore/release-v{version}` → PR → 合并，而 `release.yml` 是**由 tag 触发**的——提前把 tag 随分支推上去，
+> 会出现「Release 已在构建、PR 还没合并」的错位。宁可多付一整轮钩子：先合 PR，再从 master 切 tag 单独推。
 
 ---
 
@@ -182,18 +234,29 @@ cargo test --manifest-path src-tauri/Cargo.toml    # 后端测试（含吸附/�
 
 ### 3.1 分支命名
 
-从 `master` 拉分支，命名带类型前缀（CI 只对以下前缀跑测试）：
+从 `master` 拉分支，命名带类型前缀。**哪些前缀有 CI 由 `.github/workflows/test.yml` 的 `push.branches` 单独决定**——不在名单里的分支推上去一次都不跑，所以改这里必须同步改那边：
 
 ```
-feature/xxx   新功能
-fix/xxx       bug 修复
-refactor/xxx  重构
-docs/xxx      文档
+feature/xxx          新功能            ✅ 在 CI 名单
+fix/xxx              bug 修复          ✅ 在 CI 名单
+refactor/xxx         重构              ✅ 在 CI 名单
+chore/xxx            构建/依赖/脚本     ✅ 在 CI 名单
+agent/<会话标识>/xxx  AI 会话开的分支    ✅ 在 CI 名单
+docs/xxx             纯文档            ❌ 不跑 CI（本地 lint 即可，故意不加）
 ```
 
 ```bash
 git checkout -b feature/my-feature
 ```
+
+**`agent/` 前缀是干什么的**：同一台机器上常并行多个开发会话（见 §3.7），过去只能靠 `git status` 猜归属。把会话标识写进分支名，归属就进了 git 本身，而且每条分支都自动享受一次 CI 验证——这比给每个会话开一棵 `git worktree` 便宜得多（不多花磁盘、不重编 cargo target）。参照做法：cc-switch 的 100+ 分支里就有 `agent/*`、`claude/*`、`codex/*` 三套 AI 命名空间。
+
+**外部贡献的规矩**（本仓第一笔外部贡献 `feature/kynnzhou-dev` 之后定）：
+
+- 用 `fix/issue-<编号>` 或 `feature/<功能>`，**先开 Issue 讨论**再写代码；一个 Issue 对应一个 PR。
+- 保持追平：每天 `git merge origin/master` 一次，别把冲突攒到合并前一次性解（`strict=true` 只保证「合并前必须追平」，不保证「攒着的 34 笔能干净合」）。
+- 要改**共享函数的签名或语义**，先在主干单独提一小笔，再让功能分支 merge 主干——冲突就从「整段实现」缩成「一行签名」（教训见 §3.5 的 `local_refs` add/add）。
+- 合入后分支会被自动删掉（见 §3.11），不用自己 `git push --delete`。反面例子：cc-switch 攒着 100+ 条未清理分支。
 
 ### 3.2 开发顺序（项目硬性流程）
 
@@ -247,45 +310,129 @@ git commit          # 完成合并提交
 4. 想放弃本次合并：`git merge --abort` 回到 pull 前状态。
 
 **本项目注意点：**
-- pre-push hook 自动跑完整测试（vitest + cargo test，约 3 分钟）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
-- 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`——动这些文件前先 `git pull`，尽量只改自己负责的区段。
+- pre-push hook 跑密钥守卫 + `tsc`（恒跑），**全量 vitest / cargo 只在推 master 或 tag 时跑**；推特性分支时全量由 PR 的 CI 判（分档与耗时见 §2.7）——**冲突合并后先本地 `npm run lint` + `npx vitest run` 再 push**，避免把合并问题留给 CI。
+- 高冲突风险文件：`src/components/screenshot/ScreenshotOverlay.tsx`（3000+ 行）、`appStore.ts`、`hotkey_manager.rs`，外加两个**只追加型汇聚点**——`src/lib/utils.ts`（900+ 行；工作树里是 941 行 CRLF + 33 行裸 LF 的混合行尾，仓库没有 `.gitattributes`，谁编辑都可能翻出整片伪冲突）和 `.gitignore`。动这些文件前先 `git pull`，尽量只改自己负责的区段。
+- 🔴 最坏的一类冲突不是「两人改了同一段」，而是 **add/add：两人各自发明了一个同名 helper**。2026-10-09 的 `feature/kynnzhou-dev`（macOS 原生支持）上，基点只有 `scan_local_refs()`，master 侧和 macOS 侧分别写出私有 `fn local_refs()`，返回类型却是 `(usize, usize, AssetRef)` 与 `(Range<usize>, AssetRef)` 两套——git 只能报 content conflict，语义上等于两个人不知道对方存在。防法两条：① 动手前先 `git grep` 同名函数与同职责实现（AGENTS 规则 11.1）；② **要改共享函数的签名/语义，先在主干单独提一小笔**，再让功能分支 merge 主干，冲突就从「整段实现」缩成「一行签名」。
 - 本地 dev 跑着时 pull 一般无影响（Vite HMR 热更新）；若 pull 改了 Rust 后端需重启 dev。
 
 **防冲突日常姿势：** 开工前先 `git pull`；小步提交、频繁 push；分支做自己的事，合入前再 pull 一次 master。
+
+### 3.6 提交身份：先让 GitHub 认得出你
+
+提交必须用**与 GitHub 账号绑定（已验证）的邮箱**，否则这个提交在 GitHub 上只显示成一个孤立名字——不进 Contributors、不进 contribution graph、review 时也 @ 不到人。
+
+本项目已有前车之鉴：`git log` 里 616 个提交的作者是 `dev@clipboard-manager.local`，这个地址不是可收信域名、GitHub 无法验证，于是这些提交在贡献者图上**归属为零**——外人第一眼看到的「这个项目只有 1 个提交」。
+
+```bash
+git config user.email      # 先查：应是你账号里已验证的邮箱
+# 只改本仓库，不动全局配置：
+git config user.email "<你的ID>+<用户名>@users.noreply.github.com"
+```
+
+### 3.7 一个工作树只服务一个会话
+
+本项目经常在**同一个工作树**里并行多个开发会话（人或 AI）。规矩：
+
+- 提交前先 `git status` 看清归属，**只 `git add` 自己改的文件**；禁止 `git add -A` / `git commit -a`。
+- `pre-commit` 里的 `lint-staged` 会 stash 整个工作树：别人正在写时提交，可能把他们的在途改动卷进你的提交、或从他们手底下抽走。
+- `pre-push` 的两段恒跑检查都看**整棵树**：`tsc --noEmit` 编全部 `src/`，密钥守卫扫全部被追踪文件。所以他人未完成的改动照样能让轻档 push 变红，只是不再需要他们的测试全绿（2026-10-09 分档前还要连 `vitest` + `cargo test` 一起判）。推 master / tag 那档不变，仍然判整棵树的测试——树不干净就别发版。
+
+### 3.8 master 保护规则（2026-10-09 起真生效）
+
+实测配置（`gh api repos/lzlkyb/pastepanda/branches/master/protection` 回读）：`enforce_admins=true` + required status checks（`Rust Tests` / `Frontend Tests`，`strict=true`）+ **`required_approving_review_count=0`** + `dismiss_stale_reviews=true` + 禁 force push / 禁删分支。
+
+三条真话：
+
+1. **管理员也被约束**。此前 `enforce_admins` 是关的，所以历史 654 笔全部直推 master、不留分支与 PR 记录；2026-10-09 起直推 master 会被 GitHub 拒，改动一律走 PR。
+2. **审批数故意是 0**。GitHub 不允许作者批准自己的 PR，而当前只有 1 位维护者 + 1 位外部贡献者——保留「需 1 个 approval」等于把维护者锁在自己的规则门外。等来了第二个人，再把这条调回 1（`gh api -X PATCH .../protection/required_pull_request_reviews -F required_approving_review_count=1`）。
+3. **本仓不做 code owner 强制**。`require_code_owner_reviews` 保持 `false`，所以 `.github/CODEOWNERS` 不产生任何阻塞，已随这次改动删除——留着一个不生效的文件，比没有更容易让人误以为有人把关。同理「Require review from Code Owners」这一勾不要顺手打开：它要求「代码所有者批准」，而代码所有者就是提交者本人，又是一个自批死结。
+
+
+### 3.9 日常开发节拍（同时有新功能在途 + bug 要修时）
+
+1. **先 bug，后新功能。** bug 修常常落在汇聚点文件上（`utils.ts` / `sync/attach.rs` / `lib.rs`），新功能也常碰同一批。先把 bug 落定并推出去，新功能的改动面就变成"单侧新增"，不会再叠出 §3.5 那种 add/add。
+2. **bug 必须先变红**（AGENTS 规则 23）：改前红、改后绿，两份输出留在手上。做不到稳定红的时序类，用「把延时注入制造该状态的那一层」或静态守卫取证，**不许用重跑/加压当验收**。
+3. **新功能先出方案/设计稿**（AGENTS 规则 1、4），目标文件接近 300 行就新建文件而不是追加（规则 7）。
+4. 验证分档，别每步全量：
+   - 改完就跑：`npx tsc --noEmit`、`npx vitest run <相关测试文件>`；Rust 侧 `cargo test <module>::`；UI 改动加 `npm run lint:ui`（diff 作用域 ~0.7s）+ `npm run lint:css`。
+   - 全量三段（守卫 + vitest + cargo）**不再在特性分支 push 前付**：轻档只跑守卫 + `tsc`（实测 48s），全量由 PR 的 CI 判——它已经是合入 master 的硬门槛（§3.8）。只有推 master / tag 那一档还在本地跑全量（566s），口径见 §2.7。
+   - 不在开发中跑裸 `npm run lint`（全量 eslint 本机 60–90s，挂进钩子必然被 `--no-verify` 绕过；pre-commit 已用 lint-staged 只跑改动文件）。
+5. 归属隔离（§3.7）：每次提交前 `git status` 判归属，只 `git add` 自己改的路径；别人的未跟踪文档一律不碰、不 `git stash`、不 `git add -A`。树上别人只剩未跟踪文件时再提交，避开 lint-staged 的整树 stash。
+6. 提交粒度：一个 bug 一笔、一个功能语义单元一笔、纯文档单独一笔。攒到一个完整可交付状态再 push。
+7. 三件不自动做的事：版本号（规则 2）、`npx tauri build`（规则 3）、把「欠真机点验」当已完成——点验项一律写进 commit/PR 描述或 Issue。
+
+---
+
+### 3.10 覆盖守卫：管理员推别人的分支会被本机拦下
+
+§3.8 的保护只覆盖 master。协助者自己那条 `feature/kynnzhou-dev` 上，管理员 force push 覆盖掉他的提交，
+GitHub 既不拦也不提示——ruleset 的 bypass 名单只认角色/团队/GitHub App，做不到「拦管理员、放行写权限的协作者」，
+所以给那条分支加保护会连**他本人**要求的 `strict=true` rebase 都推不动（2026-10-09 查证后放弃这条路）。
+唯一还能拦的地方是 pre-push：`scripts/prePushTier.mjs` 的 `decideOwnership`，判据和退出码见 §2.7。
+
+- 它只读**本地对象库**：不 fetch、不联网，`git cat-file` / `merge-base --is-ancestor` / `log --format=%ae` 三种问句。
+- 拒绝时机在跑任何测试**之前**——先付 48s 再告「这次本来不该推」是错的顺序（`prePushHookParity` 钉着）。
+- 认作「我的」的地址是一个集合：`git config user.email` + `dev@clipboard-manager.local`（§3.6 / AGENTS 21 改地址前的 616 笔）。
+- 逃生口：确认要覆盖就 `git push --no-verify`（同时跳过测试，所以只在核对过 `git log old..new` 之后用）。
+- 端到端取证配方（`decideOwnership` 的单测注入假 repo，CLI 那半边用真 git 对象）：
+  `git init` 一个临时仓（放 `.cache/` 下，别污染树上别人的路径），`git -c user.email=<对方的> commit` 造一条他的提交当旧 tip，
+  再 `--orphan` 造一条无关历史当新 tip，喂 `printf '<local-ref> <新sha> <remote-ref> <旧sha>\n' | node scripts/prePushTier.mjs`，
+  期望 `light` + `exit=9`；同一目标改成 fast-forward 期望 `exit=0`。2026-10-09 六条场景（覆盖/ff/删他分支/删我分支/新分支/旧 tip 本地没有）全按预期。
+
+---
+
+### 3.11 合并即自动删除头分支（2026-10-10 起）
+
+仓库开关 `delete_branch_on_merge` 已开（回读：`gh api repos/lzlkyb/pastepanda --jq .delete_branch_on_merge` → `true`）。此后 PR **合入**的那一刻 GitHub 删掉头分支，谁都不必再手动 `git push --delete`——分支数量从此不随 PR 累积。
+
+三条边界，全是「以为它会、其实不会」：
+
+- **只在合并时触发**：关掉但不合并的 PR 不删；把开关打开**之前**就已合入的那些分支也不会被追溯删除，得自己 `git push --delete`（2026-10-10 已经这样清过一轮）。还没合并的分支本来就不在自动删除范围内，比如 `chore/macos-ci-check`——它会一直躺到被合并或被手删。
+- **只管本仓的分支**：贡献者从自己 fork 开 PR 时，头分支存在他的 fork 里，本仓这个开关删不到，由他自己清。目前唯一的外部协助者用的是同仓分支（`feature/kynnzhou-dev`），所以他的分支会在合入时被删。
+- **保护规则能豁免**：官方文档写明分支保护规则会阻止自动删除。想长期留着一条分支（比如还要复用的验证分支），给它加保护规则，而不是去找设置里的「保留名单」——没有这个东西。
+
+配套两条本地姿势（分支在远端消失后，本地那条同名分支照样躺着，`git push --force-with-lease` 会因为 lease 比对的远端 ref 已不存在而被拒）：
+
+```bash
+git config --global fetch.prune true   # 常驻：每次 fetch 顺手抹掉远端已不存在的分支
+git fetch origin --prune               # 一次性：被拒之后先跑这个再推
+```
+
+真删错了想找回：合并后的 PR 页面上有 **Restore branch**，本地那条分支还在的话直接 `git push -u origin <branch>` 重推也等价。
 
 ---
 
 ## 4. 用 AI Coding 协作
 
 **先完成 §2「从零到能跑 dev」**（人跑一遍或让 AI 按 §2.2–§2.5 执行），§2.5 自检全绿后再开发。  
-欢迎用 Claude Code / Cursor 等 AI 工具干活，但 **`claude.md` 对人和 AI 同样有效**，不能当甩手掌柜。
+欢迎用 Claude Code / Cursor 等 AI 工具干活，但 **`AGENTS.md` 对人和 AI 同样有效**，不能当甩手掌柜。
 
 ### 4.1 选什么工具
 
 | 工具 | 推荐度 | 说明 |
 |------|--------|------|
-| **Claude Code** | ★★★★★ | 项目以 `claude.md` 为规则源，开箱即用 |
+| **Claude Code** | ★★★★★ | 它读 `CLAUDE.md`，而该文件现在只是一句指针（`@AGENTS.md`），规则正文永远只有 `AGENTS.md` 一份 |
 | Cursor / Windsurf | ★★★★ | 在项目根放好规则文件（见下）即可 |
 | 其他 CLI（Codex、Qwen Code 等） | ★★★ | 规则加载方式各异，需手动贴规则 |
 
-**唯一硬要求**：不管用什么工具，**必须让它读到 `claude.md`**。读不到就会踩版本号、组件行数、AI 红线这些坑。
+**唯一硬要求**：不管用什么工具，**必须让它读到 `AGENTS.md`**。读不到就会踩版本号、组件行数、AI 红线这些坑。
 
 ### 4.2 让 AI 读到规则
 
 **Claude Code**：把仓库根目录当工作区打开即可。启动后第一句先核对：
 
 ```
-先读 claude.md 和 CONTRIBUTING.md，用 5 条要点复述本项目的硬性规则。
+先读 AGENTS.md 和 CONTRIBUTING.md，用 5 条要点复述本项目的硬性规则。
 ```
 
 复述不对就纠正，再开工。
 
-**Cursor / Windsurf**：任选其一——把 `claude.md` 内容贴进项目 Rules / `.cursorrules`；或在 `.cursor/rules/`、`.windsurfrules` 里写：**「开始任何任务前先完整阅读仓库根目录 `claude.md`，并严格遵守」**。
+**Cursor / Windsurf**：任选其一——把 `AGENTS.md` 内容贴进项目 Rules / `.cursorrules`；或在 `.cursor/rules/`、`.windsurfrules` 里写：**「开始任何任务前先完整阅读仓库根目录 `AGENTS.md`，并严格遵守」**。
 
 **任何工具通用的开工提示词：**
 
 ```
-你在 PastePanda 仓库工作。规则源是根目录 claude.md（已存在，先读）。
+你在 PastePanda 仓库工作。规则源是根目录 AGENTS.md（已存在，先读）。
 硬性约束（违反即失败）：
 - 不改任何版本号（tauri.conf.json / Cargo.toml / package.json）
 - 不执行 npm run tauri build
@@ -345,7 +492,7 @@ git commit          # 完成合并提交
 
 ```
 你是 PastePanda 的结对工程师。项目：Tauri 2 + React 19 + TypeScript + Rust + SQLite，
-Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md 是规则权威，优先级高于你的默认习惯。
+Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 AGENTS.md 是规则权威，优先级高于你的默认习惯。
 
 工作方式：
 - 若环境未就绪，先按 CONTRIBUTING.md §2 执行 scripts/setup-dev.ps1，自检全绿再改代码
@@ -360,7 +507,7 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md �
 
 ---
 
-## 5. 项目硬性规则（摘要，完整版见 claude.md）
+## 5. 项目硬性规则（摘要，完整版见 AGENTS.md）
 
 违反任意一条，PR 直接打回：
 
@@ -375,6 +522,7 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md �
 9. **直接推 `master` 禁止**：一律 feature/fix 分支 + PR。
 10. **git push 用 SSH**：本机 HTTPS 访问 GitHub 常超时，remote 应保持 `git@github.com:lzlkyb/pastepanda.git`。
 11. **AI 默认不提交**：未经你人工审查，不让 AI 自动 commit / push / tag。
+12. **修 bug 先让它变红**：每条修复都要有「改前红、改后绿」的用例，两份输出写进 commit/PR；**重跑至绿不算修复**。时序类不稳定就用延时注入制造该状态的那一层，或加静态守卫钉住机制（完整条文见 `AGENTS.md` 规则 23）。
 
 ---
 
@@ -387,12 +535,12 @@ Windows 桌面剪贴板管理器 + 本地知识库。仓库根目录 claude.md �
 3. `npm run prebuild` 确认 `src/lib/changelog.generated.ts` 已含新版本；
 4. commit → push → `git tag vX.Y.Z` → `git push origin vX.Y.Z` 触发 CI 构建发布。
 
-> CHANGELOG 是给用户看的：只说「能做什么」，不说「怎么实现的」。示例与禁忌见 claude.md「发版流程」一节。
+> CHANGELOG 是给用户看的：只说「能做什么」，不说「怎么实现的」。示例与禁忌见 AGENTS.md「发版流程」一节。
 
 ---
 
 ## 7. 求助顺序
 
-1. 读 `claude.md`（规则全集，含踩坑记录）；
+1. 读 `AGENTS.md`（规则全集，含踩坑记录）；
 2. 读 `docs/` 下的专题文档（OCR 替换、AI 架构、功能清单等）；
 3. 在 Issue 里提问，或 PR 里 @ 维护者。

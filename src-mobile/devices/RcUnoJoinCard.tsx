@@ -13,7 +13,7 @@
  *
  * 凭证才是天花板：一律申请「可控」，被控端会压档并回传真实档（桌面同语义）。
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type RefObject } from "react";
 import { fingerprintOf } from "@/lib/fingerprint";
 import { parseUnoInput, unoCodeShapeOk, unoPassCharsOk, UNO_PASS_MIN_CHARS, UNO_PASS_MAX_CHARS } from "@/lib/rcUno";
 import { rcDisplayName } from "@/lib/rcDevice";
@@ -21,6 +21,9 @@ import { RcDeviceMeta } from "@/components/rc/RcDeviceMeta";
 import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 import type { UseRc } from "@/hooks/useRc";
 import { RcScanOverlay } from "./RcScanOverlay";
+import { useMobileBack } from "../ui/useMobileBack";
+import { MobileChoice } from "../ui/MobileChoice";
+import { RcChannelNotice } from "./RcChannelNotice";
 import { MobileNotice } from "../ui/MobileNotice";
 import { rcErrorText } from "./rcErrorText";
 import styles from "./RcDevices.module.css";
@@ -29,11 +32,13 @@ type CredMode = "code" | "pass";
 
 export function RcUnoJoinCard({
   rc,
+  backRef,
   fixedTarget,
   onClose,
   onConnected,
 }: {
   rc: UseRc;
+  backRef?: RefObject<(() => boolean) | null>;
   /** 从设备动作面板进来时已锁定目标（node_id）；独立入口为 null。 */
   fixedTarget?: string | null;
   onClose: () => void;
@@ -48,6 +53,9 @@ export function RcUnoJoinCard({
   const [picked, setPicked] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const back = () => { if (busy) return true; if (scanning) { setScanning(false); return true; } return false; };
+  useMobileBack(scanning, back, true, 20);
+  useEffect(() => { if (backRef) backRef.current = back; return () => { if (backRef) backRef.current = null; }; });
   const [err, setErr] = useState("");
 
   const targets = rc.targets ?? [];
@@ -116,26 +124,10 @@ export function RcUnoJoinCard({
       <div className={styles.pairHint}>凭接入码或密码直连无人值守的电脑（电脑前不用有人确认）</div>
 
       <div className={styles.unoModes} role="radiogroup" aria-label="凭证类型">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={credMode === "code"}
-          disabled={busy}
-          className={`${styles.peerChip} ${credMode === "code" ? styles.peerChipOn : ""}`}
-          onClick={() => setCredMode("code")}
-        >
-          接入码（对方提前发给你）
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={credMode === "pass"}
-          disabled={busy}
-          className={`${styles.peerChip} ${credMode === "pass" ? styles.peerChipOn : ""}`}
-          onClick={() => setCredMode("pass")}
-        >
-          固定密码（长期值守的机器）
-        </button>
+        <MobileChoice value="code" checked={credMode === "code"} disabled={busy} onSelect={() => setCredMode("code")}
+          title="接入码" description="使用电脑提前提供的接入码" />
+        <MobileChoice value="pass" checked={credMode === "pass"} disabled={busy} onSelect={() => setCredMode("pass")}
+          title="固定密码" description="使用长期值守电脑的密码" />
       </div>
 
       {credMode === "code" ? (
@@ -207,19 +199,10 @@ export function RcUnoJoinCard({
           ) : (
             <div className={styles.peerPick} role="radiogroup" aria-label="选择设备">
               {targets.map((t) => (
-                <button
-                  key={t.node_id}
-                  type="button"
-                  role="radio"
-                  aria-label={rcDisplayName(t)}
-                  aria-checked={picked === t.node_id}
-                  disabled={busy}
-                  className={`${styles.peerChip} ${picked === t.node_id ? styles.peerChipOn : ""}`}
-                  onClick={() => setPicked(t.node_id)}
-                >
-                  <RcDeviceIcon os={t.os} size={34} />
-                  <span className={styles.peerDetails}><strong>{rcDisplayName(t)}</strong><RcDeviceMeta os={t.os} className={styles.deviceType} /><small>{fingerprintOf(t.node_id)}</small></span>
-                </button>
+                <MobileChoice key={t.node_id} value={t.node_id} checked={picked === t.node_id} disabled={busy}
+                  onSelect={() => setPicked(t.node_id)} title={rcDisplayName(t)}
+                  icon={<RcDeviceIcon os={t.os} size={34} />}
+                  description={<><RcDeviceMeta os={t.os} className={styles.deviceType} /> · {fingerprintOf(t.node_id)}</>} />
               ))}
             </div>
           )}
@@ -234,7 +217,7 @@ export function RcUnoJoinCard({
       {err && (
         <MobileNotice error title="未能连接无人值守电脑" detail={rcErrorText(err)} onDismiss={() => setErr("")} />
       )}
-      {rc.status?.enabled === false && <MobileNotice tone="warning">请先在设置中开启远程通道。</MobileNotice>}
+      <RcChannelNotice rc={rc} />
       {!target && targets.length > 0 && <p className={styles.dirHint}>请先选择要连接的设备。</p>}
 
       <button type="button" className={styles.primaryBtn} disabled={!canConnect} onClick={() => void connect()}>

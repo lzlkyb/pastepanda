@@ -33,13 +33,14 @@ export function SessionScreen({ pointer, canControl, hasFrame, statusText, waitH
     <PinchViewport ref={viewportRef} surfaceRef={surfaceRef}>
       <VideoSurface canvasRef={canvasRef} className={styles.canvas} statusText={statusText} showStatus={false} sandboxSize={sandboxSize} />
     </PinchViewport>
-    <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} stage={stage} onReturn={onReturn} />
+    {!hasFrame && <SessionFrameState text={statusText} hasFrame={hasFrame} hint={waitHint} stage={stage} onReturn={onReturn} />}
     {!statusText && <SessionModeNotice hasFrame={hasFrame} canControl={canControl} pointer={pointer} />}
     <div ref={cursorRef} className={styles.cursorRing} aria-hidden="true" />
     <div ref={chargeRef} className={styles.chargeRing} aria-hidden="true" />
     <div ref={remoteCursorRef} className={styles.remoteCursor} aria-hidden="true"><RemoteCursorGlyph shape={remoteShape} /></div>
     {pointer.mode === "floating" && <FloatingMouse visible={canControl && hasFrame && !statusText && !blocked}
       surfaceRef={surfaceRef} point={pointer.point} move={pointer.moveFloating} reveal={pointer.reveal} cancel={pointer.reset}
-      dragging={pointer.dragging} scrolling={pointer.scrolling} onClick={pointer.click} onDrag={pointer.toggleDrag} />}
+      dragging={pointer.dragging} scrolling={pointer.scrolling} clickEnabled={pointer.clickEnabled}
+      onClick={pointer.click} onDrag={pointer.toggleDrag} onScroll={pointer.toggleScroll} />}
   </div>;
 }

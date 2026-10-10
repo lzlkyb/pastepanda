@@ -5,6 +5,7 @@ import type { MobileKeyMode } from "./SessionToolbar";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileNotice, type MobileNoticeTone } from "../ui/MobileNotice";
 import { SessionSettingFeedback } from "./SessionSettingFeedback";
+import { MobileChoice } from "../ui/MobileChoice";
 import type { SessionSettingState } from "./useSessionSettings";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcMobileSession.module.css";
@@ -42,7 +43,10 @@ export function ModifierKeyBar({
     if (open && keyMode === "type" && !more) field.current?.focus();
   }, [open, keyMode, more]);
   useEffect(() => {
-    if (!open) setMore(false);
+    if (!open) {
+      field.current?.blur();
+      setMore(false);
+    }
   }, [open]);
   return (
     <>
@@ -83,6 +87,12 @@ export function ModifierKeyBar({
           <button type="button" className={styles.mkKey} onClick={onHide}>
             收起
           </button>
+        </div>
+        <div className={styles.modeRow} role="radiogroup" aria-label="输入方式" onPointerDown={event => {
+          if (event.target instanceof Element && event.target.closest("button")) event.preventDefault();
+        }}>
+          <MobileChoice value="type" checked={keyMode === "type"} title="文字输入" onSelect={() => onPickKeyMode("type")} />
+          <MobileChoice value="direct" checked={keyMode === "direct"} title="逐键直传" onSelect={() => onPickKeyMode("direct")} />
         </div>
         {keyMode === "type" ? (
           <form
@@ -130,7 +140,7 @@ export function ModifierKeyBar({
             </button>
           </form>
         ) : (
-          <p className={styles.panelHint}>直传模式 · 逐键发送，中文请切换到文字输入。</p>
+          <p className={styles.panelHint}>逐键直传 · 中文请点上方「文字输入」。</p>
         )}
         {hint && (
           <MobileNotice compact tone={hintTone} title={hint} />
@@ -140,28 +150,6 @@ export function ModifierKeyBar({
       <MobileSheet open={more && open} title="扩展按键" onClose={() => setMore(false)}
         footer={setting && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} />}>
         <div className={styles.panelActions}>
-          <div className={styles.modeRow}>
-            <button
-              type="button"
-              className={keyMode === "type" ? ui.primary : ui.secondary}
-              aria-pressed={keyMode === "type"}
-              onClick={() => {
-                onPickKeyMode("type");
-              }}
-            >
-              文字输入
-            </button>
-            <button
-              type="button"
-              className={keyMode === "direct" ? ui.primary : ui.secondary}
-              aria-pressed={keyMode === "direct"}
-              onClick={() => {
-                onPickKeyMode("direct");
-              }}
-            >
-              逐键直传
-            </button>
-          </div>
           <div className={styles.modRow}>
             {MOD_KEYS.slice(2).map((key) => (
               <button

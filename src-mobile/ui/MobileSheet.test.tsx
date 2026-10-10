@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MobileSheet } from "./MobileSheet";
 import { setupMotionClock } from "./mobileMotionTestUtils";
@@ -79,4 +79,16 @@ it("完全滑出屏幕后立即释放弹层，不等待看不见的弹簧尾段"
   act(() => clock.advance(400));
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(clock.frames.size).toBe(0);
+});
+
+it("来源面板的返回与关闭全部分别执行，Escape也返回来源", () => {
+  const clock = setupMotionClock(); clock.reduced.matches = true;
+  const back = vi.fn(), close = vi.fn();
+  render(<MobileSheet open title="画质" onBack={back} onClose={close}>画质选择</MobileSheet>);
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
+  expect(back).toHaveBeenCalledTimes(1); expect(close).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  expect(back).toHaveBeenCalledTimes(2); expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "关闭全部" }));
+  expect(close).toHaveBeenCalledTimes(1);
 });

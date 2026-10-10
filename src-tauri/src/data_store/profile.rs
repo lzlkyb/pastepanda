@@ -60,7 +60,7 @@ impl DataStore {
                         "SELECT action_id, COUNT(*) AS c FROM action_events
                          WHERE created_at >= ?1 AND action_id != ?2
                            AND outcome IN ('copied', 'pasted')
-                         GROUP BY action_id ORDER BY c DESC",
+                         GROUP BY action_id ORDER BY c DESC, action_id ASC",
                     )
                     .map_err(|e| e.to_string())?;
                 let rows: Vec<rusqlite::Result<(String, u32)>> = stmt
@@ -80,7 +80,7 @@ impl DataStore {
                          WHERE created_at >= ?1 AND action_id != ?2
                            AND outcome IN ('copied', 'pasted')
                            AND content_type <> ''
-                         GROUP BY content_type ORDER BY c DESC",
+                         GROUP BY content_type ORDER BY c DESC, content_type ASC",
                     )
                     .map_err(|e| e.to_string())?;
                 let rows: Vec<rusqlite::Result<(String, u32)>> = stmt

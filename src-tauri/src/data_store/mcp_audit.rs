@@ -100,7 +100,7 @@ impl DataStore {
         let mut stmt = conn
             .prepare(
                 "SELECT client, MIN(at), MAX(at), COUNT(*) FROM mcp_audit
-                 GROUP BY client ORDER BY MAX(at) DESC",
+                 GROUP BY client ORDER BY MAX(at) DESC, client ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt

@@ -30,6 +30,16 @@ it.each(["error", "warning", "pending"] as const)("%s 提示不会自动消失",
   expect(dismiss).not.toHaveBeenCalled();
 });
 
+it("当前面板内的成功提示到时收起，被面板覆盖的页面提示保留", () => {
+  vi.useFakeTimers(); document.body.dataset.mobileSheets = "1";
+  const visible = vi.fn(), covered = vi.fn();
+  render(<><MobileToast placement="flow" tone="success" title="页面结果" onDismiss={covered} />
+    <section role="dialog" data-state="open"><MobileToast placement="flow" tone="success" title="面板结果" onDismiss={visible} /></section></>);
+  act(() => vi.advanceTimersByTime(4000));
+  expect(visible).toHaveBeenCalledOnce();
+  expect(covered).not.toHaveBeenCalled();
+});
+
 it("成功轻提示聚焦暂停，离开后使用剩余阅读时间", () => {
   vi.useFakeTimers();
   const dismiss = vi.fn();

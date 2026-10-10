@@ -207,7 +207,7 @@ impl DataStore {
     pub fn action_prefs_all(&self) -> Result<Vec<ActionPrefRow>, String> {
         let conn = self.lock_conn();
         let mut stmt = conn
-            .prepare("SELECT action_id, preference, updated_at FROM action_prefs ORDER BY updated_at DESC")
+            .prepare("SELECT action_id, preference, updated_at FROM action_prefs ORDER BY updated_at DESC, action_id ASC")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {

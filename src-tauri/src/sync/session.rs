@@ -60,6 +60,54 @@ use iroh::{Endpoint, EndpointAddr};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+struct ScratchCleanup(PathBuf, PathBuf);
+impl Drop for ScratchCleanup {
+    fn drop(&mut self) {
+        // Cancellation drops the future before its ordinary cleanup path.
+        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = std::fs::remove_dir_all(&self.1);
+    }
+}
+
+struct InterruptedConnection(Option<iroh::endpoint::Connection>);
+impl Drop for InterruptedConnection {
+    fn drop(&mut self) {
+        if let Some(conn) = self.0.take() {
+            conn.close(2u32.into(), b"sync interrupted");
+        }
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancelled_session_cleans_scratch_but_keeps_landed_content() {
+        let root = std::env::temp_dir().join(format!("kb-cancel-test-{}", uuid::Uuid::new_v4()));
+        let out = root.join("out");
+        let inbox = root.join("in");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::write(inbox.join("plaintext.md"), "temporary content").unwrap();
+        let landed = root.join("landed.md");
+        std::fs::write(&landed, "already saved note").unwrap();
+        let mut future = Box::pin(async {
+            let _cleanup = ScratchCleanup(out.clone(), inbox.clone());
+            std::future::pending::<()>().await;
+        });
+        assert!(futures_util::poll!(future.as_mut()).is_pending());
+        drop(future);
+        assert!(!out.exists());
+        assert!(!inbox.exists());
+        assert_eq!(
+            std::fs::read_to_string(&landed).unwrap(),
+            "already saved note"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
 /// 会话协议版本。对不上就**连不下去**，不猜。
 pub const PROTO_V: u32 = 1;
 
@@ -227,6 +275,7 @@ async fn run(
     send_first: bool,
     want_digest: bool,
 ) -> Result<SessionReport, String> {
+    let mut interrupted = InterruptedConnection(Some(w.conn.clone()));
     let mine = Hello {
         v: PROTO_V,
         cursor_ms: store.device_cursor(peer),
@@ -295,6 +344,7 @@ async fn run(
 
     let out = scratch("out");
     let inbox = scratch("in");
+    let _scratch_cleanup = ScratchCleanup(out.clone(), inbox.clone());
     let r = exchange(store, &mut w, since, &out, &inbox, send_first, &diverged).await;
     let _ = std::fs::remove_dir_all(&out);
     // ❗ `inbox` 也要在每条退出路径上删掉：里面是**明文笔记**，
@@ -349,6 +399,7 @@ async fn run(
         );
     }
 
+    interrupted.0 = None;
     Ok(SessionReport {
         peer: peer.to_string(),
         since_ms: since,

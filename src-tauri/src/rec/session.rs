@@ -4,11 +4,11 @@
 //! 写 MP4」；音频（系统环回 / 麦克风）在另一条线程泵出 s16 并 AAC 编码，经
 //! mpsc 交给主循环 mux。全局单会话槽 `ACTIVE`——录制中再触发录屏热键 = 停止。
 //!
-//! 取舍（设计稿 §7 已声明，三期 2026-10-06 修订）：编码参数会话开始时定死；
-//! 静止画面不写重复帧——**时间轴按提交帧号驱动**（`已提交帧数 × 1000 / fps`，
-//! 经 `set_capture_at` 喂给编码器），跳帧/暂停天然压缩、播放端时长连续；
-//! 指针经 DXGI 元数据合成进帧（rec/pointer.rs），指针变化也算「有帧」；
-//! 抓帧连续失败（锁屏 / 显示器关闭）→ 自动落盘停止并上报，不静默丢帧。
+//! 取舍（设计稿 §7 已声明，四期 2026-10-10 修订）：编码参数会话开始时定死；
+//! 静止画面**按墙钟补重复帧**——时间轴口径收口在 `rec/timeline.rs`（旧口径
+//! 「按已提交帧数驱动」会把静止段整段从视频轨里抹掉，长录制的「时间轴卡死」
+//! 就是这么来的）；指针经 DXGI 元数据合成进帧（rec/pointer.rs），指针变化也算
+//! 「有帧」；抓帧连续失败（锁屏 / 显示器关闭）→ 自动落盘停止并上报，不静默丢帧。
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,6 +30,7 @@ use super::hooks::{self, RecEvent};
 use super::pointer::{self, PtrDraw, Ripple};
 use super::quality::{self, RecQuality};
 use super::sink::{extract_parameter_sets, sink_params, RecSink, SinkParams};
+use super::timeline::VideoAxis;
 
 /// 单条 mpsc 消息容量上限（音频线程每 10ms 泵一小段，远用不满）。
 const AUDIO_MSG_CAP: usize = 256;
@@ -226,6 +227,116 @@ fn clear_active() {
     ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).take();
 }
 
+/// 会话时刻 = 墙钟（`axis_t0` 起算）扣掉暂停段。视频槽号与音频轴共用这一个基准，
+/// 两处口径必须一致，否则两根轨又会开始互相漂移。
+fn session_ms(t0: Instant, paused_ms: u64) -> u64 {
+    let wall = Instant::now().saturating_duration_since(t0).as_millis() as u64;
+    wall.saturating_sub(paused_ms)
+}
+
+/// 主循环的编码 + mux 上下文。真帧与静止补帧走**同一条**提交路径：开封装、
+/// 连续失败计数、写失败语义只要漏在补帧那一路，静止段就会悄悄掏空时间轴
+/// （规则 11.1：分支逻辑收口，不要抄两份）。
+struct MuxCtx<'a> {
+    enc: H264SessionEncoder,
+    sink: Option<RecSink>,
+    /// 上一格的编码输入（sp.width×sp.height BGRA）：静止段拿它补帧。与 crop_buf
+    /// 分开是因为 crop_buf 上已经画了指针/涟漪，这条缓冲要原样重放上一格画面。
+    /// 多一帧内存：1080p ≈ 8MB、4K ≈ 33MB。
+    last_frame: Vec<u8>,
+    frames_written: u64,
+    enc_fail_streak: u32,
+    /// 两轨都落在 `axis_t0` 这根墙钟上：视频槽号本身就是它相对时间，音频 pts
+    /// 从采集 Start 起算，所以位移只加在音频上（= 开封装取回的 start_ms；无音轨 0）。
+    audio_shift_ms: i64,
+    audio_cfg: Option<mpsc::Receiver<AudioReady>>,
+    aud_rx: &'a mpsc::Receiver<AudioMsg>,
+    path: &'a Path,
+    sp: &'a SinkParams,
+    bytes: &'a Arc<AtomicU64>,
+}
+
+impl MuxCtx<'_> {
+    /// 收干音频通道并写盘。
+    fn mux_audio(&mut self) -> DrainResult {
+        drain_audio(&mut self.sink, self.aud_rx, self.audio_shift_ms)
+    }
+
+    /// 有没有可拿来补帧的上一格画面。
+    fn has_last_frame(&self) -> bool {
+        !self.last_frame.is_empty()
+    }
+
+    /// 用上一格画面补写这些空槽（时间戳升序）。
+    fn submit_holds(&mut self, stamps: &[i64]) -> Result<(), String> {
+        for t in stamps {
+            self.submit_last(*t)?;
+        }
+        Ok(())
+    }
+
+    /// 编码并写入 last_frame（take 出来再还回去：让编码期间仍能借用它）。
+    fn submit_last(&mut self, at_ms: i64) -> Result<(), String> {
+        let frame = std::mem::take(&mut self.last_frame);
+        let r = self.submit(at_ms, &frame);
+        self.last_frame = frame;
+        r
+    }
+
+    fn submit(&mut self, at_ms: i64, frame: &[u8]) -> Result<(), String> {
+        // 编码器时间戳必须逐帧驱动——不驱动它 at_ms 恒 0，整条视频时间轴塌在 0
+        // 上（2026-10-06 三期 P0）。同一帧的全部包（SPS/PPS+IDR）落同一时刻。
+        self.enc.set_capture_at(at_ms);
+        let packets = match self.enc.encode_bgra(frame, self.sp.width, self.sp.height) {
+            Err(e) => {
+                self.enc_fail_streak += 1;
+                log::warn!("[Rec] 编码失败（{}/5）：{e}", self.enc_fail_streak);
+                if self.enc_fail_streak >= 5 {
+                    return Err(format!("视频编码连续失败，已保留已录部分：{e}"));
+                }
+                return Ok(()); // 单帧 hiccup：这一格空着，时间戳照样往前走
+            }
+            Ok(p) => {
+                self.enc_fail_streak = 0;
+                p
+            }
+        };
+        if packets.is_empty() {
+            return Ok(());
+        }
+        if self.sink.is_none() {
+            // 首（批）帧：提参数集 → 开 sink（等音频 cfg 至多 800ms；ready 通道
+            // 一次性消费，开不成也不再重试）
+            let seq = extract_parameter_sets(self.sp.hevc, &packets[0].data);
+            if seq.is_empty() {
+                return Ok(()); // 参数集还没出（首包可能只有 IDR 前导），下一帧再试
+            }
+            match open_sink(self.path, self.sp, self.audio_cfg.take(), self.bytes.clone()) {
+                Ok((s, audio_start_ms)) => {
+                    self.sink = Some(s);
+                    self.audio_shift_ms = audio_start_ms as i64;
+                }
+                Err(e) => return Err(format!("创建 MP4 封装失败：{e}")),
+            }
+        }
+        if let Some(s) = self.sink.as_mut() {
+            for p in &packets {
+                s.write_video(p.at_ms, &p.data)
+                    .map_err(|e| format!("写入视频帧失败，已保留已录部分：{e}"))?;
+                self.frames_written += 1;
+            }
+        }
+        Ok(())
+    }
+
+    /// 收尾：先放掉编码器（让它先释放 MF 对象），再 Finalize sink。
+    fn finish(mut self) -> (u64, Option<Result<(), String>>) {
+        drop(self.enc);
+        let result = self.sink.as_mut().map(|s| s.finalize());
+        (self.frames_written, result)
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn run_record(
     app: AppHandle,
@@ -289,7 +400,7 @@ fn run_record(
     // ── 3. 编码器（内部含 BGRA→NV12；HEVC 打不开自动回落 H.264）──
     // 质量导向码控（三期 1.3）：录制写本地文件，PeakConstrainedVBR——静态桌面
     // 码率自然下沉、突发画面不糊；rc 推流的 CBR+低延迟口径不适用这里。
-    let mut enc = H264SessionEncoder::try_open_for_file(
+    let enc = H264SessionEncoder::try_open_for_file(
         opts.quality.codec(),
         sp.width,
         sp.height,
@@ -307,52 +418,65 @@ fn run_record(
     // 差值就是 mux 时的位移（音画对齐，见 av_shift）。
     let axis_t0 = Instant::now();
     let (aud_tx, aud_rx) = mpsc::sync_channel::<AudioMsg>(AUDIO_MSG_CAP);
-    let mut audio_cfg = spawn_audio(&opts, aud_tx, axis_t0, pause.clone());
+    let audio_cfg = spawn_audio(&opts, aud_tx, axis_t0, pause.clone());
 
     // ── 5. 主循环 ──
     let frame_dur = Duration::from_nanos(1_000_000_000 / sp.fps.max(1) as u64);
-    let mut sink: Option<RecSink> = None;
+    let mut ctx = MuxCtx {
+        enc,
+        sink: None,
+        last_frame: Vec::new(),
+        frames_written: 0,
+        enc_fail_streak: 0,
+        audio_shift_ms: 0,
+        audio_cfg,
+        aud_rx: &aud_rx,
+        path: &path,
+        sp: &sp,
+        bytes: &bytes,
+    };
     let mut scaler = pastepanda_rc_scale::BgraScaler::default();
     let mut crop_buf: Vec<u8> = Vec::new();
     let mut grab_fail_streak = 0u32;
-    let mut enc_fail_streak = 0u32;
     let mut next_frame = Instant::now();
-    let mut frames_written: u64 = 0;
-    // 提交编码的帧数——时间轴的驱动源（`已提交帧数 × 1000 / fps`），也是
-    // rec-done 时长的口径（静止跳帧/暂停不提交 → 时长自然收缩，播放端连续）。
-    let mut frames_submitted: u64 = 0;
+    // 视频时间轴：墙钟（扣暂停）驱动，静止空槽补重复帧（见 rec/timeline.rs）
+    let mut axis = VideoAxis::new(sp.fps);
+    // 暂停段总时长：从墙钟里扣掉，两根轴（视频槽号、音频 pts）同步冻结
+    let mut paused_ms: u64 = 0;
+    let mut pause_started: Option<Instant> = None;
     // 中途故障不边走边报：记原因 → 收尾按结局发**一条**事件
     // （旧实现故障点发 rec-failed、收尾再发 rec-done，主窗双 toast 自相矛盾）
     let mut interrupted: Option<String> = None;
-    // 音画对齐：视频轴 0 = 首帧编码时刻，音频轴 0 = 采集 Start 时刻（音频线程
-    // 记在 axis_t0 相对轴上，开 sink 时取回）。0 点差决定位移哪条轨（只推迟不回拨）。
-    let mut video_encode0_set = false;
-    let mut video_encode0_ms: u64 = 0;
-    let mut video_shift_ms: i64 = 0;
-    let mut audio_shift_ms: i64 = 0;
 
     loop {
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        // 暂停（三期 1.4）：不抓不编——提交驱动时间轴自然冻结；只 drain 音频
-        // 心跳防通道积压。续录无需补帧：静屏上的画面冻结本就是真实内容。
+        // 暂停（三期 1.4）：不抓不编——墙钟轴扣掉暂停段，两轴一起冻结；只 drain
+        // 音频心跳防通道积压。续录无需补帧：静屏上的画面冻结本就是真实内容。
         // 🔴 节奏锚点必须跟着推进：next_frame 停在暂停前，长暂停会积累巨量
         // 「帧距债」，续录后循环会以无节流最高速抓帧编码把债还完。
         if pause.load(Ordering::SeqCst) {
+            if pause_started.is_none() {
+                pause_started = Some(Instant::now());
+            }
             // 暂停段的事件丢弃：该段不进视频，涟漪与 sidecar 都不属于它
             while ev_rx.try_recv().is_ok() {}
-            drain_audio(&mut sink, &aud_rx, audio_shift_ms);
+            ctx.mux_audio();
             next_frame = Instant::now();
             std::thread::sleep(Duration::from_millis(20));
             continue;
         }
-        // 事件轨 drain（四期 1.3）：打点用当前视频时间轴——暂停/静止跳帧时
-        // 时间冻结，涟漪起点与编码画面严格对齐（不会在静止段偷偷走完）。
+        if let Some(t) = pause_started.take() {
+            paused_ms += t.elapsed().as_millis() as u64;
+        }
+        // 事件轨 drain（四期 1.3）：打点用当前视频时间轴，涟漪起点与编码画面严格
+        // 对齐（静止段补帧照走，涟漪按时间到点消失）。
+        let el_ms = session_ms(axis_t0, paused_ms);
         loop {
             match ev_rx.try_recv() {
                 Ok(ev) => {
-                    let t = frames_submitted * 1000 / u64::from(sp.fps.max(1));
+                    let t = axis.at(el_ms as i64) as u64;
                     let canvas = match &ev {
                         RecEvent::Click { x, y, .. } => Some((x - sx - rx, y - sy - ry)),
                         _ => None,
@@ -369,13 +493,22 @@ fn run_record(
             }
         }
         // 音频 mux（无音频轨时立刻返回）
-        drain_audio(&mut sink, &aud_rx, audio_shift_ms);
+        ctx.mux_audio();
         // 节奏：静止时 DXGI 30ms 超时自然降频，画面一动立即出帧
         if next_frame > Instant::now() {
             std::thread::sleep(Duration::from_millis(2));
             continue;
         }
         next_frame += frame_dur;
+        // 静止段补帧（四期 2026-10-10）：墙钟走到了、上一个样本却还停在 ~500ms 前，
+        // 就补一格上一画面。不补 = 视频轨比音频轨短掉静止时长（「时间轴卡死」）；
+        // 逐格补 = 静屏持续吃半个核（实测见 sink.rs `补帧开销_静态逐格重编`）。
+        // 节奏与口径都收在 rec/timeline.rs。
+        let holds = axis.fill_holds(session_ms(axis_t0, paused_ms) as i64, ctx.has_last_frame());
+        if let Err(e) = ctx.submit_holds(&holds) {
+            interrupted = Some(e);
+            break;
+        }
         match pool.grab_rec() {
             Err(e) => {
                 grab_fail_streak += 1;
@@ -387,7 +520,7 @@ fn run_record(
                     break;
                 }
             }
-            Ok(None) => { /* 静止且指针没动：跳帧，时间轴由编码器步进，时长连续 */ }
+            Ok(None) => { /* 静止且指针没动：上面已按墙钟补过格 */ }
             Ok(Some(((vw2, vh2, bgra), ptr))) => {
                 if (vw2, vh2) != (vw, vh) {
                     interrupted = Some("录制中分辨率变化（接显示器/改缩放），已保留已录部分".into());
@@ -395,8 +528,16 @@ fn run_record(
                 }
                 crop_into(bgra, vw, rx, ry, rw, rh, &mut crop_buf);
                 // 涟漪（四期 1.3）：画在指针**之前**（光标保持最上层）、裁剪后
-                // 缩放前（跟内容一起缩放）。时间基 = 本帧时间戳（提交帧数驱动）。
-                let frame_t = frames_submitted * 1000 / u64::from(sp.fps.max(1));
+                // 缩放前（跟内容一起缩放）。时间基 = 本帧时间戳（墙钟槽）。
+                // 抓帧本身会阻塞（acquire 最多等 30ms），所以本帧的时刻重新取一次；
+                // 期间走掉的空槽由 arrive 一并返回，仍用上一格画面补。
+                let (extra_holds, frame_t) =
+                    axis.arrive(session_ms(axis_t0, paused_ms) as i64, ctx.has_last_frame());
+                if let Err(e) = ctx.submit_holds(&extra_holds) {
+                    interrupted = Some(e);
+                    break;
+                }
+                let frame_t = frame_t as u64;
                 ripples.retain(|r| frame_t.saturating_sub(r.start_ms) < pointer::RIPPLE_DURATION_MS);
                 if opts.click_highlight && !ripples.is_empty() {
                     pointer::draw_ripples(&mut crop_buf, rw, rh, &ripples, frame_t);
@@ -425,104 +566,52 @@ fn run_record(
                         },
                     );
                 }
-                let src = if (rw, rh) != (sp.width, sp.height) {
+                // 编码输入 = ctx.last_frame：1:1 档与 crop_buf 换手（零拷贝，
+                // 旧格画面顺手留作下一圈的补帧源），需要缩放时把缩放结果拷进去。
+                if (rw, rh) != (sp.width, sp.height) {
                     match scaler.resize(&crop_buf, rw, rh, sp.width, sp.height) {
-                        Ok(s) => s.to_vec(),
+                        Ok(s) => {
+                            ctx.last_frame.clear();
+                            ctx.last_frame.extend_from_slice(s);
+                        }
                         Err(e) => {
                             interrupted = Some(format!("画面缩放失败：{e}"));
                             break;
                         }
                     }
                 } else {
-                    std::mem::take(&mut crop_buf)
-                };
-                if !video_encode0_set {
-                    video_encode0_set = true;
-                    video_encode0_ms =
-                        Instant::now().saturating_duration_since(axis_t0).as_millis() as u64;
+                    std::mem::swap(&mut crop_buf, &mut ctx.last_frame);
                 }
-                // 时间轴（三期 1.1）：按**提交帧号**驱动编码器时间戳——不驱动它
-                // at_ms 恒 0，整条视频时间轴塌在 0 上（存量 P0，rec 从未接过
-                // 帧龄时间轴）。同一帧的全部包（SPS/PPS+IDR）落同一时刻。
-                enc.set_capture_at((frames_submitted * 1000 / sp.fps.max(1) as u64) as i64);
-                match enc.encode_bgra(&src, sp.width, sp.height) {
-                    Err(e) => {
-                        enc_fail_streak += 1;
-                        log::warn!("[Rec] 编码失败（{enc_fail_streak}/5）：{e}");
-                        if enc_fail_streak >= 5 {
-                            interrupted = Some(format!("视频编码连续失败，已保留已录部分：{e}"));
-                            break;
-                        }
-                    }
-                    Ok(packets) => {
-                        enc_fail_streak = 0;
-                        frames_submitted += 1;
-                        if packets.is_empty() {
-                            continue;
-                        }
-                        if sink.is_none() {
-                            // 首（批）帧：提参数集 → 开 sink（等音频 cfg 至多 800ms；
-                            // ready 通道一次性消费，开不成也不再重试）
-                            let seq = extract_parameter_sets(sp.hevc, &packets[0].data);
-                            if seq.is_empty() {
-                                continue; // 参数集还没出（首包可能只有 IDR 前导），下一帧再试
-                            }
-                            match open_sink(&path, &sp, audio_cfg.take(), bytes.clone()) {
-                                Ok((s, audio_start_ms)) => {
-                                    sink = Some(s);
-                                    // 两轴 0 点差 → 晚开的那条轨整体推迟差值（不回拨）；
-                                    // 无音频轨（0 = 无锚点）时视频轴保持原样
-                                    let (vs, ash) = if audio_start_ms == 0 {
-                                        (0, 0)
-                                    } else if audio_start_ms > video_encode0_ms {
-                                        (0, (audio_start_ms - video_encode0_ms) as i64)
-                                    } else {
-                                        ((video_encode0_ms - audio_start_ms) as i64, 0)
-                                    };
-                                    video_shift_ms = vs;
-                                    audio_shift_ms = ash;
-                                }
-                                Err(e) => {
-                                    interrupted = Some(format!("创建 MP4 封装失败：{e}"));
-                                    break;
-                                }
-                            }
-                        }
-                        if let Some(s) = sink.as_mut() {
-                            let mut write_err = None;
-                            for p in &packets {
-                                if let Err(e) = s.write_video(p.at_ms + video_shift_ms, &p.data) {
-                                    write_err = Some(e);
-                                    break;
-                                }
-                                frames_written += 1;
-                            }
-                            if let Some(e) = write_err {
-                                interrupted = Some(format!("写入视频帧失败，已保留已录部分：{e}"));
-                                break;
-                            }
-                        }
-                    }
+                if let Err(e) = ctx.submit_last(frame_t as i64) {
+                    interrupted = Some(e);
+                    break;
                 }
-                crop_buf = src; // 复用容量（mem::take 后归还）
             }
         }
     }
 
-    // ── 6. 收尾：drain 音频余量 → Finalize → 按结局发**一条**事件 ──
+    // ── 6. 收尾：补尾格 → drain 音频余量 → Finalize → 按结局发**一条**事件 ──
     drop(scaler);
-    let mut sink = sink;
-    drain_audio(&mut sink, &aud_rx, audio_shift_ms);
+    // 轨尾对齐墙钟：静止段按 ~500ms 节奏落样，最后一次落样可能比会话末尾早一个间隔，
+    // 那一段视频轨就没有样本了（成品末尾冻结 + rec-done 时长比成品短）。补一帧收尾，
+    // 一次会话只补这一次。🔴 若是在暂停中停的，当前这段暂停还没结算进 paused_ms，
+    // 直接取 session_ms 会把暂停时长算进轨尾（比真实内容长）。
+    let paused_now = paused_ms + pause_started.map_or(0, |t| t.elapsed().as_millis() as u64);
+    let tail = axis.tail_hold(session_ms(axis_t0, paused_now) as i64, ctx.has_last_frame());
+    if let Err(e) = ctx.submit_holds(&tail) {
+        if interrupted.is_none() {
+            interrupted = Some(e);
+        }
+    }
+    ctx.mux_audio();
     // 音频线程可能还有最后一段：给它一点时间自然排空
     let deadline = Instant::now() + Duration::from_millis(300);
     while Instant::now() < deadline {
-        if matches!(drain_audio(&mut sink, &aud_rx, audio_shift_ms), DrainResult::Idle) {
+        if ctx.mux_audio() == DrainResult::Idle {
             break;
         }
     }
-    drop(enc);
-    let finalize_result = sink.as_mut().map(|s| s.finalize());
-    drop(sink);
+    let (frames_written, finalize_result) = ctx.finish();
 
     // 会话槽先清：完成事件到达前 status() 已不再报「录制中」
     clear_active();
@@ -534,9 +623,9 @@ fn run_record(
         let _ = app.emit("rec-discarded", serde_json::json!({ "path": path.display().to_string() }));
         return;
     }
-    // 时长按编码器时间轴（提交帧数×帧长）：不含首帧等待与暂停段，与播放器
-    // 显示的时长一致。frames_written 是**包数**（SPS/PPS 会多出一两个），不能当帧数用。
-    let duration_ms = frames_submitted * 1000 / sp.fps.max(1) as u64;
+    // 时长取视频时间轴末尾（墙钟扣暂停，含补帧）：与播放器显示的时长一致。
+    // frames_written 是**包数**（SPS/PPS 会多出一两个），不能当帧数用。
+    let duration_ms = axis.duration_ms();
     match finalize_result {
         Some(Ok(())) => {
             let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
@@ -671,6 +760,9 @@ fn run_audio(
     // 与视频首帧编码时刻同轴相减就是 mux 位移。
     let audio_start_ms =
         Instant::now().saturating_duration_since(axis_t0).as_millis() as u64;
+    // 静音保活锚：音频轴（pts = 已喂样本数）已推进到的墙钟点。无真声期间按
+    // 墙钟缺口补静音（见循环内），真声到来即重锚——补多少、轴走多少，不凭空加速。
+    let mut fill_t = Instant::now();
     if sys && loopback.is_none() {
         log::warn!("[Rec] 系统声音采集不可用（无播放设备），本次录制无系统声");
     }
@@ -710,7 +802,9 @@ fn run_audio(
             |e| e.cfg(),
         );
     let cfg = AudioReady { sr: enc_cfg.sr, ch: enc_cfg.ch, asc: enc_cfg.asc, start_ms: audio_start_ms };
-    let _ = ready_tx.send(cfg);
+    // cfg 延后到**首个成功编码**再回报（见循环内）：open_sink 一收到 cfg 就开
+    // 音轨，编码器「开得成、编不出」的残废态绝不能让它开出一条永远空的音轨。
+    let mut cfg_sent = false;
 
     loop {
         // 没人收（主循环已退）就退
@@ -748,25 +842,51 @@ fn run_audio(
             }
         }
         if paused {
-            // AAC pts 按已喂样本数累计：暂停不喂 = 音频时间轴与视频轴同步冻结
+            // AAC pts 按已喂样本数累计：暂停不喂 = 音频时间轴与视频轴同步冻结。
+            // 锚点跟着墙钟走：续录从「现在」起补，不把暂停段补成静音。
+            fill_t = Instant::now();
             std::thread::sleep(Duration::from_millis(10));
             continue;
         }
         if pcm.is_empty() {
-            std::thread::sleep(Duration::from_millis(10));
-            continue;
+            // 🔴 静音保活（0xC00D4A45 实录踩坑）：WASAPI 环回在「完全没有声音
+            // 在放」时可以整场零包（音频引擎停摆不产渲染），AAC 编码器零输入
+            // → 音轨 0 样本 → MP4 sink Finalize 写不出 moov（样本描述要从流内
+            // 自取）→ 保存失败。按墙钟缺口补静音：轴照走，真声来了无缝衔接。
+            let frames = silence_fill_frames(fill_t.elapsed(), base_sr);
+            if frames == 0 {
+                std::thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            fill_t += Duration::from_secs_f64(frames as f64 / f64::from(base_sr));
+            pcm = vec![0i16; frames * 2];
+        } else {
+            fill_t = Instant::now();
         }
         if let Some(e) = encoder.as_mut() {
             match e.encode(&pcm) {
-                Ok(packets) if !packets.is_empty() => {
-                    if tx.send(AudioMsg::Packets(packets)).is_err() {
+                Ok(packets) => {
+                    if !cfg_sent {
+                        cfg_sent = true;
+                        let _ = ready_tx.send(cfg.clone());
+                    }
+                    if !packets.is_empty() && tx.send(AudioMsg::Packets(packets)).is_err() {
                         break;
                     }
                 }
-                Ok(_) => {}
                 Err(err) => {
                     log::warn!("[Rec] AAC 编码失败，剩余录制无音轨：{err}");
                     encoder = None;
+                    if !cfg_sent {
+                        // 首编即挂：回报空 cfg 让主循环走「只录画面」，别留空音轨
+                        cfg_sent = true;
+                        let _ = ready_tx.send(AudioReady {
+                            sr: 0,
+                            ch: 0,
+                            asc: Vec::new(),
+                            start_ms: 0,
+                        });
+                    }
                 }
             }
         }
@@ -800,6 +920,11 @@ fn drain_audio(
                 }
                 any = true;
                 if let Some(s) = sink.as_mut() {
+                    if !s.has_audio() {
+                        // 只录画面：包照收（通道必须排空，否则音频线程 send 阻塞），
+                        // 不写也不刷「无音频轨」警告
+                        continue;
+                    }
                     let mut err = None;
                     for p in &pkts {
                         if let Err(e) = s.write_audio(p.pts_ms as i64 + audio_shift_ms, &p.data) {
@@ -911,6 +1036,12 @@ fn resample_linear(input: &[i16], from_sr: u32, to_sr: u32, phase: &mut f64) -> 
     out
 }
 
+/// 静音保活补帧量：距音频轴锚点的墙钟 gap → 应补的**每声道**帧数（向下取整）。
+/// 纯函数可单测；调用侧「补多少、锚点推进多少」，pts 轴在无真声期间严格按墙钟走。
+fn silence_fill_frames(gap: Duration, sr: u32) -> usize {
+    (gap.as_secs_f64() * f64::from(sr)) as usize
+}
+
 /// 供 mod.rs re-export（commands 用）。
 #[cfg(test)]
 mod tests {
@@ -949,5 +1080,16 @@ mod tests {
         // input 是 480 **帧**（960 个 s16 元素）；44.1k 的时长在 48k 下帧数 ×1.088
         let expect = 480f64 * (48_000f64 / 44_100f64);
         assert!(((out.len() / 2) as f64 - expect).abs() < 2.0, "{} vs {}", out.len() / 2, expect);
+    }
+
+    #[test]
+    fn 静音保活_墙钟缺口换算帧数() {
+        // 守卫（0xC00D4A45 静音场踩坑）：补帧 = 墙钟缺口 × 采样率（floor）——
+        // 补多少、锚点推进多少，pts 轴在无真声期间严格按墙钟走，真声衔接不失速。
+        assert_eq!(silence_fill_frames(Duration::from_millis(100), 48_000), 4_800);
+        assert_eq!(silence_fill_frames(Duration::from_millis(100), 44_100), 4_410);
+        // 微 gap 不足 1 帧不补（floor），下一轮凑够再说
+        assert_eq!(silence_fill_frames(Duration::from_micros(10), 48_000), 0);
+        assert_eq!(silence_fill_frames(Duration::ZERO, 48_000), 0);
     }
 }

@@ -8,6 +8,7 @@ import { AppIcon } from "@/components/AppIcon";
 import { ChangelogView } from "@/components/ChangelogView";
 import aboutStyles from "../About.module.css";
 import { SponsorCard } from "@/components/SponsorCard";
+import { MobileAppCard } from "@/components/MobileAppCard";
 import melodyUrl from "@/assets/melody.png";
 
 const TECH_STACK = [
@@ -93,6 +94,8 @@ export function AboutTabContent({ appName, appVersion }: { appName: string; appV
       </div>
 
       <div className={aboutStyles.aboutDivider} />
+
+      <MobileAppCard />
 
       <SponsorCard />
 

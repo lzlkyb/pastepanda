@@ -62,7 +62,7 @@
 ## 14. git push 优先使用 SSH
 本机 HTTPS 访问 GitHub 经常超时（系统代理 `127.0.0.1:26561` 不稳定），但 SSH (`git@github.com`) 始终可用。
 - remote URL 用 SSH 格式：`git@github.com:lzlkyb/pastepanda.git`；若 `git push` 报 `Failed to connect` / `Connection was reset`，先 `git remote get-url origin` 检查，是 HTTPS 就 `git remote set-url origin git@github.com:lzlkyb/pastepanda.git`。
-- pre-push hook 会跑完整测试（vitest + cargo test），约 3 分钟，push 的 timeout 需 ≥ 300s。
+- pre-push hook 恒跑**覆盖守卫 + 密钥守卫 + `npx tsc --noEmit`**；**全量 vitest / cargo test 只在推 master 或 tag 时跑**（判据 `scripts/prePushTier.mjs`，特性分支的全量交给 PR 的 CI）。覆盖守卫拦的是「这次 push 会抹掉别人写的提交」——master 的保护规则管不到别的分支，本机这一条是唯一还在拦的地方（条文与取证配方见 `CONTRIBUTING.md` §3.10）。每段耗时由钩子自己打印，口径与实测数字见 §2.7；push 的 timeout 仍按 ≥ 1800s 留，因为发版那一档要付全量。
 
 ## 15. 反馈必须和触发在同一「可见性域」
 - **15.1 触发常驻可见，结果就必须常驻可见。** 把操作按钮提到卡头 / 摘要卡 / 工具栏时，**同一次改动**里要把它的成功与失败展示提到同一层级。按钮和它的反馈被拆进两个可见性域 = 用户眼里的「点了没反应」。
@@ -98,6 +98,21 @@
 3. 裸 `npm run tauri android build/dev` 与桌面共用 `target/` 会抢 cargo 构建锁，**仅当没有桌面 dev 在跑时**才允许直接用；禁止用「杀桌面进程」来腾 Android 构建。
 4. `target-android` 首次全树重编约 10–20 分钟属正常，之后增量秒级；换机器只改脚本里的 `ENV_DEFAULTS`。
 5. 踩坑细节（ABI 只编 aarch64、Kotlin `Plugin.activity` 私有、APK 包根 index.html 等）见 `docs/dev-运行手册.md` Android 各节。
+
+---
+
+## 21. 提交身份必须能归属到 GitHub 账号
+`git config user.email` 若是无法在 GitHub 验证的地址（本仓历史上是 `dev@clipboard-manager.local`，616 个提交因此在贡献者图上归属为零），**提醒用户改**，但不要自行修改 git config——由用户执行。
+
+## 22. 共享工作树：只 add 自己的文件
+同一工作树常并行多个开发会话。提交前 `git status` 判归属，禁止 `git add -A` / `git commit -a`；`pre-commit` 的 `lint-staged` 会 stash 整棵树，`pre-push` 跑整棵树的测试——树里有他人在途改动时不要 push（详见 `CONTRIBUTING.md` §3.7）。
+
+## 23. 修 bug 先让它变红（复现用例先行）
+「重跑到绿」不是修复，也不许拿来当验收。任何 bug 修复必须有一条**改前为红、改后为绿**的用例，两次输出都留在手上（写进 commit message 或 PR 描述）。
+
+- 竞态/时序类做不到稳定红时，按这两条之一取证：① 把延时注入**制造该状态的那一层**（例：先 `store.setState({error})`，`setTimeout` 后再 `throw`），把中间帧变成可观测的稳态；② 用静态守卫钉住机制本身（例：`prePushHookParity.test.ts` 钉住「钩子会打印分段耗时」）。
+- 🔴 负载和重跑不是证据：2026-10-09 CI 的「重置接收位置」判红，本机压 52–59 个 node 进程时**坏版本和修好版本都能连过 3 次**，只有撑开时间窗才造出确定性红（19ms vs 328ms）。同理，全绿不等于守卫有效——新守卫要先喂一个反例确认它会红。
+- 验收标准：**这条用例明天被人删掉，bug 会不会无声复发？** 不会（有断言或守卫钉住）才算修完。
 
 ---
 

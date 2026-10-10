@@ -13,8 +13,20 @@ run-name: Gitee 通道自愈${{ github.event.inputs.dry_run == 'true' && '（仅
 #   不重新构建、不签名、不碰 GitHub Release，也不需要桌面/Android 构建环境。
 on:
   schedule:
-    # 每 6 小时一次；:17 分错开整点队列。健康时脚本秒退（两次 GET），几乎零开销。
-    - cron: "17 */6 * * *"
+    # 🔴 2026-10-09 从「每 6 小时」提到「每 30 分钟」，三条实测依据：
+    #    ① Gitee 的 GitHub→Gitee 镜像同步只保 master，会剪掉 releases 分支，被剪窗口实测 ≤67 分钟
+    #       ⇒ 6 小时的档等于「第 1 源每天有一段长时间是 404」，国内用户掉回 ghproxy/GitHub；
+    #    ② GitHub 的 scheduler 会把 fire **延后几个小时**：10-08 的 18:17 档实际 23:19:54 才出 run。
+    #       ⇒ 档期只能靠「一小时内多跑几次」兜住，不能指望某一次跑准。
+    #    ③ 🔴 分字段**不许写逗号列表**：`17,47 * * *` 被 GitHub 判 `invalid cron attribute`，
+    #       整条工作流降级成「workflow file issue」——schedule 从此一次都不跑，而且
+    #       本地 js-yaml / action-validator 全都说文件是好的，只有 GitHub 的 422 报错说了真话。
+    #       要多档就写**多条 `- cron:`**（守卫：releaseCrossChannelGuards.test.ts）。
+    #    为什么不加 push 触发：剪枝发生在 push 之后约 16 分钟那次同步的**当时**，
+    #    由该次 push 触发的自愈跑在剪枝之前，等于白跑；只有下一轮定时接得住。
+    #    成本：健康时脚本秒退（两次 GET + 一次 ls-remote），本仓 public 不限分钟数。
+    - cron: "17 * * * *"
+    - cron: "47 * * * *"
   workflow_dispatch:
     inputs:
       tag:

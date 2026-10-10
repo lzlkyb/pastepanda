@@ -1,5 +1,7 @@
-.summary { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--section-bg); color: var(--text-primary); font-size: 13px; }
+.summary { display: flex; align-items: center; gap: 8px; padding: 4px 12px; background: var(--section-bg); color: var(--text-primary); font-size: var(--mobile-font-secondary); }
 .summary > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.summary button { flex: none; min-height: 48px; min-width: 48px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--accent-strong); font-size: 13px; }
+.summary button { flex: none; min-height: 48px; min-width: 48px; padding: 8px; border: 0; border-radius: 8px; background: transparent; color: var(--accent-strong); font-size: var(--mobile-font-secondary); }
+.compact { flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 4px; font-size: var(--mobile-font-label); }
+.compact button { min-width: 0; width: 100%; padding-inline: 4px; font-size: var(--mobile-font-label); overflow-wrap: anywhere; }
 .summary button:active { background: var(--accent-light); }
 .summary button:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -2px; }

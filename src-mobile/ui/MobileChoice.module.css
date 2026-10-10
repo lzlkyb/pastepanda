@@ -1,0 +1,9 @@
+.choice { display:flex; align-items:center; gap:12px; width:100%; min-height:48px; padding:12px; border:0; border-radius:12px; color:var(--text-primary); background:var(--section-bg); text-align:left; font-size:var(--mobile-font-body); }
+.choice[aria-checked="true"] { color:var(--accent-strong); background:var(--accent-light); }
+.copy { flex:1; min-width:0; overflow-wrap:anywhere; }
+.copy strong { display:block; font-weight:600; line-height:1.5; }
+.description { display:block; margin-top:4px; font-size:var(--mobile-font-secondary); line-height:1.5; color:var(--text-secondary); }
+.choice[aria-checked="true"] .description { color:var(--accent-strong); }
+.icon,.check { display:flex; align-items:center; justify-content:center; flex:none; width:24px; }
+.choice:focus-visible { outline:2px solid var(--accent-strong); outline-offset:2px; }
+.choice:disabled { opacity:.6; }

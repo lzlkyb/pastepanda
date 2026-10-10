@@ -46,6 +46,28 @@ function rootEl(container: HTMLElement) {
   return container.firstElementChild as HTMLElement;
 }
 
+/** 折叠态 aria-label 里的剩余数（空态首帧是 0，真数据落地才是 3） */
+function remainInLabel(container: HTMLElement) {
+  return (rootEl(container).getAttribute("aria-label") ?? "").match(/还剩 (\d+) 项/)?.[1];
+}
+
+/**
+ * 渲染并等「快照真的落地」。
+ *
+ * 🔴 不能用 `waitFor(data-st === "pill")` 当就绪信号：stage 初值**就是** pill，
+ * 而 `useIslandState` 首帧返回空态（total 0 / hint 空），取数 promise 要下一个
+ * 微任务才 setState。等 pill 等于没等——快机器碰巧能过，CI 慢机器上断言读到
+ * 空态首帧（实测判成「0今天没有待办」）。`loaded` 传只有真数据才成立的断言。
+ */
+async function renderIslandLoaded(assertReady?: (container: HTMLElement) => void) {
+  const { container } = render(<TodoIsland />);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  if (assertReady) await waitFor(() => assertReady(container));
+  return container;
+}
+
 beforeEach(() => {
   h.handlers.clear();
   h.invoke.mockReset();
@@ -76,15 +98,29 @@ afterEach(() => {
 
 describe("TodoIsland 舞台机", () => {
   it("收起态渲染真数据：剩余数与下一条", async () => {
+    const container = await renderIslandLoaded((c) =>
+      expect(c.textContent).toContain("交材料"),
+    );
+    expect(container.textContent).toContain("3");
+  });
+
+  it("🔴 守卫：快照晚于首帧落地时，pill 就绪信号必须算「还没好」", async () => {
+    // 反例注入：取数 20ms 后才回（CI 慢机器的形状）。首帧 stage 已经是 pill，
+    // 把 data-st==="pill" 当就绪信号就会读到 useIslandState 的空态首帧。
+    h.invoke.mockImplementation((cmd: string) =>
+      cmd === "todo_island_tasks"
+        ? new Promise((resolve) => setTimeout(() => resolve(STATE), 20))
+        : Promise.resolve(null),
+    );
     const { container } = render(<TodoIsland />);
     await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
-    expect(container.textContent).toContain("3");
+    expect(remainInLabel(container)).toBe("0");
+    await waitFor(() => expect(remainInLabel(container)).toBe("3"));
     expect(container.textContent).toContain("交材料");
   });
 
   it("点胶囊 → list 舞台，窗口几何立即交给 Rust 动画（2026-09-25 起尺寸动画在窗口侧）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container));
     expect(rootEl(container).getAttribute("data-st")).toBe("list");
     await waitFor(() =>
@@ -114,8 +150,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 展开态清空不再被强制收走：留在列表，用户收起那一刻才走全清（审计修复）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     // 先展开（全清态只发生在「勾完最后一条」的时刻——用户正看着列表）
     fireEvent.click(rootEl(container));
     await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("list"));
@@ -137,8 +172,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 tab 挂岛层：收起再展开仍在原视图，不被重置回「进行中」（critique P2-3，规则 §15.2）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getByText("已完成"));
     expect(screen.getByText("已办的事")).toBeTruthy();
@@ -150,8 +184,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 语义层跟得上视觉层（audit 2026-09-28 P2/P3）：胶囊标签报剩余数、alert 常驻、tab 关联面板", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     // 剩余数只画在环和数字上（纯视觉）——读屏用户展开前也得知道「还剩几件」
     expect(rootEl(container).getAttribute("aria-label")).toContain("还剩 3 项待办");
     // 失败提示的播报口在收起态就已挂载：条件挂载的 role 节点第一次来不及播报
@@ -196,8 +229,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 Rust hide 广播舞台复位 → 前端同步回胶囊（否则下次点亮按旧展开尺寸出现）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     expect(rootEl(container).getAttribute("data-st")).toBe("list");
     await act(async () => {
@@ -207,8 +239,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("收起态下数据被外部清空不切全清（全清是展开时刻的专属语义）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     await act(async () => {
       h.handlers.get("todo-island-update")?.({ payload: { ...STATE, tasks: [] } });
     });
@@ -216,8 +247,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("提醒态：dueAlert 占住胶囊（铃 + 到点了 + 任务文字），点击仍进列表（二期甲案）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     await act(async () => {
       h.handlers
         .get("todo-island-update")
@@ -242,8 +272,7 @@ describe("TodoIsland 舞台机", () => {
         return Promise.resolve({ ok: true, label: "明天 14:00", hasTime: true });
       return Promise.resolve(null);
     });
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getByText("记一条")); // → compose
     const input = screen.getByLabelText("记一条待办") as HTMLInputElement;
@@ -281,8 +310,7 @@ describe("TodoIsland 舞台机", () => {
     h.invoke.mockImplementation((cmd: string) =>
       cmd === "todo_island_tasks" ? Promise.resolve(withDue) : Promise.resolve(null),
     );
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     // 胶囊态不多嘴：只有环 + 剩余数 + 下一条
     expect(container.querySelector("[class*='peekDue']")).toBeNull();
     // hover → peek（Rust 轮询广播进来）
@@ -296,8 +324,7 @@ describe("TodoIsland 舞台机", () => {
 
   it("peek 在没有截止时间时不编造时间（宁可少说一句）", async () => {
     // STATE.tasks[0]（交材料）没有 dueMs / dueLabel
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     await act(async () => {
       h.handlers.get("todo-island-hover")?.({ payload: true });
     });
@@ -307,8 +334,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("意图态接线（吸附双态设计稿 §3）：intent=true 只点亮 glow、不切舞台；离开熄灭；展开态不点亮", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     // 停留 3 拍：intent 事件先于 hover 事件到——glow 预告点亮，舞台**仍**是胶囊
     await act(async () => {
       h.handlers.get("todo-island-intent")?.({ payload: true });
@@ -335,29 +361,23 @@ describe("TodoIsland 舞台机", () => {
         ? Promise.resolve({ ...STATE, hint: "交材料", dueAlert: alertTask })
         : Promise.resolve(null),
     );
-    const { container } = render(<TodoIsland />);
-    // pill is also the initial stage before the asynchronous snapshot arrives.
-    // Wait for the reminder itself so this guard cannot inspect the empty state.
-    await waitFor(() => {
-      expect(container.textContent).toContain("到点了");
-      expect(container.textContent).toContain("回邮件给张工");
-    });
+    const container = await renderIslandLoaded((c) => expect(c.textContent).toContain("到点了"));
+    expect(container.textContent).toContain("回邮件给张工");
     expect(rootEl(container).getAttribute("data-st")).toBe("pill");
-    // 胶囊 32px 高只装得下一句话：下一条待办不许跟着拼上来
+    // 胶囊 32px 高只装得下一句话：下一条待办不许跟着拼上来（正断言在上面先证明数据已落地，
+    // 否则空态首帧会让这条负断言「假通过」）
     expect(container.textContent).not.toContain("交材料");
   });
 
   it("收起按钮带常驻文字标签（L2：图标 + title 不算标签），快捷键只进 title", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     const btn = screen.getByRole("button", { name: "收起" });
     expect(btn.textContent).toContain("收起");
     expect(btn.getAttribute("title")).toContain("Esc");
   });
   it("🔴 整行可点 = 勾选（B 方案）：点行文字与点来源名都触发一次 toggle，点勾圈不双重触发", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     h.invoke.mockClear(); // 清掉 mount 拉快照与切舞台的调用，只看勾选行为
     // hint 与行文字都叫「交材料」：只点列表行那个（.tx）
@@ -598,8 +618,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 root 键盘可达（P1-1）：tabIndex + Enter/Space 展开，Esc 收回不变", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     const root = rootEl(container);
     expect(root.getAttribute("tabindex")).toBe("0");
     fireEvent.keyDown(root, { key: "Enter" });
@@ -609,8 +628,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 全局热键（P1-1）：收起态触发 → 唤岛直进 compose 并请求焦点；再按 → 收回胶囊", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     await act(async () => {
       h.handlers.get("todo-island-hotkey")?.({ payload: null });
     });
@@ -626,8 +644,7 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 seg 是真 tab 按钮（P1-1）：←/→ 切换视图且焦点跟到新选中的 tab", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getByText("已完成"));
     expect(screen.getByRole("tab", { name: "已完成" }).getAttribute("aria-selected")).toBe("true");
@@ -724,8 +741,7 @@ describe("TodoIslandList 写回", () => {
   });
 
   it("勾选必须带 noteId + line + 原文走 toggle_task（行号漂移防线）", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getAllByTitle("完成")[0]);
     await waitFor(() =>
@@ -738,8 +754,7 @@ describe("TodoIslandList 写回", () => {
   });
 
   it("「记一条」回车 → note_append_daily_task，成功后清空输入", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getByText("记一条")); // → compose
     const input = screen.getByLabelText("记一条待办") as HTMLInputElement;
@@ -752,8 +767,7 @@ describe("TodoIslandList 写回", () => {
   });
 
   it("「已完成」标签页展示已勾任务", async () => {
-    const { container } = render(<TodoIsland />);
-    await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    const container = await renderIslandLoaded();
     fireEvent.click(rootEl(container));
     fireEvent.click(screen.getByText("已完成"));
     expect(screen.getByText("已办的事")).toBeTruthy();

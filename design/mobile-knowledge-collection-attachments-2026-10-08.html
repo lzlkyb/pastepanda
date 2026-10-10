@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手机知识库 · 收集与附件补充稿</title><link rel="stylesheet" href="mobile-knowledge-detail-2026-10-07.css">
+<style>
+.screen { display:flex; flex-direction:column; min-height:0; }
+.bar { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 16px; flex:none; background:var(--surface); }
+.bar strong { font-size:1em; }.bar button,.body button,.foot button { min-height:48px; padding:8px 12px; border:0; border-radius:12px; color:var(--ink); background:var(--soft); }
+.body { padding:16px; flex:1; min-height:0; overflow:auto; overflow-wrap:anywhere; }.body h2 { font-size:1.5em; line-height:1.4; }.body p { line-height:1.7; }
+.body label { display:block; margin-block:16px 6px; }.body input,.body textarea { width:100%; padding:12px; border:0; border-radius:12px; color:var(--ink); background:var(--surface); }.body textarea { min-height:160px; resize:vertical; }
+.foot { flex:none; display:flex; flex-direction:column; max-height:45%; padding:8px 16px; background:var(--card); }.foot button { flex:none; width:100%; background:var(--accent-solid); color:var(--on-accent); }.foot .result { min-height:0; overflow:auto; }.quiet { font-size:.875em; color:var(--muted); }
+.notice { padding:12px; border-radius:12px; background:var(--soft); margin-block:12px; }.notice strong { display:block; }.image-demo { background:var(--soft); border-radius:12px; padding:24px; text-align:center; }.image-demo svg { max-width:100%; height:auto; color:var(--accent); }
+.action-row { display:flex; flex-wrap:wrap; gap:8px; }.choice { margin-block:16px; }.result { min-height:24px; margin:4px 0; color:var(--accent); }
+.app { --soft:var(--surface); }
+</style></head><body><div class="studio"><aside class="controls">
+<h1>收集与附件</h1><p class="intro">沿用已确认的知识库版式。<br>正文优先，结果就在操作旁。</p>
+<p class="prototype">补充设计稿：交互均为演示，不读手机、不连接电脑、不写正式笔记。</p>
+<label class="field">查看流程<select id="flow"><option value="image">分享图片与文字</option><option value="draft">已有草稿，保留两份</option><option value="missing">缺图单张补齐（推荐）</option><option value="old">旧电脑暂不支持</option><option value="offline">电脑离线，稍后重试</option></select></label>
+<label class="field">屏幕尺寸<select id="size"><option value="phone">390 × 844 · 竖屏</option><option value="small">320 × 640 · 小屏</option><option value="landscape">844 × 390 · 横屏</option></select></label>
+<label class="field">文字大小<select id="font"><option value="1">标准</option><option value="2">200%</option></select></label>
+<label class="toggle"><input id="dark" type="checkbox">深色外观</label>
+<p class="explanation">只收用户主动分享或选择的内容。图片先安全存到手机再保存引用；保存链接不自动下载网页。</p>
+<div class="choice"><b>附件方案取舍</b><p class="quiet">A 推荐：正文照常同步，缺图时由用户补齐单张；兼容旧电脑，旧端明确提示升级或整轮同步。<br><br>B：单篇“保留离线”，先核对该篇所有图片后逐张取得，额外需要完整性清单与批量取消。<br><br>C：继续整库同步图片，体验改动小，但无法只取当前需要的一张。</p></div>
+<a href="mobile-knowledge-detail-2026-10-07.html">查看已确认的编辑、冲突与分享流程</a>
+</aside><section class="preview-area"><div class="preview-caption"><span>新增图片收集与按需补图</span><span>PastePanda · 演示</span></div>
+<div id="device" class="device" data-size="phone" data-dark="false" data-font="standard"><div class="app"><div class="statusbar"><span>9:41</span><span>5G　93%</span></div><main id="screen" class="screen"></main><nav class="nav"><button>设备</button><button>文件</button><button aria-current="page">知识库</button><button>设置</button></nav></div></div>
+<p class="preview-note">新：图片收集、缺图单张补齐与不支持/离线恢复。保持既有导航、全文和保存反馈。</p></section></div>
+<script>
+const flow=document.getElementById('flow'),screen=document.getElementById('screen'),device=document.getElementById('device');
+const picture='<div class="image-demo"><svg width="220" height="120" viewBox="0 0 220 120" role="img" aria-label="测试图片占位"><rect x="2" y="2" width="216" height="116" rx="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15 104 78 40 120 78 156 52 205 104" fill="none" stroke="currentColor" stroke-width="3"/><circle cx="173" cy="28" r="9" fill="currentColor"/></svg><p class="quiet">演示图片 · 不包含真实分享内容</p></div>';
+function render(){ const value=flow.value; let body='',button='';
+if(value==='image'){ body='<h2>来自系统分享</h2><p class="quiet">1 张图片已存到手机，内容仍待你确认。</p>'+picture+'<label for="title">标题（可后填）</label><input id="title" value="项目截图"><label for="content">备注</label><textarea id="content" placeholder="补充需要记住的内容…"></textarea>';button='保存到手机'; }
+else if(value==='draft'){ body='<h2>先保留当前记录</h2><div class="notice"><strong>你还有一份未完成草稿</strong><p>系统分享内容已保存在待收集列表，不会覆盖正在写的内容。</p></div><div class="action-row"><button data-message="演示：恢复原草稿。分享内容继续保留。">继续已有草稿</button><button data-message="演示：返回待收集列表，两份内容都保留。">稍后收集分享内容</button></div>';button='返回知识库'; }
+else { let notice='';if(value==='old')notice='<div class="notice"><strong>这台电脑暂不支持单张补图</strong><p>手机正文可以继续阅读。升级电脑后重试，或在同步面板运行一次正常同步。</p></div>';if(value==='offline')notice='<div class="notice"><strong>暂时无法连接电脑</strong><p>手机已有资料仍保留。确认电脑上线后，可以再次尝试。</p></div>';body='<p class="quiet">本机内容 · 图片尚未完整</p><h2>项目交付说明</h2><p>这里是已保存在手机的正文。缺少图片不会影响继续阅读。</p><div class="notice"><strong>这张图片尚未保存到手机</strong><p>从已授权的知识库电脑取得；只下载当前图片，单张不超过 10MB。</p><button data-message="演示：正在取得图片… → 校验完成，图片已保存到手机。">'+(value==='missing'?'取得这张图片':'重试取得图片')+'</button><p class="result" role="status"></p></div>'+notice+'<p>恢复动作放在缺图位置，不弹出挡住正文的全屏错误。</p>';button='继续阅读'; }
+screen.innerHTML='<header class="bar"><button data-message="演示：返回上一级，已落盘内容保留。">← 返回</button><strong>知识库</strong><button data-message="演示：打开已有操作面板。">更多</button></header><div class="body">'+body+'</div><footer class="foot"><p id="receipt" class="result" role="status"></p><button data-save>'+button+'</button></footer>'; }
+screen.addEventListener('click',e=>{const action=e.target.closest('button');if(!action)return;const text=action.dataset.message;if(text){(action.closest('.notice')?.querySelector('.result')||document.getElementById('receipt')).textContent=text;}if(action.hasAttribute('data-save'))document.getElementById('receipt').textContent=flow.value==='image'?'演示：已保存到手机。电脑同步需另看状态。':'演示：已有内容与待处理分享继续保留。';});
+flow.addEventListener('change',render);document.getElementById('size').addEventListener('change',e=>device.dataset.size=e.target.value);document.getElementById('font').addEventListener('change',e=>device.dataset.font=e.target.value==='2'?'huge':'standard');document.getElementById('dark').addEventListener('change',e=>device.dataset.dark=e.target.checked);render();
+</script></body></html>

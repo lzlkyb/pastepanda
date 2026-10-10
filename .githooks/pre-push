@@ -1,12 +1,38 @@
 #!/bin/sh
 # ────────────────────────────────────────────────────
-#  pre-push — push 前自动跑密钥守卫 + 前端 + Rust 测试
+#  pre-push — 覆盖守卫 + 密钥守卫 + tsc 恒跑；全量测试只在推 master / tag 时跑
 #
-#  安装：cp .githooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#  生效的是这一份：core.hooksPath=.husky/_，husky 的 shim 再调本文件。
+#  `.githooks/pre-push` 是「不用 husky 时」的等价副本，改这里必须同步它——
+#  2026-10-08 实测两份已漂移：旧副本缺 `--pool=forks` 和 LIBCLANG_PATH 注入，
+#  照原来那句「cp .githooks/pre-push」装上去，cargo test 会因找不到 libclang 编不过。
 #  跳过：git push --no-verify
+#
+#  2026-10-09 为什么分档：不是「本地慢所以省掉」，而是裁判换了地方——master 现在有
+#  enforce_admins=true + required status checks（Rust Tests / Frontend Tests），
+#  PR 合入前 GitHub 已经跑过同一套全量。特性分支再本地跑第二遍是同一套测试付两遍
+#  （本地实测累计 566s + CI 12m），而且判的是**整棵工作树**：别人的在途文件在给本次 push 判红。
+#  轻档不等于裸推：密钥守卫和 tsc 照跑——tsc 尤其要跑，因为 `npx vitest` 只剥类型不校验，
+#  CI 的 frontend-test 里没有任何一步是 tsc。
+#
+#  2026-10-09 为什么还要一条覆盖守卫：分支保护只装在 master 上，`feature/<别人的账号>`
+#  这类协助者自己的分支，管理员 force push 覆盖时 GitHub 不拦也不提示（ruleset 的 bypass
+#  名单只认角色/团队/App，做不到「拦管理员但放行写权限的协作者」——2026-10-09 查证过）。
+#  本机这一条是唯一还能拦住的地方，判据只读本地对象库，不联网。
 # ────────────────────────────────────────────────────
 
 set -e
+
+# ── 分段计时 ────────────────────────────────────────
+# 整轮耗时以前靠人手抄进文档，两次抄成假数字：CONTRIBUTING 写「约 3 分钟」而实测 25 分钟，
+# 后来写的「22.2 分钟」又在密钥守卫提速后被继续外推。钩子自己报数，文档里就不再有会过期的常数。
+HOOK_START=$(date +%s)
+PREV=$HOOK_START
+mark() {
+  NOW=$(date +%s)
+  echo "  耗时 $1：$((NOW - PREV))s（累计 $((NOW - HOOK_START))s）"
+  PREV=$NOW
+}
 
 echo ""
 echo "══════════════════════════════════════════════"
@@ -14,27 +40,85 @@ echo "  Pre-push: 守卫 + 测试..."
 echo "══════════════════════════════════════════════"
 echo ""
 
+# ── 判档 ────────────────────────────────────────────
+# 初值必须是 full：git 传给钩子的 stdin 读不到（部分 GUI 客户端不喂）、或 node 不在 PATH 时，
+# 兜底方向只能是「多跑一遍」，不能是「静默走轻档把守卫以外全跳过」。
+MODE="full"
+REFS=$(cat || true)
+# scripts/prePushTier.mjs 的退出码约定：0 = 放行，9 = 覆盖守卫拒绝，其它非 0 = 守卫自己没跑成。
+TIER_EXIT=0
+if [ -n "$REFS" ]; then
+  MODE=$(printf '%s' "$REFS" | node scripts/prePushTier.mjs) || TIER_EXIT=$?
+fi
+# 拒绝要发生在付代价之前——否则是先跑 48s 守卫再告「这次 push 本来就不该推」。
+if [ "$TIER_EXIT" = 9 ]; then
+  echo ""
+  echo "══════════════════════════════════════════════"
+  echo "  ❌ push 已拒绝：这次会抹掉不是本机身份写的提交（明细见上）"
+  echo "══════════════════════════════════════════════"
+  exit 9
+fi
+case "$TIER_EXIT" in
+  0) ;;
+  # 守卫没跑成（node 不在 PATH、脚本被改坏…）：判不了就往重的方向掉，压回全量档。
+  *) echo "  ⚠ 判档/覆盖守卫异常（exit=$TIER_EXIT），降级为 full 档"; MODE="" ;;
+esac
+case "$MODE" in
+  full | light) ;;
+  *) MODE="full" ;;
+esac
+case "$MODE" in
+  full) echo "  档位 full —— 本次 push 动了 master 或 tag：跑全量" ;;
+  *) echo "  档位 light —— 只推特性分支：跑守卫 + tsc，全量由 PR 的 CI 判" ;;
+esac
+mark "判档"
+echo ""
+
 # ── 密钥明文守卫 ────────────────────────────
-# 放在最前：只是几条 grep（秒级），而下面两步要十几分钟。
 # v6.10.0 的教训：一个测试用的假 Slack token 让 GitHub push protection
 # 直接拒了 push（GH013），而那时 commit 已经建好、tag 也已打上，
 # 只能 amend 重写 + 重打 tag。在本地提前拦，代价只是改一行。
-echo "[1/3] 密钥明文守卫..."
+# 2026-10-09 起是秒级：合并成 2 趟 + 剔掉「0 个被追踪文件」的构建缓存目录后本机空闲时实测 8–11s（连测两次 7.8s / 10.7s）；有并发会话时同一份脚本量到 41s——是区间不是常数
+# （历史：4 趟全树 grep -rn ≈499s）。排除名单由脚本开头的 git ls-files 断言自证，
+# 反例在 src/__tests__/secretGuardCanary.test.ts。
+echo "[守卫] 密钥明文守卫..."
 bash tools/check_no_plaintext_secrets.sh
+mark "密钥守卫"
 echo ""
 
-# ── 前端测试 ──────────────────────────────────────
-echo "[2/3] 前端 Vitest..."
-npx vitest --run
-echo "  ✅ 前端测试通过"
+# ── 类型检查（恒跑）────────────────────────────────
+echo "[守卫] tsc --noEmit..."
+npx tsc --noEmit
+mark "tsc"
+echo "  ✅ 类型检查通过"
 echo ""
 
-# ── Rust 测试 ─────────────────────────────────────
-echo "[3/3] Rust cargo test..."
-cd src-tauri && cargo test
-echo "  ✅ Rust 测试通过"
-echo ""
+if [ "$MODE" = "full" ]; then
+  # ── 前端测试 ──────────────────────────────────────
+  echo "[全量] 前端 Vitest..."
+  # vitest 4 的默认 pool 已经是 forks，这里显式重复一遍只是不让钩子依赖配置文件没被改坏。
+  # 真正封顶并发的是 vitest.config.ts 的 maxWorkers（4 里没有 poolOptions 这个键，别往回写）。
+  npx vitest --run --pool=forks
+  mark "前端 Vitest"
+  echo "  ✅ 前端测试通过"
+  echo ""
+
+  # ── Rust 测试 ─────────────────────────────────────
+  echo "[全量] Rust cargo test..."
+  # ocr-rs (vendored) 的 bindgen 需要 libclang.dll，项目自带于 src-tauri/.libclang。
+  # 若该目录存在则注入 LIBCLANG_PATH；CI/其他环境无此目录时走系统 clang，不影响。
+  if [ -d "src-tauri/.libclang" ]; then
+    export LIBCLANG_PATH="$(cygpath -w "$(pwd)/src-tauri/.libclang")"
+  fi
+  cd src-tauri && cargo test
+  mark "Rust cargo test"
+  echo "  ✅ Rust 测试通过"
+  echo ""
+else
+  echo "  （light 档跳过 vitest / cargo —— PR 的 Rust Tests / Frontend Tests 是合入门槛）"
+  echo ""
+fi
 
 echo "══════════════════════════════════════════════"
-echo "  全部测试通过 ✅  开始 push..."
+echo "  本档检查通过 ✅  开始 push..."
 echo "══════════════════════════════════════════════"

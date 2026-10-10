@@ -7,6 +7,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Local knowledge failures must not expose note contents or private filesystem paths. */
+export function knowledgeErrorText(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  if (raw.startsWith("MOBILE_EDIT_REJECTED:folder_missing")) return "原文件夹已被移除，请重新选择文件夹后保存。";
+  if (raw.startsWith("MOBILE_EDIT_REJECTED:tag_missing")) return "所选标签已被移除，请重新选择标签后保存。";
+  if (raw.startsWith("MOBILE_EDIT_REJECTED:title_empty")) return "请填写标题，再保存修改。";
+  if (/disk.*full|storage.*full|database or disk is full|no space|空间不足/i.test(raw))
+    return "手机存储空间不足，请腾出空间后重试。";
+  if (/locked|busy|正在保存|版本已更新/i.test(raw))
+    return "内容正在保存或已更新，请稍后重试。";
+  if (/invoke|tauri_internal|__TAURI|not found.*command/i.test(raw))
+    return "无法连接应用后台，请在最新版 PastePanda 应用内使用。";
+  return "本机操作未能完成，请重试。已有内容不会因这次失败被删除。";
+}
+
 export type PermissionContext = "general" | "file-receive" | "file-send" | "camera";
 
 /** 先区分应用授权与系统文件访问，不能把 IPC 拒绝引导成「去系统开权限」。 */
@@ -922,12 +937,12 @@ export function clampRcViewportOffset(offset: number, size: number, scale: numbe
   return Math.max(size * (1 - scale), Math.min(0, offset));
 }
 /** 控制柄及邻近按钮留在可见区域；远端指针独立移动，仍可到达电脑画面边缘。 */
-export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number) {
-  const marginX = Math.min(108, width / 2);
+export function clampRcFloatingMousePosition(x: number, y: number, width: number, height: number, controlWidth = 208, controlHeight = 116) {
+  const marginX = Math.min(controlWidth / 2 + 4, width / 2);
   const minY = Math.min(96, height / 2);
   return {
     x: Math.max(marginX, Math.min(width - marginX, x)),
-    y: Math.max(minY, Math.min(Math.max(minY, height - 88), y)),
+    y: Math.max(minY, Math.min(Math.max(minY, height - (controlHeight - 28)), y)),
   };
 }
 
@@ -1036,4 +1051,33 @@ export function jsonValidationLabel(text: string, validation: ReturnType<typeof 
   if (!text.trim()) return "等待输入";
   if (validation.valid) return "✓ 有效";
   return validation.line ? `✕ 第 ${validation.line} 行错误` : "✕ JSON 格式错误";
+}
+
+/** Native collection returns verified portable refs; never interpolate arbitrary URI Markdown. */
+export function knowledgeCollectedContent(text: string, images: string[], existing = "") {
+  const references = [...new Set(images)].filter(src => /^pp-asset:[a-f0-9]{32}\.(?:png|jpe?g|gif|webp|bmp|ico)$/i.test(src));
+  const added = references.filter(src => !existing.includes(`](${src})`)).map(src => `![收集的图片](${src})`);
+  return [existing, text, ...added].filter(part => part.trim()).join("\n\n");
+}
+
+/** Asset errors are a code contract. Never display raw transport errors or peer filesystem paths. */
+export function knowledgeAssetErrorText(error: unknown) {
+  let candidate: unknown = error;
+  if (typeof error === "string") { try { candidate = JSON.parse(error); } catch { /* Unknown errors stay generic. */ } }
+  const code = candidate && typeof candidate === "object" && "code" in candidate ? String(candidate.code) : "";
+  const messages: Record<string, string> = {
+    sync_disabled: "知识库同步已关闭，请在同步面板开启后重试。",
+    unauthorized: "这台电脑尚未授权知识库同步，请先在同步面板连接。",
+    paused: "这台电脑的知识库同步已暂停，请恢复后重试。",
+    cancelled: "已停止取得图片，正文与已有图片仍保留。",
+    busy: "已有图片正在取得，请稍后重试。",
+    unsupported: "这台电脑暂不支持单张补图。请升级电脑，或在同步面板运行一次正常同步。",
+    offline: "暂时无法连接电脑，请确认电脑在线后重试。正文仍可阅读。",
+    missing: "电脑上也没有这张图片，请在电脑核对原图。",
+    invalid: "图片引用已变化或不受支持，请载入笔记新版后重试。",
+    too_large: "这张图片超过单张10MB限制，请在电脑压缩后重试。",
+    integrity: "图片校验未通过，未保存不完整内容。可以重试取得。",
+    io: "图片未能保存，请检查手机存储空间后重试。",
+  };
+  return messages[code] || "图片未能取得，请重试。正文与已有内容仍保留。";
 }

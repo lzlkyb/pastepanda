@@ -2,13 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import { createMobileSpring, type MobileSpring } from "./mobileSpring";
 
 /** Only the handle drags; body scrolling must never dismiss a sheet. */
-export function useSheetDrag(open: boolean, onClose: () => void) {
+export function useSheetDrag(open: boolean, onClose: () => void, sideways = false) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const spring = useRef<MobileSpring | null>(null);
   const [present, setPresent] = useState(open);
+  const [dismissRequest, setDismissRequest] = useState(0);
   const active = useRef<{
     id: number;
     start: number;
+    crossStart: number;
     origin: number;
     distance: number;
     moved: number;
@@ -37,15 +39,16 @@ export function useSheetDrag(open: boolean, onClose: () => void) {
     const fresh = !spring.current;
     const motion = ensureSpring();
     if (!motion) return;
-    visibleHeight.current = sheetRef.current.offsetHeight;
+    visibleHeight.current = sideways ? sheetRef.current.offsetWidth : sheetRef.current.offsetHeight;
     const height = visibleHeight.current + 16;
     closing.current = !open;
     if (fresh && open) motion.set(height);
     active.current = null;
     sheetRef.current.removeAttribute("data-dragging");
-    motion.move(open ? 0 : height, releaseVelocity.current, open ? undefined : () => setPresent(false));
+    // Returning to a source step keeps the sheet open; its drag must settle too.
+    motion.move(open ? 0 : height, open ? 0 : releaseVelocity.current, open ? undefined : () => setPresent(false));
     releaseVelocity.current = undefined;
-  }, [open, present, ensureSpring]);
+  }, [open, present, ensureSpring, sideways, dismissRequest]);
   useLayoutEffect(
     () => () => {
       spring.current?.dispose();
@@ -58,12 +61,12 @@ export function useSheetDrag(open: boolean, onClose: () => void) {
     const element = sheetRef.current;
     if (!present || !element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      visibleHeight.current = element.offsetHeight;
+      visibleHeight.current = sideways ? element.offsetWidth : element.offsetHeight;
       if (closing.current) spring.current?.move(visibleHeight.current + 16, undefined, () => setPresent(false));
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [present]);
+  }, [present, sideways]);
   const cancel = useCallback(() => {
     if (!active.current) return;
     active.current = null;
@@ -90,7 +93,8 @@ export function useSheetDrag(open: boolean, onClose: () => void) {
       const current = ensureSpring()?.stop().position ?? 0;
       active.current = {
         id: event.pointerId,
-        start: event.clientY,
+        start: sideways ? event.clientX : event.clientY,
+        crossStart: (sideways ? event.clientY : event.clientX) ?? 0,
         origin: Math.max(0, current),
         distance: Math.max(0, current),
         moved: 0,
@@ -103,32 +107,37 @@ export function useSheetDrag(open: boolean, onClose: () => void) {
     onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
       const drag = active.current;
       if (!drag || drag.id !== event.pointerId) return;
-      const distance = Math.max(0, drag.origin + event.clientY - drag.start);
+      const position = sideways ? event.clientX : event.clientY;
+      const distance = Math.max(0, drag.origin + position - drag.start);
       const elapsed = event.timeStamp - drag.time;
       if (elapsed > 0) drag.velocity = ((distance - drag.distance) / elapsed) * 1000;
       drag.time = event.timeStamp;
       drag.distance = distance;
-      drag.moved = Math.max(drag.moved, Math.abs(event.clientY - drag.start));
+      const cross = (sideways ? event.clientY : event.clientX) ?? 0;
+      drag.moved = Math.max(drag.moved, Math.abs(position - drag.start), Math.abs(cross - drag.crossStart));
       spring.current?.set(distance);
     },
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
       const drag = active.current;
       if (!drag || drag.id !== event.pointerId) return;
-      const distance = Math.max(0, drag.origin + event.clientY - drag.start);
+      const position = sideways ? event.clientX : event.clientY;
+      const distance = Math.max(0, drag.origin + position - drag.start);
       const velocity = event.timeStamp - drag.time > 80 ? 0 : drag.velocity;
-      const moved = Math.max(drag.moved, Math.abs(event.clientY - drag.start));
+      const cross = (sideways ? event.clientY : event.clientX) ?? 0;
+      const moved = Math.max(drag.moved, Math.abs(position - drag.start), Math.abs(cross - drag.crossStart));
       active.current = null;
       sheetRef.current?.removeAttribute("data-dragging");
       spring.current?.set(distance);
       if (distance > 80 || (distance > 16 && velocity > 600) || moved < 4) {
         releaseVelocity.current = velocity;
+        setDismissRequest(request => request + 1);
         onClose();
       } else spring.current?.move(0, velocity);
     },
     onPointerCancel: cancel,
     onLostPointerCapture: cancel,
     onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
-      if (event.detail === 0) onClose();
+      if (event.detail === 0) { setDismissRequest(request => request + 1); onClose(); }
     },
   };
 }

@@ -350,11 +350,15 @@ jobs:
           }
           if (-not (Test-Path $mirrorDir)) { Fail "镜像工作目录不存在：$mirrorDir" }
 
-          # manifest（JSON 小文件）固定覆盖 latest/ 目录（raw 无需登录即可读）
+          # manifest（JSON 小文件）写进 latest/ 目录（raw 无需登录即可读）
+          # 🔴 不许整目录清空再放自己那一份：latest/ 里同时住着**手机端**的
+          #    apk-update-gitee.json（由 scripts/publish-apk.mjs 推上来）。原先这里
+          #    Remove-Item 后 `git add -A latest` 等于每次桌面发版都删掉手机的第 1 更新源，
+          #    手机用户当场回 404 掉到 ghproxy。留着旧那份才是对的：桌面先发、APK 后发是
+          #    常规顺序，旧 manifest 指向的仍是线上可下的版本。
           $destDir = Join-Path $mirrorDir "latest"
-          if (Test-Path $destDir) { Remove-Item $destDir -Recurse -Force }
           New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-          Copy-Item dist/updater-gitee.json $destDir/ -ErrorAction SilentlyContinue
+          Copy-Item dist/updater-gitee.json $destDir/ -Force -ErrorAction SilentlyContinue
 
           # 体积和文件数必须打印：push 被重置时这是判断"是不是太大传不动"的唯一依据。
           $files = @(Get-ChildItem $destDir -Recurse -File)

@@ -6,9 +6,9 @@ import type { TouchCallbacks } from "./touchClassifier";
 import { useTouchGestures } from "./useTouchGestures";
 import { POINTER_MODES, type PointerMode } from "./pointerModes";
 import { LONG_PRESS_MS } from "./touchConstants";
+import { readPointerPreference, savePointerPreference } from "./pointerPreference";
 
 export type { PointerMode } from "./pointerModes";
-const MODE_KEY = "pastepanda-mobile-pointer-mode";
 
 /** 保存内容坐标而非屏幕像素，键盘、旋转或缩放后指针仍指向同一目标。 */
 export function useSessionPointer({
@@ -36,12 +36,7 @@ export function useSessionPointer({
     charge(mode: "on" | "drag" | "off", x?: number, y?: number): void;
   };
 }) {
-  const [mode, setMode] = useState<PointerMode>(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY);
-      return saved && Object.prototype.hasOwnProperty.call(POINTER_MODES, saved) ? saved as PointerMode : "trackpad";
-    } catch { return "trackpad"; }
-  });
+  const [mode, setMode] = useState<PointerMode>(readPointerPreference);
   const [hint, setHint] = useState("");
   const [hintTone, setHintTone] = useState<"success" | "warning">("success");
   const clearHint = useCallback(() => setHint(""), []);
@@ -51,6 +46,7 @@ export function useSessionPointer({
   const dragOwner = useRef<"button" | "gesture" | null>(null);
   const [scrolling, setScrolling] = useState(false);
   const [charging, setCharging] = useState(false);
+  const clickEnabled = enabled && canControl && !dragging && !scrolling;
   const padRef = useRef<HTMLDivElement>(null);
   const position = useRef({ x: 32768, y: 32768 });
   const initialized = useRef(false);
@@ -98,7 +94,7 @@ export function useSessionPointer({
     return visible;
   };
   const click = (button: 1 | 2, isDouble = false) => {
-    if (!enabled || !canControl || dragging) return;
+    if (!clickEnabled) return;
     initialized.current = true;
     const p = point();
     if (!p) return;
@@ -234,6 +230,7 @@ export function useSessionPointer({
     dragging,
     scrolling,
     charging,
+    clickEnabled,
     padRef,
     point,
     moveFloating: (dx: number, dy: number) => {
@@ -248,11 +245,10 @@ export function useSessionPointer({
     pickMode: (next: PointerMode) => {
       reset();
       setMode(next);
-      setMouseOpen(true);
       try {
-        localStorage.setItem(MODE_KEY, next);
+        savePointerPreference(next);
         setHintTone("success");
-        setHint(`已切换为${POINTER_MODES[next].label} · 已记住选择`);
+        setHint(`${POINTER_MODES[next].hint} · 已记住选择`);
       } catch {
         setHintTone("warning");
         setHint(`已切换为${POINTER_MODES[next].label}，无法保存偏好；本次会话仍可使用。`);

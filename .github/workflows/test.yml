@@ -2,7 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [master, "feature/**", "fix/**", "refactor/**"]
+    # 这份名单就是「哪些分支有 CI」的唯一裁判：不在名单里的前缀推上去不跑测试。
+    # 与 CONTRIBUTING §3.1 的分支命名保持一致（新增前缀要同时改那里）。
+    branches: [master, "feature/**", "fix/**", "refactor/**", "chore/**", "agent/**"]
   pull_request:
     branches: [master]
   workflow_dispatch:

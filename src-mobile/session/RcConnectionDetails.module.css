@@ -2,16 +2,17 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 44px;
+  min-height: 48px;
+  min-width: 0;
   border: 0;
   border-radius: 12px;
   padding: 4px 8px;
   background: var(--section-bg);
   flex: none;
 }
-.badge > span { display: flex; flex-direction: column; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.badge > span { display: flex; min-width: 0; flex-direction: column; font-size: var(--mobile-font-label); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .good > span { color: var(--text-primary); }
-.badge small { color: var(--text-secondary); font-size: 11px; font-weight: 400; }
+.badge small { color: var(--text-secondary); font-size: var(--mobile-font-label); font-weight: 400; }
 .good { color: var(--success); }
 .warn { color: var(--text-primary); background: var(--warning-bg); }
 .bad { color: var(--danger); background: var(--danger-bg); }
@@ -20,18 +21,18 @@
 .measurements { display: grid; grid-template-columns: 1fr 1fr; }
 .measurements > div { min-width: 0; padding: 0 12px; }
 .measurements > div:first-child { padding-left: 0; border-right: 1px solid var(--border-color); }
-.measurements span, .measurements small { color: var(--text-secondary); font-size: 13px; }
-.measurements strong { display: block; font-size: 30px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; } /* ui-rule-ok: confirmed mobile primary measurement */
+.measurements span, .measurements small { color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.measurements strong { display: block; font-size: 1.875rem; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } /* ui-rule-ok: confirmed mobile primary measurement */
 .measurements small { font-weight: 400; }
-.measurements p { color: var(--text-secondary); font-size: 12px; margin: 0; }
+.measurements p { color: var(--text-secondary); font-size: var(--mobile-font-label); margin: 0; overflow-wrap: anywhere; }
 .parameters { margin: 0; }
-.parameters > div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border-color); padding: 12px 0; font-size: 13px; }
-.parameters dt { color: var(--text-secondary); }
-.parameters dd { text-align: right; font-variant-numeric: tabular-nums; margin: 0; overflow-wrap: anywhere; }
+.parameters > div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border-color); padding: 12px 0; font-size: var(--mobile-font-secondary); }
+.parameters dt { flex: 1; min-width: 0; color: var(--text-secondary); overflow-wrap: anywhere; }
+.parameters dd { flex: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; margin: 0; overflow-wrap: anywhere; }
 .trend { padding: 12px; border-radius: 12px; background: var(--section-bg); }
-.trendHead { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+.trendHead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: var(--mobile-font-label); color: var(--text-secondary); }
 .trend svg { display: block; width: 100%; height: 60px; margin: 8px 0; }
 .trend polyline { fill: none; stroke: var(--accent-strong); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.advanced summary { cursor: pointer; min-height: 44px; font-size: 13px; padding: 12px 0; }
-.advanced summary span { color: var(--text-secondary); margin-left: 12px; font-size: 12px; }
+.advanced summary { cursor: pointer; min-height: 48px; font-size: var(--mobile-font-secondary); padding: 12px 0; }
+.advanced summary span { color: var(--text-secondary); margin-left: 12px; font-size: var(--mobile-font-label); }
 .advanced summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }

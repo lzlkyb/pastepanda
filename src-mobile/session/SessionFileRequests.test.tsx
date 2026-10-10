@@ -36,7 +36,7 @@ it("接收位置失败在会话中可重试，已过期的请求禁止响应", a
   expect(screen.getByRole("button", { name: "拒绝" })).toBeDisabled();
 });
 
-it("最后一条请求成功后返回画面，响应失败仍留在面板", async () => {
+it("最后一条请求的结果保持在原面板，由用户返回画面", async () => {
   dir.mockResolvedValue("/receive");
   const file = fileView();
   vi.mocked(file.respond).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
@@ -48,5 +48,8 @@ it("最后一条请求成功后返回画面，响应失败仍留在面板", asyn
   expect(close).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.getByRole("button", { name: "接受" })).not.toBeDisabled());
   fireEvent.click(screen.getByRole("button", { name: "接受" }));
-  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(await screen.findByText("已接受文件请求，等待传输")).toBeTruthy();
+  expect(close).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "返回远程画面" }));
+  expect(close).toHaveBeenCalledOnce();
 });

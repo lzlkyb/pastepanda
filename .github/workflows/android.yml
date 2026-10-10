@@ -154,14 +154,17 @@ jobs:
             exit 1
           fi
           BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort | tail -1)
-          # 与本地 scripts/android-build.mjs 同一套 pass: 直传（缺省 keyPassword 回落 storePassword）。
+          # 口令走 apksigner 自带的 env: 引用（只进子进程环境，不进命令行 argv）。
+          # 本地 scripts/android-build.mjs 同一口径；keyPassword 缺省时回落 storePassword。
+          export PP_APK_EFFECTIVE_KEY_PASS="${PP_APK_KEY_PASSWORD:-$PP_APK_KEYSTORE_PASSWORD}"
           "$BT/apksigner" sign \
             --ks "$PP_KEYSTORE" \
-            --ks-pass "pass:${PP_APK_KEYSTORE_PASSWORD}" \
+            --ks-pass "env:PP_APK_KEYSTORE_PASSWORD" \
             --ks-key-alias "$PP_APK_KEY_ALIAS" \
-            --key-pass "pass:${PP_APK_KEY_PASSWORD:-$PP_APK_KEYSTORE_PASSWORD}" \
+            --key-pass "env:PP_APK_EFFECTIVE_KEY_PASS" \
             --out "$SIGNED" \
             "$UNSIGNED"
+          unset PP_APK_EFFECTIVE_KEY_PASS
           "$BT/apksigner" verify --print-certs "$SIGNED"
           echo "✅ 已签名（v$VERSION）：$SIGNED"
 

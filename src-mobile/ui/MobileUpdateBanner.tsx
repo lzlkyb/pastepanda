@@ -4,7 +4,7 @@ import { MobileUpdateSheet } from "./MobileUpdateSheet";
 import { progressText, useMobileUpdate } from "./MobileUpdate";
 import ui from "./MobileUi.module.css";
 
-export function MobileUpdateBanner() {
+export function MobileUpdateBanner({ quiet = false }: { quiet?: boolean }) {
   const update = useMobileUpdate();
   const [open, setOpen] = useState(false);
   const { status, info, progress, error } = update;
@@ -37,7 +37,7 @@ export function MobileUpdateBanner() {
 
   return (
     <>
-      {notice}
+      {!quiet && notice}
       <MobileUpdateSheet open={open} onClose={() => setOpen(false)} />
     </>
   );

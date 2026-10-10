@@ -479,6 +479,37 @@ describe("RcA2DeviceDetail", () => {
     expect(screen.getByRole("button", { name: /管理此设备/ }).getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("保存进行中时按钮是 disabled，抢跑的第二次点击不生效（机理用例，不依赖机器负载）", async () => {
+    // 这条是上面那条红的**机理**钉子：promise 由测试自己控制落地时机，所以任何机器上都会踩进
+    // 「savingName=true」那个窗口。React 不给 disabled 的 button 派发 click ⇒ 连点＝只发一次改名。
+    let settle: (ok: boolean) => void = () => {};
+    const onRename = vi.fn(
+      () =>
+        new Promise<boolean>((res) => {
+          settle = res;
+        }),
+    );
+    renderDetail({ onRename });
+
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), {
+      target: { value: "书房电脑" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    await waitFor(() => expect(onRename).toHaveBeenCalledTimes(1));
+
+    const busy = screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement;
+    expect(busy.disabled, "保存进行中必须禁用，否则用户连点就是重复请求").toBe(true);
+    fireEvent.click(busy);
+    expect(onRename).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      settle(false);
+    });
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("textbox", { name: "设备备注名" }), "失败要留在编辑态").toBeTruthy();
+  });
+
   it("设备详情保留改名能力，失败时不退出编辑", async () => {
     let complete!: (ok: boolean) => void;
     const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));

@@ -1,63 +1,72 @@
-/* C 方案：卡片实底，颜色全部来自桌面语义变量。 */
-.channel {
+/* 已批准的 B 方案：实底分组与统一移动字体令牌。 */
+.deviceCard {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 16px 0 24px;
-}
-.channel strong {
-  font-size: 15px;
-  font-weight: 650;
-}
-.channel p {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 4px 0 0;
-}
-.channel > span {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  color: var(--accent-strong);
-  background: var(--accent-light);
-}
-.actionsRow {
-  display: flex;
-  gap: 10px;
-}
-.actionsRow > button {
-  flex: 1;
+  gap: 8px;
+  padding: 8px 12px;
   min-width: 0;
-  background: var(--card-bg);
-  color: var(--accent-strong);
-  font-size: 15px;
 }
-.deviceCard {
+.deviceCard + .deviceCard {
+  border-top: 1px solid var(--border-color);
+}
+.deviceDetails {
   border: 0;
   background: transparent;
   color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  padding: 18px 14px;
-  min-height: 96px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  min-height: 64px;
   text-align: left;
 }
-.deviceCard + .deviceCard {
-  border-top: 1px solid var(--border-color);
-}
-.deviceCard:active,
-.deviceCard:hover {
+.deviceDetails:active,
+.deviceDetails:hover {
   background: var(--section-bg);
   transform: none;
 }
-.deviceCard:active:not(:disabled) {
-  transform: scale(0.992);
+.connectButton {
+  flex: none;
+  min-width: 64px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  font-size: var(--mobile-font-secondary);
+  font-weight: 600;
 }
+.connectButton:disabled {
+  background: var(--section-bg);
+  color: var(--text-secondary);
+}
+.connectButton:active:not(:disabled) {
+  background: var(--accent-strong);
+  transform: none;
+}
+.connectionEntry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+.connectionEntry + .connectionEntry {
+  border-top: 1px solid var(--border-color);
+}
+.connectionEntry > span { flex: 1; min-width: 0; }
+.connectionEntry strong { display: block; font-size: var(--mobile-font-body); font-weight: 600; }
+.connectionEntry small { display: block; margin-top: 4px; font-size: var(--mobile-font-secondary); color: var(--text-secondary); overflow-wrap: anywhere; }
+.connectionEntry > svg { flex: none; color: var(--text-secondary); }
+.connectionEntry:active:not(:disabled) { background: var(--section-bg); transform: none; }
 .deviceIcon {
   display: grid;
   place-items: center;
@@ -78,18 +87,18 @@
 }
 .deviceText strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 .deviceType {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
 }
 
 .deviceSub {
   display: block;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
@@ -123,12 +132,12 @@
   stroke-width: 1.3;
 }
 .deviceHero h2 {
-  font-size: 20px;
+  font-size: var(--mobile-title-size);
   margin: 12px 0 4px;
   overflow-wrap: anywhere;
 }
 .deviceHero p {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   margin: 0;
 }
@@ -143,7 +152,7 @@
   padding: 12px 16px;
   border: 0;
   border-radius: 12px;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
 }
 .primaryBtn {
@@ -162,7 +171,7 @@
 }
 .pairHint,
 .dirHint {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   line-height: 1.7;
   overflow-wrap: anywhere;
@@ -175,39 +184,39 @@
   border: 1px solid var(--border-color);
   background: var(--section-bg);
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--mobile-title-size);
   text-align: center;
   letter-spacing: 3px;
   font-variant-numeric: tabular-nums;
 }
 .codeInput::placeholder {
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   letter-spacing: 0;
   color: var(--text-secondary);
 }
 .pendingCard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  background: var(--accent-light);
-  color: var(--accent-strong);
+  gap: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
   border-radius: var(--mobile-radius-group);
   padding: 16px;
   margin: 0 0 16px;
 }
 .pendingCard p {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   margin: 0;
 }
 .pendingTitle {
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
 }
 /* 入站申请确认卡的按钮行：允许/拒绝并排，允许是主操作。 */
 .askActions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 .askActions button {
   flex: 1;
@@ -224,7 +233,7 @@
 .scanOverlay {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .scanHead {
   display: flex;
@@ -236,7 +245,7 @@
   width: auto;
 }
 .scanTitle {
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
 }
 .scanVideo {
@@ -250,10 +259,7 @@
   width: 100%;
 }
 .fileLayout, .fileControls, .fileRecords { min-width: 0; }
-:global(html[data-mobile-layout="landscape"]) .channel { margin: 0 0 12px; gap: 12px; }
-:global(html[data-mobile-layout="landscape"]) .channel > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-:global(html[data-mobile-layout="landscape"]) .channel > span { width: 32px; height: 32px; }
-:global(html[data-mobile-layout="landscape"]) .deviceCard { min-height: 80px; padding: 12px; }
+:global(html[data-mobile-layout="landscape"]) .deviceCard { padding: 4px 12px; }
 :global(html[data-mobile-layout="landscape"]) .transferActions button { min-height: 64px; flex-direction: row; padding: 12px 8px; gap: 8px; }
 @media (min-width: 700px) {
   :global(html[data-mobile-layout="landscape"]) .fileLayout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
@@ -273,12 +279,12 @@
 }
 .peerSelect strong {
   display: block;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   overflow-wrap: anywhere;
 }
 .peerSelect small {
   display: block;
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
   color: var(--text-secondary);
 }
 .peerSelect > span {
@@ -291,7 +297,7 @@
 }
 .transferActions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 .transferActions button {
@@ -300,27 +306,27 @@
   min-height: 92px;
   display: flex;
   flex-direction: column;
-  font-size: 15px;
-  gap: 9px;
+  font-size: var(--mobile-font-body);
+  gap: 8px;
 }
 .transferActions .ghostBtn {
   background: var(--card-bg);
-  color: var(--accent-strong);
+  color: var(--text-primary);
 }
 .dirCard {
   background: var(--section-bg);
   border-radius: 12px;
-  padding: 14px;
+  padding: 16px;
 }
 .dirLabel {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   margin: 0 0 6px;
 }
 .dirPath {
   color: var(--text-primary);
   font:
-    13px/1.7 ui-monospace,
+    var(--mobile-font-secondary)/1.7 ui-monospace,
     Consolas,
     monospace;
   overflow-wrap: anywhere;
@@ -340,13 +346,13 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 14px 12px;
+  padding: 12px;
   border: 0;
   border-radius: 12px;
   min-height: 48px;
   background: var(--section-bg);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   text-align: left;
   overflow-wrap: anywhere;
 }
@@ -364,24 +370,24 @@
 .fileAsk {
   padding: 16px;
   border-radius: var(--mobile-radius-group);
-  background: var(--accent-light);
+  background: var(--card-bg);
   margin: 12px 0;
 }
 .fileAskTitle {
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 .fileAskLead {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
-  margin-top: 5px;
+  margin-top: 4px;
   overflow-wrap: anywhere;
 }
 .fileAskBtns {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: 12px;
 }
 .fileAskBtns button {
@@ -391,27 +397,30 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
+  background: var(--card-bg);
+  border-radius: var(--mobile-radius-group);
+  overflow: hidden;
   padding: 0;
   margin: 0;
 }
 .fileTask {
-  background: var(--card-bg);
-  border-radius: var(--mobile-radius-group);
+  background: transparent;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+.fileTask + .fileTask { border-top: 1px solid var(--border-color); }
 .fileTaskHead {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 .fileDir {
   flex: none;
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
   color: var(--accent-strong);
 }
 .fileDirIn {
@@ -420,7 +429,7 @@
 .fileTaskName {
   flex: 1;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
@@ -436,7 +445,7 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
 }
 .fileTaskBar {
   width: 100%;
@@ -460,13 +469,13 @@
   background: var(--accent);
 }
 .fileTaskLine {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .fileTaskSub,
 .fileTaskPeer {
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -483,7 +492,7 @@
 }
 .unoModes > button {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
 }
 .unoInput {
   width: 100%;
@@ -493,20 +502,23 @@
   border-radius: 12px;
   background: var(--section-bg);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   resize: vertical;
 }
 .unoFp {
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
 .unoPickBlock {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .unoInput {
-  font-size: var(--mobile-input-size);
+  font-size: var(--mobile-font-body);
 }
+
+.fileUse { display: grid; gap: 8px; }
+.fileUseActions { display: flex; flex-wrap: wrap; gap: 8px; }

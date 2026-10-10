@@ -3,7 +3,8 @@ import { sendFilesToPeer } from "./rcSendFiles";
 import { rcErrorText } from "./rcErrorText";
 
 /** 文件页在切页时保留，上传与提示生命周期一致；busy 不与完成文案混用。 */
-export function useMobileFileSend(onStatus?: (text: string | null, error?: boolean) => void) {
+export function useMobileFileSend(onStatus?: (text: string | null, error?: boolean) => void, selectedPeer?: string | null) {
+  const [receiptPeer, setReceiptPeer] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,12 +20,14 @@ export function useMobileFileSend(onStatus?: (text: string | null, error?: boole
       controller.current?.abort();
     };
   }, []);
+  const visible = selectedPeer === undefined || selectedPeer === receiptPeer;
   useEffect(() => {
-    onStatus?.(error ?? note, !!error);
-  }, [error, note, onStatus]);
+    onStatus?.(visible ? error ?? note : null, visible && !!error);
+  }, [error, note, onStatus, visible]);
   const send = async (peer: string, name: string, files: File[]) => {
     if (locked.current || files.length === 0) return;
     locked.current = true;
+    setReceiptPeer(peer);
     setSending(true);
     setCanceling(false);
     const batch = new AbortController();
@@ -78,5 +81,5 @@ export function useMobileFileSend(onStatus?: (text: string | null, error?: boole
     setNote("正在停止准备，等待当前步骤结束并清理暂存…");
   };
   const dismissError = () => { setError(null); setPartial(false); };
-  return { sending, canceling, note, error, partial, dismissError, send, cancel };
+  return { sending, canceling, note: visible ? note : null, error: visible ? error : null, partial, dismissError, dismissNote: () => setNote(null), send, cancel };
 }

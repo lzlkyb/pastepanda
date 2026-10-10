@@ -26,6 +26,8 @@
 //! 而它是整个模块的门面，读代码的人第一眼看到的就是它。
 
 pub mod attach;
+pub mod asset;
+mod asset_requests;
 pub mod coordinate;
 pub mod digest;
 pub mod engine;

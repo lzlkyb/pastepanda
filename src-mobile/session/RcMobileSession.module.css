@@ -1,5 +1,6 @@
-/* 会话内容实底，玻璃只用于短小的工具胶囊。 */
+/* 远程画面优先；工具使用实底，避免叠加模糊和透明层。 */
 .root {
+  --session-rail-width: max(68px, 4.25rem);
   position: fixed;
   top: var(--mobile-viewport-top, 0px);
   left: 0;
@@ -10,18 +11,20 @@
   background: var(--app-bg);
   color: var(--text-primary);
   overflow: hidden;
+  overscroll-behavior: none;
   padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 /* 会话页头（RcSessionHeader）。R2 后无玻璃模糊；padding 走 header 自身的
    布局，不再带 safe-area（root 已统一处理 inset）。 */
 .statusRow {
-  background: var(--mobile-glass);
+  background: var(--card-bg);
   display: flex;
   align-items: center;
   min-height: 48px;
+  flex: none;
   gap: 4px;
   padding: 0 8px;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   color: var(--text-secondary);
 }
 .statusTitle {
@@ -32,7 +35,7 @@
   white-space: nowrap;
 }
 .headerIdentity { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.headerSubtitle { color: var(--text-secondary); font-size: 12px; }
+.headerSubtitle { color: var(--text-secondary); font-size: var(--mobile-font-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .landscapeTools {
   z-index: var(--mobile-layer-nav);
   display: flex;
@@ -155,7 +158,10 @@
   flex-direction: column;
   gap: 8px;
   max-height: 40%;
+  flex: none;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .modRow {
   display: flex;
@@ -164,14 +170,14 @@
   align-items: center;
 }
 .mkKey {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--section-bg);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   font-weight: 600;
 }
 .modeRow {
@@ -185,10 +191,10 @@
   justify-content: space-around;
   gap: 4px;
   border-radius: 0;
-  background: var(--mobile-glass);
-  backdrop-filter: blur(var(--mobile-glass-blur));
-  -webkit-backdrop-filter: blur(var(--mobile-glass-blur));
-  padding: 4px;
+  background: var(--card-bg);
+  border-top: 1px solid var(--border-color);
+  flex: none;
+  padding: 8px;
   margin: 0;
   position: relative;
   z-index: var(--mobile-layer-nav);
@@ -198,21 +204,11 @@
   flex-direction: column;
   width: 100%;
   background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  border: 0;
+  padding: 0;
 }
 .toolbarHidden {
   display: none;
-}
-:global(body[data-mobile-sheets]) .toolbar {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-@media (prefers-reduced-transparency: reduce) {
-  .toolbar {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
 }
 .tbBtn {
   display: flex;
@@ -221,15 +217,18 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-width: 44px;
+  min-width: 0;
   min-height: 54px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
+.tbBtn > svg { flex: none; }
 .tbBtn:active {
   background: var(--accent-light);
 }
@@ -243,7 +242,8 @@
   gap: 12px;
 }
 .qualityChoices {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 .qualityChoices button {
@@ -253,7 +253,7 @@
 .panelHint {
   margin: 0;
   line-height: 1.6;
-  font-size: 15px;
+  font-size: var(--mobile-font-body);
   color: var(--text-secondary);
 }
 
@@ -267,8 +267,8 @@
 .headerButton {
   display: grid;
   place-items: center;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 8px;
   border: 0;
   border-radius: 12px;
@@ -299,13 +299,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--card-bg);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--mobile-font-secondary);
 }
 .mouseAssist {
   background: var(--card-bg);
@@ -318,14 +318,27 @@
   grid-row: 1;
   min-height: 0;
   min-width: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   background: var(--card-bg);
   padding: 4px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  border-left: 1px solid var(--border-color);
 }
+.toolRailScroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.toolRailScroll > * { flex-shrink: 0; }
+.toolRail .railExit { border-top: 1px solid var(--border-color); border-radius: 0; }
 .toolRail .landscapeTools { flex-direction: column; gap: 4px; }
 .toolRail .landscapeTools > button {
   min-width: 0;
@@ -336,33 +349,33 @@
   gap: 4px;
   border: 0;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--mobile-font-label);
   overflow-wrap: anywhere;
 }
 .toolRail .landscapeTools > button:not(.toolHandle) > svg:last-child { display: none; }
 .toolRail .mouseAssist { padding: 4px 0; }
 .toolRail .mouseActions { flex-direction: column; gap: 4px; }
-.toolRail .mouseActions button { font-size: 12px; padding: 8px 4px; min-width: 0; flex: none; }
+.toolRail .mouseActions button { font-size: var(--mobile-font-label); padding: 8px 4px; min-width: 0; flex: none; }
 .toolRail .tbBtn { flex: none; min-width: 0; min-height: 48px; padding: 4px; white-space: normal; }
 .toolRail .pointerWide { flex: none; }
 .toolRail .pointerWide span { white-space: normal; }
-.frameWaiting, .frameNotice { position: absolute; z-index: 6; overflow-y: auto; overscroll-behavior: contain; }
+.frameWaiting { position: absolute; z-index: 6; overflow-y: auto; overscroll-behavior: contain; }
 .frameWaiting { inset: 0; display: grid; place-items: center; padding: 16px; }
 .frameWaiting > section { margin: auto; border: 0; background: transparent; text-align: center; width: min(100%, 360px); }
 .frameWaiting section > div { justify-content: center; flex-wrap: wrap; margin-left: 0; }
 .frameWaiting strong { flex-basis: 100%; }
 .frameWaiting p { margin-left: 0; }
-.frameNotice { top: 8px; left: 8px; right: 8px; max-height: calc(100% - 16px); }
+.frameNotice { min-width: 0; }
 .frameNotice > section { margin: 0; background: var(--card-bg); }
 /* ① 连接建立阶段化（甲+乙稿 2026-10-07）：卡头真标分阶段填充 + 步进点 + 路径胶囊。
    图标是 public/icon.png（AppIcon.tsx 唯一 logo 源，实测四角+中心透明可压深色画面区），
    两层画法：空壳 28% + 全彩按 stage/3 裁 clip-path 水位；图标零无限动画，
-   水位只在换档时跑一次 600ms 过渡，reduced-motion 下连过渡也停（规则 8）。 */
+   水位只在换档时跑一次 400ms 过渡，reduced-motion 下连过渡也停（规则 8）。 */
 .stageHead { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-basis: 100%; }
 .iconHead { position: relative; width: 64px; height: 64px; }
 .iconHead img { position: absolute; inset: 0; width: 64px; height: 64px; }
 .iconShell { opacity: .28; }
-.iconFill { transition: clip-path 600ms cubic-bezier(.2,0,0,1); }
+.iconFill { transition: clip-path 400ms cubic-bezier(0.2,0,0,1); }
 .iconFill1 { clip-path: inset(67% 0 0 0); }
 .iconFill2 { clip-path: inset(33% 0 0 0); }
 .iconFill3 { clip-path: inset(0% 0 0 0); }
@@ -376,7 +389,7 @@
 .stepLine { width: 18px; height: 1.5px; background: var(--border-color); margin: 0 6px; flex: none; }
 .stepLine[data-done="true"] { background: var(--accent); }
 .stagePillRow { margin: 6px 0 0; }
-.pathPill { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--accent-light); color: var(--accent-strong); font-size: 11.5px; font-weight: 600; }
+.pathPill { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: 999px; background: var(--accent-light); color: var(--accent-strong); font-size: var(--mobile-font-label); font-weight: 600; }
 .pathPillWarn { background: var(--warning-bg); color: var(--text-primary); border: 1px solid var(--warning-border); }
 @keyframes stagePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.92); } }
 @media (prefers-reduced-motion: reduce) {
@@ -411,16 +424,16 @@
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
 }
-.pointerOptionText strong { font-size: 15px; }
-.pointerSelected { flex: none; font-size: 12px; }
+.pointerOptionText strong { font-size: var(--mobile-font-body); }
+.pointerSelected { flex: none; font-size: var(--mobile-font-label); }
 .pointerAdvanced {
   min-height: 44px;
   padding: 8px;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
 }
 .pointerAdvanced:focus-visible {
   outline: 2px solid var(--accent);
@@ -428,14 +441,14 @@
 }
 .mouseActions button {
   flex: 1;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 48px;
+  min-height: 48px;
   padding: 8px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--section-bg);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--mobile-font-secondary);
 }
 .mouseActions button[aria-pressed="true"],
 .mkKey[aria-pressed="true"] {
@@ -455,7 +468,7 @@
   border-radius: var(--mobile-radius-group);
   background: var(--section-bg);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
   touch-action: none;
   user-select: none;
 }
@@ -475,7 +488,7 @@
 .textEntry input {
   flex: 1;
   min-width: 0;
-  min-height: 44px;
+  min-height: 48px;
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 8px 12px;
@@ -507,11 +520,12 @@
 .root[data-landscape="true"] {
   padding-block: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 68px;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) var(--session-rail-width);
+  grid-template-rows: minmax(0, 1fr) auto auto;
 }
 .root[data-landscape="true"] .controlArea { grid-column: 1; grid-row: 1; min-width: 0; flex-direction: row; }
-.root[data-landscape="true"] .modifierBar { grid-column: 1 / -1; grid-row: 2; max-height: min(40dvh, 160px); }
+.root[data-landscape="true"] .modifierBar { grid-column: 1 / -1; grid-row: 3; max-height: min(45%, 12rem); }
+.root[data-landscape="true"] > .feedbackSlot { grid-column: 1 / -1; grid-row: 2; }
 .root[data-landscape="true"] .controlArea > .mouseAssist { width: clamp(144px, 22vw, 184px); display: flex; flex-direction: column; padding: 8px; overflow-y: auto; }
 .root[data-landscape="true"] .controlArea > .mouseAssist .mouseActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .root[data-landscape="true"] .trackpad { flex: 1; height: auto; min-height: 80px; padding: 8px; }
@@ -519,7 +533,6 @@
 @media (max-width: 359px) {
   .statusRow { padding-inline: 4px; }
   .headerButton { padding: 4px; }
-  .statusTitle { font-size: 13px; }
   .toolbar .tbBtn { padding-inline: 4px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -533,15 +546,25 @@
     opacity: 0.7;
   }
 }
-.feedbackSlot { position: static; grid-column: 1 / -1; grid-row: 3; flex: none; min-width: 0; max-height: min(20%, 96px); overflow-y: auto; }
+.feedbackSlot { flex: none; min-width: 0; max-height: min(20%, 96px); overflow-y: auto; overscroll-behavior: contain; }
 .feedbackSlot:empty { display: none; }
+.toolRail .feedbackSlot { max-height: none; overflow: visible; }
+.toolRail .frameNotice > section { padding: 8px 4px; }
+.toolRail .frameNotice section > div { flex-wrap: wrap; }
+.toolRail .frameNotice p { margin-left: 0; }
+.toolRail .frameNotice button { min-width: 0; width: 100%; padding-inline: 4px; font-size: var(--mobile-font-label); }
+.connectionNotices { display: grid; gap: 4px; min-width: 0; }
+.toolRail .connectionNotices section { padding: 8px 4px; font-size: var(--mobile-font-label); }
+.toolRail .connectionNotices section > div { flex-wrap: wrap; }
+.toolRail .connectionNotices p { margin-left: 0; font-size: var(--mobile-font-label); }
+.toolRail .connectionNotices button { min-width: 0; max-width: 100%; padding-inline: 4px; font-size: var(--mobile-font-label); overflow-wrap: anywhere; }
 /* 横屏首次引导（2026-10-05）：收起后把手的一次性脉冲与气泡。
    脉冲随用户首次打开工具栏/点画面停止（teaching→hint→done），非常驻；
    后台时 WebView 随 Activity 暂停，不空转。 */
 .toolHandlePulse { animation: toolPulse 400ms cubic-bezier(0.2, 0, 0, 1) 2; }
 @keyframes toolPulse {
   from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
-  to { box-shadow: 0 0 0 8px transparent; }
+  to { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .toolHandlePulse { animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -550,14 +573,14 @@
   position: absolute;
   z-index: var(--mobile-layer-nav);
   top: calc(56px + env(safe-area-inset-top, 0px));
-  right: calc(76px + env(safe-area-inset-right, 0px));
+  right: calc(var(--session-rail-width) + 8px + env(safe-area-inset-right, 0px));
   max-width: 200px;
   padding: 8px 12px;
   border: 1px solid var(--accent);
   border-radius: var(--mobile-radius-group);
   background: var(--card-bg);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--mobile-font-secondary);
 }
 .toolTip::before {
   content: "";

@@ -161,7 +161,7 @@ impl DataStore {
         let conn = self.lock_conn();
         let mut st = conn
             .prepare(&format!(
-                "SELECT {} FROM rc_devices ORDER BY paired_at DESC",
+                "SELECT {} FROM rc_devices ORDER BY paired_at DESC, rowid DESC",
                 COLS
             ))
             .map_err(|e| e.to_string())?;

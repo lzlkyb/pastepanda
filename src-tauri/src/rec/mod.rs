@@ -1,7 +1,8 @@
 //! 屏幕录制（本地写 MP4，与 rc/ 的网络推流管线平行）。
 //!
-//! - `quality` 档位表（纯函数）；`sink` MF SinkWriter mux；`session` 采集会话；
-//!   `commands` Tauri 命令。Windows 使用 DXGI/MF，Mac 使用 ScreenCaptureKit/AVAssetWriter。
+//! - `quality` 档位表（纯函数）；`timeline` 视频时间轴（墙钟槽 + 静止补帧）；
+//!   `sink` MF SinkWriter mux；`session` 采集会话；`commands` Tauri 命令。
+//!   Windows 使用 DXGI/MF，Mac 使用 ScreenCaptureKit/AVAssetWriter。
 //! - 窗口两个：`rec-select`（全屏透明覆盖层：预览 → 确认条 → 倒计时 → 录制中红框，
 //!   录制中整窗鼠标穿透）＋ `rec-control`（置顶小条：REC / 计时 / 停止，可拖动）。
 //! - 窗口机制照抄截图窗（screenshot.rs）：运行时创建、物理像素定位、前端 ready
@@ -40,6 +41,7 @@ pub mod session;
 pub mod session_types;
 #[cfg(windows)]
 pub mod sink;
+pub mod timeline;
 pub mod trim_types;
 #[cfg(not(target_os = "macos"))]
 pub mod trim;

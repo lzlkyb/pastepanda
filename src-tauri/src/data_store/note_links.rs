@@ -100,7 +100,7 @@ impl DataStore {
                 "SELECT l.to_title, l.line,
                         (SELECT n.id FROM notes n
                           WHERE n.title = l.to_title AND n.deleted_at IS NULL LIMIT 1)
-                 FROM note_links l WHERE l.from_id = ?1 ORDER BY l.line",
+                 FROM note_links l WHERE l.from_id = ?1 ORDER BY l.line, l.rowid",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -129,7 +129,7 @@ impl DataStore {
                  JOIN notes f ON f.id = l.from_id AND f.deleted_at IS NULL
                  WHERE l.to_title = (SELECT title FROM notes WHERE id = ?1)
                    AND l.from_id <> ?1
-                 ORDER BY f.title",
+                 ORDER BY f.title, l.rowid",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -159,7 +159,7 @@ impl DataStore {
                  WHERE NOT EXISTS (
                      SELECT 1 FROM notes n WHERE n.title = l.to_title AND n.deleted_at IS NULL
                  )
-                 ORDER BY f.title, l.to_title",
+                 ORDER BY f.title, l.to_title, l.rowid",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -182,7 +182,7 @@ impl DataStore {
                  WHERE n.deleted_at IS NULL
                    AND NOT EXISTS (SELECT 1 FROM note_links l WHERE l.from_id = n.id)
                    AND NOT EXISTS (SELECT 1 FROM note_links l WHERE l.to_title = n.title)
-                 ORDER BY n.title",
+                 ORDER BY n.title, n.rowid",
             )
             .map_err(|e| e.to_string())?;
         let rows = st

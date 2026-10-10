@@ -20,7 +20,7 @@
 //! 用相对路径就得按每篇的深度拼 `../`，多一层少一层都是错。
 //! `pp-asset:<hash>.<ext>` 与深度无关，而且一眼就能认出来。
 //!
-//! ❗ 它**永远不会进数据库**：导入前已经在暂存目录里改写回本机绝对路径。
+//! 导入前改写为本机绝对路径；手机采集也可以直接保存便携引用。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -94,16 +94,81 @@ static LOCAL_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("图片引用正则写错了")
 });
 
-// Unix paths must begin at a content boundary. Matching any slash would turn
-// https://host/images/... into a local attachment. file://remote hosts are excluded.
-static UNIX_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?i)(^|["'(\s>])((?:file:/{3,4}|/[^/])[^"'()<>\[\]\r\n]*?/images/([0-9a-f]{32})\.([a-z0-9]{1,5}))"#).expect("Unix 图片引用正则写错了")
-});
-
 /// 便携引用（`pp-asset:<hash>.<ext>`）。
 static PORTABLE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)pp-asset:([0-9a-f]{32})\.([a-z0-9]{1,5})").expect("便携引用正则写错了")
 });
+
+// Android/iOS keep app data under a POSIX root. A slash inside an https URL is
+// not a local path, so bare paths additionally require a surrounding boundary.
+static POSIX_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)(?:file:/{3,4}|/)(?:[^"'()<>\[\]\r\n]*?/)?images/([0-9a-f]{32})\.([a-z0-9]{1,5})"#,
+    )
+    .expect("POSIX 图片引用正则写错了")
+});
+
+static APP_RELATIVE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)images[/\\]([0-9a-f]{32})\.([a-z0-9]{1,5})")
+        .expect("应用相对图片引用正则写错了")
+});
+
+fn app_relative_context(content: &str, range: &std::ops::Range<usize>) -> bool {
+    if range.start == 0 && range.end == content.len() { return true; }
+    let before = content[..range.start].trim_end();
+    let after = content[range.end..].trim_start();
+    // Only image destinations qualify, not mentions in prose or ordinary links.
+    // This also rejects ../../images/... and scheme URLs with the same suffix.
+    let Some(alt) = before.strip_suffix("](").and_then(|p| p.rsplit_once("![").map(|(_, alt)| alt)) else {
+        return false;
+    };
+    let destination_ends = after.starts_with(')') || ['"', '\''].into_iter().any(|quote| {
+        after.strip_prefix(quote)
+            .and_then(|title| title.find(quote).map(|end| title[end + quote.len_utf8()..].trim_start()))
+            .is_some_and(|remaining| remaining.starts_with(')'))
+    });
+    !alt.contains(['\r', '\n', '[', ']']) && destination_ends
+}
+
+fn local_refs(content: &str) -> Vec<(std::ops::Range<usize>, AssetRef)> {
+    let mut refs = Vec::new();
+    for (kind, re) in [(0, &*LOCAL_REF_RE), (1, &*POSIX_REF_RE), (2, &*APP_RELATIVE_REF_RE)] {
+        for capture in re.captures_iter(content) {
+            let matched = capture.get(0).expect("whole match");
+            if kind == 1
+                && !matched.as_str().to_ascii_lowercase().starts_with("file:")
+                && (matched.as_str().starts_with("//")
+                    || content[..matched.start()].chars().next_back().is_some_and(|c| {
+                        !c.is_whitespace() && !matches!(c, '"' | '\'' | '(' | '<' | '=' | '[')
+                    }))
+            {
+                continue;
+            }
+            if kind == 2 && !app_relative_context(content, &matched.range()) {
+                continue;
+            }
+            if matched.as_str().split(['/', '\\']).any(|segment| segment == ".." || segment == ".") {
+                continue;
+            }
+            if content[matched.end()..].chars().next().is_some_and(|c| c == '.' || c.is_ascii_alphanumeric()) {
+                continue;
+            }
+            // file:///C:/... can satisfy both matchers. Keep one full match so
+            // portable rewriting can never insert overlapping replacements.
+            if refs.iter().any(|(range, _): &(std::ops::Range<usize>, AssetRef)| {
+                range.start < matched.end() && matched.start() < range.end
+            }) {
+                continue;
+            }
+            refs.push((matched.range(), AssetRef {
+                hash: capture[1].to_ascii_lowercase(),
+                ext: capture[2].to_ascii_lowercase(),
+            }));
+        }
+    }
+    refs.sort_by_key(|(range, _)| range.start);
+    refs
+}
 
 /// 一个附件的身份。`hash` 就是内容 md5，所以跳机去重是天然的。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -123,40 +188,10 @@ impl AssetRef {
 ///
 /// 用 `BTreeMap` 而不是 `Vec`：同一张图被一篇笔记引用多次很常见，
 /// 而且有序输出让清单可重现（测试好写）。
-fn local_refs(content: &str) -> Vec<(usize, usize, AssetRef)> {
-    let mut refs: Vec<_> = LOCAL_REF_RE
-        .captures_iter(content)
-        .map(|c| {
-            let span = c.get(0).unwrap();
-            (
-                span.start(),
-                span.end(),
-                AssetRef {
-                    hash: c[1].to_ascii_lowercase(),
-                    ext: c[2].to_ascii_lowercase(),
-                },
-            )
-        })
-        .chain(UNIX_REF_RE.captures_iter(content).map(|c| {
-            let span = c.get(2).unwrap();
-            (
-                span.start(),
-                span.end(),
-                AssetRef {
-                    hash: c[3].to_ascii_lowercase(),
-                    ext: c[4].to_ascii_lowercase(),
-                },
-            )
-        }))
-        .collect();
-    refs.sort_by_key(|r| (r.0, r.1));
-    refs.dedup_by_key(|r| (r.0, r.1));
-    refs
-}
 pub fn scan_local_refs(content: &str) -> Vec<AssetRef> {
-    let mut set = BTreeMap::new();
-    for (_, _, asset) in local_refs(content) {
-        set.insert(asset.hash.clone(), asset);
+    let mut set: BTreeMap<String, AssetRef> = BTreeMap::new();
+    for (_, asset) in local_refs(content) {
+        set.insert(asset.file_name(), asset);
     }
     set.into_values().collect()
 }
@@ -167,26 +202,33 @@ pub fn scan_portable_refs(content: &str) -> Vec<AssetRef> {
     for c in PORTABLE_REF_RE.captures_iter(content) {
         let hash = c[1].to_ascii_lowercase();
         let ext = c[2].to_ascii_lowercase();
-        set.insert(hash.clone(), AssetRef { hash, ext });
+        set.insert(format!("{hash}.{ext}"), AssetRef { hash, ext });
     }
     set.into_values().collect()
 }
 
 /// 本机绝对路径 → 便携引用。导出时用。
 pub fn to_portable(content: &str) -> String {
-    let mut output = String::new();
+    let mut output = String::with_capacity(content.len());
     let mut cursor = 0;
-    for (start, end, asset) in local_refs(content) {
-        if start < cursor {
-            continue;
-        }
-        output.push_str(&content[cursor..start]);
+    for (range, asset) in local_refs(content) {
+        output.push_str(&content[cursor..range.start]);
         output.push_str(PORTABLE_SCHEME);
         output.push_str(&asset.file_name());
-        cursor = end;
+        cursor = range.end;
     }
     output.push_str(&content[cursor..]);
-    output
+    // Content-addressed filenames are lowercase on the wire. Windows hides
+    // case errors that would become missing files on Android's filesystem.
+    PORTABLE_REF_RE.replace_all(&output, |captures: &regex::Captures<'_>| {
+        format!("{PORTABLE_SCHEME}{}.{}", captures[1].to_ascii_lowercase(), captures[2].to_ascii_lowercase())
+    }).into_owned()
+}
+
+/// Includes phone-captured portable references as well as legacy absolute paths.
+pub fn scan_refs(content: &str) -> Vec<AssetRef> {
+    let portable = to_portable(content);
+    scan_portable_refs(&portable)
 }
 
 /// 便携引用 → 本机绝对路径。导入前在暂存目录里用。
@@ -197,8 +239,11 @@ pub fn to_portable(content: &str) -> String {
 pub fn to_local(content: &str, images_dir: &Path) -> String {
     let base = images_dir.to_string_lossy().replace('\\', "/");
     let base = base.trim_end_matches('/').to_string();
+    let prefix = if base.starts_with('/') { "file://" } else { "file:///" };
     PORTABLE_REF_RE
-        .replace_all(content, format!("file:///{}/$1.$2", base).as_str())
+        .replace_all(content, |captures: &regex::Captures<'_>| {
+            format!("{prefix}{base}/{}.{}", captures[1].to_ascii_lowercase(), captures[2].to_ascii_lowercase())
+        })
         .into_owned()
 }
 
@@ -213,13 +258,21 @@ pub fn stage_asset(
     out_assets: &Path,
     a: &AssetRef,
 ) -> Result<Option<u64>, String> {
+    if !is_asset_name(&a.file_name()) {
+        return Err("附件名称无效".into());
+    }
     let src = images_dir.join(a.file_name());
     let meta = match std::fs::metadata(&src) {
         Ok(m) => m,
         Err(_) => return Ok(None), // 源图不在（被手动删过）
     };
-    if meta.len() > MAX_ASSET_BYTES {
+    if !meta.is_file() || meta.len() > MAX_ASSET_BYTES {
         return Ok(None);
+    }
+    let root = images_dir.canonicalize().map_err(|e| format!("读取图片目录失败: {e}"))?;
+    let canonical = src.canonicalize().map_err(|e| format!("读取图片路径失败: {e}"))?;
+    if canonical.parent() != Some(root.as_path()) {
+        return Err("附件不在应用图片目录内".into());
     }
     std::fs::create_dir_all(out_assets).map_err(|e| format!("建附件目录失败: {e}"))?;
     let dst = out_assets.join(a.file_name());
@@ -227,7 +280,7 @@ pub fn stage_asset(
     if dst.exists() {
         return Ok(Some(meta.len()));
     }
-    std::fs::copy(&src, &dst).map_err(|e| format!("拷附件失败 {}: {e}", a.file_name()))?;
+    std::fs::copy(&canonical, &dst).map_err(|e| format!("拷附件失败 {}: {e}", a.file_name()))?;
     Ok(Some(meta.len()))
 }
 

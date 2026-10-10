@@ -27,6 +27,18 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("B 方案配对流程", () => {
+  it("关闭再打开保留手输草稿，不自动启动配对或相机", () => {
+    let draft = "";
+    const paired = vi.fn();
+    const view = render(<RcPairCard onPaired={paired} onDraftChange={value => { draft = value; }} />);
+    enter("1234567");
+    view.unmount();
+    render(<RcPairCard onPaired={paired} initialDraft={draft} />);
+    expect(screen.getByLabelText("电脑的配对码")).toHaveValue("1234567");
+    expect(screen.getByRole("button", { name: "开始配对" })).toBeDisabled();
+    expect(rc.begin).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("摄像头取景")).toBeNull();
+  });
   it("默认不取本机码，码不完整不能提交，完整码也不自动连接", () => {
     render(<RcPairCard onPaired={vi.fn()} />);
     expect(rc.code).not.toHaveBeenCalled();

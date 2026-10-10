@@ -251,7 +251,7 @@ impl DataStore {
                         COALESCE(SUM(completion_tokens), 0),
                         COALESCE(SUM(cost_usd), 0)
                  FROM ai_usage_log WHERE created_at >= ?1
-                 GROUP BY action_id ORDER BY SUM(cost_usd) DESC, COUNT(*) DESC",
+                 GROUP BY action_id ORDER BY SUM(cost_usd) DESC, COUNT(*) DESC, action_id ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt

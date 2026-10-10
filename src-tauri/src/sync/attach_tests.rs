@@ -116,6 +116,86 @@ fn test_落到对端时用对端自己的路径() {
     );
 }
 
+#[test]
+fn mobile_posix_refs_roundtrip_without_leaking_private_paths() {
+    let root = Path::new("/data/user/0/com.pastepanda.app/files/images");
+    let original = format!("![图片](file:///data/user/0/com.pastepanda.app/files/images/{HASH}.png)");
+    let portable = to_portable(&original);
+    assert_eq!(portable, format!("![图片](pp-asset:{HASH}.png)"));
+    assert_eq!(to_local(&portable, root), original);
+    assert_eq!(scan_refs(&original), scan_refs(&portable));
+    let legacy = original.replace("file:///", "file:////");
+    assert_eq!(to_portable(&legacy), portable);
+    let bare = original.replace("file:///", "/");
+    assert_eq!(to_portable(&bare), portable);
+    let windows = to_local(&portable, Path::new("C:/Users/John Doe/AppData/images"));
+    assert_eq!(to_portable(&windows), portable);
+    assert_eq!(to_local(&to_portable(&windows), root), original);
+    let upper = format!("PP-ASSET:{}.PNG", HASH.to_ascii_uppercase());
+    assert_eq!(to_portable(&upper), format!("pp-asset:{HASH}.png"));
+    assert_eq!(to_local(&upper, root), format!("file:///data/user/0/com.pastepanda.app/files/images/{HASH}.png"));
+}
+
+#[test]
+fn mobile_posix_matcher_never_rewrites_web_or_unrelated_references() {
+    for prefix in ["https://host", "http://host", "//cdn.example", "content://provider", "relative", "data:image/png;"] {
+        let original = format!("![image]({prefix}/images/{HASH}.png)");
+        assert_eq!(to_portable(&original), original, "changed {prefix}");
+        assert!(scan_refs(&original).is_empty());
+    }
+    for suffix in ["png.exe", "toolongext", "pngxpng"] {
+        let original = format!("![image](file:///data/app/images/{HASH}.{suffix})");
+        assert_eq!(to_portable(&original), original);
+    }
+}
+
+#[test]
+fn mobile_asset_identity_includes_extension() {
+    let text = format!("![a](pp-asset:{HASH}.png) ![b](file:///data/files/images/{HASH}.jpg)");
+    assert_eq!(scan_refs(&text).len(), 2);
+}
+
+#[test]
+fn mobile_relative_app_images_share_one_portable_identity() {
+    let relative = format!("images/{HASH}.png");
+    let portable = format!("pp-asset:{HASH}.png");
+    for src in [&relative, &relative.replace('/', "\\")] {
+        assert_eq!(to_portable(src), portable);
+        assert_eq!(scan_refs(src), scan_refs(&portable));
+        let markdown = format!("正文\n![手机图片]({src} \"说明\")\n");
+        assert_eq!(to_portable(&markdown), format!("正文\n![手机图片]({portable} \"说明\")\n"));
+        assert_eq!(scan_refs(&markdown), scan_refs(&portable));
+    }
+}
+
+#[test]
+fn mobile_relative_matcher_rejects_prose_urls_traversal_and_non_images() {
+    let relative = format!("images/{HASH}.png");
+    for content in [
+        format!("文本中提到 {relative}，不要改写"),
+        format!("文本 {relative}"),
+        format!("{relative}\n普通文本"),
+        format!("![x](https://host/{relative})"),
+        format!("![x](//host/{relative})"),
+        format!("![x](content:/{relative})"),
+        format!("![x](content://provider/{relative})"),
+        format!("![x](../{relative})"),
+        format!("![x](../../{relative})"),
+        format!("![x](./{relative})"),
+        format!("![x](subfolder/{relative})"),
+        format!("![x](file:///data/../{relative})"),
+        format!("![x](file:///C:/data/../{relative})"),
+        format!("[下载链接]({relative})"),
+        format!("![x]({relative}/other)"),
+        format!("![x]({relative}.exe)"),
+        format!("![x]({relative}?token=secret)"),
+        format!("![x]({relative} \"没有结束的标题)"),
+    ] {
+        assert_eq!(to_portable(&content), content, "changed {content}");
+        assert!(scan_refs(&content).is_empty(), "scanned {content}");
+    }
+}
+
 /// 附件目录**必须**带前导点：`collect_md` 跳过点目录，
 /// 不带点的话它会被当成一个笔记文件夹，对端会凭空多出一个文件夹。
 #[test]
@@ -340,7 +420,8 @@ fn test_w1_带图笔记同步后对端能打开这张图() {
     // ② B 的正文指向 B 的路径，不是 A 的
     let got = p.b.note_get(&n.id).unwrap().expect("对端该有这一篇");
     assert!(
-        got.content.contains(&url_in(&p.b_images, &name)),
+        // Master canonicalizes legacy four-slash POSIX URLs on import.
+        got.content.contains(&url_in(&p.b_images, &name).replacen("file:////", "file:///", 1)),
         "引用没改成本机路径：{}",
         got.content
     );
@@ -394,8 +475,57 @@ fn unix_references_preserve_boundaries_and_exclude_remote_urls(){
         assert_eq!(portable,format!("中文<img src=\"pp-asset:{HASH}.png\">![x](pp-asset:{HASH}.png)"));
     }
     for prefix in ["https://example.com","//example.com","file://server/app","https://example.com/a"] {
-        let content=format!("<img src=\"{prefix}/images/{HASH}.png\">");assert!(scan_local_refs(&content).is_empty());assert_eq!(to_portable(&content),content);
+        let content=format!("<img src=\"{prefix}/images/{HASH}.png\">");assert!(scan_local_refs(&content).is_empty(), "remote reference: {content}");assert_eq!(to_portable(&content),content);
     }
     let images=Path::new("/Users/Name Space/app/images");let original=format!("<img src=\"file:////Users/Name Space/app/images/{HASH}.png\">");
-    assert_eq!(to_local(&to_portable(&original),images),original);
+    // Imports use the canonical POSIX URL introduced on master. Legacy four-slash
+    // capture URLs must keep the same portable identity (the sync echo comparator).
+    let canonical = original.replace("file:////", "file:///");
+    let landed = to_local(&to_portable(&original), images);
+    assert_eq!(landed, canonical);
+    assert_eq!(to_portable(&landed), to_portable(&original));
+}
+
+#[test]
+fn mobile_portable_note_exports_bytes_and_return_echo_is_identical() {
+    let p = pair("mobile-portable-echo");
+    let name = format!("{HASH}.png");
+    let raw = png_bytes();
+    std::fs::write(p.a_images.join(&name), &raw).unwrap();
+    let original = format!("![手机截图](pp-asset:{name})");
+    let note = p.a.note_create(None, "手机采集", &original).unwrap();
+    let first = apply_delta(&p.b, &export(&p, "delta1"), 0).unwrap();
+    assert_eq!(first.created, 1);
+    assert_eq!(first.missing_files, 0);
+    assert_eq!(std::fs::read(p.b_images.join(&name)).unwrap(), raw);
+    let back = p.root.join("back");
+    std::fs::create_dir_all(&back).unwrap();
+    write_delta(&p.b, &compute_delta(&p.b, 0).unwrap(), &back).unwrap();
+    let echo = apply_delta(&p.a, &back, 0).unwrap();
+    assert_eq!(echo.identical, 1);
+    assert_eq!(echo.conflicts, 0);
+    assert_eq!(p.a.note_get(&note.id).unwrap().unwrap().content, original);
+    let _ = std::fs::remove_dir_all(&p.root);
+}
+
+#[test]
+fn mobile_relative_note_exports_bytes_and_return_echo_is_identical() {
+    let p = pair("mobile-relative-echo");
+    let name = format!("{HASH}.png");
+    let raw = png_bytes();
+    std::fs::write(p.a_images.join(&name), &raw).unwrap();
+    let original = format!("![手机截图](images/{name})");
+    let note = p.a.note_create(None, "手机相对引用", &original).unwrap();
+    let first = apply_delta(&p.b, &export(&p, "delta1"), 0).unwrap();
+    assert_eq!(first.created, 1);
+    assert_eq!(first.missing_files, 0);
+    assert_eq!(std::fs::read(p.b_images.join(&name)).unwrap(), raw);
+    let back = p.root.join("back");
+    std::fs::create_dir_all(&back).unwrap();
+    write_delta(&p.b, &compute_delta(&p.b, 0).unwrap(), &back).unwrap();
+    let echo = apply_delta(&p.a, &back, 0).unwrap();
+    assert_eq!(echo.identical, 1);
+    assert_eq!(echo.conflicts, 0);
+    assert_eq!(p.a.note_get(&note.id).unwrap().unwrap().content, original);
+    let _ = std::fs::remove_dir_all(&p.root);
 }

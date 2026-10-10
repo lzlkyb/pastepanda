@@ -15,6 +15,9 @@ mod kb_shadow;
 mod mcp_audit;
 mod note;
 mod note_access;
+mod mobile_knowledge;
+mod mobile_knowledge_draft;
+mod mobile_knowledge_edit;
 mod note_ai;
 mod note_daily;
 mod note_folder;
@@ -47,6 +50,9 @@ mod tests_qa;
 // 库体检（N3）的用例。
 #[cfg(test)]
 mod tests_health;
+// 排序确定性守卫（时间戳粒度导致的平手 → 分页重复/跌页）
+#[cfg(test)]
+mod tests_ordering;
 // 每日整理（H3）的用例。
 #[cfg(test)]
 mod tests_daily;
@@ -57,6 +63,10 @@ mod tests_events;
 // 这条 SQL 只有在数据层才跑得到——详见该文件头部。
 #[cfg(test)]
 mod tests_pulse;
+#[cfg(test)]
+mod tests_mobile_knowledge;
+#[cfg(test)]
+mod tests_mobile_knowledge_edit;
 
 pub use ai_action::{CustomAction, MAX_ACTION_DESC_CHARS, MAX_ACTION_NAME_CHARS};
 pub use ai_usage::{
@@ -108,6 +118,9 @@ pub use note::{
     question_terms, question_to_or_expr, Note, NoteGroupCount, NoteUpdateReport, NoteViewOpts,
 };
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
+pub use mobile_knowledge::{MobileKnowledgeOptions, MobileKnowledgePage, MobileNoteMeta, MobileNoteSummary};
+pub use mobile_knowledge_draft::MobileKnowledgeDraft;
+pub use mobile_knowledge_edit::{MobileKnowledgeEditDraft, MobileKnowledgeEditResult};
 pub use note_daily::DailyAppend;
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
 pub use note_md::{
@@ -659,6 +672,27 @@ impl DataStore {
             -- updated_at DESC 排（同 history 有 idx_history_time）。
             CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
 
+            -- Phone-only state deliberately does not enter note serialization or desktop pinning.
+            CREATE TABLE IF NOT EXISTS mobile_note_state (
+                note_id TEXT PRIMARY KEY REFERENCES notes(id) ON DELETE CASCADE,
+                common INTEGER NOT NULL DEFAULT 0,
+                last_access_at TEXT,
+                reading_position REAL NOT NULL DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS mobile_knowledge_draft (
+                slot INTEGER PRIMARY KEY CHECK (slot = 1),
+                id TEXT NOT NULL UNIQUE,
+                revision INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            -- Keep receipts after note deletion: a lost IPC response must never resurrect a note.
+            CREATE TABLE IF NOT EXISTS mobile_knowledge_commits (
+                draft_id TEXT PRIMARY KEY,
+                revision INTEGER NOT NULL
+            );
+
             -- 笔记标签：复用既有 tags 主表，模式同 history_tags（D2）。
             -- FK 是真生效的（下方 PRAGMA foreign_keys=ON），所以删笔记会自动清关联行。
             CREATE TABLE IF NOT EXISTS note_tags (
@@ -765,6 +799,8 @@ impl DataStore {
             );
             CREATE INDEX IF NOT EXISTS idx_mcp_audit_at ON mcp_audit(at);",
         )?;
+        mobile_knowledge_edit::init_mobile_knowledge_edit_schema(&conn)?;
+        mobile_knowledge_draft::init_mobile_knowledge_draft_schema(&conn)?;
 
         // 笔记全文索引。**常规 FTS5，不是外部内容表**——同 history_fts 的取舍
         // （见下方 history_fts 那段长注释：外部内容表与「手工塞 ngram 串」根本矛盾）。

@@ -327,7 +327,7 @@ impl DataStore {
                AND content_type != 'chain'
                AND outcome IN ('copied', 'pasted')
              GROUP BY action_id, content_type
-             ORDER BY c DESC",
+             ORDER BY c DESC, action_id ASC, content_type ASC"
         ) {
             Ok(s) => s,
             Err(e) => {
@@ -372,7 +372,7 @@ impl DataStore {
                AND content_type != 'chain'
                AND outcome IN ('copied', 'pasted')
              GROUP BY content_type, action_id, hb, source_app
-             ORDER BY c DESC",
+             ORDER BY c DESC, action_id ASC, content_type ASC"
         ) {
             Ok(s) => s,
             Err(e) => {
@@ -436,7 +436,7 @@ impl DataStore {
         let mut stmt = conn
             .prepare(
                 "SELECT action_id, content_type, created_at FROM action_dismissals
-                 ORDER BY created_at DESC",
+                 ORDER BY created_at DESC, rowid DESC"
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -522,7 +522,7 @@ impl DataStore {
         let mut stmt = conn
             .prepare(
                 "SELECT action_id, content_type, created_at FROM action_pins
-                 ORDER BY created_at DESC",
+                 ORDER BY created_at DESC, rowid DESC"
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt

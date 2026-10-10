@@ -1,7 +1,7 @@
 .root {
   position: absolute;
   z-index: 5;
-  width: 208px;
+  width: min(280px, 100%);
   transform: translate(-50%, -28px);
   display: flex;
   flex-direction: column;
@@ -20,7 +20,7 @@
   border-radius: 50%; /* ui-rule-ok: 圆形鼠标控制柄是已确认的交互形态 */
   background: var(--card-bg);
   color: var(--accent-strong);
-  font-size: 11px;
+  font-size: var(--mobile-font-label);
   touch-action: none;
   user-select: none;
 }
@@ -33,13 +33,13 @@
 }
 .actions button {
   min-width: 52px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 8px;
   border: 0;
   border-radius: 8px;
   background: var(--section-bg);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--mobile-font-label);
   white-space: nowrap;
 }
 .actions button[aria-pressed="true"] {

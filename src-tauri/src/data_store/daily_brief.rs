@@ -54,7 +54,7 @@ impl DataStore {
             .prepare(
                 // 升序：分段本来就要升序，在 SQL 里排比拉回去再排便宜。
                 "SELECT id, time, source, type, content_type FROM history
-                 WHERE time LIKE ?1 ORDER BY time ASC",
+                 WHERE time LIKE ?1 ORDER BY time ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -113,7 +113,7 @@ impl DataStore {
         let mut st = conn
             .prepare(
                 "SELECT id, time, source, type, content_type, COALESCE(text, '')
-                 FROM history WHERE time LIKE ?1 ORDER BY time ASC",
+                 FROM history WHERE time LIKE ?1 ORDER BY time ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -156,7 +156,7 @@ impl DataStore {
         let mut st = conn
             .prepare(
                 "SELECT id, time, source, type, content_type, COALESCE(text, '')
-                 FROM history WHERE time >= ?1 ORDER BY time ASC",
+                 FROM history WHERE time >= ?1 ORDER BY time ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = st
@@ -220,9 +220,9 @@ impl DataStore {
         let mut st = conn
             .prepare(
                 "SELECT id, time, source, type, content_type FROM (
-                     SELECT id, time, source, type, content_type FROM history
-                     ORDER BY time DESC LIMIT ?1
-                 ) ORDER BY time ASC",
+                     SELECT id, time, source, type, content_type, rowid FROM history
+                     ORDER BY time DESC, rowid DESC LIMIT ?1
+                 ) ORDER BY time ASC, rowid ASC",
             )
             .map_err(|e| e.to_string())?;
         let rows = st

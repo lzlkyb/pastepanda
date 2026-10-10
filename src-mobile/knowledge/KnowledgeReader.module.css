@@ -1,0 +1,62 @@
+.reader { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; container-type: inline-size; container-name: knowledge-reader; background: var(--card-bg); color: var(--text-primary); }
+.header { display: flex; align-items: center; gap: 8px; padding: 4px 12px; border-bottom: 1px solid var(--border-color); flex: none; }
+.headerTitle { flex: 1; min-width: 0; text-align: center; font-size: var(--mobile-font-secondary); color: var(--text-secondary); }
+@container knowledge-reader (max-width: 20rem) {
+  .headerTitle { display: none; }
+  .header { justify-content: space-between; }
+}
+.reader button, .sheetActions button { min-height: 48px; display: inline-flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--section-bg); color: var(--text-primary); font: inherit; font-size: var(--mobile-font-body); cursor: pointer; overflow-wrap: anywhere; }
+.reader button:active, .sheetActions button:active { background: var(--accent-light); }
+.reader button:disabled, .sheetActions button:disabled { opacity: .55; cursor: default; }
+.reader button svg, .sheetActions button svg { flex: none; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 16px; }
+.scroll > section { margin-bottom: 12px; }
+.article { max-width: 720px; margin: auto; overflow-wrap: anywhere; font-size: var(--mobile-font-body); line-height: 1.75; }
+.article h1 { font-size: 1.6em; line-height: 1.3; margin: 8px 0 24px; }
+.meta { font-size: var(--mobile-font-secondary); color: var(--text-secondary); line-height: 1.6; margin: 0 0 8px; overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; color: var(--accent-strong); font-size: var(--mobile-font-secondary); }
+.footer { flex: none; display: flex; flex-direction: column; max-height: 45%; padding: 8px 16px; border-top: 1px solid var(--border-color); }
+/* Keep feedback with its action, but let long details scroll on short/large-type screens. */
+.footer > :not(.footerActions) { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-bottom: 8px; }
+.footerActions { flex: none; display: flex; gap: 12px; }
+.footerActions button { flex: 1; }
+.footerActions button[aria-pressed="true"] { color: var(--accent-strong); background: var(--accent-light); }
+.sheetActions { display: flex; flex-direction: column; gap: 8px; }
+.sheetActions button { justify-content: flex-start; text-align: left; flex-wrap: wrap; }
+.sheetActions button small { display: block; width: 100%; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.sheetActions button[data-depth="2"] { padding-left: 24px; }
+.sheetActions button[data-depth="3"], .sheetActions button[data-depth="4"] { padding-left: 36px; }
+.address { overflow-wrap: anywhere; color: var(--text-secondary); font-size: var(--mobile-font-body); }
+.markdown { min-width: 0; }
+.markdown :is(h1,h2,h3,h4,h5,h6) { line-height: 1.4; margin: 1.4em 0 .6em; }
+.markdown h2 { font-size: 1.3em; }
+.markdown h3 { font-size: 1.12em; }
+.markdown p { margin: .8em 0; }
+.markdown :is(ul,ol) { padding-left: 1.6em; }
+.markdown a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 3px; }
+.markdown blockquote { margin: 1em 0; padding: 8px 16px; border-left: 3px solid var(--accent); background: var(--section-bg); }
+.markdown code { font-family: ui-monospace, Consolas, monospace; background: var(--section-bg); border-radius: 4px; }
+.markdown :global(.kb-code) { margin: 16px 0; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+.markdown :global(.kb-code header) { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 4px 12px; background: var(--section-bg); color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.markdown :global(.kb-code pre) { overflow: auto; max-width: 100%; margin: 0; padding: 16px; font-size: .9em; white-space: pre; background: var(--section-bg); }
+.markdown :global(.kb-code code) { background: none; overflow-wrap: normal; }
+.markdown :global(.kb-code-result) { display: block; padding: 0 12px; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.markdown :global(.kb-code-result:not(:empty)) { padding-block: 8px; }
+.markdown :global(.kb-table) { overflow-x: auto; max-width: 100%; overscroll-behavior-x: contain; margin: 16px 0; }
+.markdown table { border-collapse: collapse; min-width: 100%; width: max-content; }
+.markdown :is(th,td) { padding: 10px 12px; border: 1px solid var(--border-color); text-align: left; max-width: 24em; }
+.markdown th { background: var(--section-bg); }
+.markdown :global(.kb-image) { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; background: var(--section-bg); border-radius: 12px; padding: 16px; margin: 16px 0; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.markdown :global(.kb-image img) { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.markdown :global(.kb-image [hidden]) { display:none; }
+@media (orientation: landscape) and (max-height: 500px) { .header { padding-block: 0; } .scroll { padding: 12px 20px; } .footer { padding: 4px 12px; } }
+@media (min-width: 700px) { .scroll { padding: 24px 32px; } }
+
+/* Once decoded, the picture is the target; recovery controls belong to missing-image state. */
+.markdown :global(.kb-image[data-loaded="true"]) { padding: 0; background: transparent; }
+.markdown :global(.kb-image[data-loaded="true"] > strong),
+.markdown :global(.kb-image[data-loaded="true"] > span:not(.kb-image-result)),
+.markdown :global(.kb-image[data-loaded="true"] > [data-local-image]) { display: none; }
+.markdown :global(.kb-image [data-view-image]) { display: block; padding: 0; width: 100%; background: transparent; }
+.markdown :global(.kb-image [data-view-image] img) { margin: auto; }
+.markdown :global(.kb-image img) { max-height: 75dvh; object-fit: contain; }

@@ -228,7 +228,7 @@ impl DataStore {
                     "SELECT source, COUNT(*), MAX(source_icon)
                      FROM history WHERE workspace = ?1 AND source != ''
                      GROUP BY source
-                     ORDER BY COUNT(*) DESC
+                     ORDER BY COUNT(*) DESC, source ASC
                      LIMIT 5",
                 )
                 .map_err(|e| e.to_string())?;

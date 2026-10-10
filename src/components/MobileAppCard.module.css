@@ -1,0 +1,274 @@
+/* 手机 App 下载卡（关于页 · AboutTabContent 内嵌，插在分割线后、赞助卡前）
+   结构复刻 SponsorCard.module.css 的 .card 语言；数值一律落在 UI 规则尺度表内
+   （圆角 4/8/12、字号 11/12/13/15/20、时长 150/200/300/400ms、色走 var(--token)）。 */
+
+.card {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--section-bg);
+  border: 1px solid transparent;
+  margin-bottom: 24px;
+  transition: all 0.2s, background 0.3s ease, border-color 0.3s ease;
+}
+.card:hover {
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.cardIcon {
+  font-size: 15px;
+}
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  transition: color 0.3s ease;
+}
+.cardBadge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  transition: color 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+.cardDesc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 16px;
+  transition: color 0.3s ease;
+}
+.cardDesc b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* 码 + 引导并排 */
+.dlRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.qrWrap {
+  flex-shrink: 0;
+  width: 160px;
+}
+/* 二维码画布外框：深块浅底靠 qrcode 自身出白底黑块，这里给白静区托底，
+   深浅主题都保持可扫（这是功能性的纯白，非装饰色）。
+   内容盒 = 160 − 2×8 padding − 2×1 border = 142，与 canvas 的 size=142 精确对齐（box-sizing:border-box）。
+   提到 160（原 140）是让这条「手机相机扫」主路径的模块更粗、更好扫（GitHub URL 52 字符，码偏密）。 */
+.qrFrame {
+  width: 160px;
+  height: 160px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff; /* ui-rule-ok: 二维码静区必须纯白保证任意主题下都可扫，非装饰色 */
+  border: 1px solid var(--border-color);
+  display: grid;
+  place-items: center;
+}
+.qrCanvas[data-ready="0"] {
+  display: none;
+}
+/* 懒加载 qrcode 出码前的占位：canvas 被上面 data-ready=0 藏起时，这里补一句人话，别留白块 */
+.qrLoading {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+  padding: 0 8px;
+  transition: color 0.3s ease;
+}
+.qrFail {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
+.qrCap {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  text-align: center;
+  line-height: 1.5;
+  transition: color 0.3s ease;
+}
+
+.dlSide {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hintStep {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  transition: color 0.3s ease;
+}
+.hintStep b {
+  color: var(--text-primary);
+}
+
+.cardBtns {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.cardBtn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  white-space: nowrap;
+  transition: all 0.15s, color 0.3s ease;
+}
+.cardBtn:hover {
+  border-color: var(--accent);
+}
+.cardBtn:active {
+  transform: scale(0.98);
+}
+.cardBtnPrimary {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
+.cardBtnPrimary:hover {
+  filter: brightness(1.06);
+  border-color: transparent;
+}
+/* 复制成功反馈：按钮态常驻在卡内（规则 15.1 触发与反馈同可见域），无需 toast */
+.cardBtnCopied {
+  color: var(--success, var(--text-primary));
+  border-color: var(--success);
+}
+
+.moreBtn {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+.moreBtn:hover {
+  text-decoration: underline;
+}
+
+.more {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-color);
+}
+.moreLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  transition: color 0.3s ease;
+}
+.srcList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.src {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.srcLink {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  text-align: left;
+  word-break: break-all;
+}
+.srcLink:hover {
+  text-decoration: underline;
+}
+.srcTag {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 0.3s ease;
+}
+/* GitHub 在国内常慢/连不上，主路径之外主动给「改用 Gitee」的逃生口，别让用户扫完码卡在第一屏 */
+.srcNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 12px;
+  transition: color 0.3s ease;
+}
+/* 项目主页与两条下载源分栏：它下不到安卓包，只是「了解产品」，故单列一行不复用 .src 的下载语义 */
+.homeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+.guide {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  transition: color 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+}
+.guide ol {
+  margin: 8px 0 0;
+  padding-left: 16px;
+}
+.guide li {
+  margin-bottom: 4px;
+}
+.guide code {
+  background: var(--section-bg);
+  padding: 4px;
+  border-radius: 4px;
+  font-size: 11px;
+}

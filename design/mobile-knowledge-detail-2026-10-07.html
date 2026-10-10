@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PastePanda · 二期知识库详细交互稿</title>
+  <link rel="stylesheet" href="mobile-knowledge-detail-2026-10-07.css">
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true"><defs>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4h6l2 2 2-2h6v16h-6l-2 2-2-2H4zM12 6v16"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5M8 21h8"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 20V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v12z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m14 5-7 7 7 7M7 12h14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 3 6 6.5 1-4.7 4.6 1.2 6.4-6-3-6 3 1.2-6.4L2.5 10 9 9z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L20 5"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v1"/></symbol>
+    <symbol id="i-offline" viewBox="0 0 24 24"><path d="m3 3 18 18M4 8a14 14 0 0 1 16 0M7 12a8 8 0 0 1 10 0M10 16a3 3 0 0 1 4 0M12 20h.01"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  </defs></svg>
+  <div class="studio">
+    <aside class="controls">
+      <h1>手机知识库</h1>
+      <p class="intro">查资料，记内容。<br>在手机上完成真正需要的事。</p>
+      <p class="prototype">可点击详细设计稿 · 所有数据、同步和系统动作均为示例；不连接电脑、不发送内容。</p>
+      <label class="field">查看流程
+        <select id="scenario">
+          <optgroup label="首版 · 查阅与记录">
+            <option value="home">正常主页</option><option value="welcome">尚未授权同步</option><option value="local">仅本机笔记</option><option value="first">首次同步中</option>
+            <option value="search">搜索命中与筛选</option><option value="empty">没有搜索结果</option><option value="loaderror">读取失败</option>
+            <option value="reader">全文阅读</option><option value="missing">缺少图片</option><option value="offline">离线阅读</option>
+            <option value="new">独立快速记录</option><option value="draft">恢复草稿</option><option value="saved">本机保存，等待同步</option>
+            <option value="saveerror">存储失败，保留输入</option><option value="partial">同步部分失败</option><option value="revoked">同步授权已撤销</option>
+          </optgroup>
+          <optgroup label="后续批次 · 需补能力后交付">
+            <option value="conflict">修改遇到版本冲突</option><option value="deleted">修改的笔记已被删除</option><option value="share">系统分享收集</option>
+            <option value="shareerror">分享载荷失效</option><option value="duplicate">重复分享内容</option><option value="link">笔记链接有多个匹配</option><option value="broken">笔记链接失效</option>
+          </optgroup>
+        </select>
+      </label>
+      <div class="conditions">
+        <label class="field">屏幕尺寸<select id="size"><option value="phone">竖屏 · 390 × 844</option><option value="small">小屏 · 320 × 640</option><option value="landscape">横屏 · 844 × 390</option><option value="tablet">平板 · 1024 × 700</option></select></label>
+        <label class="field">文字大小<select id="font"><option value="1">标准</option><option value="1.3">130%</option><option value="2">200%</option></select></label>
+        <label class="toggle"><input id="dark" type="checkbox">深色外观</label>
+        <label class="toggle"><input id="reduced" type="checkbox">减少动效</label>
+        <label class="toggle"><input id="keyboard" type="checkbox">键盘占用空间</label>
+      </div>
+      <p id="explanation" class="explanation"></p>
+      <div class="walkthrough"><b>推荐体验</b><ol><li>搜索“会议”，打开笔记再返回。</li><li>新建一条，输入后退出并恢复草稿。</li><li>切换存储失败，重试保存。</li><li>用横屏和200%字号检查操作入口。</li></ol></div>
+      <a href="../docs/二期知识库-手机端产品与实施规划-2026-10-07.md">查看详细规划</a>
+      <button id="reset" class="reset">重置演示</button>
+    </aside>
+    <section class="preview-area" aria-label="手机交互预览">
+      <div class="preview-caption"><span id="caption">首版 · 知识库主页</span><span>PastePanda</span></div>
+      <div id="device" class="device" data-size="phone" data-dark="false" data-font="standard" data-keyboard="false">
+        <div class="app">
+          <div class="statusbar" aria-label="普通页面系统状态栏示意"><span>9:41</span><span>5G　93%</span></div>
+          <main id="screen" class="screen"></main>
+          <nav id="nav" class="nav" aria-label="主要导航"></nav>
+          <div id="ime" class="ime" hidden><span>系统键盘占位 · 仅预览空间变化</span><button data-action="hide-keyboard">收起键盘</button></div>
+        </div>
+        <div id="overlay" class="overlay" hidden></div>
+      </div>
+      <p class="preview-note">正文在手机本机读取；“已保存到手机”与“同步成功”分开反馈。后续批次在左侧单独标出。</p>
+    </section>
+  </div>
+  <script src="mobile-knowledge-detail-2026-10-07.js"></script>
+</body>
+</html>

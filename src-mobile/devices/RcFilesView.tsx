@@ -2,7 +2,10 @@ import { RcDeviceMeta } from "@/components/rc/RcDeviceMeta";
 import { rcDisplayName } from "@/lib/rcDevice";
 import { RcDeviceIcon } from "@/components/rc/RcDeviceIcon";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, FolderDown, FolderOpen, FolderUp } from "lucide-react";
+import { ChevronDown, FolderDown, FolderOpen, FolderUp } from "lucide-react";
+import { isTerminal } from "@/lib/rcFile";
+import { MobileChoice } from "../ui/MobileChoice";
+import { RcChannelNotice } from "./RcChannelNotice";
 import { permissionErrorInfo } from "@/lib/utils";
 import { useRcFile } from "@/hooks/useRcFile";
 import { useRcFileStore } from "@/stores/rcFileStore";
@@ -47,7 +50,7 @@ export function RcFilesView({
   const [actionNote, setActionNote] = useState<string | null>(null);
   const pickRef = useRef<HTMLInputElement>(null);
   const pullLock = useRef(false);
-  const send = useMobileFileSend(onStatus);
+
   const targets = rc.targets ?? [];
   useEffect(() => {
     if (initialPeer) setPicked(initialPeer);
@@ -56,8 +59,21 @@ export function RcFilesView({
   const peer = validPicked ?? (targets.length === 1 ? targets[0].node_id : null);
   const target = targets.find((item) => item.node_id === peer);
   const peerName = target ? rcDisplayName(target) : "";
+  const send = useMobileFileSend(onStatus, peer);
+  const [actionPeer, setActionPeer] = useState<string | null>(null);
+  const visibleAction = actionPeer === peer;
+  const pickerPeer = useRef<{ id: string; name: string } | null>(null);
+  const fileErrorPeer = useRcFileStore(s => s.errorPeer);
+  const visibleFileError = fileErrorPeer === null || fileErrorPeer === peer ? file.error : null;
+  // The native chooser may outlive a peer change; keep its original object explicit.
+  const chooseFiles = () => {
+    if (!peer || rc.status?.running === false || rc.status?.enabled === false) return;
+    pickerPeer.current = { id: peer, name: peerName };
+    pickRef.current?.click();
+  };
   const pull = async () => {
-    if (!peer || !receiveDir || pullLock.current) return;
+    if (!peer || !receiveDir || pullLock.current || rc.status?.running === false || rc.status?.enabled === false) return;
+    setActionPeer(peer);
     pullLock.current = true;
     setPulling(true);
     setActionErr(null);
@@ -76,22 +92,27 @@ export function RcFilesView({
     }
   };
   const startSend = async (list: FileList | null) => {
-    if (!peer || !list?.length) return;
+    const pickedPeer = pickerPeer.current;
+    pickerPeer.current = null;
+    if (!pickedPeer || !list?.length) return;
     const files = Array.from(list);
-    await send.send(peer, peerName, files);
+    await send.send(pickedPeer.id, pickedPeer.name, files);
     if (pickRef.current) pickRef.current.value = "";
   };
   return (
     <MobilePage title="文件" subtitle="不接管画面，也能互传文件。" pageNotice={pageNotice}>
-      {file.error && file.error !== actionErr && rcErrorText(file.error) !== directory.error && <MobileNotice error title="文件操作未能完成" detail={rcErrorText(file.error)} />}
+      {rc.targetsError && <MobileNotice error title="设备列表未能更新" detail={rcErrorText(rc.targetsError)}
+        action={<button className={ui.textButton} onClick={() => void rc.refreshTargets()}>重试</button>} />}
+      {visibleFileError && visibleFileError !== (visibleAction ? actionErr : null) && rcErrorText(visibleFileError) !== directory.error && <MobileNotice error title="文件操作未能完成" detail={rcErrorText(visibleFileError)} />}
       <div className={styles.fileLayout}>
       <section className={styles.fileControls} aria-label="文件传输">
+      <RcChannelNotice rc={rc} />
       {targets.length === 0 ? (
         <div className={ui.empty}>
           <FolderOpen aria-hidden="true" />
-          <h2>还没有配对的电脑</h2>
+          <h2>{rc.targetsLoaded === false ? "正在获取设备…" : rc.targetsError ? "暂时无法获取设备" : "还没有配对的电脑"}</h2>
           <p>
-            先在「设备」页配对，
+            {rc.targetsLoaded === false ? "请稍候，设备就绪后即可选择。" : rc.targetsError ? "请重试更新设备列表，" : "先在「设备」页配对，"}
             <br />
             然后在这里发送、接收和查看进度。
           </p>
@@ -107,7 +128,7 @@ export function RcFilesView({
             type="button"
             className={styles.peerSelect}
             onClick={() => setChoosePeer(true)}
-            disabled={send.sending}
+            disabled={send.sending || pulling}
           >
             <RcDeviceIcon os={target?.os} size={34} />
             <span>
@@ -120,13 +141,13 @@ export function RcFilesView({
           <div className={styles.transferActions}>
             <button
               className={styles.primaryBtn}
-              disabled={!peer || send.sending}
-              onClick={() => pickRef.current?.click()}
+              disabled={!peer || send.sending || rc.status?.running === false || rc.status?.enabled === false}
+              onClick={chooseFiles}
             >
               <FolderUp size={24} aria-hidden="true" />
               {send.sending ? "正在准备文件…" : "发文件到电脑"}
             </button>
-            <button className={styles.ghostBtn} disabled={!peer || !receiveDir || pulling} onClick={() => void pull()}>
+            <button className={styles.ghostBtn} disabled={!peer || !receiveDir || pulling || rc.status?.running === false || rc.status?.enabled === false} onClick={() => void pull()}>
               <FolderDown size={24} aria-hidden="true" />
               {pulling ? "请求中…" : "从电脑取文件"}
             </button>
@@ -149,13 +170,13 @@ export function RcFilesView({
           </button>}
           {send.error && <MobileNotice tone={send.partial ? "warning" : "error"} title={send.partial ? "部分文件未能提交" : "文件未能提交"}
             detail={send.error} onDismiss={send.dismissError}
-            action={<button type="button" className={ui.textButton} disabled={!peer || send.sending} onClick={() => pickRef.current?.click()}>重新选择文件</button>} />}
-          {actionNote && (
+            action={<button type="button" className={ui.textButton} disabled={!peer || send.sending || rc.status?.running === false || rc.status?.enabled === false} onClick={chooseFiles}>重新选择文件</button>} />}
+          {visibleAction && actionNote && (
             <MobileNotice tone={pulling ? "pending" : "info"}>{actionNote}</MobileNotice>
           )}
-          {actionErr && <>
+          {visibleAction && actionErr && <>
             <MobileNotice error title="取回请求未能发出" detail={rcErrorText(actionErr, "file-receive")}
-              action={!permissionErrorInfo(actionErr, "file-receive") && <button type="button" className={ui.textButton} disabled={!peer || !receiveDir || pulling} onClick={() => void pull()}>重试</button>} />
+              action={!permissionErrorInfo(actionErr, "file-receive") && <button type="button" className={ui.textButton} disabled={!peer || !receiveDir || pulling || rc.status?.running === false || rc.status?.enabled === false} onClick={() => void pull()}>重试</button>} />
             {permissionErrorInfo(actionErr, "file-receive")?.kind === "file-receive" && (
               <button type="button" className={ui.secondary} disabled={directory.busy} onClick={() => {
                 void directory.reset().then(ok => {
@@ -180,11 +201,12 @@ export function RcFilesView({
       <div className={ui.sectionHead}>
         <span>传输记录</span>
         {file.tasks.length > 0 && (
-          <button className={ui.textButton} disabled={file.busy} onClick={() => void file.clearFinished()}>
-            清空已完成
+          <button className={ui.textButton} disabled={file.busy || !file.tasks.some(t => isTerminal(t.state))} onClick={() => void file.clearFinished()}>
+            清除已结束记录
           </button>
         )}
       </div>
+      <p className={ui.hint}>只清除记录，不删除已接收文件。</p>
       {file.tasks.length > 0 ? (
         <RcFileTaskList tasks={file.tasks} rateOf={file.rateOf} onCancel={(id) => void file.cancel(id)} />
       ) : (
@@ -195,23 +217,10 @@ export function RcFilesView({
       <MobileSheet open={active && choosePeer} title="选择设备" onClose={() => setChoosePeer(false)}>
         <div className={styles.peerPick} role="radiogroup" aria-label="选择设备">
           {targets.map((item) => (
-            <button
-              type="button"
-              key={item.node_id}
-              role="radio"
-              aria-label={rcDisplayName(item)}
-              aria-checked={peer === item.node_id}
-              className={`${styles.peerChip} ${peer === item.node_id ? styles.peerChipOn : ""}`}
-              onClick={() => {
-                setPicked(item.node_id);
-                onPeerChange?.(item.node_id);
-                setChoosePeer(false);
-              }}
-            >
-              <RcDeviceIcon os={item.os} size={34} />
-              <span className={styles.peerDetails}><strong>{rcDisplayName(item)}</strong><RcDeviceMeta os={item.os} className={styles.deviceType} /></span>
-              {peer === item.node_id && <Check size={18} aria-hidden="true" />}
-            </button>
+            <MobileChoice key={item.node_id} value={item.node_id} checked={peer === item.node_id}
+              title={rcDisplayName(item)} icon={<RcDeviceIcon os={item.os} size={34} />}
+              description={<RcDeviceMeta os={item.os} className={styles.deviceType} />}
+              onSelect={() => { setPicked(item.node_id); onPeerChange?.(item.node_id); setChoosePeer(false); }} />
           ))}
         </div>
       </MobileSheet>

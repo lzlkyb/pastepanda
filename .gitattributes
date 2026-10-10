@@ -1,0 +1,61 @@
+# 行尾判据的单一来源。此前本仓只有 `core.autocrlf=true` 这个「每人本地配置」，
+# 仓库里没有任何版本化的判据，所以同一文件在不同机器上检出成不同行尾。
+#
+# 实测动机（2026-10-09 审计 macOS 分支合并时量的）：`git ls-files --eol` 里 12 个文件
+# 工作树是 mixed，其中 `src/lib/utils.ts` 是 941 行 CRLF + 33 行裸 LF——而双方都往这个
+# 文件尾部追加公共函数，谁下一次编辑顺手归一化，就会造出整片伪冲突。
+* text=auto
+
+# 源码、配置与文档：检出也钉 LF，不再随本机 autocrlf 变
+*.rs text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.py text eol=lf
+*.kt text eol=lf
+
+# 🔴 例外，别「顺手统一」：这个测试的 fixture 里写了 3 个裸 NUL 字节（测 NUL 分割行为），
+# git 因此把它自动判成 binary（`ls-files --eol` 显示 `i/-text`）。它的 blob 现存 560 对 CRLF，
+# 一旦被上面的 `*.ts text` 收走，整文件会被重规范化成一个大 diff，二进制判据也一起丢了。
+# 实测判据：`git check-attr text -- src/__tests__/recommend.test.ts` → `text: unset`
+# （本行写在 `*.ts` 之后，后写优先；`eol` 在 text 未设时不参与转换）。
+src/__tests__/recommend.test.ts -text
+
+# 随包携带 / 按需下载的二进制分发物，绝不做行尾转换
+# （src-tauri/resources/easytier/** 与 ffmpeg/** 是按需下载的分发源，改一个字节就报废）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.exe binary
+*.mnn binary
+*.mp4 binary
+*.zip binary
+*.gz binary
+*.jks binary

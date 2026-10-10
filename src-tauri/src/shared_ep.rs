@@ -43,6 +43,7 @@ pub type ConnHandler = Arc<dyn Fn(iroh::endpoint::Connection) + Send + Sync>;
 pub fn shared_alpns() -> Vec<Vec<u8>> {
     vec![
         SYNC_ALPN.to_vec(),
+        crate::sync::asset::ALPN.to_vec(),
         RC_ALPN.to_vec(),
         RC_FILE_ALPN.to_vec(),
     ]
@@ -185,17 +186,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 共享端点_alpn清单_同步远程文件三路齐全() {
+    fn 共享端点_alpn清单_同步远程文件与知识库单图齐全() {
         let alpns = shared_alpns();
-        assert_eq!(alpns.len(), 3);
+        assert_eq!(alpns.len(), 4);
         assert!(alpns.contains(&SYNC_ALPN.to_vec()), "漏了同步 ALPN——同步入连接会被拒");
         assert!(alpns.contains(&RC_ALPN.to_vec()), "漏了远程会话 ALPN——公网会话会被拒");
         assert!(alpns.contains(&RC_FILE_ALPN.to_vec()), "漏了文件传输 ALPN——G6 会被拒");
-        // 三条互不相同：撞了的话后注册的会覆盖先注册的。
+        assert!(alpns.contains(&crate::sync::asset::ALPN.to_vec()), "漏了知识库单图 ALPN");
+        // 所有路由互不相同：撞了的话后注册的会覆盖先注册的。
         let mut uniq = alpns.clone();
         uniq.sort();
         uniq.dedup();
-        assert_eq!(uniq.len(), 3);
+        assert_eq!(uniq.len(), 4);
     }
 
     #[test]

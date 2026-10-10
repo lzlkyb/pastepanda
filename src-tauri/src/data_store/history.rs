@@ -377,7 +377,7 @@ impl DataStore {
             params_vec.push(Box::new(search_pattern));
         }
 
-        sql.push_str(" ORDER BY pinned DESC, time DESC LIMIT ? OFFSET ?");
+        sql.push_str(" ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ? OFFSET ?");
         params_vec.push(Box::new(limit.min(500))); // 单次查询上限 500 条
         params_vec.push(Box::new(offset));
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -476,7 +476,7 @@ impl DataStore {
             sql.push_str(" AND id IN (SELECT history_id FROM history_tags WHERE tag_id = ?)");
             params_vec.push(Box::new(tag_id.clone()));
         }
-        sql.push_str(" ORDER BY pinned DESC, time DESC LIMIT ?");
+        sql.push_str(" ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ?");
         params_vec.push(Box::new(limit.min(1000)));
 
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -608,7 +608,7 @@ impl DataStore {
             params_vec.push(Box::new(tag_id.clone()));
         }
 
-        sql.push_str(" ORDER BY pinned DESC, time DESC LIMIT ?");
+        sql.push_str(" ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ?");
         params_vec.push(Box::new(limit.min(1000))); // 上限，防止宽泛搜索整表返回
 
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -659,7 +659,7 @@ impl DataStore {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-                     FROM history ORDER BY time DESC LIMIT ?1",
+                     FROM history ORDER BY time DESC, rowid DESC LIMIT ?1",
                 )
                 .map_err(|e| e.to_string())?;
             let result: Vec<HistoryItem> = stmt
@@ -885,7 +885,7 @@ impl DataStore {
         let result = conn.query_row(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
              FROM history WHERE md5 = ?1 AND type = ?3 AND workspace = ?2
-             ORDER BY time DESC LIMIT 1",
+             ORDER BY time DESC, rowid DESC LIMIT 1",
             params![md5, workspace, item_type],
             |row| {
                 Ok(HistoryItem {
@@ -1625,7 +1625,7 @@ impl DataStore {
         );
         let sql = format!(
             "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-             FROM history{} ORDER BY time DESC LIMIT ?",
+             FROM history{} ORDER BY time DESC, rowid DESC LIMIT ?",
             where_clause
         );
         let mut params_vec = params_vec;
@@ -1676,7 +1676,7 @@ impl DataStore {
             let mut stmt = conn
                 .prepare(
                     "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-                     FROM history WHERE workspace = ?1 ORDER BY time DESC",
+                     FROM history WHERE workspace = ?1 ORDER BY time DESC, rowid DESC",
                 )
                 .map_err(|e| e.to_string())?;
             let result: Vec<HistoryItem> = stmt

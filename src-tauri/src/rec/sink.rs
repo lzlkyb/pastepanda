@@ -17,6 +17,10 @@
 //! 0xC00D36B4（2026-10-08 探针 + 变异各实测一次）。esds 由 sink 按采样率/声道数
 //! 自造，与 `rc/audio.rs::asc_for` 那份逐字节相同，所以调用方无从也无需传 asc。
 //!
+//! 🔴 每条轨在 Finalize 前必须至少收到 **1 个样本**——moov 的样本描述要从流内
+//! 自取，零样本轨 = 0xC00D4A45「未提供所需的标头」（静音场整场零环回包，
+//! 2026-10-07 实录踩坑；音频线程按墙钟补静音保活，见 session.rs::run_audio）。
+//!
 //! MF 时间单位 100ns；`at_ms * 10_000`。全部 COM 调用收敛在本文件，
 //! 释放顺序同 `encode_h264.rs::release_com`：先放对象引用再 CoUninitialize。
 
@@ -114,6 +118,8 @@ pub struct RecSink {
     /// 是因为时间轴塌在 0（delta=0 可平凡推导），三期修好时间轴后必然踩中。
     video_frame_t100: i64,
     com_owned: bool,
+    /// 已写入的音频样本数（finalize 诊断用：0 = 音轨零样本，见 finalize）。
+    audio_samples: u64,
     /// 已写入的媒体字节（视频+音频裸流，不含封装开销；四期 1.2 控制条体积显示）。
     /// 调用方持有同一 Arc 供 `rec_status` 跨线程读——计数器由会话注入（依赖注入），
     /// sink 不自造：状态读口永远只有一个（规则 11.1 同款思路）。
@@ -221,6 +227,7 @@ impl RecSink {
                     video_stream,
                     audio_stream,
                     audio_frame_t100,
+                    audio_samples: 0,
                     video_frame_t100: 10_000_000i64 / fps.max(1) as i64,
                     com_owned,
                     bytes,
@@ -248,7 +255,13 @@ impl RecSink {
     /// 写一帧裸 AAC。`pts_ms` 来自 `AacPacket`。
     pub fn write_audio(&mut self, pts_ms: i64, data: &[u8]) -> Result<(), String> {
         let stream = self.audio_stream.ok_or("无音频轨")?;
+        self.audio_samples += 1;
         unsafe { self.write(stream, pts_ms * 10_000, self.audio_frame_t100, data) }
+    }
+
+    /// 是否开了音轨（drain 侧据此静默跳过：包要照收防通道积压，但不写不刷日志）。
+    pub(crate) fn has_audio(&self) -> bool {
+        self.audio_stream.is_some()
     }
 
     unsafe fn write(
@@ -290,7 +303,18 @@ impl RecSink {
     /// 收尾：写 moov、落盘。调用后本对象不可再用（Drop 只清 COM）。
     pub fn finalize(&mut self) -> Result<(), String> {
         match self.writer.as_ref() {
-            Some(w) => unsafe { w.Finalize().map_err(mf_err) },
+            Some(w) => unsafe {
+                w.Finalize().map_err(|e| {
+                    let mut msg = mf_err(e);
+                    // 0xC00D4A45「未提供所需的标头」= 某条轨零样本，moov 写不出
+                    // （样本描述要从流内自取）。视频零样本被参数集门卫挡在 open
+                    // 前；音轨零样本只能在这里给出可读诊断（静音保活失守时）。
+                    if self.audio_stream.is_some() && self.audio_samples == 0 {
+                        msg.push_str("；诊断：音轨 0 样本（整场无音频产出）");
+                    }
+                    msg
+                })
+            },
             None => Err("SinkWriter 已释放".into()),
         }
     }
@@ -441,6 +465,183 @@ mod tests {
             drop(sink);
         }
         let _ = std::fs::remove_file(&path);
+    }
+
+    // ── 探针 1（2026-10-10 实测）：**容器时长由样本时间戳推，不由我们给的
+    // duration 推，也不由样本数推**。8 个样本、最后时间戳 3198ms → mvhd 报
+    // 3231ms（=3198+33），而 8×33ms=264ms；轨时基是 fps 定的 30000（15 分钟跨度
+    // 实测 mvhd=900033ms 正常，u32 时长要 39.8 小时才回绕）。
+    // ⇒ 封装层无罪：视频轨短于音频轨只能是**喂进来的时间戳**本身就短——
+    //   生产侧时间轴按「已提交帧数」走，静止段不提交 = 轴不走（见 timeline.rs）。 ──
+    #[test]
+    fn 稀疏时间戳_容器时长跟时间戳不跟帧数() {
+        let stamps = [0i64, 33, 66, 99, 132, 3132, 3165, 3198];
+        let Some((samples, dur)) = 容器时长实测(&stamps, "sparse") else {
+            return; // 本机无硬件编码器：类型装配本体已由上面的回归覆盖
+        };
+        println!(
+            "稀疏时间戳实测：样本数={samples} 最后时间戳={}ms 容器时长={dur}ms",
+            stamps[stamps.len() - 1]
+        );
+        assert!(
+            dur + 100 >= *stamps.last().unwrap() as u64,
+            "容器时长必须跟到最后一帧的时间戳：实测 {dur}ms，样本数 {samples}（×33ms 只有 {}ms）",
+            samples as u64 * 33
+        );
+    }
+
+    // ── 探针 2（「时间轴卡死」的成品验收）：拿**生产同款**时间轴（rec/timeline）
+    // 驱动真编码器写 20 秒，画面只在每 2 秒变一次、其余静止段按 HOLD_MIN_INTERVAL
+    // 的节奏补帧——产物时长必须仍是 20 秒。旧口径（提交帧数×帧长、静止段不落样）
+    // 在这串样本上只写出 11×33=363ms 的轨（60 秒会话改前实测 966ms）。样本数会明显
+    // 低于 CFR 格子数，这是有意的：补帧不重新编码，时长靠时间戳，逐格重编的代价见
+    // 下面 `补帧开销_静态逐格重编`。 ──
+    #[test]
+    fn 静止补帧_容器时长跟住墙钟() {
+        use crate::rec::timeline::VideoAxis;
+        let (fps, secs) = (30u32, 20i64);
+        let mut axis = VideoAxis::new(fps);
+        let mut stamps: Vec<i64> = Vec::new();
+        let mut el = 0i64;
+        // 主循环按 1/fps 走；k%60==0 的那几圈 DXGI 才给真帧
+        for k in 0..(secs * i64::from(fps) + 6) {
+            el = k * 33;
+            if k % 60 == 0 {
+                let (holds, at) = axis.arrive(el, k > 0);
+                stamps.extend(holds);
+                stamps.push(at);
+            } else {
+                stamps.extend(axis.fill_holds(el, true));
+            }
+        }
+        // 与生产同款的收尾尾格（session.rs 收尾第一步）
+        stamps.extend(axis.tail_hold(el, true));
+        let want = stamps[stamps.len() - 1];
+        let reported = axis.duration_ms();
+        let Some((samples, dur)) = 容器时长实测(&stamps, "cfr") else {
+            return; // 无硬件编码器：轴本身由 timeline.rs 的单测覆盖
+        };
+        println!(
+            "补帧成品实测：输入格子数={} 写入样本数={samples} 最后时间戳={want}ms \
+             容器时长={dur}ms rec-done 口径={reported}ms",
+            stamps.len()
+        );
+        assert!(
+            dur + 1000 >= (secs * 1000) as u64,
+            "录满 {secs} 秒的产物只报了 {dur}ms（时间轴终点 {want}ms、样本 {samples}）——\
+             视频轨短于会话时长，播放器末尾就是「卡死」"
+        );
+        assert!(
+            dur.abs_diff(reported) <= 100,
+            "rec-done 报 {reported}ms 而成品 {dur}ms——用户看到的时长与文件对不上"
+        );
+    }
+
+    /// 用真编码器把一串时间戳写成 MP4，返回（写入样本数, 容器时长 ms）。
+    /// 本机没有硬件编码器时返回 None（跳过，不当成通过）。
+    fn 容器时长实测(stamps_ms: &[i64], tag: &str) -> Option<(usize, u64)> {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        crate::rc::encode_h264::ensure_mf_startup().unwrap();
+
+        let (w, h, fps) = (320u32, 240u32, 30u32);
+        let path = std::env::temp_dir().join(format!("rec_sink_probe_{tag}.mp4"));
+        let _ = std::fs::remove_file(&path);
+        let mut sink = RecSink::open(
+            &path,
+            w,
+            h,
+            fps,
+            false,
+            None,
+            2_000_000,
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        )
+        .expect("开封装（纯画面轨）");
+
+        let mut enc = crate::rc::encode_h264::H264SessionEncoder::try_open(
+            crate::rc::encode_h264::VideoCodec::H264,
+            w,
+            h,
+            fps,
+        );
+        let frame = vec![96u8; (w * h * 4) as usize];
+        let mut samples = 0usize;
+        for t in stamps_ms {
+            enc.set_capture_at(*t);
+            match enc.encode_bgra(&frame, w, h) {
+                Ok(ps) => {
+                    for p in &ps {
+                        sink.write_video(p.at_ms, &p.data)
+                            .unwrap_or_else(|e| panic!("写帧 @{t}ms 必须成功：{e}"));
+                        samples += 1;
+                    }
+                }
+                Err(e) => {
+                    println!("（编码器本机不可用，探针跳过：{e}）");
+                    return None;
+                }
+            }
+        }
+        if samples == 0 {
+            println!("（编码器无输出，探针跳过）");
+            return None;
+        }
+        sink.finalize().expect("finalize 必须成功");
+        drop(sink);
+        println!("探针文件：{}", path.display());
+        Some((samples, super::super::scan::mp4_duration_ms(&path).expect("moov 必须带 mvhd")))
+    }
+
+    /// 补帧的真实开销（规则 8：先测再写结论，不进 CI）。本机跑法：
+    /// `cargo test --lib 补帧开销 -- --ignored --nocapture`
+    #[test]
+    #[ignore = "900 帧 1080p 真编码，只本机量补帧开销"]
+    fn 补帧开销_静态逐格重编() {
+        use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        crate::rc::encode_h264::ensure_mf_startup().unwrap();
+        let (w, h, fps, n) = (1920u32, 1080u32, 30u32, 900usize);
+        let mut enc = crate::rc::encode_h264::H264SessionEncoder::try_open_for_file(
+            crate::rc::encode_h264::VideoCodec::H264,
+            w,
+            h,
+            fps,
+            8_000_000,
+        );
+        if !enc.available() {
+            println!("（本机无可用硬件编码器，跳过）");
+            return;
+        }
+        let frame = vec![96u8; (w * h * 4) as usize];
+        let started = std::time::Instant::now();
+        let mut packets = 0usize;
+        let mut bytes = 0usize;
+        for i in 0..n {
+            enc.set_capture_at(i as i64 * 1000 / i64::from(fps));
+            match enc.encode_bgra(&frame, w, h) {
+                Ok(ps) => {
+                    packets += ps.len();
+                    bytes += ps.iter().map(|p| p.data.len()).sum::<usize>();
+                }
+                Err(e) => {
+                    println!("（编码器不可用：{e}）");
+                    return;
+                }
+            }
+        }
+        let ms = started.elapsed().as_millis();
+        println!(
+            "1080p30 静态逐格重编：{n} 帧耗时 {ms}ms（{:.2}ms/帧 = 每秒 {:.1}% 单核），\
+             输出 {packets} 包 / {bytes}B（平均 {:.0}B/包）",
+            ms as f64 / n as f64,
+            ms as f64 * 100.0 / (n as f64 / f64::from(fps)) / 1000.0,
+            bytes as f64 / packets.max(1) as f64
+        );
     }
 
     #[test]
