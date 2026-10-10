@@ -39,6 +39,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_RETRY_WAITS, MANIFEST_BRANCH, giteeRawManifestUrl, publishManifestBranch } from "./publish-manifest-branch.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -200,6 +201,15 @@ function run(cmd, args, opts = {}) {
   return r;
 }
 
+/** GitHub 写令牌：manifest 现在提交到 GitHub 的 releases 分支，本地发布走 gh 的登录态。 */
+function ghAuthToken() {
+  const fromEnv = (process.env.GH_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (fromEnv) return fromEnv;
+  const r = spawnSync("gh", ["auth", "token"], { encoding: "utf8" });
+  if (r.status !== 0) fail("gh auth token 失败（manifest 要提交到 GitHub releases 分支，先 gh auth login）");
+  return r.stdout.trim();
+}
+
 if (spawnSync("gh", ["--version"], { stdio: "ignore" }).status !== 0) {
   fail("找不到 gh CLI（GitHub 上传依赖它，先装 gh 并 gh auth login）");
 }
@@ -207,9 +217,12 @@ info(`上传 GitHub Release ${TAG}（APK + 2 份 manifest）…`);
 run("gh", ["release", "upload", TAG, path.join(DIST, APK_NAME), path.join(DIST, "apk-update.json"), path.join(DIST, "apk-update-ghproxy.json"), "--clobber"]);
 ok("GitHub 资产已上传");
 
-// ─── Gitee 镜像 ──────────────────────────────────────────
-// 与 release.yml 的 Gitee 段同一套实探结论：manifest 走 releases 分支 raw（小文件），
-// 二进制走发行版附件 attach_files（raw 大文件要登录会 403）。
+// ─── Gitee 通道 ──────────────────────────────────────────
+// 与 release.yml 同一套实探结论：**manifest 不再手工推 Gitee**，改为提交到 GitHub 的
+// `releases` 分支，由 Gitee 的「仓库镜像管理」搬运（实测同步 4–11s，raw 边缘再 20–100s）。
+// 以前它在 Gitee 上是手工建的孤儿分支，而镜像同步按「删除在远程仓库中不存在的分支和标签」
+// 剪枝 ⇒ 每推一次 GitHub 就剪一次，客户端第 1 更新源跟着 404（2026-10-10 实测时间链）。
+// 二进制仍然走 Gitee 发行版附件 attach_files（raw 大文件要登录会 403），那需要 GITEE_TOKEN。
 
 if (SKIP_GITEE) {
   info("--skip-gitee：跳过 Gitee 通道。国内用户这次更新只靠 ghproxy/GitHub 两层。");
@@ -219,47 +232,7 @@ if (SKIP_GITEE) {
       "缺少 GITEE_TOKEN 环境变量（Gitee 是三源之一，缺一即失败是设计；确实要跳过用 --skip-gitee）",
     );
   }
-  // 1) manifest → releases 分支 latest/
-  // 🔴 `releases` 是一条 orphan 分支，Gitee 的 GitHub→Gitee 镜像同步只保 master，会把别的分支
-  //    剪掉。实测 2026-10-09：桌面 17:46 刚把它重建出来，18:53 这一轮 clone 就已经
-  //    `Remote branch releases not found in upstream origin`。所以这里不能假定它存在——
-  //    配方与 release.yml 的 Gitee 段一致：分支查无 → clone 默认分支 → `checkout --orphan` 重建。
-  //    （不这么做的话，每次发版都得先手动跑一遍 gitee-repair 才能推 APK manifest。）
-  const mirror = mkdtempSync(path.join(tmpdir(), "pp-gitee-mirror-"));
-  const giteeGit = `https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git`;
-  let clone = spawnSync("git", ["clone", "--depth", "1", "--branch", "releases", giteeGit, mirror], { encoding: "utf8" });
-  if (clone.status !== 0) {
-    if (!/Remote branch releases not found|not found in upstream origin/.test(`${clone.stderr}${clone.stdout}`)) {
-      fail(`clone Gitee releases 分支失败（不是「分支不存在」这一类，先查 GITEE_TOKEN 写权限与 GITEE_REPOSITORY=${GITEE_REPO}）：\n${clone.stderr || clone.stdout}`);
-    }
-    info("releases 分支不存在（已被镜像同步剪掉），clone 默认分支后重建孤儿分支");
-    rmSync(mirror, { recursive: true, force: true });
-    clone = spawnSync("git", ["clone", "--depth", "1", giteeGit, mirror], { encoding: "utf8" });
-    if (clone.status !== 0) fail(`clone Gitee 默认分支也失败：\n${clone.stderr || clone.stdout}`);
-    const orphan = spawnSync("git", ["-C", mirror, "checkout", "--orphan", "releases"], { encoding: "utf8" });
-    if (orphan.status !== 0) fail(`创建 releases 孤儿分支失败：\n${orphan.stderr || orphan.stdout}`);
-    const wipe = spawnSync("git", ["-C", mirror, "reset", "--hard"], { encoding: "utf8" });
-    if (wipe.status !== 0) fail(`清空孤儿分支索引失败：\n${wipe.stderr || wipe.stdout}`);
-  }
-  const latest = path.join(mirror, "latest");
-  // 新建的孤儿分支里当然没有 latest/——它只是 manifest 的目录，不是镜像结构的先决条件。
-  mkdirSync(latest, { recursive: true });
-  copyFileSync(path.join(DIST, "apk-update-gitee.json"), path.join(latest, "apk-update-gitee.json"));
-  run("git", ["-C", mirror, "add", "-A", "latest"], { quiet: true });
-  const commit = spawnSync("git", ["-C", mirror, "-c", "user.email=pub@pastepanda.local", "-c", "user.name=pastepanda-pub", "commit", "-m", `release: apk-update ${TAG}`], { encoding: "utf8" });
-  if (commit.status !== 0 && !/nothing to commit/.test(commit.stdout || "")) {
-    fail(`Gitee manifest commit 失败：${commit.stderr || commit.stdout}`);
-  }
-  let push = spawnSync("git", ["-C", mirror, "push", "origin", "releases"], { encoding: "utf8" });
-  if (push.status !== 0) {
-    info("第一次 push 失败，按 CI 经验用 postBuffer+--no-thin 重试…");
-    push = spawnSync("git", ["-C", mirror, "-c", "http.postBuffer=524288000", "push", "--no-thin", "origin", "releases"], { encoding: "utf8" });
-    if (push.status !== 0) fail(`Gitee manifest push 两次都失败：${push.stderr || push.stdout}`);
-  }
-  ok("apk-update-gitee.json 已推到 releases 分支 latest/");
-  rmSync(mirror, { recursive: true, force: true });
-
-  // 2) APK → Gitee 发行版附件（attach_files 接口名，不是 GitHub 的 assets）
+  // 1) APK → Gitee 发行版附件（attach_files 接口名，不是 GitHub 的 assets）
   const apiBase = `https://gitee.com/api/v5/repos/${GITEE_REPO}`;
   const headers = { Authorization: `token ${GITEE_TOKEN}` };
   const sha = spawnSync("git", ["rev-parse", TAG], { cwd: ROOT, encoding: "utf8" }).stdout?.trim();
@@ -285,7 +258,7 @@ if (SKIP_GITEE) {
   if (!up.ok) fail(`attach_files 上传失败：HTTP ${up.status} ${(await up.text()).slice(0, 400)}`);
   ok("APK 已挂到 Gitee 发行版");
 
-  // 3) 回读确认资产里真有（防假绿，CI 同款教训）
+  // 2) 回读确认资产里真有（防假绿，CI 同款教训）
   let found = false;
   for (let i = 1; i <= 4 && !found; i++) {
     const chk = await fetch(`${apiBase}/releases/${rel.id}`, { headers });
@@ -297,6 +270,17 @@ if (SKIP_GITEE) {
   }
   if (!found) fail("Gitee 发行版附件里回读不到 APK（上传假绿？）");
   ok("Gitee 附件回读通过");
+
+  // 3) manifest → GitHub 的 releases 分支（放在附件之后：manifest 一旦上线，
+  //    里面那条 releases/download/{tag}/{APK} 必须已经可下，否则客户端就是「发现新版 → 下载 404」）
+  try {
+    publishManifestBranch({ repo: GH_REPO, token: ghAuthToken(), files: [path.join(DIST, "apk-update-gitee.json")] });
+  } catch (e) {
+    fail(
+      `apk-update-gitee.json 提交到 GitHub ${MANIFEST_BRANCH} 分支失败：${e?.message ?? e}\n` +
+        `  Gitee 那份 manifest 这次不会更新（老那份仍留在分支上，客户端会降级到 ghproxy/GitHub）。`,
+    );
+  }
 }
 
 // ─── 三源回读验证（发布后冒烟，缺一源红灯）──────────────
@@ -319,7 +303,8 @@ for (const m of manifests) {
   let manifestUrl;
   let apkUrl = m.body.url;
   if (m.file === "apk-update-gitee.json") {
-    manifestUrl = `https://gitee.com/${GITEE_REPO}/raw/releases/latest/${m.file}`;
+    // 与发布出口、repair 脚本、客户端硬编码端点同一份地址构造，别各处自己拼一边。
+    manifestUrl = giteeRawManifestUrl(GITEE_REPO, m.file);
   } else {
     const direct = `https://github.com/${GH_REPO}/releases/latest/download/${m.file}`;
     manifestUrl = m.file === "apk-update.json" ? direct : `https://ghproxy.net/${direct}`;
@@ -329,15 +314,17 @@ for (const m of manifests) {
 
 for (const c of checks) {
   let body = null;
-  // 与 repair-gitee-channel.mjs 同一档阶梯（5 次、累计等 200s）：新建 releases 分支后
-  // Gitee 的 raw CDN 实测要到第 3 次（≈95s）才读得到。原先只等 8+16+24=48s，
-  // 会在「其实已经发布成功」的最后一步判红——而红了一轮就得重来、再把线上 APK clobber 一次。
-  for (let i = 1; i <= 5 && !body; i++) {
+  // 等待档必须盖住「镜像同步 + raw 边缘传播」两段实测延迟（同步 4–11s，raw 见过 20–100s、最坏 4 分钟）。
+  // 2026-10-10 改道之后 manifest 推的是 GitHub 的 releases 分支，Gitee 那份由镜像搬运，
+  // 所以这里比的不是「我们刚推完」而是「搬到了没有」。等待档一旦短于传播延迟，
+  // 就会在「其实已经发布成功」的最后一步判红——而红了一轮就得重来、再把线上 APK clobber 一次。
+  const total = DEFAULT_RETRY_WAITS.length + 1;
+  for (let i = 1; i <= total && !body; i++) {
     try {
       const r = await fetch(c.manifestUrl, { redirect: "follow" });
       if (r.ok) body = await r.json();
     } catch {}
-    if (!body && i < 5) await sleep(i * 20000);
+    if (!body && i <= DEFAULT_RETRY_WAITS.length) await sleep(DEFAULT_RETRY_WAITS[i - 1] * 1000);
   }
   if (!body) fail(`回读失败：${c.label} 的 manifest 多次重试仍读不到（${c.manifestUrl}）`);
   if (body.version !== VERSION) fail(`回读不一致：${c.label} manifest version=${body.version}，期望 ${VERSION}`);
