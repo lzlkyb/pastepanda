@@ -2,24 +2,51 @@
 //!
 //! - `quality` 档位表（纯函数）；`timeline` 视频时间轴（墙钟槽 + 静止补帧）；
 //!   `sink` MF SinkWriter mux；`session` 采集会话；`commands` Tauri 命令。
-//!   本模块 **Windows 桌面专属**（依赖 DXGI/MF）。
+//!   Windows 使用 DXGI/MF，Mac 使用 ScreenCaptureKit/AVAssetWriter。
 //! - 窗口两个：`rec-select`（全屏透明覆盖层：预览 → 确认条 → 倒计时 → 录制中红框，
 //!   录制中整窗鼠标穿透）＋ `rec-control`（置顶小条：REC / 计时 / 停止，可拖动）。
 //! - 窗口机制照抄截图窗（screenshot.rs）：运行时创建、物理像素定位、前端 ready
 //!   存活探针（React 树崩了 / webview 白屏时自动关窗，不让用户被困在遮罩后面）。
 
-#![cfg(target_os = "windows")]
+#![cfg(any(target_os = "windows", target_os = "macos"))]
 
 pub mod commands;
+pub mod event_types;
 pub mod events;
+mod gif_job;
+#[cfg(target_os = "macos")]
+#[path = "../macos/h264_frames.rs"]
+mod h264_frames;
+#[cfg(windows)]
 pub mod gif;
+#[cfg(target_os = "macos")]
+#[path = "../macos/rec_gif.rs"]
+pub mod gif;
+#[cfg(windows)]
 pub mod hooks;
+#[cfg(target_os = "macos")]
+mod mac_validation;
+#[cfg(target_os = "macos")]
+mod mac_keys;
+#[cfg(windows)]
 pub mod pointer;
 pub mod quality;
+mod control_layout;
 pub mod scan;
+#[cfg(windows)]
 pub mod session;
+#[cfg(target_os = "macos")]
+#[path = "../macos/rec_session.rs"]
+pub mod session;
+pub mod session_types;
+#[cfg(windows)]
 pub mod sink;
 pub mod timeline;
+pub mod trim_types;
+#[cfg(not(target_os = "macos"))]
+pub mod trim;
+#[cfg(target_os = "macos")]
+#[path = "../macos/rec_trim.rs"]
 pub mod trim;
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -89,7 +116,10 @@ pub fn take_hud_data() -> Option<serde_json::Value> {
 
 /// 一次性交给预览裁剪窗的数据（窗挂载后经 rec_preview_take 取走）。
 pub fn take_preview_data() -> Option<serde_json::Value> {
-    PREVIEW_DATA.lock().unwrap_or_else(|p| p.into_inner()).take()
+    PREVIEW_DATA
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take()
 }
 
 /// 打开预览裁剪窗（rec_open_preview 校验路径并放行资产白名单后调用）。
@@ -120,7 +150,11 @@ pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) {
     .build();
     match built {
         Ok(window) => {
+            #[cfg(target_os="macos")]
+            let _=crate::macos::screen::place_window(&window,x,y,win_w as u32,win_h as u32);
+            #[cfg(not(target_os="macos"))]
             let _ = window.set_size(tauri::PhysicalSize::new(win_w as u32, win_h as u32));
+            #[cfg(not(target_os="macos"))]
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
             let _ = window.show();
             let _ = window.set_focus();
@@ -161,7 +195,11 @@ pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
     match built {
         Ok(window) => {
             // builder 收逻辑像素，物理覆盖一次（同选区窗的坑）
+            #[cfg(target_os="macos")]
+            let _=crate::macos::screen::place_window(&window,x,y,win_w as u32,win_h as u32);
+            #[cfg(not(target_os="macos"))]
             let _ = window.set_size(tauri::PhysicalSize::new(win_w as u32, win_h as u32));
+            #[cfg(not(target_os="macos"))]
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
             let _ = window.show();
             let probe = app.clone();
@@ -180,12 +218,22 @@ pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
 
 /// 主屏几何（物理像素 + 缩放系数；primary_monitor 不可用时退回 SM_CXSCREEN，scale=1）。
 fn primary_screen_metrics(app: &AppHandle) -> (i32, i32, i32, i32, f64) {
+    #[cfg(not(target_os="macos"))]
     if let Ok(Some(m)) = app.primary_monitor() {
         let p = m.position();
         let s = m.size();
         return (p.x, p.y, s.width as i32, s.height as i32, m.scale_factor());
     }
+    #[cfg(target_os = "macos")]
+    {
+        let m = crate::macos::screen::primary().ok();
+        return m
+            .map(|m| (m.x, m.y, m.w, m.h, crate::macos::screen::primary_scale()))
+            .unwrap_or((0, 0, 0, 0, 1.0));
+    }
+    #[cfg(windows)]
     use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    #[cfg(windows)]
     unsafe {
         (
             0,
@@ -198,6 +246,7 @@ fn primary_screen_metrics(app: &AppHandle) -> (i32, i32, i32, i32, f64) {
 }
 
 /// 虚拟屏几何（物理像素）——与 rc/dxgi.rs、screenshot.rs 同源口径。
+#[cfg(windows)]
 pub(crate) fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetSystemMetrics, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
@@ -213,8 +262,28 @@ pub(crate) fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
     }
 }
 
+/// Mac 选区几何采用窗口系统的真实显示器数据；不把原生查询失败静默变成 0×0。
+pub(crate) fn selector_screen_metrics(app: &AppHandle) -> Result<(i32, i32, i32, i32), String> {
+    #[cfg(target_os = "macos")]
+    let metrics = {let r=crate::macos::screen::desktop()?;(r.x,r.y,r.w,r.h)};
+    #[cfg(windows)]
+    let metrics = virtual_screen_metrics();
+    if metrics.2 < 16 || metrics.3 < 16 {
+        return Err("显示器尺寸无效，无法打开录屏选区".into());
+    }
+    Ok(metrics)
+}
+fn report_startup_failure(app: &AppHandle, message: &str) {
+    log::warn!("[Rec] {message}");
+    let _ = app.emit(
+        "rec-failed",
+        serde_json::json!({"message":message,"hud":false}),
+    );
+}
+
 /// 打开（或聚焦）录屏选区窗。热键 / 工具箱 / 托盘共用入口。
 pub fn open_selector_window(app: &AppHandle) {
+    log::info!("[Rec] 请求打开录屏选区");
     let st = session::status();
     // 已有会话在录：热键语义 = 停止（见 commands::rec_toggle）
     if st.recording {
@@ -249,7 +318,14 @@ fn create_selector(app: &AppHandle, url: &str) {
             }
         }
         let _guard = Reset;
-        let (x, y, w, h) = virtual_screen_metrics();
+        let (x, y, w, h) = match selector_screen_metrics(&app) {
+            Ok(metrics) => metrics,
+            Err(error) => {
+                report_startup_failure(&app, &error);
+                return;
+            }
+        };
+        log::info!("[Rec] 选区屏幕几何 {x},{y} {w}×{h}");
         // 世代号在 build() 之前递增（同截图窗：build 一返回前端就可能 ready）
         let generation = GEN.fetch_add(1, Ordering::SeqCst) + 1;
         let builder = WebviewWindowBuilder::new(&app, SELECT_LABEL, WebviewUrl::App(url.into()))
@@ -269,8 +345,12 @@ fn create_selector(app: &AppHandle, url: &str) {
             Ok(window) => {
                 // builder 的 inner_size/position 收逻辑像素（同截图窗的坑），
                 // 用物理量覆盖一次；此时窗还 invisible，用户看不到中间帧。
+                #[cfg(target_os="macos")]
+                let _=crate::macos::screen::place_window(&window,x,y,w.max(1) as u32,h.max(1) as u32);
+                #[cfg(not(target_os="macos"))]
                 let _ = window.set_size(tauri::PhysicalSize::new(w.max(1) as u32, h.max(1) as u32));
-                let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+                #[cfg(not(target_os="macos"))]
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 // 🔴 就绪前整窗穿透：页面加载慢/被整页 reload 打断期间，一个没渲染
                 // 出来的全屏窗绝不能吃用户的点击（卡死陷阱的延伸教训）。
                 // rec_ready 到达时恢复交互并抢焦点（见 commands::rec_ready）。
@@ -286,45 +366,37 @@ fn create_selector(app: &AppHandle, url: &str) {
                     {
                         return;
                     }
-                    log::warn!("[Rec] 选区窗前端 {}s 内未就绪，自动关窗", READY_TIMEOUT.as_secs());
+                    log::warn!(
+                        "[Rec] 选区窗前端 {}s 内未就绪，自动关窗",
+                        READY_TIMEOUT.as_secs()
+                    );
                     let _ = probe.emit("rec-startup-failed", ());
                     close_windows(&probe);
                 });
             }
-            Err(e) => log::warn!("[Rec] 创建选区窗失败: {e}"),
+            Err(e) => report_startup_failure(&app, &format!("创建录屏选区失败：{e}")),
         }
     });
 }
 
 /// 打开录制控制条窗（rec_start 成功后调用）。位置：选区上缘外 12px，越界回弹到屏内。
-pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
-    let (sx, sy, sw, sh) = virtual_screen_metrics();
-    let (rx, ry, rw, rh) = region;
-    // 物理尺寸 = 逻辑设计 496×48 × 条所在屏的 scale —— 🔴 不乘的话 125% 缩放下
-    // CSS 视口只有 384×38，内容会被裁出窗外（P1，2026-10-05 审查；同 HUD 窗已修的坑）。
-    // 340 → 416（四期 1.2）→ 496（2026-10-07 真机实录：416 装下计时+体积+档位
-    // +三按钮后「停止」被裁掉一半，实测内容 ~470px，留 ~26px 余量；体积/档位
-    // 徽标 CSS 侧另做可收缩兜底，压力吃信息行、永不吃按钮）。
-    let probe_x = (rx + rw as i32 / 2).clamp(sx, sx + sw - 1);
-    let scale = monitor_scale_at(app, probe_x, ry.clamp(sy, sy + sh - 1));
-    let gap = (12.0 * scale).round() as i32;
-    let bar_w = (496.0 * scale).round() as i32;
-    let bar_h = (48.0 * scale).round() as i32;
-    let mut bx = rx + (rw as i32 - bar_w) / 2;
-    let mut by = ry - bar_h - gap;
-    if by < sy {
-        by = (ry + rh as i32) + gap; // 上方放不下翻到选区下方
-    }
-    bx = bx.clamp(sx, sx + sw - bar_w);
-    by = by.clamp(sy, sy + sh - bar_h);
+pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) -> Result<(), String> {
+    let screen = selector_screen_metrics(app)?;
+    let scale = monitor_scale_at(app, region.0, region.1);
+    let layout = control_layout::place(screen,region,scale)?;
+    let (bx,by,bar_w,bar_h)=(layout.x,layout.y,layout.w,layout.h);
     if let Some(old) = app.get_webview_window(CONTROL_LABEL) {
         let _ = old.close();
     }
-    let builder = WebviewWindowBuilder::new(app, CONTROL_LABEL, WebviewUrl::App("rec-control.html".into()))
-        .title("")
-        .inner_size(496.0, 48.0) // 逻辑值占位；下方按物理覆盖
-        .position(bx as f64, by as f64)
-        .resizable(false);
+    let builder = WebviewWindowBuilder::new(
+        app,
+        CONTROL_LABEL,
+        WebviewUrl::App("rec-control.html".into()),
+    )
+    .title("")
+    .inner_size(496.0, 48.0) // 逻辑值占位；下方按物理覆盖
+    .position(bx as f64, by as f64)
+    .resizable(false);
     let built = builder
         .decorations(false)
         .always_on_top(true)
@@ -332,19 +404,29 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) {
         .shadow(false)
         .transparent(true)
         .build();
-    match built {
-        Ok(window) => {
-            let _ = window.set_size(tauri::PhysicalSize::new(bar_w as u32, bar_h as u32));
-            let _ = window.set_position(tauri::PhysicalPosition::new(bx, by));
-            let _ = window.show();
-        }
-        Err(e) => log::warn!("[Rec] 创建控制条窗失败: {e}"),
+    let window = built.map_err(|e| format!("创建录制控制条失败：{e}"))?;
+    // 超时取消可能发生在 build 等待期间；晚到的控制条不应复活已停止会话。
+    if !session::status().recording {
+        let _=window.destroy();
+        return Err("录制已停止，控制条不再打开".into());
     }
+    #[cfg(target_os="macos")]
+    crate::macos::screen::place_window(&window,bx,by,bar_w,bar_h)?;
+    #[cfg(not(target_os="macos"))]
+    window.set_size(tauri::PhysicalSize::new(bar_w,bar_h)).map_err(|e|format!("设置录制控制条大小失败：{e}"))?;
+    #[cfg(not(target_os="macos"))]
+    window.set_position(tauri::PhysicalPosition::new(bx,by)).map_err(|e|format!("定位录制控制条失败：{e}"))?;
+    window.show().map_err(|e|format!("显示录制控制条失败：{e}"))?;
+    log::info!("[Rec] 控制条已显示 {bx},{by} {bar_w}×{bar_h}");
+    Ok(())
 }
 
 /// 物理坐标所在显示器的缩放系数（跨屏 DPI 各异：控制条贴着选区落在哪块屏，
 /// 就按谁的 scale 换算物理尺寸）；坐标不在任何屏上（边缘情况）退 1.0。
 fn monitor_scale_at(app: &AppHandle, x: i32, y: i32) -> f64 {
+    #[cfg(target_os="macos")]
+    {let _=(app,x,y);return crate::macos::screen::primary_scale();}
+    #[cfg(not(target_os="macos"))]
     if let Ok(monitors) = app.available_monitors() {
         for m in monitors {
             let p = m.position();
@@ -354,7 +436,8 @@ fn monitor_scale_at(app: &AppHandle, x: i32, y: i32) -> f64 {
             }
         }
     }
-    1.0
+    #[cfg(not(target_os="macos"))]
+    {1.0}
 }
 
 /// 关闭录屏相关窗口（选区 + 控制条）。会话收尾由后端权威调用（见 session::start），

@@ -1,3 +1,5 @@
+import { primaryModifierHeld, primarySearchShortcut } from "@/lib/utils";
+import { blocksPageShortcuts, isConfirmLayerPresent } from "@/lib/modalLayers";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/stores/appStore";
@@ -20,6 +22,17 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
   // 非受控模式：清除按钮可见性用 ref 驱动，避免长按期间 state 更新
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onFind = (event: KeyboardEvent) => {
+      if (!primaryModifierHeld(event) || event.key.toLowerCase() !== "f" ||
+          event.shiftKey || event.altKey || event.isComposing || blocksPageShortcuts() || isConfirmLayerPresent()) return;
+      event.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onFind);
+    return () => window.removeEventListener("keydown", onFind);
+  }, []);
+
   const clearBtnRef = useRef<HTMLButtonElement>(null);
   const debounceTimerRef = useRef<number | null>(null);
 
@@ -136,7 +149,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
             handleSearchSubmit((e.target as HTMLInputElement).value);
           }
         }}
-        placeholder="搜索剪贴板...（输入即搜）"
+        placeholder={`搜索剪贴板…  ${primarySearchShortcut()}`}
         className={styles.searchInput}
         aria-label="搜索剪贴板内容"
         aria-description="支持拼音首字母搜索"

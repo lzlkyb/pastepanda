@@ -25,6 +25,8 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useLatest } from "@/hooks/useLatest";
 import type { FileWatch } from "../useFileWatch";
+import { isToolItemId } from "@/lib/toolEditors";
+import { persistEditorSource } from "@/lib/editorSource";
 
 /** 防抖时长（ms） */
 const DEBOUNCE_MS = 1000;
@@ -70,6 +72,8 @@ export function useAutoSaveFile({
   useEffect(() => {
     // 功能关闭 / 无保存目标（新建未命名文档）/ 无改动 → 不触发
     if (!enabled) return;
+    // 临时工具草稿没有数据库目标；不能每次输入自动覆盖用户剪贴板。
+    if (isToolItemId(effectiveSourceId ?? undefined)) return;
     if (!effectiveSourceId && !currentFilePath) return;
     if (text === baseline) return;
 
@@ -80,7 +84,7 @@ export function useAutoSaveFile({
       try {
         if (effectiveSourceId) {
           // 卡片 → 回写数据库（主窗口经 history-item-updated 事件刷新）
-          await invoke("update_history", { id: effectiveSourceId, text: snapshot });
+          await persistEditorSource(effectiveSourceId, snapshot);
         } else if (currentFilePath) {
           // ① 外部改动：跳过本轮、保留脏状态（绝不弹窗、绝不覆盖）
           if (await checkNow()) return;

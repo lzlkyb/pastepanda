@@ -207,7 +207,7 @@ pub(in crate::rc) async fn spawn_inbound_video(
     };
     // G3：对端申请了系统声音 → 音频 worker 由 InboundVideo::run 启动
     // （音频状态是 Windows 宿主专属字段，mobile 无可置/可清，跳过）
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os="windows",target_os="macos"))]
     svc.audio_set_peer_wants(peer_audio);
     let Some(video) = crate::rc::inbound::InboundVideo::try_new(
         svc.clone(),
@@ -221,7 +221,7 @@ pub(in crate::rc) async fn spawn_inbound_video(
         peer_media_feedback,
     )
     else {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows",target_os="macos"))]
         svc.audio_reset();
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
         return;

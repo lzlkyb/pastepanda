@@ -1,3 +1,4 @@
+import { primaryModifierHeld } from "@/lib/utils";
 /**
  * CodeDocument —— CodeMirror 单栏族的**单份文档视图**
  * （markdown / json / html / text / csv / log / code）。
@@ -203,7 +204,7 @@ export function CodeDocument({
     if (!active) return;
     const handler = (e: KeyboardEvent) => {
       // 专注模式开关（稿子 P1-3：⋯ 菜单与快捷键双入口）
-      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "f") {
+      if (primaryModifierHeld(e) && e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
         toggleFocus();
         return;

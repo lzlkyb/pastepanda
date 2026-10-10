@@ -1,10 +1,10 @@
 use crate::clipboard_monitor::{PasteSuppress, WriteOpts};
-// arboard 是 Windows 桌面剪贴板引擎（mobile 无此 crate，探针 A 实测）。本文件的
+// arboard 是 Windows/macOS 桌面剪贴板引擎（mobile 无此 crate，探针 A 实测）。本文件的
 // 剪贴板读写全部收口在 with_clipboard_retry（规则 11），mobile 下公共函数诚实报错
 // ——RC 会话内剪贴板走 rc/clipboard.rs，不依赖系统剪贴板。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use arboard::Clipboard;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use arboard::ImageData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -118,6 +118,12 @@ impl PasteEngine {
     /// 排除 PastePanda 自身的窗口，避免把"自己"当作粘贴目标。
     /// 有效期与窗口会话绑定：本应用窗口可见期间永久有效，全部隐藏后短 TTL 过期。
     pub fn save_foreground_hwnd(&self) {
+        #[cfg(target_os = "macos")]
+        if let Some(target) = self.capture_foreground_now() {
+            if let Ok(mut guard) = self.last_foreground_hwnd.lock() {
+                *guard = Some((target, std::time::Instant::now()));
+            }
+        }
         #[cfg(target_os = "windows")]
         {
             use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
@@ -156,7 +162,11 @@ impl PasteEngine {
             Some(value)
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    pub fn capture_foreground_now(&self) -> Option<isize> {
+        crate::macos::frontmost_target(self.own_pid)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     pub fn capture_foreground_now(&self) -> Option<isize> {
         None
     }
@@ -206,7 +216,12 @@ impl PasteEngine {
             Some(categorize_app(&exe))
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    pub fn foreground_app(&self, trigger: PasteTrigger) -> Option<(String, String)> {
+        let target = self.get_target_hwnd(trigger, self.capture_foreground_now())?;
+        crate::macos::application_info(target, std::process::id())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     pub fn foreground_app(&self, _trigger: PasteTrigger) -> Option<(String, String)> {
         None
     }
@@ -302,12 +317,45 @@ impl PasteEngine {
         }
 
         // 最后实时抓取当前前台窗口（兜底）
-        #[cfg(target_os = "windows")]
-        {
-            self.capture_foreground_now()
+        self.capture_foreground_now()
+    }
+
+    /// Every Mac paste path confirms permission and focus before touching the clipboard.
+    fn checked_target(&self, trigger: PasteTrigger) -> Result<isize, String> {
+        #[cfg(target_os = "macos")]
+        crate::macos::require_accessibility()?;
+        let target = self.get_target_hwnd(trigger, self.capture_foreground_now())
+            .ok_or_else(|| Self::ERR_NO_TARGET.to_string())?;
+        #[cfg(target_os = "macos")]
+        crate::macos::prepare_target(target, self.own_pid)?;
+        Ok(target)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn copy_files(&self, paths: &[String]) -> Result<(), String> {
+        let _suppress = self.paste_suppress.begin_write(WriteOpts::files(paths));
+        crate::macos::copy_files(paths)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn copy_rich_only(&self, html: &str, plain: &str) -> Result<(), String> {
+        let _suppress = self.paste_suppress.begin_write(WriteOpts::rich(html));
+        crate::macos::copy_rich(html, plain)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn execute_paste_rich(&self, html: &str, plain: &str, trigger: PasteTrigger) -> Result<(), String> {
+        if self.paste_lock.swap(true, Ordering::Acquire) {
+            return Err("上一个粘贴操作仍在进行中，请稍后再试".into());
         }
-        #[cfg(not(target_os = "windows"))]
-        None
+        struct Guard<'a>(&'a AtomicBool);
+        impl Drop for Guard<'_> {
+            fn drop(&mut self) { self.0.store(false, Ordering::Release); }
+        }
+        let _guard = Guard(&self.paste_lock);
+        let target = self.checked_target(trigger)?;
+        self.copy_rich_only(html, plain)?;
+        crate::macos::send_paste(target, self.own_pid)
     }
 
     /// 核心粘贴流程。
@@ -343,26 +391,8 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 1. 解析并确认目标窗口 —— 必须在任何写操作之前
-        #[cfg(target_os = "windows")]
-        let now_hwnd = self.capture_foreground_now();
-        #[cfg(not(target_os = "windows"))]
-        let now_hwnd: Option<isize> = None;
-
-        let target_hwnd = self.get_target_hwnd(trigger, now_hwnd);
-        result.target_hwnd = target_hwnd;
-
-        let hwnd_raw = match target_hwnd {
-            Some(h) => h,
-            None => {
-                // 剪贴板、防抖抑制都不动：用户原样保留他复制的东西
-                log::warn!(
-                    "[PasteEngine] 未找到可粘贴的目标窗口（trigger={:?}），取消本次粘贴且不改动剪贴板",
-                    trigger
-                );
-                return Err(Self::ERR_NO_TARGET.to_string());
-            }
-        };
+        let hwnd_raw = self.checked_target(trigger)?;
+        result.target_hwnd = Some(hwnd_raw);
 
         // 2. 目标已确认，这才报备「应用自己写剪贴板」（必须在写入之前）。
         //    守卫持有到本函数结束：写入一完成竞争闸就打开，监听端不再被 3 秒无差别闸
@@ -375,9 +405,9 @@ impl PasteEngine {
 
         // 3. 写入剪贴板
         if let Some(ref t) = text {
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             Self::with_clipboard_retry("写入剪贴板", |cb| cb.set_text(t.as_str()))?;
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             { let _ = t; }
             result.clipboard_written = true;
         }
@@ -389,6 +419,8 @@ impl PasteEngine {
         {
             self.restore_and_send_ctrl_v(Some(hwnd_raw))?;
         }
+        #[cfg(target_os = "macos")]
+        crate::macos::send_paste(hwnd_raw, self.own_pid)?;
         result.wm_paste_sent = true;
 
         // 5. 不在此处清除 last_foreground_hwnd！
@@ -406,18 +438,18 @@ impl PasteEngine {
     /// 这个浏览器弹框完全是多余的。走这条路同时能用上 `with_clipboard_retry`，
     /// 比 Web API 在剪贴板被占时可靠得多。
     pub fn read_text(&self) -> Result<String, String> {
-        // 系统剪贴板引擎是 Windows 桌面专属（mobile 走 RC 会话内剪贴板）
-        #[cfg(target_os = "windows")]
+        // 系统剪贴板引擎是 Windows/macOS 桌面专属（mobile 走 RC 会话内剪贴板）
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         { Self::with_clipboard_retry("读取剪贴板", |cb| cb.get_text()) }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { Err("系统剪贴板读取仅桌面端可用".to_string()) }
     }
 
     /// 仅复制不粘贴
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         { Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?; }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = text; }
         Ok(())
     }
@@ -435,7 +467,7 @@ impl PasteEngine {
     ///
     /// 递增退避而不是固定间隔：占用方可能正在写一大块数据，固定 10ms 转 5 次
     /// 总共只等 50ms，太短。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     fn with_clipboard_retry<T>(
         what: &str,
         mut op: impl FnMut(&mut Clipboard) -> Result<T, arboard::Error>,
@@ -526,8 +558,8 @@ impl PasteEngine {
             .paste_suppress
             .begin_write(WriteOpts::image_rgba(rgba.as_raw()));
 
-        // 写入引擎是 Windows 桌面专属（mobile 无 arboard）
-        #[cfg(target_os = "windows")]
+        // 写入引擎是 Windows/macOS 桌面专属（mobile 无 arboard）
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
             let img_data = ImageData {
                 width: width as usize,
@@ -537,7 +569,7 @@ impl PasteEngine {
             // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
             Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = (width, height, rgba); }
         Ok(())
     }
@@ -558,8 +590,8 @@ impl PasteEngine {
         // 报备自写入（hash 口径由 WriteOpts 统一：RGBA 像素字节）
         let _suppress = self.paste_suppress.begin_write(WriteOpts::image_rgba(rgba));
 
-        // 写入引擎是 Windows 桌面专属（mobile 无 arboard）
-        #[cfg(target_os = "windows")]
+        // 写入引擎是 Windows/macOS 桌面专属（mobile 无 arboard）
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
             let img_data = ImageData {
                 width: width as usize,
@@ -569,7 +601,7 @@ impl PasteEngine {
             // 重试里每次都重建 ImageData：它持有对 rgba 的借用，只是开销极小的浅克隆
             Self::with_clipboard_retry("复制图片", |cb| cb.set_image(img_data.clone()))?;
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = (width, height); }
         Ok(())
     }
@@ -832,30 +864,15 @@ impl PasteEngine {
         }
         let _guard = LockGuard(&self.paste_lock);
 
-        // 3. 先解析并确认目标（在任何写操作之前）
-        #[cfg(target_os = "windows")]
-        let now_hwnd = self.capture_foreground_now();
-        #[cfg(not(target_os = "windows"))]
-        let now_hwnd: Option<isize> = None;
-
-        let hwnd_raw = match self.get_target_hwnd(trigger, now_hwnd) {
-            Some(h) => h,
-            None => {
-                log::warn!(
-                    "[PasteEngine] 图片粘贴未找到目标窗口（trigger={:?}），取消且不改动剪贴板",
-                    trigger
-                );
-                return Err(Self::ERR_NO_TARGET.to_string());
-            }
-        };
+        let hwnd_raw = self.checked_target(trigger)?;
 
         // 4. 报备自写入（hash = RGBA 像素字节，与监听线程口径一致，由 WriteOpts 统一算）
         let _suppress = self
             .paste_suppress
             .begin_write(WriteOpts::image_rgba(rgba.as_raw()));
 
-        // 5. 写入剪贴板（Windows 桌面专属引擎；mobile 走 RC 会话内剪贴板）
-        #[cfg(target_os = "windows")]
+        // 5. 写入剪贴板（Windows/macOS 桌面专属引擎；mobile 走 RC 会话内剪贴板）
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
             let img_data = ImageData {
                 width: width as usize,
@@ -865,7 +882,7 @@ impl PasteEngine {
 
             Self::with_clipboard_retry("写入图片", |cb| cb.set_image(img_data.clone()))?;
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         { let _ = (&width, &height, &rgba); }
 
         // 6. 发送 Ctrl+V（目标已在第 3 步确认）
@@ -873,6 +890,9 @@ impl PasteEngine {
         {
             self.restore_and_send_ctrl_v(Some(hwnd_raw))?;
         }
+
+        #[cfg(target_os = "macos")]
+        crate::macos::send_paste(hwnd_raw, self.own_pid)?;
 
         // 7. 不在此处清除 last_foreground_hwnd（依赖窗口会话绑定 + 短 TTL 过期）
 
@@ -1160,9 +1180,11 @@ impl PasteEngine {
         }
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    pub fn send_tab_key(&self) -> Result<(), String> { crate::macos::send_tab(self.own_pid) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     pub fn send_tab_key(&self) -> Result<(), String> {
-        Err("仅支持 Windows".to_string())
+        Err("当前平台尚未支持 Tab 注入".into())
     }
 
     #[cfg(target_os = "windows")]

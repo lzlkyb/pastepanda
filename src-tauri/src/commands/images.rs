@@ -605,8 +605,8 @@ pub fn close_pinned_image() -> Result<(), String> {
     Ok(())
 }
 
-/// OCR 端到端冒烟测试：加载 PP-OCRv6 模型并对 uploads/ 下的截图跑一次真实识别。
-/// 仅用于验证「模型能加载 + 引擎能跑通 + 坐标/文本能正确返回」，不依赖具体图片内容。
+/// OCR 端到端回归：加载真实 PP-OCRv6 模型并识别仓库内合成文字。
+/// 校验文字、坐标及两种输出；不依赖私人截图或外部 uploads 目录。
 #[cfg(test)]
 mod ocr_smoke_tests {
     use super::*;
@@ -619,29 +619,9 @@ mod ocr_smoke_tests {
             "PASTEPANDA_OCR_MODELS_DIR",
             concat!(env!("CARGO_MANIFEST_DIR"), "/resources/ocr_models"),
         );
-        // 取仓库 uploads/ 下第一张 png 作为样例（CARGO_MANIFEST_DIR 为 src-tauri，
-        // 故向上两级到达 clipboard-manager-tauri，再进 uploads）
-        let uploads = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("uploads");
-        let sample = std::fs::read_dir(&uploads).ok().and_then(|mut d| {
-            d.find_map(|e| {
-                let p = e.ok()?.path();
-                if p.extension().map(|x| x == "png").unwrap_or(false) {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-        });
-        let sample = match sample {
-            Some(p) => p,
-            None => {
-                eprintln!("跳过冒烟测试：uploads 下未找到 png 样例");
-                return;
-            }
-        };
+        // Versioned synthetic text; missing data must fail, not pass without inference.
+        let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-audit.png");
+        assert!(sample.is_file(), "missing versioned OCR audit fixture");
 
         // 坐标版：验证模型加载成功且能返回行/词框
         let coords =
@@ -651,23 +631,48 @@ mod ocr_smoke_tests {
             coords.lines.len(),
             coords.full_text.chars().count()
         );
-        for (i, line) in coords.lines.iter().take(5).enumerate() {
-            if let Some(w) = line.words.first() {
-                println!(
-                    "  行{}: '{}' @ ({:.0},{:.0},{:.0}x{:.0})",
-                    i, line.text, w.x, w.y, w.width, w.height
+        let normalized = coords.full_text.to_ascii_uppercase();
+        assert!(
+            normalized.contains("PASTEPANDA"),
+            "fixture brand was not recognized: {}",
+            normalized
+        );
+        assert!(
+            normalized.contains("2026"),
+            "fixture year was not recognized: {}",
+            normalized
+        );
+        assert!(
+            normalized.contains("AUDIT"),
+            "fixture audit marker was not recognized: {}",
+            normalized
+        );
+        assert!(!coords.lines.is_empty(), "coordinate OCR produced no lines");
+        for line in &coords.lines {
+            assert!(
+                !line.words.is_empty(),
+                "recognized line has no coordinate box"
+            );
+            for word in &line.words {
+                assert!(
+                    word.x.is_finite()
+                        && word.y.is_finite()
+                        && word.width.is_finite()
+                        && word.height.is_finite()
                 );
+                assert!(word.x >= 0.0 && word.y >= 0.0 && word.width > 0.0 && word.height > 0.0);
+                assert!(word.x + word.width <= 1000.0 && word.y + word.height <= 180.0);
             }
         }
 
         // 文本版：仅返回全文
         let text =
             ocr_recognize(&sample, false).unwrap_or_else(|e| panic!("OCR(文本版) 失败: {}", e));
-        assert!(
-            !text.full_text.is_empty() || coords.lines.is_empty(),
-            "若图片无文字属正常；有文字则应被识别出来"
+        assert_eq!(
+            text.full_text, coords.full_text,
+            "text/coordinate OCR differ"
         );
-        println!("[OCR smoke] 全文预览:\n{}", text.full_text);
+        println!("[OCR audit] synthetic fixture recognized with valid coordinate boxes");
     }
 }
 

@@ -79,11 +79,11 @@ pub fn copy_image_only(engine: State<PasteEngine>, image_path: String) -> Result
 /// 复制文件到剪贴板（CF_HDROP，等同于资源管理器 Ctrl+C）
 #[tauri::command]
 pub fn copy_files(engine: State<PasteEngine>, paths: Vec<String>) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         engine.copy_files(&paths)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = engine;
         let _ = paths;
@@ -109,7 +109,7 @@ pub fn paste_rich(
     plain_text: String,
     trigger: Option<String>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         engine.execute_paste_rich(
             &html_fragment,
@@ -117,7 +117,7 @@ pub fn paste_rich(
             PasteTrigger::from_opt(trigger.as_deref()),
         )
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = engine;
         let _ = html_fragment;
@@ -134,11 +134,11 @@ pub fn copy_rich_only(
     html_fragment: String,
     plain_text: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         engine.copy_rich_only(&html_fragment, &plain_text)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = engine;
         let _ = html_fragment;
@@ -157,11 +157,11 @@ pub fn save_foreground(engine: State<PasteEngine>) -> Result<(), String> {
 /// P3 粘贴+Tab 推进：发送单次 Tab 键（在前端确认栈顶粘贴成功后调用）
 #[tauri::command]
 pub fn paste_send_tab(engine: State<PasteEngine>) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         engine.send_tab_key()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = engine;
         Err("仅支持 Windows".to_string())

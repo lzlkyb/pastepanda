@@ -15,14 +15,24 @@ use serde::Serialize;
 use std::io::Write as _;
 use std::path::Path;
 
-use super::hooks::RecEvent;
+use super::event_types::RecEvent;
 
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SidecarEvent {
-    Click { t: u64, x: i32, y: i32, button: &'static str },
-    Key { t: u64, combo: String },
-    Mark { t: u64 },
+    Click {
+        t: u64,
+        x: i32,
+        y: i32,
+        button: &'static str,
+    },
+    Key {
+        t: u64,
+        combo: String,
+    },
+    Mark {
+        t: u64,
+    },
 }
 
 #[derive(Serialize, Debug)]
@@ -60,11 +70,16 @@ const NOTE: &str = "t = 视频时间轴 ms（暂停段不在内）；x/y = 画�
 pub struct SidecarRecorder {
     enabled: bool,
     events: Vec<SidecarEvent>,
+    truncated: bool,
 }
 
 impl SidecarRecorder {
     pub fn new(enabled: bool) -> Self {
-        Self { enabled, events: Vec::new() }
+        Self {
+            enabled,
+            events: Vec::new(),
+            truncated: false,
+        }
     }
 
     pub fn active(&self) -> bool {
@@ -76,18 +91,38 @@ impl SidecarRecorder {
         if !self.enabled {
             return;
         }
+        if self.events.len() >= 100_000 {
+            self.truncated = true;
+            return;
+        }
         match ev {
             RecEvent::Click { button, .. } => {
                 let Some((x, y)) = canvas_xy else { return };
-                self.events.push(SidecarEvent::Click { t: t_ms, x, y, button: button.as_str() });
+                self.events.push(SidecarEvent::Click {
+                    t: t_ms,
+                    x,
+                    y,
+                    button: button.as_str(),
+                });
             }
             RecEvent::Key { combo } => {
-                self.events.push(SidecarEvent::Key { t: t_ms, combo: combo.clone() });
+                self.events.push(SidecarEvent::Key {
+                    t: t_ms,
+                    combo: combo.clone(),
+                });
             }
             RecEvent::Mark => {
                 self.events.push(SidecarEvent::Mark { t: t_ms });
             }
         }
+    }
+
+    pub fn warning(&self) -> Option<&'static str> {
+        self.truncated
+            .then_some("事件轨达到 100000 条上限，已保存此前事件，后续未保存")
+    }
+    pub fn truncated(&self) -> bool {
+        self.truncated
     }
 
     pub fn len(&self) -> usize {
@@ -109,15 +144,30 @@ impl SidecarRecorder {
         let doc = SidecarDoc {
             version: 1,
             duration_ms,
-            region: Region { x: region.0, y: region.1, w: region.2, h: region.3 },
-            video: VideoInfo { w: video.0, h: video.1, fps: video.2 },
+            region: Region {
+                x: region.0,
+                y: region.1,
+                w: region.2,
+                h: region.3,
+            },
+            video: VideoInfo {
+                w: video.0,
+                h: video.1,
+                fps: video.2,
+            },
             note: NOTE,
             events: &self.events,
         };
         let path = sidecar_path(mp4_path);
         let json = serde_json::to_vec_pretty(&doc).map_err(|e| format!("sidecar 序列化：{e}"))?;
-        let mut f = std::fs::File::create(&path).map_err(|e| format!("创建 {}：{e}", path.display()))?;
-        f.write_all(&json).and_then(|_| f.flush()).map_err(|e| format!("写 {}：{e}", path.display()))
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| format!("创建 {}：{e}", path.display()))?;
+        f.write_all(&json)
+            .and_then(|_| f.flush())
+            .map_err(|e| format!("写 {}：{e}", path.display()))
     }
 }
 
@@ -130,18 +180,23 @@ pub fn sidecar_path(mp4_path: &Path) -> std::path::PathBuf {
 /// durationMs 改指选段时长。原 JSON 缺字段/坏结构 → None（调用方静默跳过，
 /// 不为 sidecar 卡裁剪主流程）。
 pub fn remap_events(raw: &serde_json::Value, in_ms: u64, out_ms: u64) -> Option<serde_json::Value> {
-    let events = raw.get("events").filter(|v| v.is_array())?.as_array()?.clone();
+    if out_ms <= in_ms {
+        return None;
+    }
+    let events = raw
+        .get("events")
+        .filter(|v| v.is_array())?
+        .as_array()?
+        .clone();
     let kept: Vec<serde_json::Value> = events
         .into_iter()
         .filter_map(|mut e| {
-            let t = e.get("t")?.as_u64()? as i64;
-            let lo = in_ms as i64;
-            let hi = out_ms as i64;
-            if t < lo || t >= hi {
+            let t = e.get("t")?.as_u64()?;
+            if t < in_ms || t >= out_ms {
                 return None;
             }
             if let Some(obj) = e.as_object_mut() {
-                obj.insert("t".into(), serde_json::json!(t - lo));
+                obj.insert("t".into(), serde_json::json!(t - in_ms));
             }
             Some(e)
         })
@@ -159,7 +214,10 @@ pub fn write_sidecar_for_trim(src_mp4: &Path, dst_mp4: &Path, in_ms: u64, out_ms
     let src = sidecar_path(src_mp4);
     let Ok(raw) = std::fs::read(&src) else { return };
     let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&raw) else {
-        log::warn!("[Rec] 裁剪：源 sidecar 不是合法 JSON，跳过重映射（{}）", src.display());
+        log::warn!(
+            "[Rec] 裁剪：源 sidecar 不是合法 JSON，跳过重映射（{}）",
+            src.display()
+        );
         return;
     };
     let Some(remapped) = remap_events(&doc, in_ms, out_ms) else {
@@ -168,7 +226,12 @@ pub fn write_sidecar_for_trim(src_mp4: &Path, dst_mp4: &Path, in_ms: u64, out_ms
     let dst = sidecar_path(dst_mp4);
     match serde_json::to_vec_pretty(&remapped) {
         Ok(bytes) => {
-            if let Err(e) = std::fs::write(&dst, bytes) {
+            if let Err(e) = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&dst)
+                .and_then(|mut file| file.write_all(&bytes).and_then(|_| file.flush()))
+            {
                 log::warn!("[Rec] 裁剪 sidecar 写入失败（{}）：{e}", dst.display());
             }
         }
@@ -179,7 +242,7 @@ pub fn write_sidecar_for_trim(src_mp4: &Path, dst_mp4: &Path, in_ms: u64, out_ms
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rec::hooks::MouseBtn;
+    use crate::rec::event_types::MouseBtn;
 
     fn doc(events: serde_json::Value) -> serde_json::Value {
         serde_json::json!({ "version": 1, "durationMs": 990, "events": events })
@@ -193,10 +256,51 @@ mod tests {
         assert!(!off.active());
 
         let mut on = SidecarRecorder::new(true);
-        on.record(&RecEvent::Click { x: 9, y: 9, button: MouseBtn::Left }, Some((3, 4)), 10);
-        on.record(&RecEvent::Key { combo: "Ctrl+C".into() }, None, 20);
+        on.record(
+            &RecEvent::Click {
+                x: 9,
+                y: 9,
+                button: MouseBtn::Left,
+            },
+            Some((3, 4)),
+            10,
+        );
+        on.record(
+            &RecEvent::Key {
+                combo: "Ctrl+C".into(),
+            },
+            None,
+            20,
+        );
         on.record(&RecEvent::Mark, None, 30);
         assert_eq!(on.len(), 3);
+    }
+
+    #[test]
+    fn bounded_events_and_existing_sidecar_are_preserved() {
+        let mut recorder = SidecarRecorder::new(true);
+        for time in 0..100_001 {
+            recorder.record(&RecEvent::Mark, None, time);
+        }
+        assert_eq!(recorder.len(), 100_000);
+        assert!(recorder.truncated());
+        let folder = std::env::temp_dir().join(format!(
+            "pp-sidecar-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&folder).unwrap();
+        let path = folder.join("clip.mp4");
+        let sidecar = sidecar_path(&path);
+        std::fs::write(&sidecar, b"existing").unwrap();
+        assert!(recorder
+            .write(&path, 10, (0, 0, 10, 10), (10, 10, 30))
+            .is_err());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"existing");
+        std::fs::remove_dir_all(folder).unwrap();
     }
 
     #[test]
@@ -215,6 +319,46 @@ mod tests {
         assert_eq!(evs[0]["t"], 230, "key 330→230");
         assert_eq!(evs[0]["combo"], "Enter");
         assert_eq!(evs[1]["t"], 600, "mark 700→600");
+    }
+
+    #[test]
+    fn trim_rejects_invalid_ranges_and_preserves_unsigned_timestamps() {
+        let time = i64::MAX as u64 + 10;
+        let input = doc(serde_json::json!([{ "t": time, "type": "mark" }]));
+        assert!(remap_events(&input, 10, 9).is_none());
+        assert!(remap_events(&input, 10, 10).is_none());
+        let result = remap_events(&input, time - 5, u64::MAX).unwrap();
+        assert_eq!(result["events"][0]["t"], 5);
+        assert_eq!(result["durationMs"], u64::MAX - (time - 5));
+    }
+
+    #[test]
+    fn trim_preserves_existing_destination_sidecar() {
+        let folder = std::env::temp_dir().join(format!(
+            "pp-trim-sidecar-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&folder).unwrap();
+        let source = folder.join("source.mp4");
+        let target = folder.join("target.mp4");
+        std::fs::write(
+            sidecar_path(&source),
+            serde_json::to_vec(&doc(serde_json::json!([{ "t": 20, "type": "mark" }]))).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(sidecar_path(&target), b"existing").unwrap();
+        write_sidecar_for_trim(&source, &target, 0, 100);
+        assert_eq!(std::fs::read(sidecar_path(&target)).unwrap(), b"existing");
+        std::fs::remove_file(sidecar_path(&target)).unwrap();
+        write_sidecar_for_trim(&source, &target, 0, 100);
+        let result: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(sidecar_path(&target)).unwrap()).unwrap();
+        assert_eq!(result["events"][0]["t"], 20);
+        std::fs::remove_dir_all(folder).unwrap();
     }
 
     #[test]

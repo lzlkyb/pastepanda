@@ -103,7 +103,7 @@ static PORTABLE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
 // not a local path, so bare paths additionally require a surrounding boundary.
 static POSIX_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)(?:file:/{2,4}|/)(?:[^"'()<>\[\]\r\n]*?/)?images/([0-9a-f]{32})\.([a-z0-9]{1,5})"#,
+        r#"(?i)(?:file:/{3,4}|/)(?:[^"'()<>\[\]\r\n]*?/)?images/([0-9a-f]{32})\.([a-z0-9]{1,5})"#,
     )
     .expect("POSIX 图片引用正则写错了")
 });

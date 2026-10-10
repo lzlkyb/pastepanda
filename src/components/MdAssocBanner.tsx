@@ -46,7 +46,7 @@ export const MdAssocBanner = memo(function MdAssocBanner() {
   }, [refresh]);
 
   // 横幅可见期间每 2s 轮询一次，关联一生效立即消失（不完全依赖窗口焦点事件）
-  const visible = !dismissed && status !== null && status !== "default";
+  const visible = !dismissed && status !== null && status !== "default" && status !== "unsupported";
   // 窗口隐藏（hide()）时暂停轮询：WebView 仍存活，空转会烧 CPU（claude.md 规则 8）
   const winVisible = useWindowVisible();
   useEffect(() => {
@@ -60,12 +60,12 @@ export const MdAssocBanner = memo(function MdAssocBanner() {
     setBusy(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("set_md_association", { enable: true });
-      toast("已注册 .md 打开方式，请在设置页中点击 .md 一行并选择 PastePanda", "success");
+      const message = await invoke<string>("set_md_association", { enable: true });
+      toast(message || "已注册 .md 打开方式，请在设置页中点击 .md 一行并选择 PastePanda", "success");
       await refresh();
     } catch (e) {
       logger.warn("设置 .md 关联失败", e);
-      toast(".md 文件关联设置失败", "error");
+      toast(`文件关联设置失败：${String(e)}`, "error");
     } finally {
       setBusy(false);
     }

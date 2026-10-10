@@ -5,6 +5,13 @@ use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tauri_plugin_updater::UpdaterExt;
 
+fn update_available_for_platform(is_macos:bool,artifacts_enabled:bool)->bool { !is_macos || artifacts_enabled }
+fn require_update_available(app:&tauri::AppHandle)->Result<(),String>{
+    let enabled=!matches!(app.config().bundle.create_updater_artifacts,tauri::utils::config::Updater::Bool(false));
+    if update_available_for_platform(cfg!(target_os="macos"),enabled){Ok(())}
+    else{Err("此 Mac 版本暂未提供自动更新，请使用后续正式安装包".into())}
+}
+
 // ─── 慢源看门狗（纯逻辑，便于单测） ─────────────────────
 //
 // 背景（2026-09-16 实测）：Gitee 发行版附件走 foruda.gitee.com，稳定约 70KB/s；
@@ -321,6 +328,7 @@ async fn download_with_speed_guard(
 /// 前端与其余调用点不分派、不感知。
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+    require_update_available(&app)?;
     #[cfg(target_os = "android")]
     {
         return super::update_android::check_apk_update(&app).await;
@@ -387,6 +395,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
 /// Android 分派到 `update_android::spawn_apk_update`（同事件契约，见 check_update 注释）。
 #[tauri::command]
 pub fn start_update(app: tauri::AppHandle) {
+    if let Err(message)=require_update_available(&app){let _=app.emit("update:error",serde_json::json!({"message":message}));return;}
     #[cfg(target_os = "android")]
     {
         super::update_android::spawn_apk_update(app);
@@ -525,8 +534,11 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    // 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
     #![allow(non_snake_case)]
+    #[test]fn mac_updates_require_explicitly_enabled_release_artifacts(){
+        assert!(!super::update_available_for_platform(true,false));assert!(super::update_available_for_platform(true,true));assert!(super::update_available_for_platform(false,false));
+    }
+    // 测试名有意用中文（守卫/回归钉的业务语义直接写在名字里）。
 
     use super::*;
 

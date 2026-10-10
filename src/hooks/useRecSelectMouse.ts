@@ -1,3 +1,4 @@
+import { capturePixelRatio } from "@/lib/utils";
 /**
  * useRecSelectMouse — 录屏选区的**鼠标状态机**（规则 7 拆分）。
  *
@@ -32,7 +33,7 @@ export function useRecSelectMouse(
   // 可吸附窗口矩形（会话内取一次；窗口在框选期间不会移动）
   useEffect(() => {
     if (!screen) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = capturePixelRatio(screen?.width);
     invoke<{ x: number; y: number; w: number; h: number }[]>("enum_window_rects")
       .then((list) => {
         winRectsRef.current = (list ?? []).map((r) =>

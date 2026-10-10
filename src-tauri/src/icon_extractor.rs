@@ -50,7 +50,7 @@ impl IconCache {
     /// 图标提取的唯一入口：事件驱动监听的捕获阶段只保存 exe 路径，
     /// 图标提取延迟到工作线程执行（避免把可能已销毁的 hwnd 带到异步阶段）
     pub fn extract_icon_by_exe_path(&self, exe_path: &std::path::Path) -> Option<String> {
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         {
             let exe_path_str = exe_path.to_string_lossy().to_string();
 
@@ -74,7 +74,7 @@ impl IconCache {
 
             result
         }
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
         {
             let _ = exe_path;
             None
@@ -382,7 +382,46 @@ impl IconCache {
         }
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    fn extract_and_save_icon(&self, exe_path: &std::path::Path) -> Option<String> {
+        use std::ffi::{c_char, c_void, CString};
+        extern "C" {
+            fn pp_mac_application_icon(
+                path: *const c_char,
+                output: *mut *mut u8,
+                length: *mut usize,
+            ) -> i32;
+            fn pp_mac_free(memory: *mut c_void);
+        }
+        let path = CString::new(exe_path.to_str()?).ok()?;
+        let mut output = std::ptr::null_mut();
+        let mut length = 0;
+        let status = unsafe { pp_mac_application_icon(path.as_ptr(), &mut output, &mut length) };
+        if output.is_null() {
+            return None;
+        }
+        let bytes = if status == 0 && length <= 1024 * 1024 {
+            Some(unsafe { std::slice::from_raw_parts(output, length) }.to_vec())
+        } else {
+            None
+        };
+        unsafe {
+            pp_mac_free(output.cast());
+        }
+        let bytes = bytes?;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        exe_path.to_string_lossy().hash(&mut hasher);
+        let filename = format!("{:016x}.png", hasher.finish());
+        let icon_path = self.cache_dir.join(&filename);
+        std::fs::write(&icon_path, bytes).ok()?;
+        if let Ok(mut files) = self.icon_files.lock() {
+            files.insert(filename.clone(), icon_path);
+        }
+        Some(filename)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     fn extract_and_save_icon(&self, _exe_path: &std::path::Path) -> Option<String> {
         None
     }

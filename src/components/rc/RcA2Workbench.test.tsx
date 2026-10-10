@@ -511,32 +511,109 @@ describe("RcA2DeviceDetail", () => {
   });
 
   it("设备详情保留改名能力，失败时不退出编辑", async () => {
-    const onRename = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    let complete!: (ok: boolean) => void;
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
     renderDetail({ onRename });
-
     fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), {
-      target: { value: "书房电脑" },
-    });
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "书房电脑" } });
     fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
-    await waitFor(() => expect(onRename).toHaveBeenCalledTimes(1));
-    // 🔴 第二次点击必须等上一次保存**落地**（按钮从 disabled 变回可用）：旧写法等的是
-    //    「onRename 已被调用」，那只证明 promise 开始了、不证明它结束了，于是抢跑的点击
-    //    可能落在 disabled 窗口里被吞掉（机理见上一条用例）。
-    //    ⚠ 这条红的**复现条件我不掌握**：CI run 37869837616（2026-10-09，该用例耗时 3060ms）判红过，
-    //    而删掉这段等待的变异体在本机三种档位下都没红（单文件 threads 3/3、rc 目录 262 条、
-    //    近全量 2971 条）。所以修法依据是「等状态落地再点」的通用口径＋上一条机理用例，
-    //    不是「本机复现过」——别把它读成已证实的因果链。
-    const saveBtn = await waitFor(() => {
-      const b = screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement;
-      expect(b.disabled, "上一次改名仍在进行中").toBe(false);
-      return b;
-    });
-    expect(screen.getByRole("textbox", { name: "设备备注名" })).toBeTruthy();
-
-    fireEvent.click(saveBtn);
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull());
+    expect(onRename).toHaveBeenCalledWith("peer-a", "书房电脑");
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(true);
+    // Await the completed failure, not just invocation; the latter races the disabled retry button.
+    await act(async () => complete(false));
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("书房电脑");
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
     expect(onRename).toHaveBeenCalledTimes(2);
+    await act(async () => complete(true));
+    expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull();
+  });
+
+  it("改名保存中连续 Enter 不重复提交", async () => {
+    let complete!: (ok: boolean) => void;
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+    renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    const input = screen.getByRole("textbox", { name: "设备备注名" });
+    fireEvent.change(input, { target: { value: "新名称" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onRename).toHaveBeenCalledTimes(1);
+    await act(async () => complete(false));
+  });
+
+  it.each([true, false])("换设备后旧改名结果 %s 不覆盖当前草稿", async ok => {
+    let complete!: (ok: boolean) => void;
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+    const { rerender } = renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "第一台" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    rerender(<DetailHost target={{ ...TARGET, node_id: "peer-b" }} onRename={onRename} />);
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "第二台未保存草稿" } });
+    await act(async () => complete(ok));
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("第二台未保存草稿");
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("取消并重新改名后旧成功回调不关闭新草稿", async () => {
+    let complete!: (ok: boolean) => void;
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+    renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "旧请求" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消改名" }));
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "新草稿" } });
+    await act(async () => complete(true));
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("新草稿");
+  });
+
+  it("保存期间继续输入的名称不会被旧成功结果丢掉", async () => {
+    let complete!: (ok: boolean) => void;
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { complete = resolve; }));
+    renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    const input = screen.getByRole("textbox", { name: "设备备注名" });
+    fireEvent.change(input, { target: { value: "已提交" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    fireEvent.change(input, { target: { value: "后来输入的草稿" } });
+    await act(async () => complete(true));
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("后来输入的草稿");
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("旧设备完成回调不解除新设备的保存中状态", async () => {
+    const completions: Array<(ok: boolean) => void> = [];
+    const onRename = vi.fn(() => new Promise<boolean>(resolve => { completions.push(resolve); }));
+    const { rerender } = renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "第一台" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    rerender(<DetailHost target={{ ...TARGET, node_id: "peer-b" }} onRename={onRename} />);
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "设备备注名" }), { target: { value: "第二台" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
+    expect(onRename).toHaveBeenCalledTimes(2);
+    await act(async () => completions[0](true));
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("第二台");
+    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => completions[1](true));
+    expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull();
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])("输入法选词 %j 的 Enter/Esc 不保存或取消改名", flags => {
+    const onRename = vi.fn(async () => true);
+    renderDetail({ onRename });
+    fireEvent.click(screen.getByRole("button", { name: "重命名设备" }));
+    const input = screen.getByRole("textbox", { name: "设备备注名" });
+    fireEvent.change(input, { target: { value: "中文草稿" } });
+    fireEvent.keyDown(input, { key: "Enter", ...flags });
+    fireEvent.keyDown(input, { key: "Escape", ...flags });
+    expect(onRename).not.toHaveBeenCalled();
+    expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("中文草稿");
   });
 
   it("纯同步设备只给完成远程配对与入站允许动作", () => {

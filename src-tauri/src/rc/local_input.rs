@@ -211,7 +211,18 @@ mod win {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os="macos")]
+mod win {
+    extern "C" {fn pp_rc_lock_set(on:bool)->bool;fn pp_rc_lock_active()->bool;fn pp_rc_watch_start()->i32;fn pp_rc_watch_stop();fn pp_rc_watching()->bool;fn pp_rc_last_keyboard()->u64;fn pp_rc_last_mouse()->u64;}
+    pub fn start_watching(){let code=unsafe{pp_rc_watch_start()};if code!=0{log::warn!("Mac 本机输入观察未启动（{code}）");}}
+    pub fn stop_watching(){unsafe{pp_rc_watch_stop()}}
+    pub fn set_swallow(on:bool)->bool{unsafe{pp_rc_lock_set(on)}}
+    pub fn is_locked()->bool{unsafe{pp_rc_lock_active()}}
+    pub fn last_kbd_ms()->u64{unsafe{pp_rc_last_keyboard()}}
+    pub fn last_mouse_ms()->u64{unsafe{pp_rc_last_mouse()}}
+    pub fn is_watching()->bool{unsafe{pp_rc_watching()}}
+}
+#[cfg(not(any(target_os = "windows",target_os="macos")))]
 mod win {
     // 非 Windows 宿主没有注入链路，也就没有「要堵的那一路」：全部空实现。
     // `set_swallow` 恒返 false = 诚实回报「这台机器上锁不住」，不假装锁定成功。
@@ -284,3 +295,9 @@ mod tests {
         assert!(hold_should_return(t0, t0 - 60_000, t0 + lim, lim));
     }
 }
+
+#[cfg(target_os="macos")]
+#[no_mangle]
+pub extern "C" fn pp_rc_should_swallow(injected:bool,own:bool,gate:bool)->bool{should_swallow(injected,own,gate)}
+#[cfg(target_os="macos")]
+pub(crate) fn refresh_lock_lease(){extern "C"{fn pp_rc_lock_refresh();}unsafe{pp_rc_lock_refresh()}}

@@ -1209,7 +1209,7 @@ pub fn rc_drain_frames(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
 /// `type u8`（0=cfg 1=AAC帧）| `pts_ms i64`（cfg 恒 0）| `len u32` | data
 /// cfg 的 data 是 JSON `{"sr","ch","asc","br"}`（asc=base64 的 AudioSpecificConfig，
 /// 前端喂 WebCodecs `description`）；每次 drain 都带当前 cfg，前端按内容变化才重配。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows",target_os="macos"))]
 #[tauri::command]
 pub fn rc_drain_audio(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -1240,7 +1240,7 @@ pub fn rc_drain_audio(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
 }
 
 /// 非 Windows 平台的空批（本功能只在 Windows 被控端产生数据）。
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows",target_os="macos")))]
 #[tauri::command]
 pub fn rc_drain_audio(_svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
     tauri::ipc::Response::new(b"RCA1\x00\x00\x00\x00".to_vec())
@@ -1263,7 +1263,7 @@ pub async fn rc_audio_toggle(svc: State<'_, Arc<RcService>>, on: bool) -> Result
 /// 「对方已静音（不发送声音）」。在此之前对端只能听到静音、无从判断是不是坏了。
 ///
 /// 跨会话保持：关了就是关了，下次会话仍是关（隐私开关不做自动回退）。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os="windows",target_os="macos"))]
 #[tauri::command]
 pub async fn rc_set_audio_local_mute(
     svc: State<'_, Arc<RcService>>,
@@ -1287,7 +1287,7 @@ pub async fn rc_set_audio_local_mute(
 
 /// 非 Windows：音频链路整体是 Windows 被控端专属。**明确报错**而不是静默成功——
 /// 前端据返回值提示，静默成功会让按钮切到一个假状态。
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os="windows",target_os="macos")))]
 #[tauri::command]
 pub fn rc_set_audio_local_mute(
     _svc: State<'_, Arc<RcService>>,
@@ -1304,7 +1304,7 @@ pub fn rc_set_audio_local_mute(
 ///
 /// 注意它**不**影响环回采集：WASAPI 抽头在端点静音之前，发起端照样听得到
 /// （与 Parsec / GameStream 的「mute host speakers」同义）。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os="windows",target_os="macos"))]
 #[tauri::command]
 pub async fn rc_host_mute_set(
     app: AppHandle,
@@ -1318,7 +1318,7 @@ pub async fn rc_host_mute_set(
 }
 
 /// 非 Windows：同上，明确报错而不是静默成功。
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os="windows",target_os="macos")))]
 #[tauri::command]
 pub async fn rc_host_mute_set(
     _svc: State<'_, Arc<RcService>>,
@@ -1489,7 +1489,7 @@ pub async fn rc_set_quality(
 /// 授权；这条撤销的只是本机保活，正在跑的会话不该因此被打断，所以只写配置。
 ///
 /// 机制与「为什么必须专用线程」见 [`crate::rc::keep_awake`]。
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows",target_os="macos"))]
 #[tauri::command]
 pub async fn rc_set_keep_awake(
     app: AppHandle,
@@ -1512,7 +1512,7 @@ pub async fn rc_set_keep_awake(
 
 /// 非 Windows：电源执行状态锁是 Windows API 专属。**明确报错**而不是静默成功——
 /// 静默成功会让开关切到一个永远不生效的假状态。
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows",target_os="macos")))]
 #[tauri::command]
 pub fn rc_set_keep_awake(
     _app: AppHandle,
@@ -1520,7 +1520,7 @@ pub fn rc_set_keep_awake(
     _svc: State<'_, Arc<RcService>>,
     _enable: bool,
 ) -> Result<(), String> {
-    Err("会话防休眠只支持 Windows 被控端".into())
+    Err("会话防休眠只支持 Windows 或 Mac 被控端".into())
 }
 
 /// Q5：发起端「码率倍率」偏好（50–200，100 = 跟随链路）。只写本机配置；
@@ -1572,7 +1572,9 @@ pub fn rc_encode_caps() -> Result<RcEncodeCaps, String> {
             monitors: c.monitors,
         })
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    {Ok(RcEncodeCaps{h264_gpu:crate::rc::mac_video::hardware_available(false),hevc_hw:crate::rc::mac_video::hardware_available(true),refresh_hz:crate::rc::mac_video::scope_support(-1,false).0,monitors:crate::macos::screen::monitors()?.len() as u32})}
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     {
         Ok(RcEncodeCaps {
             h264_gpu: false,

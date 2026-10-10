@@ -1,3 +1,4 @@
+import { primaryShortcutLabel, configuredShortcutLabel } from "@/lib/utils";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,7 +7,6 @@ import { useAppStore, resolveStackMaxItems } from "@/stores/appStore";
 import type { HistoryItem } from "@/stores/appStore";
 import { stackPasteNext, stackPasteAll, abortStackPasteAll, exitStack } from "@/lib/api";
 import { useToast } from "@/components/Toast";
-import { formatHotkey } from "@/components/settings/HotkeyRecorder";
 import { stackItemsToMergeItems } from "@/lib/mergeText";
 import { MergeDialog } from "@/components/MergeDialog";
 import { SaveTemplateDialog, TemplateLibraryDialog } from "@/components/StackTemplateDialog";
@@ -14,11 +14,6 @@ import { StackQueue } from "./StackQueue";
 import { loopProgress } from "@/lib/stack/loop";
 import styles from "./StackBanner.module.css";
 import { useClickOutside } from "@/hooks/useClickOutside";
-
-/** 紧凑热键标签：复用 formatHotkey 的大小写映射，去掉空格适配窄按钮（ctrl+alt+p → Ctrl+Alt+P） */
-function compactHotkey(combo: string): string {
-  return formatHotkey(combo).replace(/\s+/g, "");
-}
 
 /**
  * 剪贴板栈横幅 — 栈模式激活时显示在卡片列表上方（滚动区外的固定节点）。
@@ -171,8 +166,8 @@ export const StackBanner = memo(function StackBanner() {
     : total > 0
       ? Math.min(100, Math.round((stackPasted / total) * 100))
       : 0;
-  const pasteKey = compactHotkey(config.stack_paste_hotkey || "ctrl+alt+p");
-  const toggleKey = formatHotkey(config.stack_toggle_hotkey || "ctrl+alt+k");
+  const pasteKey = configuredShortcutLabel(config.stack_paste_hotkey, "ctrl+alt+p");
+  const toggleKey = configuredShortcutLabel(config.stack_toggle_hotkey, "ctrl+alt+k");
   const allDone = remaining === 0 && total > 0;
 
   const title = stackPasteAllActive
@@ -367,8 +362,8 @@ export const StackBanner = memo(function StackBanner() {
         </div>
         <span className={styles.footTxt}>
           {loopInfo
-            ? `第 ${stackLoopRound} 轮 · 本轮 ${loopInfo.done}/${loopInfo.total} · Ctrl+C 继续收集`
-            : `${stackPasted}/${total} 已粘贴 · Ctrl+C 继续收集`}
+            ? `第 ${stackLoopRound} 轮 · 本轮 ${loopInfo.done}/${loopInfo.total} · ${primaryShortcutLabel("c")} 继续收集`
+            : `${stackPasted}/${total} 已粘贴 · ${primaryShortcutLabel("c")} 继续收集`}
         </span>
       </div>
         </motion.div>

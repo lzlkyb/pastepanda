@@ -114,7 +114,7 @@ impl InboundVideo {
     ///（与视频可靠流分属不同流，互不队头阻塞）。会话中静音/恢复由 wanted
     /// 标志驱动：停时关采集、关流；恢复时 worker 重发 Cfg → 开新流，
     /// 发起端的 accept 循环天然承接「一条流结束了、又来一条」。
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub(super) fn spawn_audio_task(&self) {
         use std::sync::atomic::AtomicBool;
         if !self.svc.audio_peer_wants() {
@@ -158,12 +158,16 @@ impl InboundVideo {
                     }
                     worker = None;
                     stream = None;
+                    stream_cfg = None;
+                    rx.clear_pending();
                     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                     continue;
                 }
                 if worker.is_none() {
-                    worker =
-                        Some(super::audio::AudioWorker::start(wanted_flag.clone(), tx.clone()));
+                    worker = Some(super::audio::AudioWorker::start(
+                        wanted_flag.clone(),
+                        tx.clone(),
+                    ));
                 }
                 let msg = tokio::select! {
                     m = rx.recv() => match m {
@@ -172,23 +176,25 @@ impl InboundVideo {
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(400)) => continue,
                 };
+                if !svc.session_id_is(&my_id) {
+                    break;
+                }
                 match msg {
+                    super::audio::AudioOut::Error(error) => {
+                        if svc.set_audio_muted_for_session(&my_id, true) {
+                            svc.emit_host_audio_for(Some(&my_id), Some(&error)).await;
+                        }
+                        stream = None;
+                        stream_cfg = None;
+                    }
                     super::audio::AudioOut::Cfg(cfg) => {
+                        svc.emit_host_audio_for(Some(&my_id), None).await;
                         // 没流 / 格式变了（设备切换、编码器重开）→ 开新流并先写流头。
                         // 同格式重复的 Cfg 忽略（头已写过，别把头塞进包序列中间）。
-                        if stream.is_none() || stream_cfg.as_ref() != Some(&cfg) {
-                            // 显式弃旧流（drop 让对端读到 EOF 回 accept 循环等新流）
+                        if stream_cfg.as_ref() != Some(&cfg) || stream.is_none() {
+                            stream_cfg = Some(cfg.clone());
                             drop(stream.take());
-                            stream = conn.open_uni().await.ok();
-                            if let Some(s) = stream.as_mut() {
-                                let header = super::audio::encode_stream_header(&cfg);
-                                if s.write_all(&header).await.is_err() {
-                                    stream = None;
-                                    stream_cfg = None;
-                                } else {
-                                    stream_cfg = Some(cfg);
-                                }
-                            }
+                            stream = super::audio::open_stream(&conn, &cfg).await;
                         }
                     }
                     super::audio::AudioOut::Pkt { pts_ms, data } => {
@@ -198,13 +204,7 @@ impl InboundVideo {
                             // 「非音频流」整条丢弃，本场会话永久无声。
                             // 没有 stream_cfg 时只能丢包（还没拿到过格式）。
                             if let Some(cfg) = stream_cfg.clone() {
-                                stream = conn.open_uni().await.ok();
-                                if let Some(s) = stream.as_mut() {
-                                    let header = super::audio::encode_stream_header(&cfg);
-                                    if s.write_all(&header).await.is_err() {
-                                        stream = None;
-                                    }
-                                }
+                                stream = super::audio::open_stream(&conn, &cfg).await;
                             }
                         }
                         if let Some(s) = stream.as_mut() {
@@ -217,14 +217,16 @@ impl InboundVideo {
                             // stream = None，下一包重建新流（先补流头，P2-7）。
                             // 中途弃写不碎帧——超时即弃**整条流**，包序列在新流
                             // 从流头重新开始，对端按流边界重建解码器。
-                            if tokio::time::timeout(
+                            match tokio::time::timeout(
                                 std::time::Duration::from_secs(30),
                                 s.write_all(&pkt),
                             )
                             .await
-                            .is_err()
                             {
-                                stream = None;
+                                Ok(Ok(())) => {}
+                                _ => {
+                                    stream = None;
+                                }
                             }
                         }
                     }
@@ -246,6 +248,8 @@ impl InboundVideo {
         let my_id = self.my_id.clone();
         let conn = self.conn.clone();
         tauri::async_runtime::spawn(async move {
+            #[cfg(target_os="macos")]
+            let mut previous_lock=crate::rc::local_input::is_locked();
             let mut loss_sampler = crate::rc::media::LossSampler::default();
             let mut last_route = None;
             let mut last_transport_log = std::time::Instant::now();
@@ -254,14 +258,30 @@ impl InboundVideo {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                let Some((rtt, sample)) = loss_sampler.sample(&conn) else { continue; };
+                #[cfg(target_os="macos")]
+                {
+                    if !svc.session_id_is(&my_id){break;}
+                    if !svc.should_pause_stream(){crate::rc::local_input::refresh_lock_lease();}
+                    let current=crate::rc::local_input::is_locked();
+                    if current!=previous_lock{previous_lock=current;svc.emit_input_state(None).await;svc.notify.emit_changed();}
+                }
+                let Some((rtt, sample)) = loss_sampler.sample(&conn) else {
+                    continue;
+                };
                 let paths = conn.paths();
                 let selected = paths.iter().find(|p| p.is_selected());
-                let route = selected.as_ref().map(|p| format!("{} {:?}", p.id(), p.remote_addr()));
+                let route = selected
+                    .as_ref()
+                    .map(|p| format!("{} {:?}", p.id(), p.remote_addr()));
                 if route != last_route {
                     // paths() 只有已形成的路径，不能用它断言对端没有交换 IP 候选。
-                    log::info!("[RC-PATH] selected={route:?} rtt={rtt}ms open_paths={:?}",
-                        paths.iter().map(|p| format!("{:?}", p.remote_addr())).collect::<Vec<_>>());
+                    log::info!(
+                        "[RC-PATH] selected={route:?} rtt={rtt}ms open_paths={:?}",
+                        paths
+                            .iter()
+                            .map(|p| format!("{:?}", p.remote_addr()))
+                            .collect::<Vec<_>>()
+                    );
                     last_route = route;
                 }
                 if last_transport_log.elapsed() >= std::time::Duration::from_secs(5) {
@@ -352,7 +372,9 @@ impl InboundVideo {
                     Ok(b) => b,
                     Err(_) => break,
                 };
-                if !svc.session_id_is(&my_id) { break; }
+                if !svc.session_id_is(&my_id) {
+                    break;
+                }
                 // 发起端结束会话：End 帧与 InputEvent 同半流
                 if let Ok(RcFrame::End { reason }) = RcFrame::decode(&bytes) {
                     log::info!("[RC] 对端结束会话：{reason}");
@@ -400,7 +422,9 @@ impl InboundVideo {
                         // 等待窗口正好覆盖注入生效所需的几毫秒）
                         boost_frame(&boost);
                         let metadata = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
-                        let request_id = metadata.as_ref().and_then(|v| v["request_id"].as_str())
+                        let request_id = metadata
+                            .as_ref()
+                            .and_then(|v| v["request_id"].as_str())
                             .filter(|id| !id.is_empty() && id.len() <= 64);
                         handle_inbound_input(&svc, &peer, ev, &my_id, request_id, &send).await;
                     }
@@ -450,7 +474,11 @@ pub(super) async fn send_caps_frame(
         };
         (caps.h264_gpu && single_out && hz >= 100, hz)
     };
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    let(hz,mac_high)=crate::rc::mac_video::scope_support(opts.monitor,opts.virtual_screen);
+    #[cfg(target_os="macos")]
+    let fps120=mac_high>=120;
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     let (fps120, hz) = (false, 0u32);
     // 2026-09-22：fps144/fps165 档 caps。后端统一判定最高可用档（跑不到的档
     // 不卖），发起端按它过滤菜单；旧版发起端忽略此字段，无兼容问题。
@@ -465,18 +493,24 @@ pub(super) async fn send_caps_frame(
     } else {
         0
     };
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    let fps_high=mac_high;
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     let fps_high: u32 = 0;
     // Q3：HEVC 硬编可用性。旧版本对端忽略；uhd60 档的 UI 门控靠它。
     #[cfg(target_os = "windows")]
     let hevc = caps.hevc_hw;
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    let hevc=crate::rc::mac_video::hardware_available(true);
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     let hevc = false;
     // Q7：顺带报告在线显示器列表（几何信息齐全），发起端会话内出逐屏选项 +
     // 「下一屏」轮换按钮。旧版本对端会忽略这个字段，无兼容问题。
     #[cfg(target_os = "windows")]
     let monitors = crate::screenshot::list_monitors().unwrap_or_default();
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let monitors = crate::macos::screen::monitors().unwrap_or_default();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let monitors: Vec<crate::screenshot::MonitorInfo> = Vec::new();
     // R3：声明本机能读「鼠标移动数据报」。旧版对端没有这个字段 → 发起端
     // 解析为 false，会话 UI 提示升级；**不改传输路径**（见 §9 方案 R3）。
@@ -484,7 +518,9 @@ pub(super) async fn send_caps_frame(
     // 编码能力探测是 Windows 宿主专属（mobile 无硬编，恒 false，与 hevc 同款处理）。
     #[cfg(target_os = "windows")]
     let av1 = crate::rc::encode_h264::av1_hw_available();
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    let av1 = crate::macos::av1::available();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let av1 = false;
     let msg = serde_json::json!({
         "t": "caps",

@@ -1,3 +1,4 @@
+import { configuredShortcutLabel } from "@/lib/utils";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
@@ -228,7 +229,7 @@ export function TopBar({ onSettings, settingsOpen = false }: {
           <IconBtn
             tip={
               appMode === "record" && !settingsOpen
-                ? `收集模式（栈模式）· ${stackToggleHotkey || "ctrl+alt+k"}${stackMode ? " · 已开启" : ""}`
+                ? `收集模式（栈模式）· ${configuredShortcutLabel(stackToggleHotkey, "ctrl+alt+k")}${stackMode ? " · 已开启" : ""}`
                 : `粘贴栈收集中（${stackCount} 条）· 点击退出`
             }
             active={stackMode}

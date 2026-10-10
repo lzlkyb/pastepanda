@@ -89,7 +89,9 @@ export function RcA2DeviceDetail({
     draftName,
     setDraftName,
     savingName,
-    setSavingName,
+    beginNameSave,
+    isNameSaveCurrent,
+    finishNameSave,
     manageOpen,
     setManageOpen,
   } = ui;
@@ -136,13 +138,15 @@ export function RcA2DeviceDetail({
   const measuredRtt = lastMeasuredRtt(historyList, target.node_id);
   const heroCap = capFor ? capFor(target.node_id) : "control";
   const saveName = async () => {
-    setSavingName(true);
+    const request = beginNameSave();
+    if (request === null) return;
     try {
       const result = await actions.saveRename(target.node_id, draftName);
+      if (!isNameSaveCurrent(request, draftName)) return;
       setDraftName(result.note);
       if (result.ok) setEditingName(false);
     } finally {
-      setSavingName(false);
+      finishNameSave(request);
     }
   };
 

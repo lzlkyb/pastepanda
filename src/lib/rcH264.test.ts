@@ -1,5 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { webcodecsCodecFor, webcodecsHevcFor } from "@/lib/rcH264";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { H264Decoder, webcodecsAv1For, webcodecsCodecFor, webcodecsHevcFor } from "@/lib/rcH264";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("AV1 codec parameter syntax", () => {
+  it("uses exactly two decimal level digits across low and high sample rates", () => {
+    for (const [w, h, fps] of [[64, 64, 30], [1600, 900, 15], [960, 540, 60], [1920, 1080, 30], [1920, 1080, 60], [3840, 2160, 60]]) {
+      expect(webcodecsAv1For(w, h, fps)).toMatch(/^av01\.0\.\d{2}M\.08$/);
+    }
+  });
+  it("configures a receiver which rejects malformed three-digit AV1 levels", () => {
+    class SyntaxCheckingDecoder {
+      configure({ codec }: { codec: string }) {
+        if (!/^av01\.0\.\d{2}M\.08$/.test(codec)) throw new Error("Invalid AV1 codec parameter");
+      }
+      close() {}
+    }
+    vi.stubGlobal("VideoDecoder", SyntaxCheckingDecoder);
+    const onError = vi.fn();
+    const receiver = new H264Decoder(vi.fn(), onError);
+    receiver.ensureConfigured(1920, 1080, 60, "av1");
+    expect(receiver.available).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+    receiver.close();
+  });
+});
 
 describe("webcodecsCodecFor", () => {
   it("1080p 用 High@4.2", () => {

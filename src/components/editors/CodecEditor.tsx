@@ -204,9 +204,9 @@ export function CodecEditor({ initialText, onClose }: { initialText: string; onC
           </div>
         </div>
 
-        <div className="dialog-footer">
+        <div className="dialog-footer editor-footer">
           <span>实时转换 · Esc 关闭</span>
-          <div className="right">
+          <div className="editor-footer-actions">
             <ActionBtn icon={<Copy size={13} />} label="复制结果" onClick={copyResult} />
             <ActionBtn icon={<X size={13} />} label="关闭" onClick={onClose} />
           </div>

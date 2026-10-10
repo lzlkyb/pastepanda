@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 专注模式的浮层 chrome（稿子 P1-3 / 屏幕②）：纯展示。
  *
@@ -53,7 +54,7 @@ export function FocusChrome({
         type="button"
         className={styles.focusSavePin}
         onClick={onSave}
-        title="保存 Ctrl+S"
+        title={`保存 ${primaryShortcutLabel("s")}`}
       >
         <SaveBadge isDirty={isDirty} isSaving={isSaving} autoSaveError={autoSaveError} />
       </button>

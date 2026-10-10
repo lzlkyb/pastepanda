@@ -781,6 +781,10 @@ fn test_两边都改过时留下冲突副本() {
     // 上次同步之后，两边各改一次
     b.note_update(&n.id, "甲", "B 改的").unwrap();
     a.note_update(&n.id, "甲", "A 改的").unwrap();
+    // Independent HLCs can rank B newer even when A's update call ran last.
+    // This one-way A -> B test requires B to lose, so set that ordering explicitly.
+    set_updated_ms(&b, &n.id, cursor + 1);
+    set_updated_ms(&a, &n.id, cursor + 2);
 
     let (_, rep) = sync_from(&a, &b, cursor, cursor, "cf2");
     assert_eq!(rep.conflicts, 1, "两边都改过该判冲突：{:?}", rep);
@@ -788,6 +792,8 @@ fn test_两边都改过时留下冲突副本() {
     // 冲突副本要能被 AM-7 的类别筛出来
     let copies = b.note_search("冲突副本", "all", &[], 10).unwrap();
     assert_eq!(copies.len(), 1, "该留下一份冲突副本：{:?}", copies.len());
+    assert!(copies[0].content.contains("B 改的"));
+    assert_eq!(b.note_get(&n.id).unwrap().unwrap().content, "A 改的");
     assert!(
         crate::markdown::kinds_of(&copies[0].content).contains(&"conflict".to_string()),
         "副本里要有 - [conflict] 行，否则 kb_search(kind=conflict) 找不到它"
@@ -871,12 +877,11 @@ fn test_严格赢的一边不存副本但要计数() {
     let n = a.note_create(None, "甲", "共同起点").unwrap();
     let (cursor, _) = sync(&a, &b, 0, "win1");
 
-    // 上次同步之后两边各改一次，**A 先改 B 后改** ⇒ B 的戳更大，接收侧（B）严格赢
+    // 上次同步之后两边各改一次，明确指定接收侧（B）严格赢。
     a.note_update(&n.id, "甲", "A 改的").unwrap();
-    // 隔开 2ms：同一毫秒内两次写会变成「平手」（见 test_戳相同…），
-    // 平手赢家也会存副本，这条用例要的是**严格赢**才不存。CI 上写入极快会踩到。
-    std::thread::sleep(std::time::Duration::from_millis(2));
     b.note_update(&n.id, "甲", "B 改的").unwrap();
+    set_updated_ms(&a, &n.id, cursor + 1);
+    set_updated_ms(&b, &n.id, cursor + 2);
 
     let (_, rep) = sync_from(&a, &b, cursor, cursor, "win2");
     assert_eq!(rep.skipped_older, 1, "B 应该赢：{:?}", rep);

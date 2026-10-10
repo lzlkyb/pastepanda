@@ -113,6 +113,7 @@
   margin-bottom: 6px;
 }
 .featIcon {
+  background: linear-gradient(135deg, var(--accent), var(--accent-solid));
   width: 28px;
   height: 28px;
   border-radius: 7px;
@@ -150,6 +151,10 @@
   margin-bottom: 10px;
 }
 .collapseHeader {
+  width: 100%;
+  border: none;
+  font-family: inherit;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -197,6 +202,7 @@
 }
 .h2Row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: 4px 0;
@@ -205,13 +211,16 @@
 .h2Desc {
   font-size: 11.5px;
   color: var(--text-secondary);
-  flex: 1;
+  flex: 1 0 auto;
+  max-width: 100%;
   min-width: 0;
 }
 
 /* Keyboard key capsule */
 .hKey {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   padding: 3px 8px;
   border-radius: 5px;

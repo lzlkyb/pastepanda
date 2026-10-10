@@ -46,11 +46,10 @@ pub fn open_file_with_system(path: String) -> Result<(), String> {
             .map_err(|e| format!("打开文件失败: {}", e))?;
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = path;
-        Err("不支持的平台".to_string())
-    }
+    #[cfg(target_os = "macos")]
+    { crate::macos::open::file(std::path::Path::new(&path), false) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=path;Err("不支持的平台".into()) }
 }
 
 /// 打开文件所在文件夹并选中文件
@@ -79,11 +78,10 @@ pub fn open_file_location(path: String) -> Result<(), String> {
             .map_err(|e| format!("打开文件夹失败: {}", e))?;
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = path;
-        Err("不支持的平台".to_string())
-    }
+    #[cfg(target_os = "macos")]
+    { crate::macos::open::file(std::path::Path::new(&path), true) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=path;Err("不支持的平台".into()) }
 }
 
 /// 协议白名单校验。独立抽出来：命令层与测试共用，且测试不会真的打开浏览器。
@@ -134,11 +132,10 @@ pub fn open_url(url: String) -> Result<(), String> {
             Err(format!("打开链接失败（错误码 {}）", ret.0 as usize))
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = t;
-        Err("不支持的平台".to_string())
-    }
+    #[cfg(target_os = "macos")]
+    { crate::macos::open::url(t) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    { let _=t;Err("不支持的平台".into()) }
 }
 
 /// 设置开机自启（注册表读写收口在 `crate::autostart`）
@@ -157,7 +154,9 @@ pub fn set_startup(enable: bool) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    { crate::macos::startup::set_enabled(enable) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = enable;
         Ok(())
@@ -167,11 +166,11 @@ pub fn set_startup(enable: bool) -> Result<(), String> {
 /// 获取开机自启状态（实测口径：条目存在 && 指向当前 exe && 未被 StartupApproved 禁用）
 #[tauri::command]
 pub fn get_startup() -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         crate::autostart::effective_enabled()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         Ok(false)
     }
@@ -299,9 +298,11 @@ pub fn get_md_association_status() -> String {
             "registered".to_string()
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    { crate::macos::file_assoc::status() }
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     {
-        "unregistered".to_string()
+        "unsupported".to_string()
     }
 }
 
@@ -311,7 +312,9 @@ pub fn get_md_association_status() -> String {
 /// （Windows 10+ 不允许应用静默设为默认，必须由用户确认一次）。
 /// 关闭：清除上述注册表项（UserChoice 由系统管理，不直接写）。
 #[tauri::command]
-pub fn set_md_association(enable: bool) -> Result<(), String> {
+pub async fn set_md_association(app:tauri::AppHandle,enable: bool) -> Result<String, String> {
+    #[cfg(not(target_os="macos"))]
+    let _=&app;
     #[cfg(target_os = "windows")]
     {
         use winreg::enums::*;
@@ -381,7 +384,7 @@ pub fn set_md_association(enable: bool) -> Result<(), String> {
 
             // 注册完成后引导用户在系统设置中确认默认
             open_default_apps_ui();
-            Ok(())
+            Ok("已注册 .md 打开方式，请在系统设置中选择 PastePanda".into())
         } else {
             let _ = hkcu.delete_subkey_all(r"Software\Classes\PastePanda.md");
             if let Ok(owp) =
@@ -395,13 +398,15 @@ pub fn set_md_association(enable: bool) -> Result<(), String> {
             {
                 let _ = ra.delete_value(MD_APP_REG_NAME);
             }
-            Ok(())
+            Ok("已取消 .md 文件关联".into())
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os="macos")]
+    { tokio::task::spawn_blocking(move || crate::macos::file_assoc::set(&app,enable)).await.map_err(|error|format!("文件关联任务失败：{error}"))? }
+    #[cfg(not(any(target_os="windows",target_os="macos")))]
     {
         let _ = enable;
-        Ok(())
+        Err("此平台暂未提供 .md 文件关联，请在 PastePanda 中打开文件".into())
     }
 }
 

@@ -240,37 +240,6 @@ impl Drop for AacEncoder {
     }
 }
 
-/// 由采样率/声道构造 AAC AudioSpecificConfig（AAC-LC）。
-///
-/// windows 0.58 没带 `MF_MT_AAC_AUDIO_SPECIFIC_DATA` 常量，而 ASC 本身是
-/// 确定性位串（MSB 起）：AOT(5)=2(LC) | 采样率表序号(4) | 声道数(4) |
-/// frameLen/dependsOnCoreCoder/extensionFlag 三个 0 → 正好 16 位两字节。
-/// 对拍已知值：44.1k 立体声 = `0x12 0x10`（经典 "1210"）、48k 立体声 = `0x11 0x90`。
-/// 采样率不在 ISO 14496-3 表 1.9 内（显式 24 位写法）不支持——收件箱 AAC
-/// 编码器本身也只收表内采样率，SetInputType 会先一步失败。
-pub(in crate::rc) fn asc_for(sr: u32, ch: u32) -> Option<Vec<u8>> {
-    const FREQ_INDEX: [(u32, u32); 12] = [
-        (96000, 0),
-        (88200, 1),
-        (64000, 2),
-        (48000, 3),
-        (44100, 4),
-        (32000, 5),
-        (24000, 6),
-        (22050, 7),
-        (16000, 8),
-        (12000, 9),
-        (11025, 10),
-        (8000, 11),
-    ];
-    let idx = FREQ_INDEX.iter().find(|(f, _)| *f == sr)?.1;
-    if ch == 0 || ch > 15 {
-        return None;
-    }
-    let word: u16 = (2u16 << 11) | ((idx as u16) << 7) | ((ch as u16) << 3); // AOT=2 (AAC-LC)
-    Some(vec![(word >> 8) as u8, (word & 0xFF) as u8])
-}
-
 unsafe fn lock_buffer(buf: &IMFMediaBuffer) -> Result<Vec<u8>, String> {
     let mut p: *mut u8 = std::ptr::null_mut();
     let mut max = 0u32;
