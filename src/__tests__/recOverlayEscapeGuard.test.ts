@@ -1,11 +1,15 @@
 /**
- * 录屏选区覆盖层的两条「重写即丢」守卫（2026-10-05 方案 A 审查）。
+ * 录屏选区覆盖层 Esc 处理器不得丢失（2026-10-05 方案 A 审查）。
  *
  * 方案 A 把 RecSelectOverlay 从 469 行拆成 hook + 展示部件时，旧版的 keydown
  * Escape 处理器被整段弄丢：提示条 / 尺寸标签 / 倒计时层 / 失败卡里所有「Esc ××」
  * 文案变成空头支票，而倒计时态忽略鼠标事件，用户在录制开始前没有任何取消手段。
  * dialogEscapeLayering 的层序行为测试管不到独立窗口入口，这里按仓库惯例钉源码
  * 形状——重写再丢时必须变红，而不是等用户按 Esc 没反应。
+ *
+ * 2026-10-10 甲案：键盘逻辑搬到 useRecOverlayKeys（顺带补 Enter 加速器）。守卫跟着
+ * 搬家，并加一条「覆盖层必须真的挂上这个 hook」——处理器写得再对，没接线同样是零。
+ * 行为面另有 recSelectStartFromPreview.test.tsx 钉两级取消与浮层优先。
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,17 +19,28 @@ const overlaySrc = readFileSync(
   join(process.cwd(), "src/components/recsel/RecSelectOverlay.tsx"),
   "utf8",
 );
+const keysSrc = readFileSync(join(process.cwd(), "src/hooks/useRecOverlayKeys.ts"), "utf8");
 const mouseSrc = readFileSync(join(process.cwd(), "src/hooks/useRecSelectMouse.ts"), "utf8");
 
 describe("录屏选区覆盖层 Esc 处理器不得丢失", () => {
-  it("RecSelectOverlay 挂了 keydown Escape（两级取消的命脉）", () => {
-    expect(overlaySrc).toContain('addEventListener("keydown"');
-    expect(overlaySrc).toContain('e.key !== "Escape"');
+  it("useRecOverlayKeys 挂了 keydown Escape（两级取消的命脉）", () => {
+    expect(keysSrc).toContain('addEventListener("keydown"');
+    expect(keysSrc).toContain('e.key !== "Escape"');
+  });
+
+  it("覆盖层必须把这个 hook 挂上（写了不接 = 同样按了没反应）", () => {
+    expect(overlaySrc).toContain("useRecOverlayKeys({");
+    expect(overlaySrc).toContain('import { useRecOverlayKeys } from "@/hooks/useRecOverlayKeys"');
   });
 
   it("preview 态兑现提示条「Esc 退出」，countdown 态兑现「Esc 取消」", () => {
-    expect(overlaySrc).toContain("phase === \"preview\"");
-    expect(overlaySrc).toContain('phase === "countdown"');
+    expect(keysSrc).toContain('phase === "preview"');
+    expect(keysSrc).toContain('phase === "countdown"');
+  });
+
+  it("⋯ 浮层开着时 Esc 先关浮层（§18 两级取消，不许一步退出选屏）", () => {
+    // 顺序即语义：settingsOpen 分支必须排在 onQuit 之前
+    expect(keysSrc).toMatch(/if \(h\.settingsOpen\)[\s\S]*?onCloseSettings[\s\S]*?else if \(h\.phase === "preview"\)[\s\S]*?onQuit/);
   });
 });
 

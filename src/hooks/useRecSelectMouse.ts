@@ -46,7 +46,7 @@ export function useRecSelectMouse(
   const onMouseDown = (e: React.MouseEvent) => {
     if (phase !== "preview" && phase !== "confirm") return;
     const t = e.target as HTMLElement;
-    // 提示条/确认条（.rec-glass）上的点击不进框选——按钮各自处理（整屏 → 等）
+    // 提示条/确认条（.rec-glass）上的点击不进框选——按钮各自处理（开始录制 / ⋯ / 退出）
     if (t.closest(".rec-glass")) return;
     if (phase === "confirm" && rect && inRect(toCss(e), rect)) return; // 选区内不触发重画
     // 只在预览态继承悬停目标：confirm 重画时的 hoverRect 是上一次预览的**陈旧值**，
@@ -63,7 +63,14 @@ export function useRecSelectMouse(
     if (phase === "preview") {
       // 方案 A 悬停高亮：光标下的窗口亮出来，单击就录它；提示条玻璃上不算
       const t = e.target as HTMLElement;
-      setHoverRect(t.closest(".rec-glass") ? null : pickSnapCandidate(winRectsRef.current, toCss(e)));
+      // 🔴 甲案 §3 全文规定：**落在玻璃条上不改变目标**，与条下命中判定无关。
+      // 改前写的是 `hit === null && closest(".rec-glass")`，只挡「条下恰好是窗外」那一半；
+      // 而预览条固定在屏底居中，正常桌面上那些坐标就压在某一扇窗里（最大化窗口铺满屏），
+      // 于是「悬停 A → 移向开始录制 → 目标换成盖着条的 B → 按下」仍然会静默录错对象。
+      // 我原先注释里那句「玻璃上的坐标多半落在窗外」是没验的假设，作废。
+      // 守卫：recSelectStartFromPreview.test.tsx 的**两条**（不带坐标 / 带坐标各钉一半）。
+      if (t.closest(".rec-glass")) return;
+      setHoverRect(pickSnapCandidate(winRectsRef.current, toCss(e)));
       return;
     }
     if (phase !== "dragging" || !dragStart.current) return;
@@ -123,14 +130,31 @@ export function useRecSelectMouse(
     setPhase("preview");
   }, [setPhase]);
 
-  /** 「整屏 →」按钮：与单击桌面空白同效，显式兜底（想录整屏不必挪鼠标）。 */
-  const adoptFullscreen = useCallback(() => {
+  /**
+   * 甲案 §1：预览态的终点动作（点「开始录制」/ 按 Enter）直接落子——
+   * 有悬停目标就录那扇窗，没有就录整屏，不再要求用户先做一次「含义不明确的点击」。
+   * 用 hoverRect 而不是按下瞬间的快照：它现在是粘住的（§3），鼠标移进玻璃条也还在。
+   */
+  const commitHovered = useCallback(() => {
+    const target = hoverRect;
+    setRectFromWindow(target !== null);
+    setRect(target ? normalizeEven(target) : null);
     setHoverRect(null);
     hoverAtDown.current = null;
-    setRect(null);
-    setRectFromWindow(false);
-    setPhase("confirm");
-  }, [setPhase]);
+  }, [hoverRect, setRect]);
+
+  /**
+   * 读数即控制（2026-10-10 上线前审查 P1，规则 17 鼠标全流程可达）：
+   * 「整屏」是甲案的默认主张，可一旦光标命中任何窗口，鼠标就没有办法再表达默认值
+   * （桌面被最大化窗铺满时 `pickSnapCandidate` 永远非 null），只能靠拖一个全屏框
+   * 或者 Esc 退出整个覆盖层。这一句把粘住的悬停目标**放弃**回整屏。
+   * 🔴 只清 hoverRect 就够：点它时指针正在玻璃条上，上面那条无条件早退会保住这个 null，
+   * 直到用户真的移到另一扇窗上才重新成立新目标（= 设计稿 §3 的规则 ①）。
+   */
+  const clearHover = useCallback(() => {
+    setHoverRect(null);
+    hoverAtDown.current = null;
+  }, []);
 
   return {
     rect,
@@ -142,6 +166,7 @@ export function useRecSelectMouse(
     onMouseMove,
     onMouseUp,
     backToPreview,
-    adoptFullscreen,
+    commitHovered,
+    clearHover,
   };
 }

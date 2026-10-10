@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean-dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>录屏五期 甲案 — 默认整屏、一步开录（预览态给终点）设计稿</title>
+
+<!-- 真样式表：主题令牌与录屏覆盖层样式都直接吃生产文件，不重画 -->
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/recsel.css" />
+
+<style>
+  /* ── 对 recsel.css 的显式覆写（它按「透明全屏覆盖层窗」定义 html/body/#root，
+       直接吃会让本设计稿页面无法滚动）。除这三条外不改任何视觉。 ── */
+  html, body { height: auto; overflow: visible; background: #0d111c; cursor: default; }
+  #root { width: auto; height: auto; }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 26px 28px 60px; color: var(--text-primary);
+         font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h1 .v { font-size: 11.5px; padding: 2px 10px; border-radius: 999px; vertical-align: middle;
+          margin-left: 10px; background: var(--success); color: #08170f; font-weight: 700; }
+  .sub { color: var(--text-muted); font-size: 13px; line-height: 1.75; margin-bottom: 20px; max-width: 1100px; }
+  h2 { font-size: 16px; margin: 34px 0 4px; }
+  h2 .n { display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center;
+          border-radius: 6px; background: var(--accent); color: #fff; font-size: 12px; margin-right: 8px; }
+  .desc { color: var(--text-muted); font-size: 12.5px; line-height: 1.85; margin: 0 0 14px; max-width: 1100px; }
+  .desc b { color: var(--text-primary); }
+  code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; color: #ffd9a0; }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
+             font-size: 12px; color: var(--text-muted); }
+  .toolbar button { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+             background: rgba(255,255,255,.07); color: var(--text-primary);
+             border: 1px solid rgba(255,255,255,.16); }
+  .toolbar button.on { background: color-mix(in srgb, var(--accent) 26%, transparent);
+             border-color: color-mix(in srgb, var(--accent) 55%, transparent); font-weight: 600; }
+
+  /* 双栏：改前 / 改后 */
+  .pair { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .col { flex: 1 1 620px; }
+  .col > h3 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .tagb { font-size: 11px; padding: 2px 9px; border-radius: 999px; }
+  .tagb.before { background: color-mix(in srgb, var(--danger) 22%, transparent);
+                 color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); }
+  .tagb.after { background: color-mix(in srgb, var(--success) 20%, transparent);
+                color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 45%, transparent); }
+
+  /* 演示舞台 = 1280×720 虚拟屏，1:1（读数里的尺寸就是舞台尺寸，不缩放、不换算） */
+  .stage { position: relative; width: 1280px; height: 720px; max-width: 100%;
+           border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.14);
+           background: linear-gradient(150deg, #16233c, #1d2a44 45%, #131b2e);
+           cursor: crosshair; }
+  .stage .desk { position: absolute; inset: 0; background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,.022) 0 39px, transparent 39px 40px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.022) 0 39px, transparent 39px 40px); }
+  .stage .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 44px;
+      background: rgba(8,11,20,.72); border-top: 1px solid rgba(255,255,255,.08); }
+  .win { position: absolute; border-radius: 8px; background: rgba(24,32,54,.94);
+         border: 1px solid rgba(255,255,255,.14); box-shadow: 0 12px 30px rgba(0,0,0,.45); overflow: hidden; }
+  .win > .wh { height: 28px; display: flex; align-items: center; gap: 7px; padding: 0 10px;
+              font-size: 11.5px; color: rgba(230,237,247,.8); border-bottom: 1px solid rgba(255,255,255,.07); }
+  .win > .wh i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  .stage .fakecur { position: absolute; width: 13px; height: 19px; pointer-events: none; z-index: 40;
+      background: linear-gradient(160deg, #fff, #cfd8ea); clip-path: polygon(0 0, 0 100%, 34% 74%, 58% 100%, 74% 92%, 52% 66%, 100% 62%);
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); display: none; }
+
+  table.t { border-collapse: collapse; width: 100%; max-width: 1100px; font-size: 12px; margin-top: 6px; }
+  table.t th, table.t td { border: 1px solid rgba(255,255,255,.12); padding: 7px 9px; text-align: left; vertical-align: top; line-height: 1.6; }
+  table.t th { background: rgba(255,255,255,.05); font-weight: 600; }
+  table.t td.num { font-variant-numeric: tabular-nums; }
+  .pass { color: var(--success); font-weight: 700; }
+  .fail { color: var(--danger); font-weight: 700; }
+  .note { margin-top: 20px; font-size: 12.5px; line-height: 1.9; color: var(--text-muted);
+          background: rgba(255,255,255,.04); border-left: 3px solid var(--accent);
+          padding: 12px 16px; border-radius: 0 8px 8px 0; max-width: 1100px; }
+  .note b { color: var(--text-primary); }
+  .legend { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; line-height: 1.8; max-width: 1100px; }
+
+  /* ⋯ 展开的设置浮层：容器沿用 .rec-glass（真类），内部控件全是真类 */
+  .rec-pop-row { display: flex; align-items: center; gap: 8px; }
+  .rec-pop-row .lbl { font-size: 11px; color: var(--shot-bar-muted); min-width: 34px; }
+</style>
+</head>
+<body>
+
+<h1>录屏五期 甲案 — 默认整屏、一步开录<span class="v">待你点验</span></h1>
+<p class="sub">
+  <b>这稿不改「默认是整屏」这件事——默认今天就已经是整屏</b>（<code>RecSelectOverlay.tsx:86-91</code>：预览态
+  <code>activeRect</code> 就是整个屏幕，遮罩四块算出来是零面积，所以预览态并没有压暗）。
+  甲案治的是另一件事：<b>这条最短路径上没有终点动作</b>。按 <code>Ctrl+Alt+R</code> 之后，用户必须
+  ①先做一次「含义不明确的点击」（点窗口=录那个窗口，点空白=录整屏，见
+  <code>useRecSelectMouse.ts:94-101</code>）→ ②再在确认条点「开始录制」→ ③等 3 秒倒计时；而
+  <b>回车没绑</b>（这个窗只监听 <code>Escape</code>，<code>RecSelectOverlay.tsx:99</code>）。
+  业界默认路径上没有一个不给「开始」的：QuickTime 点屏任意处即录整屏、Game Bar 一个热键、
+  macOS <code>Cmd+Shift+5</code> 浮条并列两档 + 设置收进「选项」、Loom 记住上次模式 + Start Recording。
+</p>
+
+<div class="toolbar">
+  <span>主题：</span>
+  <button data-theme-btn="ocean-dark" class="on">深海（暗玻璃）</button>
+  <button data-theme-btn="ocean">浅蓝（亮玻璃 0.92 白）</button>
+  <button data-theme-btn="midnight">墨黑</button>
+  <button data-theme-btn="forest">松林</button>
+  <button data-theme-btn="blossom">樱</button>
+  <button data-theme-btn="dawn">晨</button>
+  <span style="margin-left:14px">舞台 = <b>1280×720 虚拟屏，1:1</b>（读数里的尺寸就是舞台像素，无缩放换算）</span>
+  <span style="margin-left:14px"><button id="recheck">重跑自检</button></span>
+</div>
+
+<!-- ══════════════ 1 场景 A：零基础用户只想「把整个屏幕录下来」 ══════════════ -->
+<h2><span class="n">1</span>场景 A · 录整屏（最高频路径）：改前 3 步有歧义 → 改后 1 步零歧义</h2>
+<p class="desc">
+  两个舞台都能真操作：移动鼠标看读数怎么变、点一下、按 <kbd>Enter</kbd>、按 <kbd>Esc</kbd>、点「⋯」。<b>改后左栏的
+  「开始录制」按钮就是预览态的终点</b>——悬停过窗口则录那个窗口，没悬停则录整屏；
+  <kbd>Enter</kbd> 是这颗按钮的键盘加速器（本页已实现，生产要绑，见 §4）。
+  🔴 <b>不夸口的边界</b>：本页的鼠标事件挂在舞台元素上，<b>没有模拟「指针移到玻璃条上」这条真实路径</b>——
+  生产代码 <code>useRecSelectMouse.ts:65</code> 一进玻璃就把 <code>hoverRect</code> 清成
+  <code>null</code>，所以「悬停窗口 → 移到按钮点开始」在生产里现在会退化成录整屏，<b>这条必须由 §3 的守卫改掉才算成立</b>；
+  同理「不动鼠标直接回车录整屏」是生产 <code>onMouseUp</code> 的空白采纳分支（<code>:94-101</code>）在本页的投影，
+  落地时要连 <code>Escape</code> 一起绑（<code>RecSelectOverlay.tsx:99</code>）。
+</p>
+
+<div class="pair">
+  <div class="col">
+    <h3>改前 <span class="tagb before">现网 2Hz 版（PR#10 已合入）</span></h3>
+    <div class="stage" id="stage-before">
+      <div class="desk"></div>
+      <div class="win" style="left:120px; top:96px; width:520px; height:360px;">
+        <div class="wh"><i></i><i></i><i></i>项目评审 - 浏览器</div>
+      </div>
+      <div class="win" style="left:700px; top:230px; width:440px; height:300px;">
+        <div class="wh"><i></i><i></i><i></i>文件资源管理器</div>
+      </div>
+      <div class="taskbar"></div>
+      <div class="rec-edge-band" style="left:0;top:0;right:0;height:6px"></div>
+      <div class="rec-edge-band" style="left:0;bottom:44px;right:0;height:6px"></div>
+      <div class="rec-edge-band" style="left:0;top:0;bottom:44px;width:6px"></div>
+      <div class="rec-edge-band" style="right:0;top:0;bottom:44px;width:6px"></div>
+      <div class="rec-rect full" id="b-rect" style="left:0;top:0;width:1280px;height:720px"></div>
+      <div class="rec-glass" id="b-bar" style="left:50%;transform:translateX(-50%);bottom:58px">
+        <span>1280×720</span><span class="muted">|</span>
+        <span>悬停选窗口 · 单击录制 · 拖拽自定义</span>
+        <button type="button" class="rec-glass-lnk" title="整个画面全录（等价：单击桌面空白处）">整屏 →</button>
+        <span class="muted">·</span>
+        <button type="button" class="rec-glass-lnk" title="关闭选区，什么都不录">✕ 退出</button>
+        <span class="muted">·</span><kbd>Esc</kbd>
+      </div>
+    </div>
+    <p class="legend">
+      这条栏里<b>没有「开始」</b>。想开录必须先在屏上做一次点击，而<b>点哪儿含义不同</b>：停在窗口上点=录那个窗口，
+      停在任务栏/壁纸上点=录整屏。鼠标扫过屏幕时整屏框还会让位给窗口框（<code>RecSelectOverlay.tsx:198</code>），
+      「现在到底会录谁」只能靠脑补。兜底按钮「整屏 →」的存在本身就是这套手势猜不到的证据。
+    </p>
+  </div>
+
+  <div class="col">
+    <h3>改后 <span class="tagb after">甲案</span></h3>
+    <div class="stage" id="stage-after">
+      <div class="desk"></div>
+      <div class="win" style="left:120px; top:96px; width:520px; height:360px;" data-name="项目评审 - 浏览器">
+        <div class="wh"><i></i><i></i><i></i>项目评审 - 浏览器</div>
+      </div>
+      <div class="win" style="left:700px; top:230px; width:440px; height:300px;" data-name="文件资源管理器">
+        <div class="wh"><i></i><i></i><i></i>文件资源管理器</div>
+      </div>
+      <div class="taskbar"></div>
+
+      <div class="rec-rect full" id="a-rect" style="left:0;top:0;width:1280px;height:720px"></div>
+      <div id="a-snap" hidden></div>
+
+      <div class="rec-glass" id="a-bar" style="left:50%;transform:translateX(-50%);bottom:58px">
+        <button type="button" class="rec-btn-start" id="a-start"><span class="dot"></span>开始录制</button>
+        <kbd>Enter</kbd>
+        <span class="muted">|</span>
+        <span id="a-target">将录制：整个屏幕 1280×720</span>
+        <button type="button" class="rec-btn-ghost" id="a-more" title="画质与声音" aria-expanded="false">⋯</button>
+        <span class="muted" id="a-more-badge">高清 · 🔊</span>
+        <span class="muted">|</span>
+        <button type="button" class="rec-glass-lnk" id="a-cancel" title="关闭选区，什么都不录">✕ 退出</button>
+        <span class="muted">·</span><kbd>Esc</kbd>
+      </div>
+
+      <div class="rec-glass" id="a-pop" hidden style="left:50%;transform:translateX(-50%);bottom:112px;flex-direction:column;align-items:stretch;gap:10px">
+        <div class="rec-pop-row">
+          <span class="lbl">画质</span>
+          <span class="rec-seg" role="group" aria-label="画质档位" id="a-seg"></span>
+        </div>
+        <div class="rec-pop-row">
+          <span class="lbl">声音</span>
+          <button type="button" class="rec-snd on" id="a-sys">🔊 系统声音</button>
+          <button type="button" class="rec-snd off" id="a-mic">🎙 麦克风</button>
+        </div>
+        <div class="rec-pop-row">
+          <span class="muted">默认「高清 · 录系统声音 · 不录麦克风」。麦克风关乎别人听不听得见你，保持默认关是对的，但<b style="color:var(--shot-bar-text)">得让他知道没开</b>。</span>
+        </div>
+      </div>
+
+      <div class="rec-countdown" id="a-count" hidden style="left:0;top:0;width:1280px;height:720px">
+        <span class="num" id="a-num">3</span>
+        <button type="button" class="rec-glass-lnk" id="a-count-cancel">取消</button>
+        <span class="esc"><kbd>Esc</kbd> 回到选区</span>
+      </div>
+      <div class="fakecur" id="a-cur"></div>
+    </div>
+    <p class="legend">
+      三条规则撑起这稿：<b>①预览态就摆终点</b>（「开始录制」+ <kbd>Enter</kbd>，此刻语义=整屏）；
+      <b>②读数永远写明将录谁</b>（悬停到窗口时「将录制：『文件资源管理器』440×300」，且<b>鼠标移进玻璃条也不清空</b>——
+      现实现会清（<code>useRecSelectMouse.ts:65</code>），不移清的话把鼠标挪到「开始录制」上目标就悄悄退回整屏，
+      是最阴的静默误录）；<b>③一次点击只做一件事</b>——单击采纳目标进确认态，但采纳后不强制第二次判断，
+      确认条上「开始录制」仍是唯一主按钮。
+    </p>
+  </div>
+</div>
+
+<table class="t">
+  <tr><th>路径</th><th>改前（现网）</th><th>改后（甲案）</th><th>依据</th></tr>
+  <tr><td>录整个屏幕</td>
+      <td class="num">2 次鼠标 + 1 次 3 秒等待，且第一次点击位置有语义</td>
+      <td class="num"><b>1 次</b>（点「开始录制」或按 Enter）+ 3 秒等待</td>
+      <td>改后预览态即有终点按钮；倒计时/取消沿用现状 <code>RecOverlayParts.tsx:142-158</code></td></tr>
+  <tr><td>录某个窗口</td>
+      <td class="num">2 次鼠标（悬停+单击，再到确认条点开始）</td>
+      <td class="num">2 次（悬停→单击进确认）或 1 次（悬停→Enter）</td>
+      <td>悬停目标读数是新增的，鼠标语义不变</td></tr>
+  <tr><td>自定义框选</td>
+      <td class="num">拖拽 → 确认条点开始</td>
+      <td class="num">拖拽 → 确认条点开始（不变）</td>
+      <td>§18「拖拽自定义」保留，甲案不动这条路</td></tr>
+  <tr><td>放弃录制</td>
+      <td class="num">Esc / ✕ 退出（两级取消已有守卫单测）</td>
+      <td class="num">不变</td>
+      <td><code>recOverlayEscapeGuard.test.ts</code></td></tr>
+  <tr><td>开录前看到的决策数</td>
+      <td class="num">确认条 6 个（开始/重画/4 档画质/系统声音/麦克风），520px</td>
+      <td class="num">预览条 3 个（开始/⋯/退出）；画质与音源收进 ⋯，<b>结果留在条上做徽标</b></td>
+      <td>规则 15.1：控件和它的反馈必须同域，收进浮层就得留徽标</td></tr>
+</table>
+
+<!-- ══════════════ 2 确认态 ══════════════ -->
+<h2><span class="n">2</span>确认态（框选/采纳之后）：控件从 6 个降到 3 个</h2>
+<p class="desc">现状 520px 一条里塞了 4 档画质，「原画/高清/标准/流畅」是技术名词，差异只写在 tooltip（要悬停才看到）。
+甲案把它收进 ⋯，条上留 <b>「高清 · 🔊」徽标</b>当反馈。<b>可点</b>：这块就是拖完框之后会出现的样子。</p>
+
+<div class="stage" id="stage-confirm" style="height:300px">
+  <div class="desk"></div>
+  <div class="rec-shade" style="left:0;top:0;width:210px;height:300px"></div>
+  <div class="rec-shade" style="left:0;top:0;width:1280px;height:40px"></div>
+  <div class="rec-shade" style="left:0;top:230px;width:1280px;height:70px"></div>
+  <div class="rec-shade" style="left:650px;top:0;width:630px;height:300px"></div>
+  <div class="rec-rect" style="left:210px;top:40px;width:440px;height:190px"></div>
+  <div class="rec-glass" style="left:210px;top:8px">
+    <span>440×190</span><span class="muted">拖边缘可调整（重画）· Esc 重选</span>
+  </div>
+
+  <div class="rec-glass" id="c-bar" style="left:50%;transform:translateX(-50%);bottom:14px">
+    <button type="button" class="rec-btn-start" id="c-start"><span class="dot"></span>开始录制</button>
+    <kbd>Enter</kbd>
+    <span class="muted">|</span>
+    <button type="button" class="rec-btn-ghost" id="c-redraw">重画</button>
+    <button type="button" class="rec-btn-ghost" id="c-more" title="画质与声音" aria-expanded="false">⋯</button>
+    <span class="muted" id="c-badge">高清 · 🔊</span>
+    <span class="muted">·</span>
+    <button type="button" class="rec-glass-lnk" id="c-cancel">✕ 退出</button>
+    <span class="muted">·</span><kbd>Esc</kbd>
+  </div>
+</div>
+
+<!-- ══════════════ 3 悬停粘住：本稿唯一的新增不变量 ══════════════ -->
+<h2><span class="n">3</span>「将录制」读数必须粘住目标 —— 这条不写清就会造出新的静默误录</h2>
+<div class="note">
+  <b>现象</b>：预览态的悬停目标由 <code>onMouseMove</code> 算，而代码里有一句
+  <code>t.closest(".rec-glass") ? null : pickSnapCandidate(...)</code>
+  （<code>useRecSelectMouse.ts:65</code>）——鼠标压在玻璃条上时目标=<b>无</b>。<br />
+  <b>为什么在改前无害</b>：改前的玻璃条上只有「整屏 →」这种显式按钮，用户不会把「悬停中」当成一个已成立的选择。<br />
+  <b>为什么在改后有害</b>：改后玻璃条上出现了 <b>「开始录制」+ Enter</b> 这个终点。用户悬停选中「文件资源管理器」→
+  把鼠标移到「开始录制」按钮上（这一步必然穿过玻璃条）→ 读数在按下前的最后一刻退回「整个屏幕」→
+  <b>他要录窗口、成片是全桌</b>，而且画面上一切看起来都正常。<br />
+  <b>甲案的规定</b>：悬停目标一旦成立就<b>粘住</b>，直到①移出到另一扇窗口（换成新目标）、②在空白处按下（回到整屏）、
+  或③按 <kbd>Esc</kbd>/重画。<b>落在玻璃条上不改变目标。</b><br />
+  <b>落地时同批补的守卫</b>（规则 11.1/23）：一条 vitest —— 「鼠标在 <code>.rec-glass</code> 内时读数与按下前的
+  <code>activeRect</code> 必须仍等于最后一次窗口悬停结果」，改前为红的取证就用把这句 <code>null</code> 留着跑。
+</div>
+
+<!-- ══════════════ 4 Enter 的焦点前提 ══════════════ -->
+<h2><span class="n">4</span>Enter 的前提：本窗必须持焦（已核，不是假设）</h2>
+<table class="t">
+  <tr><th>检查项</th><th>结论</th><th>证据</th></tr>
+  <tr><td>开选区窗时有没有主动抢焦</td><td class="pass">有</td>
+      <td><code>src-tauri/src/rec/mod.rs:230-231</code> <code>show()</code> + <code>set_focus()</code></td></tr>
+  <tr><td>现有的鼠标恢复聚焦</td><td class="pass">保留</td>
+      <td><code>RecSelectOverlay.tsx:182</code> <code>onMouseEnter → setFocus()</code>；甲案加「不动鼠标直接 Enter」这条路后，
+          <b>这条恢复路径反而更重要</b>（若焦被别的应用抢走，Enter 会打进那个应用）</td></tr>
+  <tr><td>键盘只做加速器，鼠标全流程可达</td><td class="pass">满足 §17</td>
+      <td>Enter 是「额外快路」，按钮本身在，零基础不用键盘也能一步开录</td></tr>
+</table>
+
+<!-- ══════════════ 5 自检 ══════════════ -->
+<h2><span class="n">5</span>自检（真函数、真计算值，不是口头保证）</h2>
+<p class="desc">对比度按 WCAG 2.2 AA（正文 ≥4.5:1 / 大字与图形控件 ≥3:1）在本页用 <code>getComputedStyle</code>
+实测色算；几何按「玻璃条不许顶破屏宽」算。表格每次换主题都会重跑。</p>
+<table class="t" id="ct-table">
+  <tr><th>判据</th><th>实测</th><th>结果</th></tr>
+</table>
+
+<h3>5.1 六主题横扫：甲案依赖的两个现网既有缺陷（不是本稿引入）</h3>
+<p class="desc">
+  下面这张表<b>不是手填的数字</b>：脚本临时把 <code>&lt;html data-theme&gt;</code> 依次切成 6 个主题，
+  在真实玻璃条（<code>.rec-glass</code>，<code>a-bar</code>）里插一个探针 <code>&lt;span&gt;</code>，
+  用同一套 <code>getComputedStyle</code> + 上面的 <code>ratio()</code> 现算，量完即删。
+  判据一律按 <b>4.5:1</b>——<code>✕ 退出</code> 和 <code>🎙 麦克风</code> 都是 11–12px 小字，
+  WCAG 只有 ≥24px（或 ≥18.66px 粗体）才允许降到 3:1，「弱态」不是豁免理由。
+  <b>底色口径</b>：玻璃 alpha 0.9–0.94 已按近不透明取玻璃自身色（浅色主题即纯白），所以浅色主题这几行是
+  <b>上限</b>——真机上玻璃压在深色画面上时底会变暗、比值只会更低，不会更高。
+</p>
+<table class="t" id="sweep-table">
+  <tr><th>色（表达式）</th><th>深海</th><th>墨黑</th><th>浅蓝</th><th>松林</th><th>樱</th><th>晨</th></tr>
+</table>
+<p class="desc" id="sweep-verdict">（脚本未运行时无结论）</p>
+
+<h3>5.2 取证更正 + 同批必修的两条既有色（补丁）</h3>
+<div class="note">
+  <b>先更正我自己报错的数</b>：上一轮口头汇报说「✕ 退出在四个浅色主题都是 2.79」——<b>那是污染值</b>。
+  <code>.rec-glass-lnk</code> 带 <code>transition: color 150ms</code>，我在切主题的同一帧用
+  <code>getComputedStyle</code> 量真元素，拿到的是<b>上一个已绘制主题的旧色</b>（旧 <code>--accent</code>
+  <code>#3b9eff</code> 压白玻璃 = 2.79）。<b>四个浅色主题读出完全相同的 2.79</b>——同一个缺陷色在四种不同
+  <code>--accent</code> 下不可能撞出同一个比值，这本身就是「量到的是旧帧」的信号。
+  5.1 表改用无 transition 的探针现插现量，真值是
+  <b>浅蓝 4.10 / 松林 3.77 / 樱 3.27 / 晨 3.01</b>（两个暗色 6.49 / 6.16 是过的）。
+  <b>结论没变（仍全不过 4.5），但数字换了</b>——所以这条表格里每一格都必须由脚本现算，不许手填。
+</div>
+
+<p class="desc">
+  两个修法都选<b>「把颜色拉向本主题玻璃自己的字色」</b>这条方向，理由：<code>--shot-bar-text</code> 在暗主题里是浅字、
+  在浅色主题里是深字，<b>它就是「这块玻璃上的合规字色」</b>。把它当混色目标，一次改动同时把两类主题都推向合规；
+  反之若按直觉「加深一档」，暗主题的玻璃底是深的，字反而糊掉——
+  <b>候选 A1 直接证明了这点：改成 <code>--accent-solid</code> 后浅色主题全过（4.53–4.80），但两个暗主题反而掉到 3.95 / 4.06，从「过」变成「不过」</b>，
+  这个看似最顺手的修法实际是不能用的。
+</p>
+
+<table class="t">
+  <tr><th>位置</th><th>现状（现网 <code>src/styles/recsel.css</code>）</th><th>同批改法</th><th>改后最差档（6 主题实测）</th></tr>
+  <tr>
+    <td><code>.rec-glass-lnk</code><br>（「✕ 退出」「整屏 →」）</td>
+    <td><code>color: var(--accent);</code><br>浅蓝 4.10 / 松林 3.77 / 樱 3.27 / 晨 3.01</td>
+    <td><code>color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));</code><br>hover 那一档同法再混，保持「比正文更亮/更暗」的方向</td>
+    <td class="pass">4.82（晨）</td>
+  </tr>
+  <tr>
+    <td><code>.rec-snd.off</code><br>（音源关闭态弱字）</td>
+    <td><code>color: color-mix(in srgb, var(--shot-bar-text) 40%, transparent);</code><br><b>6/6 主题全不过</b>（3.30→2.34）</td>
+    <td><code>color: color-mix(in srgb, var(--shot-bar-text) 72%, transparent);</code><br>弱态靠 <b>14px 图标 + 边框压暗</b>继续表达，不靠把字调虚</td>
+    <td class="pass">5.81（樱）</td>
+  </tr>
+  <tr>
+    <td>对照：<code>.rec-seg button</code>（未选中档，65%）</td>
+    <td>不用改</td>
+    <td>—</td>
+    <td class="pass">4.67（樱）· 已在 4.5 上方，本稿顺手把这条也补进判据表</td>
+  </tr>
+</table>
+
+<p class="desc">
+  <b>这两条为什么归甲案同批、而不另开一项</b>：甲案的动作是把「开始录制」这颗主按钮<b>提到预览态</b>，
+  于是「✕ 退出」和「🎙 麦克风」第一次出现在零基础用户的<b>最高频第一眼画面</b>上（改前它们在确认条里，用户本来就要先做一次歧义点击才看到）。
+  同一个可见性域里的控件（§15.1）不能一个是 AA 合规的主按钮、另一个是 3.0:1 的灰字。
+</p>
+
+<p class="desc">
+  <b>守卫怎么落（规则 23：先红后绿）</b>：jsdom <b>不解析 <code>color-mix()</code></b>，所以在 vitest 里查不到这条，
+  硬编一条 DOM 断言=假绿。能自动化的写法是纯函数：读 <code>src/styles/theme.css</code>，正则取 6 个主题块的
+  <code>--accent</code> / <code>--text-primary</code>（= <code>--shot-bar-text</code>），在 JS 里自己实现 srgb 混色 +
+  相对亮度 + 比值，断言「链接字 ≥4.5」「关闭态弱字 ≥4.5」。<b>改前跑它必须红</b>（红在 4 个主题 / 6 个主题），
+  改 <code>recsel.css</code> 后转绿；这条同时钉住「以后新增第 7 个主题时不能漂出合规带」——正是 §11.1 说的「第 7 个调用点」。
+  本页 5.1 表是它的<b>真人可复核版</b>（两边算法独立，若数字对不上就是有一边错了）。
+</p>
+
+<div class="note">
+  <b>这一稿故意没做的三件事</b>：① <b>模式并列选择器</b>（乙案）——业界没有任何产品把「先弹模式选择器」当默认，
+  而且它要新增一条 mode 轴、偏离 §18「单击采纳」的既有范式；② <b>录制中改音源</b>——后端
+  <code>rec/commands.rs:74-79</code> 明确「录制中改设置不影响本场」，要动的是会话层，另开一项；
+  ③ <b>音轨静默</b>（丙①，<code>rec/session.rs:774-778</code> 只 <code>log::warn</code>，麦克风没录上用户完全不知道）
+  ——它比交互层更容易毁掉一次录制，建议与甲案同批或紧随其后，但不塞进这稿。
+</div>
+
+<div class="note">
+  <b>落地记录（2026-10-10，实施后补）</b>：本稿的甲案已实施，<b>三处对稿偏差</b>请点验时按实况判：
+  ① 读数写 <code>将录制：窗口 400×300</code> 而<b>不是</b>稿里的「文件资源管理器」——后端
+  <code>enum_window_rects</code>（<code>commands/screenshot.rs:2111</code>）只回矩形、<b>没有窗口标题</b>，
+  要显示应用名得先改后端；宁可不写也不拿假名字糊上去。
+  ② ⋯ 浮层行距由稿内 10px 改 <b>12px</b>（U5 间距档：4/8/12/16/24）。
+  ③ <kbd>Enter</kbd> 加了两条让路规则（稿里没画）：焦点已在按钮/输入控件上时交给原生「Enter=按下该钮」，
+  ⋯ 展开时不开录（用户正在调档，此刻开录是误触）。
+  <br><b>守卫与取证</b>：<code>recSelectStartFromPreview.test.tsx</code>（10 条行为断言，改前红 9/绿 1；
+  粘住目标那条单独抽掉即红，已喂反例）、<code>recGlassContrastGuard.test.ts</code>（27 条，改前红在
+  链接字 4 个浅色主题 + 关闭态 6 个主题全不过）、<code>recOverlayEscapeGuard.test.ts</code>（跟着键盘逻辑
+  搬到 <code>useRecOverlayKeys.ts</code>，并新增「覆盖层必须挂上这个 hook」与「Esc 先关浮层」两条，后者
+  已喂反例确认会红）。
+  <br><b>对比度两套算法对表（改后实测，六主题逐条一致到小数点后三位）</b>：链接字
+  8.267 / 8.088 / 6.449 / 6.098 / 4.978 / 4.819，关闭态 7.999 / 7.909 / 7.129 / 7.119 / 5.812 / 6.317，
+  画质未选中 6.721 / 6.647 / 5.565 / 5.556 / 4.669 / 5.012（口径 = 玻璃自身 rgb 当底，真机压在深色画面上
+  底更暗、比值更高；本表只用于判「不过」）。浏览器侧读数须用<b>无 transition 的新建探针</b>——
+  直接在换主题的同一帧读现有元素会拿到过渡起点（本页 5.2 记录过这个坑）。
+</div>
+
+<div class="note">
+  <b>落地记录 · 上线前审查（2026-10-10 二批）</b>：本节是 critiques 全量修复后的<b>新基线</b>，
+  与上方「三处对稿偏差」并列，点验按本节实况判。
+  <br>① <b>P0（本稿 §3 的落地版是假的）</b>：改前的玻璃条早退写成 <code>hit === null && closest(".rec-glass")</code>，
+  只挡「条下恰好是窗外」那一半。预览条固定在屏底居中，正常桌面上那些坐标就压在某一扇窗里（最大化窗口铺满屏），
+  于是「悬停 A → 移向开始录制 → 目标换成盖着条的 B → 按下」<b>仍然会静默录错对象</b>。现在早退无条件
+  （<code>useRecSelectMouse.ts:71</code>）。反例已取证：把条件改回原样，新守卫
+  <code>「玻璃条压在另一扇窗上时也不许换目标」</code>判红。<b>稿内 §3 的规则①从此才是真成立的</b>。
+  <br>② <b>P1 读数即控制</b>（规则 17 鼠标全流程可达）：目标是一扇窗时，读数本身变成按钮
+  <code>将录制：窗口 400×300 〔改录整屏〕</code>，点它 = 放弃窗口目标回到默认整屏。做法是只清
+  <code>hoverRect</code>——点它时指针正在玻璃条上，①那条无条件早退会保住这个 null，直到用户真的移到另一扇窗
+  才重新成立新目标，所以<b>不需要</b>「循环」状态机。<b>「单击循环 整屏↔窗口」的后半截做不到</b>：
+  <code>enum_window_rects</code> 只回矩形，没有位置就没有窗口身份，回到窗口态只能靠光标真的落到那扇窗上；
+  这一条写明而不伪造。<b>整屏态读数不是按钮</b>（没有可放弃的东西，摆个可点的默认值 = 假控件）。
+  <br>③ <b>P1 结果常驻可见</b>（规则 15.1）：<b>确认条与倒计时层都写着「将录制：…」</b>，且用的是
+  落子后的<b>实际区域</b>（窗口来源标「窗口」，自由框选标「选区」）。稿里原来只在预览条画了读数。
+  贴右缘时确认条宽由 420 提到 <b>560</b>——这是<b>保守预留</b>（把最长读数放进去），真实是否越屏仍待点验。
+  <br>④ <b>P1 失败可懂可出</b>：<code>没能开始录制</code> + <code>点「开始录制」重试 · Esc 退出</code>，
+  后端原文收进 <code>title</code>（术语不再当正文糊用户）；另加一枚<b>常驻</b> <code>role="status" aria-live="polite"</code>
+  状态区——带内容一起插入的 live 区域多数读屏不播报，所以它一开始就在 DOM 里。<b>读数故意不放进 live 区域</b>：
+  它跟着光标每动一次就变，读屏会变成噪声。
+  <br>⑤ <b>P2 无障碍</b>：⋯ 浮层 <code>role="group" aria-label="画质与声音"</code> + <code>aria-controls</code>，
+  四档 <code>aria-pressed</code>（与音源同语义；<code>role="radio"</code> 会连带要求方向键 + roving tabindex，
+  本浮层没有，不拿半套 ARIA 装全套）；<code>.rec-seg</code> <b>删掉 <code>overflow:hidden</code></b>——它把 Tab
+  焦点环一起裁了（WCAG 2.4.7 AA），圆角改由首尾两颗按钮自己承担（8px 同档，比容器内缘更圆只会往内收）；
+  倒计时层的「取消」「读数」改穿玻璃令牌（改前 <code>color:#fff</code> 压在 <code>rgba(10,14,24,.28)</code>
+  的半透明层上，白壁纸大概率塌，而它是这一态唯一的鼠标逃生口）。
+  <br><b>守卫与取证（二批后）</b>：行为 <code>recSelectStartFromPreview.test.tsx</code> 10 → <b>16</b> 条；
+  对比度 <code>recGlassContrastGuard.test.ts</code> 27 → <b>35</b> 条（新增 6 对本批字色 +
+  <code>「.rec-seg 不得声明 overflow」</code>静态钉）；<code>recOverlayEscapeGuard.test.ts</code> 5 条不变。
+  三文件 <b>56/56 绿</b>、<code>tsc --noEmit</code> 干净、<code>npm run lint:ui</code> block 0、全量
+  <b>4284/4284</b>。新增字色实测（6 主题）：读数按钮 8.267 / 8.088 / 6.449 / 6.098 / 4.978 / <b>4.819</b>，
+  hover 9.357 / 9.228 / 8.205 / 7.890 / 6.239 / 6.238，玻璃正文 14.651 / 14.480 / 17.853 / 17.928 / 14.270 / 15.898，
+  错误字 <code>--danger</code> 满档 6.667 / 6.642 / 4.987×4 <b>全过</b>（原以为满档不过，量了是假话)；
+  同色 25% 弱档 1.463 / 1.491 / 1.496×4 <b>全不过</b>——这条是本批守卫自身的活性反例（AGENTS 23）。
+</div>
+
+
+<script>
+/* ───────── 真档位数据：直接从生产模块抄（两处必须同改，见 lib/recQuality.ts:18-23） ───────── */
+const QUALITIES = [
+  { key: "original", label: "原画", desc: "原分辨率 · 60fps · HEVC，画质天花板（体积也最大）" },
+  { key: "high",     label: "高清", desc: "原分辨率 · 30fps · H.264，兼容性最好" },
+  { key: "standard", label: "标准", desc: "1080p · 30fps，均衡" },
+  { key: "smooth",   label: "流畅", desc: "720p · 30fps，小体积" },
+];
+const DEFAULT_QUALITY = "high";
+const STAGE_W = 1280, STAGE_H = 720;
+
+const state = { quality: DEFAULT_QUALITY, sys: true, mic: false, pop: false, phase: "preview", target: null, sticky: null };
+
+const $ = (id) => document.getElementById(id);
+const stageAfter = $("stage-after");
+const rectEl = $("a-rect"), snapEl = $("a-snap"), targetEl = $("a-target"), moreBadge = $("a-more-badge");
+const fakeCur = $("a-cur");
+
+/* 假定的可吸附窗口（真实数据来自 enum_window_rects） */
+const WINS = [...stageAfter.querySelectorAll(".win")].map((w) => {
+  const b = w.getBoundingClientRect(), s = stageAfter.getBoundingClientRect();
+  return { name: w.dataset.name, x: b.left - s.left, y: b.top - s.top, w: b.width, h: b.height };
+});
+
+/* 读数：粘住目标（规则见 §3） */
+function readout(t) {
+  if (!t) return `将录制：整个屏幕 ${STAGE_W}×${STAGE_H}`;
+  return `将录制：「${t.name}」${Math.round(t.w)}×${Math.round(t.h)}`;
+}
+function paint() {
+  const t = state.sticky ?? state.target;
+  targetEl.textContent = readout(t);
+  if (t) {
+    snapEl.hidden = false;
+    snapEl.className = "rec-snap";
+    Object.assign(snapEl.style, { left: t.x - 1.5 + "px", top: t.y - 1.5 + "px", width: t.w + "px", height: t.h + "px" });
+    rectEl.hidden = true;
+  } else {
+    snapEl.hidden = true;
+    rectEl.hidden = false;
+  }
+  moreBadge.textContent = `${QUALITIES.find((q) => q.key === state.quality).label} · ${state.sys ? "🔊" : ""}${state.mic ? " 🎙" : ""}`.trim();
+}
+
+/* 悬停：落在玻璃条上不清目标（甲案的新不变量，演示里靠 sticky 实现） */
+stageAfter.addEventListener("mousemove", (e) => {
+  if (state.phase !== "preview") return;
+  const b = stageAfter.getBoundingClientRect();
+  fakeCur.style.display = "block";
+  fakeCur.style.left = e.clientX - b.left + "px";
+  fakeCur.style.top = e.clientY - b.top + "px";
+  const x = e.clientX - b.left, y = e.clientY - b.top;
+  if (e.target.closest(".rec-glass")) return;              // ← 关键：不改目标、不清 sticky
+  state.target = WINS.find((w) => x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) || null;
+  if (state.target === null) state.sticky = null;          // 移到空白 = 放弃粘住的窗口
+  else state.sticky = state.target;
+  paint();
+});
+
+/* 单击采纳：按下瞬间的目标（与生产 useRecSelectMouse.ts:94-101 同构） */
+stageAfter.addEventListener("mousedown", (e) => {
+  if (e.target.closest(".rec-glass")) return;
+  if (state.phase !== "preview") return;
+  state.sticky = state.target;                              // 按下瞬间定目标
+  state.phase = "confirm";
+  paint();
+});
+
+/* 「开始录制」= 终点 */
+function begin() {
+  state.phase = "countdown";
+  $("a-pop").hidden = true;
+  $("a-more").setAttribute("aria-expanded", "false");
+  $("a-count").hidden = false;
+  let n = 3;
+  $("a-num").textContent = n;
+  const iv = setInterval(() => {
+    n -= 1;
+    if (n <= 0) {
+      clearInterval(iv);
+      $("a-count").hidden = true;
+      state.phase = "recording";
+      rectEl.className = "rec-rect recording";
+      rectEl.style.left = (state.sticky ? state.sticky.x : 0) + "px";
+      rectEl.style.top = (state.sticky ? state.sticky.y : 0) + "px";
+      rectEl.style.width = (state.sticky ? state.sticky.w : STAGE_W) + "px";
+      rectEl.style.height = (state.sticky ? state.sticky.h : STAGE_H) + "px";
+      targetEl.textContent = state.sticky
+        ? `正在录制：「${state.sticky.name}」（演示到此，真产品会开控制条窗）`
+        : `正在录制：整个屏幕（演示到此，真产品会开控制条窗）`;
+    } else $("a-num").textContent = n;
+  }, 700);
+}
+$("a-start").addEventListener("click", begin);
+$("a-count-cancel").addEventListener("click", () => { $("a-count").hidden = true; state.phase = "confirm"; });
+$("a-cancel").addEventListener("click", reset);
+$("c-redraw")?.addEventListener("click", () => {});
+
+function reset() {
+  state.phase = "preview"; state.target = null; state.sticky = null;
+  rectEl.className = "rec-rect full";
+  rectEl.style.left = "0px"; rectEl.style.top = "0px";
+  rectEl.style.width = STAGE_W + "px"; rectEl.style.height = STAGE_H + "px";
+  $("a-count").hidden = true; $("a-pop").hidden = true;
+  $("a-more").setAttribute("aria-expanded", "false");
+  fakeCur.style.display = "none";
+  paint();
+}
+
+/* Enter / Esc：键盘是加速器 */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (state.phase === "preview" || state.phase === "confirm")) { e.preventDefault(); begin(); }
+  if (e.key === "Escape") {
+    if (state.phase === "countdown") { $("a-count").hidden = true; state.phase = "confirm"; }
+    else reset();
+  }
+});
+
+/* ⋯ 浮层 */
+function buildSeg(host) {
+  host.innerHTML = "";
+  QUALITIES.forEach((q) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = q.label;
+    b.title = q.desc;
+    if (q.key === state.quality) b.className = "on";
+    b.addEventListener("click", () => {
+      state.quality = q.key;
+      [...host.children].forEach((c) => (c.className = c === b ? "on" : ""));
+      paint();
+      checkAll();
+    });
+    host.appendChild(b);
+  });
+}
+buildSeg($("a-seg"));
+$("a-more").addEventListener("click", () => {
+  state.pop = !state.pop;
+  $("a-pop").hidden = !state.pop;
+  $("a-more").setAttribute("aria-expanded", String(state.pop));
+});
+
+/* 主题切换 */
+document.querySelectorAll("[data-theme-btn]").forEach((b) =>
+  b.addEventListener("click", () => {
+    document.documentElement.dataset.theme = b.dataset.themeBtn;
+    document.querySelectorAll("[data-theme-btn]").forEach((x) => x.classList.toggle("on", x === b));
+    requestAnimationFrame(checkAll);
+  })
+);
+
+/* ───────── 自检：真算对比度 + 真量几何 ───────── */
+function lum(rgb) {
+  const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+}
+/* 解析 Chrome 可能返回的三种形态：#hex / rgb(a)() / color(srgb R G B / A)（后者的分量是 0–1） */
+function parseColor(str) {
+  const s = str.trim();
+  let m = s.match(/^color\(srgb\s+([^)]+)\)$/i);
+  if (m) {
+    const parts = m[1].split("/").flatMap((p) => p.trim().split(/[\s,]+/)).filter(Boolean).map(parseFloat);
+    return { r: parts[0] * 255, g: parts[1] * 255, b: parts[2] * 255, a: parts.length > 3 ? parts[3] : 1 };
+  }
+  m = s.match(/rgba?\(([^)]+)\)/i);
+  if (m) {
+    const p = m[1].split(/[\s,/]+/).filter(Boolean).map(parseFloat);
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+  }
+  m = s.match(/^#([\da-f]{6})$/i);
+  if (m) {
+    const v = parseInt(m[1], 16);
+    return { r: (v >> 16) & 255, g: (v >> 8) & 255, b: v & 255, a: 1 };
+  }
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+function toRgb(color) {
+  const c = parseColor(color);
+  return [c.r, c.g, c.b];
+}
+function bgOf(el) {                       // 往上找第一个不透明底（玻璃条本身是半透明，压在演示舞台的深色画面样例上）
+  let n = el, guard = 0;
+  while (n && guard++ < 12) {
+    const c = parseColor(getComputedStyle(n).backgroundColor);
+    if (c.a > 0.85) return [c.r, c.g, c.b];
+    n = n.parentElement;
+  }
+  return [13, 17, 28];
+}
+/* 🔴 量「生产类自己算出来的字色」必须用**无 transition 的新建探针**：
+ * `.rec-glass-lnk` 带 `transition: color 150ms`，在换主题的同一帧读现成元素拿到的是
+ * 过渡起点（Chrome 还把中间值报成 oklab，parseColor 认不了 → 兜底成黑，比值假报 1.16）。
+ * 新建 span 挂进玻璃条、关掉过渡，拿到的才是最终值。2026-10-10 改后复测时踩过。 */
+function ratioByClass(cls) {
+  const p = document.createElement("span");
+  p.className = cls;
+  p.style.transition = "none";
+  $("a-bar").appendChild(p);
+  const v = ratio(p, "color");
+  p.remove();
+  return v;
+}
+function ratio(el, prop) {
+  const cs = getComputedStyle(el);
+  const fg = parseColor(cs[prop]);
+  const bg = bgOf(el);
+  /* 半透明文字必须先合成到背景上，再算亮度差——直接拿原色算会把 65%/40% 弱态高估成满对比 */
+  const mix = [0, 1, 2].map((i) => fg.a * [fg.r, fg.g, fg.b][i] + (1 - fg.a) * bg[i]);
+  const L1 = lum(mix), L2 = lum(bg);
+  const [a, b] = L1 > L2 ? [L1, L2] : [L2, L1];
+  return (a + 0.05) / (b + 0.05);
+}
+function checkAll() {
+  const rows = [];
+  const push = (name, val, ok) => rows.push({ name, val, ok });
+
+  const pop = $("a-pop");
+  const popWas = pop.hidden;
+  pop.hidden = false;                     // 浮层里的控件也得真量：display:none 时拿到的是未合成值
+  const checks = [
+    ["预览条「开始录制」白字 / --accent-solid 实底", ratio($("a-start"), "color"), 4.5],
+    ["预览条目标读数 / 玻璃底", ratio($("a-target"), "color"), 4.5],
+    ["预览条 ⋯ 徽标文字（muted）/ 玻璃底", ratio($("a-more-badge"), "color"), 4.5],
+    ["预览条 ✕ 退出（修正后：accent 拉向本主题字色 30%）/ 玻璃底", ratioByClass("rec-glass-lnk"), 4.5],
+    ["确认条主按钮字 / 玻璃底", ratio($("c-start"), "color"), 4.5],
+    ["⋯ 浮层 画质未选中字（65% 弱态）/ 玻璃底", ratio($("a-seg").children[3], "color"), 4.5],
+    ["⋯ 浮层 系统声音（开）字 / 玻璃底", ratio($("a-sys"), "color"), 4.5],
+    ["⋯ 浮层 麦克风（关，修正后 72% 弱态）字 / 玻璃底", ratioByClass("rec-snd off"), 4.5],
+  ];
+  checks.forEach(([n, v, min]) => push(n, v.toFixed(2) + "（需 ≥" + min + "）", v >= min));
+  const pw = pop.getBoundingClientRect().width;
+  pop.hidden = popWas;
+
+  /* 几何：玻璃条不许顶破屏宽，两侧各留 ≥8px（同生产钳位口径 RecOverlayParts.tsx:53-57） */
+  const bw = $("b-bar").getBoundingClientRect().width;
+  const aw = $("a-bar").getBoundingClientRect().width;
+  push("改前预览条自然宽度", bw.toFixed(0) + "px", true);
+  push("改后预览条自然宽度（含 ⋯ 徽标）", aw.toFixed(0) + "px", aw + 16 <= STAGE_W);
+  push("改后条 + 两侧 8px 余量 ≤ 舞台宽 1280", (aw + 16).toFixed(0) + "px ≤ 1280", aw + 16 <= STAGE_W);
+  push("最窄支持屏 1366px 下是否仍放得下", (aw + 16).toFixed(0) + "px ≤ 1366", aw + 16 <= 1366);
+  push("⋯ 浮层自然宽度 ≤ 屏宽 − 16", pw.toFixed(0) + "px", pw + 16 <= STAGE_W);
+
+  /* 一致性：默认档与生产数据源同值 */
+  push("默认档 = 生产 DEFAULT_REC_QUALITY（high）", state.quality === DEFAULT_QUALITY ? "high" : state.quality, state.quality === DEFAULT_QUALITY);
+  push("音源默认 = 生产 appStore（系统开 / 麦克风关）", `sys=${state.sys} mic=${state.mic}`, state.sys === true && state.mic === false);
+
+  const tb = $("ct-table");
+  tb.innerHTML = "<tr><th>判据</th><th>实测</th><th>结果</th></tr>";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.name}</td><td class="num">${r.val}</td><td class="${r.ok ? "pass" : "fail"}">${r.ok ? "过" : "不过"}</td>`;
+    tb.appendChild(tr);
+  });
+}
+$("recheck").addEventListener("click", () => { checkAll(); sweep(); });
+
+/* ───────── 六主题横扫（5.1）：现网既有缺陷 + 修正候选，同一套真函数重算 ───────── */
+const THEMES = ["ocean-dark", "midnight", "ocean", "forest", "blossom", "dawn"];
+const SWEEP_ROWS = [
+  { group: "A · .rec-glass-lnk 链接字（✕ 退出）", name: "修前 <code>var(--accent)</code>", expr: "var(--accent)", min: 4.5 },
+  { group: "A · .rec-glass-lnk 链接字（✕ 退出）", name: "候选 A1 <code>var(--accent-solid)</code>", expr: "var(--accent-solid)", min: 4.5 },
+  { group: "A · .rec-glass-lnk 链接字（✕ 退出）", name: "候选 A2 accent 拉向本主题字色 30%（✅已采用=常态字色）", expr: "color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text))", min: 4.5 },
+  { group: "A · .rec-glass-lnk 链接字（✕ 退出）", name: "候选 A3 accent 拉向本主题字色 45%（✅已采用=hover 字色）", expr: "color-mix(in srgb, var(--accent) 55%, var(--shot-bar-text))", min: 4.5 },
+  { group: "B · .rec-snd.off 关闭态弱字", name: "修前 <code>--shot-bar-text</code> 40%", expr: "color-mix(in srgb, var(--shot-bar-text) 40%, transparent)", min: 4.5 },
+  { group: "B · .rec-snd.off 关闭态弱字", name: "候选 B1 提到 56%", expr: "color-mix(in srgb, var(--shot-bar-text) 56%, transparent)", min: 4.5 },
+  { group: "B · .rec-snd.off 关闭态弱字", name: "候选 B2 提到 72%（✅已采用）", expr: "color-mix(in srgb, var(--shot-bar-text) 72%, transparent)", min: 4.5 },
+  { group: "B · .rec-snd.off 关闭态弱字", name: "候选 B3 满不透明（关闭态改由图标/边框表达）", expr: "var(--shot-bar-text)", min: 4.5 },
+];
+
+function measureProbe(host, expr) {
+  const p = document.createElement("span");
+  p.textContent = "探针";
+  p.style.color = expr;
+  host.appendChild(p);
+  const v = ratio(p, "color");        // 复用上面同一函数：同一解析、同一合成、同一条底
+  p.remove();
+  return v;
+}
+
+function sweep() {
+  const bar = $("a-bar");
+  const prev = document.documentElement.dataset.theme || "ocean";
+  const cols = THEMES.map(() => []);
+  THEMES.forEach((t, ti) => {
+    document.documentElement.dataset.theme = t;
+    SWEEP_ROWS.forEach((r, ri) => { cols[ti][ri] = measureProbe(bar, r.expr); });
+  });
+  document.documentElement.dataset.theme = prev;   // 量完复位，别把用户看着的主题改了
+
+  const tb = $("sweep-table");
+  tb.innerHTML = "<tr><th>色（表达式）</th>" + THEMES.map((t) => `<th>${t}</th>`).join("") + "</tr>";
+  let lastGroup = null;
+  SWEEP_ROWS.forEach((r, ri) => {
+    if (r.group !== lastGroup) {
+      const trh = document.createElement("tr");
+      trh.innerHTML = `<td colspan="${THEMES.length + 1}" style="font-weight:700">${r.group}（判据 ≥${r.min}:1）</td>`;
+      tb.appendChild(trh);
+      lastGroup = r.group;
+    }
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${r.name}</td>` + cols.map((c) => {
+      const v = c[ri];
+      return `<td class="${v >= r.min ? "pass" : "fail"} num">${v.toFixed(2)}</td>`;
+    }).join("");
+    tb.appendChild(tr);
+  });
+  const verdict = $("sweep-verdict");
+  const fails = (ri) => THEMES.filter((_, ti) => cols[ti][ri] < SWEEP_ROWS[ri].min);
+  const plain = (s) => s.replace(/<[^>]+>/g, "").trim();
+  const curA = fails(0), curB = fails(4);
+  const passing = SWEEP_ROWS.map((r, ri) => ({ r, ri }))
+    .filter(({ ri }) => ri !== 0 && ri !== 4 && fails(ri).length === 0)
+    .map(({ r }) => plain(r.name));
+  verdict.innerHTML =
+    `实测：<code>.rec-glass-lnk</code>（A 首行，即现网「✕ 退出」的字色）在 <b>${curA.length}/6</b> 个主题不过 4.5:1` +
+    (curA.length ? `（${curA.join("、")}）` : "") + `；<code>.rec-snd.off</code>（B 首行，关闭态弱字）在 <b>${curB.length}/6</b> 个主题不过。` +
+    `两行都是<b>现网既有缺陷</b>——甲案把「开始录制」提到预览态，等于把这两条既有色推到最高频路径上，所以同批要修。` +
+    `<br>全 6 主题都过的候选：<b>${passing.join(" / ") || "（无，需再加档）"}</b>。`;
+}
+sweep();
+requestAnimationFrame(() => { paint(); checkAll(); });
+setTimeout(checkAll, 400);                 // 字体落地后再量一次
+</script>
+</body>
+</html>
