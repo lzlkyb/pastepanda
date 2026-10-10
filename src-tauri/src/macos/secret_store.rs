@@ -12,6 +12,7 @@ const DUPLICATE: i32 = -25299;
 extern "C" {
     fn pp_mac_keychain_read(key: *mut u8, capacity: usize) -> i32;
     fn pp_mac_keychain_create(key: *const u8, length: usize) -> i32;
+    fn pp_mac_keychain_authorize(key: *mut u8, capacity: usize) -> i32;
 }
 /// Serialize key loading. Keychain calls are noninteractive, including the first call.
 #[derive(Default)]
@@ -40,7 +41,25 @@ fn local_key(create: bool) -> Result<[u8; 32], String> {
         .get(create, load_key)
 }
 fn keychain_error(status: i32) -> String {
-    format!("无法访问 PastePanda 钥匙串密钥（{status}）；启动时不会弹出认证窗口；需要加密的功能暂不可用。请在钥匙串访问中授权此应用后重启。")
+    format!("无法访问 PastePanda 钥匙串密钥（{status}）；启动时不会弹出认证窗口。请主动开启 MCP，并在 macOS 钥匙串窗口中确认此应用的访问；取消验证不会修改原密钥。")
+}
+/// Explicit user action only. The cache mutex serializes interactive access with
+/// background encryption so its temporary policy cannot leak into other callers.
+pub fn authorize_access() -> Result<(), String> {
+    let mut cache = KEY_CACHE.lock().map_err(|_| "加密密钥缓存不可用，请重启应用")?;
+    if cache.key.is_some() { return Ok(()); }
+    match read_key() {
+        Ok(key) => { cache.key = Some(key); return Ok(()); }
+        // MCP token creation will create a missing key through the normal path.
+        Err(NOT_FOUND) => return Ok(()),
+        Err(-25293 | -25308) => {}
+        Err(status) => return Err(keychain_error(status)),
+    }
+    let mut key = [0u8; 32];
+    let status = unsafe { pp_mac_keychain_authorize(key.as_mut_ptr(), key.len()) };
+    if status != 0 { return Err(keychain_error(status)); }
+    cache.key = Some(key);
+    Ok(())
 }
 fn read_key() -> Result<[u8; 32], i32> {
     let mut key = [0u8; 32];

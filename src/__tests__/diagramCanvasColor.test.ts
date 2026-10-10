@@ -7,7 +7,7 @@ const css = readFileSync("src/styles/theme.css", "utf8");
 describe("流程图画布底色", () => {
   it("所有样式的 color-mix 都不能把场景渐变 --app-bg 当作颜色", () => {
     const invalid: string[] = [];
-    for (const name of readdirSync("src", { recursive: true }).filter((name) => name.endsWith(".css"))) {
+    for (const name of readdirSync("src", { recursive: true, encoding: "utf8" }).filter((name) => name.endsWith(".css"))) {
       const path = `src/${name}`;
       const source = readFileSync(path, "utf8");
       if (/color-mix\(\s*in\s+[^,]+,\s*var\(--app-bg\b/.test(source)) invalid.push(path);

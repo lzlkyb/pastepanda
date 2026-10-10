@@ -649,6 +649,15 @@ async fn mcp_handler(
         .unwrap_or("")
         .to_string();
 
+    // Notifications have no JSON-RPC response. Streamable HTTP requires an empty
+    // 202 even when the method is unknown; dispatch still records any tool access.
+    let notification = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .is_some_and(|request| {
+            request.get("jsonrpc").and_then(|v| v.as_str()) == Some("2.0")
+                && request.get("method").is_some_and(|v| v.is_string())
+                && request.get("id").is_none()
+        });
     let out = super::protocol::dispatch(&ctx.kb, &client, &body).await;
 
     if let Some(draft) = out.audit {
@@ -656,5 +665,9 @@ async fn mcp_handler(
             .record(&client, &draft.tool, &draft.args, draft.ok, &draft.note_ids);
     }
 
-    (StatusCode::OK, Json(out.response)).into_response()
+    if notification {
+        StatusCode::ACCEPTED.into_response()
+    } else {
+        (StatusCode::OK, Json(out.response)).into_response()
+    }
 }

@@ -330,13 +330,17 @@ pub fn mcp_regenerate_token(app: AppHandle, server: State<McpServer>) -> Result<
 ///   “以为没开其实开着”是本功能最不能出的一类状态。
 /// - 关：先写配置、成功了再停。写失败就什么都不动，状态仍然自洽。
 #[tauri::command]
-pub fn mcp_set_enabled(
+pub async fn mcp_set_enabled(
     app: AppHandle,
-    store: State<DataStore>,
-    server: State<McpServer>,
+    store: State<'_, DataStore>,
+    server: State<'_, McpServer>,
     enabled: bool,
 ) -> Result<McpStatus, String> {
     if enabled {
+        #[cfg(target_os = "macos")]
+        tauri::async_runtime::spawn_blocking(crate::macos::secret_store::authorize_access)
+            .await
+            .map_err(|e| format!("钥匙串验证未完成：{e}"))??;
         let token = mcp::token::load_or_create(&app_dir(&app)?)?;
         let port = configured_port(&store);
         let kb = std::sync::Arc::new(mcp::source::AppKbSource::new(app.clone()));

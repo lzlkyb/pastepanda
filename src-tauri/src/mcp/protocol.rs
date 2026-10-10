@@ -190,7 +190,7 @@ pub fn err(id: Value, code: i32, message: impl Into<String>) -> Value {
 
 /// 处理一整个请求体，返回该回给客户端的 JSON。
 ///
-/// **总是返 HTTP 200 + JSON-RPC 体**（鉴权失败除外，那在 `server.rs` 拦）：
+/// 请求返回 HTTP 200 + JSON-RPC 体；通知由 `server.rs` 转为空正文 202：
 /// JSON-RPC 的错误要走 `error` 字段，用 HTTP 状态码代替会让客户端拿不到
 /// `code` 与 `message`。
 /// 一次调用的审计草稿（W3）。`client` 不在这里填——它来自 HTTP 头，
@@ -340,9 +340,7 @@ pub async fn dispatch(
             ok(id, initialize_result(params, &switches, &blurb)).into()
         }
 
-        // 握手完成通知。按规范它是 notification（无 id，不需应答），
-        // 但 HTTP 传输下必须回一个响应体，否则客户端会一直等。
-        // 回 `id: null` 的空结果（同 cc-bridge）。
+        // 通知的占位结果仅供内部 dispatch；HTTP 层不把它发给客户端。
         "notifications/initialized" => ok(Value::Null, json!({})).into(),
 
         // 开关每次现读：所以客户端重连后看到的就是当前的工具表。
