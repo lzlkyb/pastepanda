@@ -12,16 +12,20 @@ import { useKnowledgeReading } from "./useKnowledgeReading";
 import { mobileKnowledgeShareSend } from "@/lib/api/mobileKnowledgeShare";
 import { KnowledgeAssetSheet } from "./KnowledgeAssetSheet";
 import { KnowledgeImageViewer } from "./KnowledgeImageViewer";
+import { useKnowledgeArticleReading } from "./useKnowledgeArticleReading";
+import { KnowledgeArticleReadingNotice } from "./KnowledgeArticleReadingNotice";
 import styles from "./KnowledgeReader.module.css";
 
-export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpenNote, initialNotice, onEdit }: {
+export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpenNote, initialNotice, onEdit, onFillArticle }: {
   noteId: string; onBack: () => void; onCommonChanged?: () => void; active: boolean;
   onOpenNote?: (id: string) => void;
   initialNotice?: MobileFeedback;
   onEdit?: (id: string) => Promise<boolean>;
+  onFillArticle?: (id: string) => void;
 }) {
   const reading = useKnowledgeReading(noteId, active);
   const { note, meta, setMeta, loading, error, missing, newer } = reading;
+  const articleReading = useKnowledgeArticleReading(noteId, active, note?.content || "", reading.reload);
   const article = useRef<HTMLDivElement>(null);
   const restored = useRef<string | null>(null);
   const request = useRef(0);
@@ -139,6 +143,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
       <button type="button" disabled={!note} onClick={() => { setFeedback(null); setLocalImageCount(article.current?.querySelectorAll("[data-local-image]").length || 0); setSheet("more"); }}><MoreHorizontal size={20} aria-hidden="true" /><span>更多</span></button>
     </header>
     <div ref={article} className={styles.scroll} onScroll={event => reading.onScroll(event.currentTarget)}>
+      <KnowledgeArticleReadingNotice article={articleReading} onFill={onFillArticle} onOriginal={href => void followLink(href, false)} />
       {loading && !note && <MobileNotice tone="pending" title="正在读取本机正文…" />}
       {error && <MobileNotice tone="error" title="未能读取笔记" detail={reading.errorDetail} action={<button type="button" onClick={() => void reading.reload()}>重试读取</button>} />}
       {!reading.online && note && <MobileNotice compact tone="info" title="正在阅读本机内容" detail="手机当前离线；外部链接和图片可能无法加载。" />}
@@ -150,7 +155,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
         <p className={styles.meta}>本机内容 · 更新于 {new Date(note.updated_at).toLocaleString()}</p>
         <h1>{note.title || "未命名笔记"}</h1>
         {!!note.tags.length && <p className={styles.tags}>{note.tags.map(tag => <span key={tag.id}>#{tag.name}</span>)}</p>}
-        {note.content ? <KnowledgeMarkdown content={note.content} active={active && !image && !sheet} onLink={(href, internal) => void followLink(href, internal)} onHeadings={setHeadings} onMissingImage={(src, reload) => { reloadImage.current = reload; setAsset({ noteId, src }); }} onImage={(src, alt) => setImage({ src, alt })} /> : <p className={styles.meta}>这篇笔记还没有正文。</p>}
+        {note.content ? <KnowledgeMarkdown content={note.content} active={active && !image && !sheet} onLink={(href, internal) => void followLink(href, internal)} onHeadings={setHeadings} onMissingImage={(src, reload) => { reloadImage.current = reload; setAsset({ noteId, src }); }} onImage={(src, alt) => setImage({ src, alt })} articleImages={articleReading.sources} onArticleImage={articleReading.recover} /> : <p className={styles.meta}>这篇笔记还没有正文。</p>}
       </article>}
     </div>
     <footer className={styles.footer}>

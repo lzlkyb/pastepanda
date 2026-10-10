@@ -225,7 +225,7 @@ const ARTICLE_ROOT_SELECTORS: [&str; 4] = ["#js_content", "article", "main", "[r
 /// 正文：只定位**根节点并返回它的 HTML**——导航/脚本/隐藏节点的清洗不在这里做，
 /// 前端 htmlToMarkdown 是所有 HTML（CF_HTML + 抓取页）唯一的清洗出口（规则 #11）。
 /// 纯函数，供单测直接喂 HTML。
-fn extract_article_from_html(body: &str) -> (String, String, String) {
+pub(crate) fn extract_article_from_html(body: &str) -> (String, String, String) {
     use scraper::{Html, Selector};
 
     let doc = Html::parse_document(body);
@@ -296,7 +296,7 @@ fn is_fetchable_url(url: &str) -> bool {
 /// 审查 backlog：#14 抓取 SSRF 防护 —— 剪贴板诱饵 URL 可能指向内网/保留地址
 /// （localhost、192.168.*、10.* 等），抓取就等于替攻击者探测内网。这里拦截字面 IP
 /// 的私有段与常见保留主机名（域名不解析，避免 DNS rebinding 面扩大）。
-fn url_host_blocked(url: &str) -> bool {
+pub(crate) fn url_host_blocked(url: &str) -> bool {
     let Ok(u) = reqwest::Url::parse(url.trim()) else {
         return true;
     };
@@ -346,7 +346,7 @@ fn url_host_blocked(url: &str) -> bool {
 ///
 /// 为何不简单地 `Policy::none()`：http→https 的重定向太普遍，
 /// 一律禁掉会让这个功能对一大片站点失效。
-fn build_fetch_client() -> Result<reqwest::Client, String> {
+pub(crate) fn build_fetch_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 {
@@ -370,7 +370,7 @@ fn build_fetch_client() -> Result<reqwest::Client, String> {
 /// 抓取 URL（带流式限流），返回 (重定向后的最终 URL, 响应体文本)。
 /// 审查 backlog：#6 流式限流 —— 先看 Content-Length 快速拒绝，再边读边计数，
 /// 恶意大页不会整块进内存（此前先全量下载再判上限）。
-async fn fetch_page_and_body(
+pub(crate) async fn fetch_page_and_body(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<(String, String), String> {

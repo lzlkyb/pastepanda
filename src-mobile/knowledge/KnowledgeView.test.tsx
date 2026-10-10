@@ -34,6 +34,8 @@ beforeEach(() => {
     const args = input as { id: string; noteId: string; draft: MobileKnowledgeDraft & MobileKnowledgeEditDraft };
     switch (command) {
       case "mobile_knowledge_list": return { items: notes.map(n => ({ ...n, excerpt: n.content, folder_name: null, ...metadata })), has_more: false };
+      case "mobile_article_pending": return [];
+      case "mobile_article_for_note": return null;
       case "note_get": return notes.find(n => n.id === args.id) || null;
       case "mobile_knowledge_meta": case "mobile_knowledge_visit": return metadata;
       case "mobile_knowledge_draft_get": return draft;
@@ -52,6 +54,23 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("reopening an unconsumed article share uses article preview again",async()=>{
+  const source=inbox([{...incoming,text:"https://example.com/article"}]);
+  const baseline=vi.mocked(invoke).getMockImplementation()!;
+  const task={id:"article",revision:1,url:source.items[0].text,title:"文章标题",author:"",html:"",body:"已取得的正文",remarks:"",folder_id:null,tag_ids:[],images:[],source_ids:[incoming.id],error:"",note_id:null,duplicate_note_id:null,saved_link_only:false,baseline_title:"",baseline_content:""};
+  vi.mocked(invoke).mockImplementation(async(command,args)=>{
+    if(command==="mobile_article_begin")return task;
+    if(command==="mobile_article_pending")return [task];
+    return baseline(command,args);
+  });
+  render(<KnowledgeView active inbox={source}/>);
+  await screen.findByRole("region",{name:"收藏文章"});
+  fireEvent.click(screen.getByRole("button",{name:"返回"}));
+  fireEvent.click(await screen.findByRole("button",{name:"查看收集内容"}));
+  await screen.findByRole("region",{name:"收藏文章"});
+  expect(screen.queryByRole("dialog",{name:"收集内容预览"})).toBeNull();
+  expect(source.acknowledge).not.toHaveBeenCalled();
+});
 
 it("quick saving a share opens the saved note; failed queue cleanup cannot create a duplicate", async () => {
   const source = inbox([incoming]);
@@ -88,6 +107,7 @@ it("a lost quick-save reply recovered in the editor never saves a later unrelate
   await screen.findByText("已保存到手机");
   fireEvent.click(screen.getByRole("button", { name: /^返回$/ }));
   fireEvent.click(screen.getByRole("button", { name: "新建" }));
+  fireEvent.click(screen.getByRole("button", { name: "写笔记" }));
   fireEvent.change(await screen.findByLabelText("内容", { exact: true }), { target: { value: "草稿B，不应由分享A保存" } });
   fireEvent.click(screen.getByRole("button", { name: "查看收集内容" }));
   fireEvent.click(screen.getByRole("button", { name: "重试清理收集状态" }));

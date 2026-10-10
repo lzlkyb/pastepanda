@@ -1,4 +1,6 @@
 .root { height: 100%; min-width: 0; container-type: size; container-name: knowledge; }
+.root[hidden] { display:none; }
+.newActions { display:grid; gap:8px; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr); height: 100%; min-height: 0; }
 .workspace[hidden] { display: none; }
 .listPane, .editor { display: flex; flex-direction: column; min-height: 0; height: 100%; min-width: 0; }

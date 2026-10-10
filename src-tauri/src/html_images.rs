@@ -22,7 +22,7 @@ pub(crate) static IMG_SRC_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?i)<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap());
 
 /// 单个 `<img …>` 标签（用于整标签改写，而非只抓属性值）。
-static IMG_TAG_RE: LazyLock<Regex> =
+pub(crate) static IMG_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)<img\b[^>]*>").unwrap());
 
 /// 标签内带值的属性（name="v" / name='v' / name=裸值）。
@@ -195,7 +195,7 @@ fn img_attrs(tag: &str) -> Vec<(String, String)> {
 
 /// 从 `<img …>` 标签里取出真实图片地址：data-src 优先（懒加载真实地址），
 /// 其次 src；两者都空/缺失返回 None。
-fn img_tag_src(tag: &str) -> Option<String> {
+pub(crate) fn img_tag_src(tag: &str) -> Option<String> {
     let attrs = img_attrs(tag);
     let pick = |want: &str| {
         attrs
@@ -209,7 +209,7 @@ fn img_tag_src(tag: &str) -> Option<String> {
 
 /// 重建 `<img …>` 标签：src 指向本地文件、丢弃 data-src，其余属性
 /// （alt/class 等，前端转换器要用 alt）按原顺序保留。
-fn rewrite_img_tag(tag: &str, new_src: &str) -> String {
+pub(crate) fn rewrite_img_tag(tag: &str, new_src: &str) -> String {
     let mut out = String::from("<img");
     for (name, value) in img_attrs(tag) {
         if name == "src" || name == "data-src" {

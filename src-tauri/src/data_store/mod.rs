@@ -18,6 +18,7 @@ mod note_access;
 mod mobile_knowledge;
 mod mobile_knowledge_draft;
 mod mobile_knowledge_edit;
+pub(crate) mod mobile_article;
 mod note_ai;
 mod note_daily;
 mod note_folder;
@@ -65,6 +66,8 @@ mod tests_events;
 mod tests_pulse;
 #[cfg(test)]
 mod tests_mobile_knowledge;
+#[cfg(test)]
+mod tests_mobile_article;
 #[cfg(test)]
 mod tests_mobile_knowledge_edit;
 
@@ -120,6 +123,7 @@ pub use note::{
 pub use note_ai::{parse_ai_tags, AI_TAG_SOURCE};
 pub use mobile_knowledge::{MobileKnowledgeOptions, MobileKnowledgePage, MobileNoteMeta, MobileNoteSummary};
 pub use mobile_knowledge_draft::MobileKnowledgeDraft;
+pub use mobile_article::{MobileArticle, MobileArticleFields, MobileArticleImage};
 pub use mobile_knowledge_edit::{MobileKnowledgeEditDraft, MobileKnowledgeEditResult};
 pub use note_daily::DailyAppend;
 pub use note_folder::{NoteFolder, MAX_FOLDER_DEPTH};
@@ -801,6 +805,7 @@ impl DataStore {
         )?;
         mobile_knowledge_edit::init_mobile_knowledge_edit_schema(&conn)?;
         mobile_knowledge_draft::init_mobile_knowledge_draft_schema(&conn)?;
+        mobile_article::init_mobile_article_schema(&conn)?;
 
         // 笔记全文索引。**常规 FTS5，不是外部内容表**——同 history_fts 的取舍
         // （见下方 history_fts 那段长注释：外部内容表与「手工塞 ngram 串」根本矛盾）。
