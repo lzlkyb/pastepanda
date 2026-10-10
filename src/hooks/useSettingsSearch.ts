@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef, useLayoutEffect, type RefObject } from "react";
-import { aliasesFor, warnStaleAliasKeys } from "@/lib/settings-aliases";
+import { aliasesFor, warnStaleAliasKeys, SETTING_SECTION_ALIASES } from "@/lib/settings-aliases";
 import styles from "@/components/Settings.module.css";
 
 /**
@@ -224,7 +224,8 @@ export function useSettingsSearch(): SettingsSearch {
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
         const title = sectionTitleOf(el);
-        sectionHit = kw !== "" && title.toLowerCase().includes(kw);
+        sectionHit = kw !== "" && [title, ...(SETTING_SECTION_ALIASES[title] ?? [])]
+          .some((name) => name.toLowerCase().includes(kw));
         cur = { el, title, direct: 0, shown: 0, titleHit: sectionHit };
         heads.push(cur);
         continue;

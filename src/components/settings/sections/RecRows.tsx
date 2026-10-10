@@ -207,7 +207,7 @@ export function SaveDirRow({ value, onPick }: { value: string; onPick: (dir: str
       <SettingTile hue="save">📁</SettingTile>
       <div className={styles.sRowBody}>
         <div className={styles.sRowLabel}>保存目录</div>
-        <div className={styles.sRowDesc}>{value || "默认「视频\\PastePanda\\」"}</div>
+        <div className={styles.sRowDesc}>{value || "默认保存到系统视频目录中的 PastePanda 文件夹"}</div>
       </div>
       <button type="button" className={styles.sSegText} onClick={() => void pick()}>
         更改

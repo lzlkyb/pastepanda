@@ -221,6 +221,8 @@
 /* 元信息条 */
 .code-meta-bar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
@@ -231,16 +233,31 @@
 
 .code-meta-left {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
 }
 
 .code-meta-item {
   display: flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.code-meta-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-meta-right > * {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .code-meta-label {

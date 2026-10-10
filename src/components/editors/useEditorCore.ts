@@ -3,6 +3,7 @@ import { useToast } from "@/components/Toast";
 import { pasteTextGuarded } from "@/lib/api";
 import { useAppStore, type HistoryItem } from "@/stores/appStore";
 import type { EditorActions } from "@/lib/editorRegistry";
+import { persistEditorSource } from "@/lib/editorSource";
 
 /**
  * 文本类编辑器共享核心（方案 A）：
@@ -49,25 +50,18 @@ export function useEditorCore(item: HistoryItem, registerActions: (a: EditorActi
 
   /** 保存：invoke + 乐观更新 + top-200 刷新（修复 C12：基于回调时刻最新 state） */
   const save = useCallback(async (): Promise<boolean> => {
-    // 工具模式合成条目：库里没有这条 id，保存 = 写回剪贴板（见 lib/toolEditors.ts）。
-    const { isToolItemId } = await import("@/lib/toolEditors");
-    if (isToolItemId(item.id)) {
-      try {
-        await navigator.clipboard.writeText(textRef.current);
-        toast("已复制到剪贴板", "success");
-        return true;
-      } catch {
-        toast("复制失败", "error");
-        return false;
-      }
-    }
+    const snapshot = textRef.current;
     try {
+      const target = await persistEditorSource(item.id, snapshot);
+      if (target === "clipboard") {
+        toast("已复制到剪贴板", "success");
+        return textRef.current === snapshot;
+      }
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("update_history", { id: item.id, text: textRef.current });
       // 乐观更新 — 基于最新 state 函数式更新（text 影响搜索过滤，同步清 _filterCache）
       useAppStore.setState((s) => ({
         history: s.history.map((h) =>
-          h.id === item.id ? { ...h, text: textRef.current, md5: undefined } : h
+          h.id === item.id ? { ...h, text: snapshot, md5: undefined } : h
         ),
         _filterCache: null,
       }));
@@ -84,7 +78,7 @@ export function useEditorCore(item: HistoryItem, registerActions: (a: EditorActi
         }));
       }).catch(() => {});
       toast("已保存", "success");
-      return true;
+      return textRef.current === snapshot;
     } catch (e) {
       toast("保存失败: " + (e instanceof Error ? e.message : String(e)), "error");
       return false;
