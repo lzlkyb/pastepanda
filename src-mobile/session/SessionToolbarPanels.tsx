@@ -27,10 +27,10 @@ export function SessionToolbarPanels({ panel, onBack, onClose, onScreen, onExit,
     inputReady = true, canControl = true, pointerMode = "trackpad", onEnd, ending, endError, waiting = false } = props;
   const title = panel === "screen" ? "画面" : panel === "more" ? "更多" : waiting ? "取消连接申请" : "断开连接？";
   const footer = panel === "screen" ? <>
-    <SessionSettingFeedback state={settings?.items.quality} onRetry={() => void settings?.retry("quality")} />
+    <SessionSettingFeedback state={settings?.feedbackItems.quality} onRetry={() => void settings?.retry("quality")} onDismiss={() => settings?.dismiss("quality")} />
     {orientationHint && <MobileNotice compact tone="error" title="显示方向未能切换" detail={orientationHint} onDismiss={onOrientationHintDismiss} />}
-  </> : panel === "more" && settings?.items.audio
-    ? <SessionSettingFeedback state={settings.items.audio} onRetry={() => void settings.retry("audio")} /> : undefined;
+  </> : panel === "more" && settings?.feedbackItems.audio
+    ? <SessionSettingFeedback state={settings.feedbackItems.audio} onRetry={() => void settings.retry("audio")} onDismiss={() => settings.dismiss("audio")} /> : undefined;
   return <MobileSheet open={panel !== null && panel !== "mode"} title={title} onClose={onClose} onBack={onBack}
     description={panel === "end" && !waiting ? "结束会话后返回设备，电脑上的工作会继续保留。" : undefined} footer={footer}>
     {panel === "screen" && <div className={styles.panelActions}>

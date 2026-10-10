@@ -263,7 +263,7 @@ export function RcMobileSession({
           onFunctionKey={(vk) => input.sendKeyPair(vk)}
           keyMode={keyMode}
           onPickKeyMode={pickKeyMode}
-          setting={settings.items.key_mode} onRetryMode={() => void settings.retry("key_mode")}
+          setting={settings.feedbackItems.key_mode} onRetryMode={() => void settings.retry("key_mode")} onSettingDismiss={() => settings.dismiss("key_mode")}
         />
       }
 

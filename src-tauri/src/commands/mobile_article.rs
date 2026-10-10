@@ -40,6 +40,14 @@ pub fn mobile_article_pending(store: State<DataStore>) -> Result<Vec<MobileArtic
     store.mobile_article_pending()
 }
 #[tauri::command]
+pub fn mobile_article_discard(
+    store: State<DataStore>,
+    id: String,
+    revision: u32,
+) -> Result<(), String> {
+    store.mobile_article_discard(&id, revision)
+}
+#[tauri::command]
 pub fn mobile_article_for_note(
     store: State<DataStore>,
     id: String,

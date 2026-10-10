@@ -43,6 +43,57 @@ fn fields(task: &MobileArticle, body: &str) -> MobileArticleFields {
 }
 
 #[test]
+fn article_discard_is_durable_and_a_late_fetch_cannot_revive_it() {
+    let store = make_store();
+    let task = store.mobile_article_begin("https://example.com/discard").unwrap();
+    let other = store.mobile_article_begin("https://example.com/keep").unwrap();
+    store.mobile_article_discard(&task.id, task.revision).unwrap();
+    assert!(store.mobile_article_get(&task.id).is_err());
+    // A committed deletion whose reply was lost must be safely repeatable.
+    store.mobile_article_discard(&task.id, task.revision).unwrap();
+    assert!(store.mobile_article_fetched(&task, task.clone()).is_err());
+    assert!(store.mobile_article_put(&task.id, &fields(&task, "迟到修改")).is_err());
+    assert_eq!(store.mobile_article_pending().unwrap().len(), 1);
+    assert_eq!(store.mobile_article_get(&other.id).unwrap().id, other.id);
+    let fresh = store.mobile_article_begin(&task.url).unwrap();
+    assert_ne!(fresh.id, task.id, "discard also releases the URL ownership mapping");
+}
+
+#[test]
+fn article_discard_rejects_stale_revision_and_preserves_saved_notes_and_metadata() {
+    let store = make_store();
+    let task = store.mobile_article_begin("https://example.com/guard").unwrap();
+    let changed = store.mobile_article_put(&task.id, &fields(&task, "新的正文")).unwrap();
+    assert!(store.mobile_article_discard(&task.id, task.revision).is_err());
+    assert_eq!(store.mobile_article_get(&task.id).unwrap().body, changed.body);
+    let note = store.mobile_article_save(&task.id, changed.revision, false).unwrap();
+    let saved = store.mobile_article_get(&task.id).unwrap();
+    assert!(store.mobile_article_discard(&task.id, saved.revision).is_err());
+    assert_eq!(store.note_get(&note.id).unwrap().unwrap().content, note.content);
+    assert_eq!(store.mobile_article_for_note(&note.id).unwrap().unwrap().id, task.id);
+}
+
+#[test]
+fn article_discard_does_not_consume_the_original_share_or_another_articles_assets() {
+    let store = make_store();
+    let task = store.mobile_article_begin("https://example.com/discard-assets").unwrap();
+    let other = store.mobile_article_begin("https://example.com/keep-assets").unwrap();
+    let mut task = store.mobile_article_bind_source(&task.id, "share-original").unwrap();
+    let mut other = other;
+    let image = MobileArticleImage { url: "https://example.com/a.png".into(), local: Some("pp-asset:shared.png".into()), bytes: 12 };
+    task.images.push(image.clone()); other.images.push(image);
+    let task = store.mobile_article_fetched(&task.clone(), task).unwrap();
+    let other = store.mobile_article_fetched(&other.clone(), other).unwrap();
+    store.mobile_article_discard(&task.id, task.revision).unwrap();
+    let conn = store.lock_conn();
+    let removed: i64 = conn.query_row("SELECT COUNT(*) FROM mobile_article_assets WHERE task_id=?", [&task.id], |r| r.get(0)).unwrap();
+    let kept: i64 = conn.query_row("SELECT COUNT(*) FROM mobile_article_assets WHERE task_id=?", [&other.id], |r| r.get(0)).unwrap();
+    assert_eq!(removed, 0);assert_eq!(kept, 1);
+    // The share inbox has no deletion/acknowledgment call in this operation; its
+    // durable receipt is separate from article source IDs and stays available.
+}
+
+#[test]
 fn article_identity_preserves_access_params_and_ignores_query_order() {
     assert_eq!(
         article_url_key("https://example.com/a?sn=secret&mid=1#x").unwrap(),

@@ -1,0 +1,12 @@
+.notice { margin-block: 8px 16px; color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; border-block-end: 1px solid var(--border-color); }
+.toggle, .later { border: 0; background: transparent; font: inherit; min-height: 48px; padding: 8px; color: var(--accent-strong); }
+.toggle { flex: 1 1 10rem; min-width: 0; display: flex; align-items: center; gap: 8px; text-align: left; }
+.toggle span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toggle svg { flex: none; }
+.later { flex: none; white-space: nowrap; }
+.details { padding: 4px 8px 8px; }
+.details p { margin-block: 8px; line-height: 1.5; overflow-wrap: anywhere; }
+.error { color: var(--text-primary); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.toggle:active, .later:active { background: var(--accent-light); }

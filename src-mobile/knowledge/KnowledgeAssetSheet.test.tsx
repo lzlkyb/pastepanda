@@ -6,7 +6,7 @@ import { KnowledgeAssetSheet } from "./KnowledgeAssetSheet";
 import type { ReactNode } from "react";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@/lib/api/mobileKnowledgeAssets", () => ({ mobileKnowledgeAssetFetch: vi.fn(), mobileKnowledgeAssetCancel: vi.fn() }));
-vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ open, children, footer }: { open: boolean; children: ReactNode; footer: ReactNode }) => open ? <aside role="dialog">{children}{footer}</aside> : null }));
+vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ open, children, footer, actions }: { open: boolean; children: ReactNode; footer: ReactNode; actions: ReactNode }) => open ? <aside role="dialog">{children}<div data-testid="feedback">{footer}</div><div data-testid="actions">{actions}</div></aside> : null }));
 const target = { noteId: "note", src: "pp-asset:0123456789abcdef0123456789abcdef.png" };
 const devices = [{ node_id: "knowledge-peer", name: "知识库电脑", paused: false }];
 let syncEnabled = true;
@@ -61,4 +61,21 @@ it("disabled knowledge sync does not use remote-control pairing as a fallback", 
   await screen.findByText("知识库同步已关闭");
   fireEvent.click(screen.getByRole("button", { name: "取得这张图片" }));
   expect(assets.mobileKnowledgeAssetFetch).not.toHaveBeenCalled();
+});
+
+it("failed authorization reads never claim sync is off or there are no computers; retry recovers", async () => {
+  vi.mocked(invoke).mockImplementation(async command => {
+    if (command === "kb_sync_devices") throw new Error("offline");
+    return true;
+  });
+  render(<KnowledgeAssetSheet target={target} active onClose={vi.fn()} onLoaded={vi.fn()} />);
+  await screen.findByText("知识库电脑未能读取");
+  expect(screen.queryByText("知识库同步已关闭")).toBeNull();
+  expect(screen.queryByText("尚未连接知识库电脑")).toBeNull();
+  const retry = screen.getByRole("button", { name: "重新读取电脑" });
+  expect(screen.getByTestId("actions").contains(retry)).toBe(true);
+  vi.mocked(invoke).mockImplementation(async command => command === "kb_sync_devices" ? { devices } : true);
+  fireEvent.click(retry);
+  await waitFor(() => expect((screen.getByRole("button", { name: "取得这张图片" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(screen.getByTestId("actions").contains(screen.getByRole("button", { name: "取得这张图片" }))).toBe(true);
 });

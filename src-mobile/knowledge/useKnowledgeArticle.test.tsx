@@ -1,9 +1,9 @@
 import { act, renderHook, waitFor, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { mobileArticleAckSources, mobileArticleBegin, mobileArticleFetch, mobileArticleGet, mobileArticlePending, mobileArticlePut, mobileArticleSave, type MobileArticle } from "@/lib/api/mobileArticle";
+import { mobileArticleAckSources, mobileArticleBegin, mobileArticleDiscard, mobileArticleFetch, mobileArticleGet, mobileArticlePending, mobileArticlePut, mobileArticleSave, type MobileArticle } from "@/lib/api/mobileArticle";
 import { useKnowledgeArticle } from "./useKnowledgeArticle";
 
-vi.mock("@/lib/api/mobileArticle", () => ({ mobileArticleAckSources:vi.fn(),mobileArticleBegin:vi.fn(),mobileArticleFetch:vi.fn(),mobileArticleGet:vi.fn(),mobileArticlePending:vi.fn(),mobileArticlePut:vi.fn(),mobileArticleSave:vi.fn() }));
+vi.mock("@/lib/api/mobileArticle", () => ({ mobileArticleDiscard:vi.fn(),mobileArticleAckSources:vi.fn(),mobileArticleBegin:vi.fn(),mobileArticleFetch:vi.fn(),mobileArticleGet:vi.fn(),mobileArticlePending:vi.fn(),mobileArticlePut:vi.fn(),mobileArticleSave:vi.fn() }));
 const makeTask = (id="a", fields:Partial<MobileArticle>={}):MobileArticle => ({id,revision:1,url:`https://example.com/${id}`,title:"文章标题",author:"来源",html:"",body:"已取得的正文",remarks:"",folder_id:null,tag_ids:[],images:[],source_ids:[],error:"",note_id:null,duplicate_note_id:null,saved_link_only:false,baseline_title:"",baseline_content:"",...fields});
 beforeEach(() => {
   vi.resetAllMocks();
@@ -12,6 +12,50 @@ beforeEach(() => {
   vi.mocked(mobileArticleBegin).mockImplementation(async url=>makeTask(url.split("/").slice(-1)[0]));
   vi.mocked(mobileArticlePut).mockImplementation(async (id,fields)=>({...makeTask(id),...fields,revision:fields.revision+1}));
   vi.mocked(mobileArticleGet).mockImplementation(async id=>makeTask(id));
+  vi.mocked(mobileArticleDiscard).mockResolvedValue(undefined);
+});
+
+it("discard removes only its durable task and preserves incoming shares",async()=>{
+  const acknowledge=vi.fn();
+  const inbox={items:[{id:"share-a"}],acknowledge} as unknown as Parameters<typeof useKnowledgeArticle>[1];
+  const hook=renderHook(()=>useKnowledgeArticle(true,inbox,vi.fn()));
+  await act(async()=>{await hook.result.current.begin("https://example.com/a");});
+  act(()=>hook.result.current.change("remarks","不想保存的修改"));
+  await act(async()=>{expect(await hook.result.current.discard("a")).toBe(true);});
+  expect(mobileArticleDiscard).toHaveBeenCalledWith("a",1);
+  expect(hook.result.current.open).toBe(false);expect(hook.result.current.task).toBeNull();
+  expect(mobileArticlePut).not.toHaveBeenCalled();expect(acknowledge).not.toHaveBeenCalled();
+});
+
+it("discard during fetching cannot revive the preview when its late reply arrives",async()=>{
+  let reply!:(value:MobileArticle)=>void;
+  vi.mocked(mobileArticleBegin).mockResolvedValue(makeTask("a",{body:""}));
+  vi.mocked(mobileArticleFetch).mockImplementation(()=>new Promise(done=>{reply=done;}));
+  const hook=renderHook(()=>useKnowledgeArticle(true,undefined,vi.fn()));
+  act(()=>{void hook.result.current.begin("https://example.com/a");});
+  await waitFor(()=>expect(mobileArticleFetch).toHaveBeenCalledWith("a"));
+  await act(async()=>{expect(await hook.result.current.discard("a")).toBe(true);await hook.result.current.begin();});
+  await act(async()=>{reply(makeTask("a",{body:"迟到正文"}));});
+  expect(hook.result.current.task).toBeNull();expect(hook.result.current.open).toBe(true);
+});
+
+it("stale confirmation and saved tasks cannot discard another capture or note",async()=>{
+  const hook=renderHook(()=>useKnowledgeArticle(true,undefined,vi.fn()));
+  await act(async()=>{await hook.result.current.begin("https://example.com/b");expect(await hook.result.current.discard("a")).toBe(false);});
+  vi.mocked(mobileArticleGet).mockResolvedValue(makeTask("b",{note_id:"note-b",saved_link_only:true}));
+  await act(async()=>{await hook.result.current.begin(undefined,undefined,"b");expect(await hook.result.current.discard("b")).toBe(false);});
+  expect(mobileArticleDiscard).not.toHaveBeenCalled();expect(hook.result.current.task?.note_id).toBe("note-b");
+});
+
+it("failed deletion retains preview and refreshes its durable revision for an explicit retry",async()=>{
+  const hook=renderHook(()=>useKnowledgeArticle(true,undefined,vi.fn()));
+  await act(async()=>{await hook.result.current.begin("https://example.com/a");});
+  vi.mocked(mobileArticleDiscard).mockRejectedValueOnce(new Error("文章收集已更新"));
+  vi.mocked(mobileArticleGet).mockResolvedValue(makeTask("a",{revision:2,title:"新标题"}));
+  await act(async()=>{expect(await hook.result.current.discard("a")).toBe(false);});
+  expect(hook.result.current.open).toBe(true);expect(hook.result.current.task?.revision).toBe(2);expect(hook.result.current.error).toContain("已更新");
+  await act(async()=>{expect(await hook.result.current.discard("a")).toBe(true);});
+  expect(mobileArticleDiscard).toHaveBeenLastCalledWith("a",2);
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { htmlToMarkdown } from "@/lib/notes/htmlToMd";
 import { knowledgeArticleErrorText } from "@/lib/utils";
-import { mobileArticleAckSources, mobileArticleBegin, mobileArticleFetch, mobileArticleGet, mobileArticlePending, mobileArticlePut, mobileArticleSave, type MobileArticle, type MobileArticleFields } from "@/lib/api/mobileArticle";
+import { mobileArticleAckSources, mobileArticleBegin, mobileArticleDiscard, mobileArticleFetch, mobileArticleGet, mobileArticlePending, mobileArticlePut, mobileArticleSave, type MobileArticle, type MobileArticleFields } from "@/lib/api/mobileArticle";
 import type { MobileKnowledgeIncoming } from "@/lib/api/mobileKnowledgeShare";
 import type { useKnowledgeInbox } from "./useKnowledgeInbox";
 
@@ -65,7 +65,9 @@ export function useKnowledgeArticle(active: boolean, inbox: ReturnType<typeof us
     const id = current.current.id, token = epoch.current;
     try {
       if (!await flush()) return;
-      const result = await convert(await mobileArticleFetch(id));
+      const fetched = await mobileArticleFetch(id);
+      if (epoch.current !== token || current.current?.id !== id) return;
+      const result = await convert(fetched);
       if (epoch.current === token && current.current?.id === id) { accept(result); if (result.error) setError(knowledgeArticleErrorText(result.error)); }
     } catch (cause) { if (epoch.current === token) setError(knowledgeArticleErrorText(cause)); }
     finally { if (epoch.current === token) { locked.current = false; setBusy(false); } void refresh(); }
@@ -93,6 +95,34 @@ export function useKnowledgeArticle(active: boolean, inbox: ReturnType<typeof us
     if (committing.current) return;
     if (dirty.current && !await flush()) return;
     visible.current = false; ++epoch.current; locked.current = false; setBusy(false); setOpen(false); void refresh();
+  };
+  const discard = async (id: string): Promise<boolean> => {
+    if (committing.current || current.current?.id !== id || current.current.note_id || current.current.duplicate_note_id) return false;
+    committing.current = true; locked.current = true; ++epoch.current;
+    setBusy(true); setSaving(true); setError("");
+    clearTimeout(timer.current);
+    try {
+      // A pending metadata write owns the revision. Wait for it, but do not save
+      // unsent edits that the user has explicitly chosen to discard.
+      if (writes.current) { try { await writes.current; } catch { /* Backend revision guard remains authoritative. */ } writes.current = null; }
+      const snapshot = current.current;
+      if (!snapshot || snapshot.id !== id) return false;
+      await mobileArticleDiscard(id, snapshot.revision);
+      dirty.current = false; ++generation.current; ++epoch.current;
+      visible.current = false; locked.current = false; incoming.current = null;
+      accept(null); setBusy(false); setOpen(false); await refresh();
+      return true;
+    } catch (cause) {
+      setError(`放弃结果尚未确认：${knowledgeArticleErrorText(cause)}。可以重新确认放弃。`);
+      // An in-flight fetch/save may have advanced the durable receipt. A failed
+      // discard requires a new explicit confirmation against that current task.
+      try {
+        const receipt = await mobileArticleGet(id), local = current.current;
+        accept(dirty.current && local?.id === id ? { ...receipt, title: local.title, body: local.body, remarks: local.remarks, folder_id: local.folder_id, tag_ids: local.tag_ids } : receipt);
+        setError(`文章收集仍保留：${knowledgeArticleErrorText(cause)}`);
+      } catch { /* Keep local preview while the receipt is unavailable. */ }
+      return false;
+    } finally { committing.current = false; locked.current = false; setBusy(false); setSaving(false); }
   };
   const finish = async (id: string, message: string) => {
     const sources = [...new Set([...(current.current?.source_ids || []), ...(incoming.current ? [incoming.current] : [])])].filter(id => inbox?.items.some(item=>item.id===id));
@@ -131,5 +161,5 @@ export function useKnowledgeArticle(active: boolean, inbox: ReturnType<typeof us
     catch (cause) { setError(knowledgeArticleErrorText(cause)); }
     finally { committing.current = false; setSaving(false); locked.current = false; setBusy(false); }
   };
-  return { open, task, pending, busy, saving, error, change, begin, close, fetch, save, existing, refresh };
+  return { open, task, pending, busy, saving, error, change, begin, close, discard, fetch, save, existing, refresh };
 }

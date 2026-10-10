@@ -37,6 +37,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it("输入法缩小视口不会把竖屏页面和会话工具改成横屏", () => {
   render(<Harness />);
   expect(screen.getByText("竖屏")).toBeTruthy();
+  expect(document.documentElement.dataset.mobileShortViewport).toBe("false");
   act(() => {
     landscape.matches = true;
     landscape.dispatchEvent(new Event("change"));
@@ -45,11 +46,13 @@ it("输入法缩小视口不会把竖屏页面和会话工具改成横屏", () =
   });
   expect(document.documentElement.dataset.mobileLayout).toBe("portrait");
   expect(document.documentElement.dataset.mobileKeyboard).toBe("true");
+  expect(document.documentElement.dataset.mobileShortViewport).toBe("true");
   expect(document.documentElement.style.getPropertyValue("--mobile-viewport-height")).toBe("430px");
   expect(document.documentElement.style.getPropertyValue("--mobile-viewport-top")).toBe("12px");
   expect(screen.getByText("竖屏")).toBeTruthy();
   act(() => { viewport.height = 844; viewport.dispatchEvent(new Event("resize")); });
   expect(document.documentElement.dataset.mobileKeyboard).toBe("false");
+  expect(document.documentElement.dataset.mobileShortViewport).toBe("false");
 });
 
 it("设备真实旋转时页面和远程工具使用同一个方向", () => {
@@ -74,6 +77,7 @@ it("无屏幕方向 API 的浏览器沿用布局方向，卸载释放标记和�
   viewport.height = 100;
   viewport.dispatchEvent(new Event("resize"));
   expect(document.documentElement.dataset.mobileLayout).toBeUndefined();
+  expect(document.documentElement.dataset.mobileShortViewport).toBeUndefined();
   expect(document.documentElement.style.getPropertyValue("--mobile-viewport-height")).toBe("");
 });
 

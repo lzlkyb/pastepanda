@@ -3,6 +3,7 @@ import { ArrowLeft, Check, Clipboard, Link } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { knowledgeArticleUrl, knowledgeErrorText } from "@/lib/utils";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
 import { KnowledgeMarkdown } from "./KnowledgeMarkdown";
 import { KnowledgeArticleMetadata } from "./KnowledgeArticleMetadata";
@@ -14,6 +15,7 @@ export function KnowledgeArticleView({ article, active }: { article: ReturnType<
   const [url, setUrl] = useState("");
   const [fieldError, setFieldError] = useState("");
   const [linkFeedback, setLinkFeedback] = useState("");
+  const [discardId, setDiscardId] = useState<string | null>(null);
   const clipboardEpoch = useRef(0);
   const input = useRef<HTMLTextAreaElement>(null);
   const task = article.task;
@@ -61,6 +63,7 @@ export function KnowledgeArticleView({ article, active }: { article: ReturnType<
           </article>
           {!duplicate && <KnowledgeArticleMetadata key={task.id} task={task} busy={article.busy} change={article.change} />}
           <button className={ui.textButton} disabled={article.saving} onClick={() => void original(task.url)}><Link size={18} aria-hidden="true" />查看原文</button>
+          {task.note_id || task.duplicate_note_id ? <button className={ui.textButton} disabled={article.saving} onClick={close}>保留原笔记并退出</button> : <button className={ui.textButton} disabled={article.saving} onClick={() => setDiscardId(task.id)}>放弃这次收集</button>}
           {linkFeedback && <MobileNotice compact title={linkFeedback} />}
         </>}
       </div>
@@ -75,5 +78,14 @@ export function KnowledgeArticleView({ article, active }: { article: ReturnType<
         </div>
       </footer>}
     </div>
+    <MobileSheet open={active && !!task && !task.note_id && !task.duplicate_note_id && task.id === discardId} title="放弃文章收集？" onClose={() => setDiscardId(null)} closeDisabled={article.saving} closeBusyLabel="处理中"
+      footer={article.error ? <MobileNotice compact error title="请核对文章收集" detail={article.error} /> : undefined}
+      actions={<>
+        <button type="button" className={ui.secondary} aria-label="保留文章收集" disabled={article.saving} onClick={() => setDiscardId(null)}>保留</button>
+        <button type="button" className={ui.danger} aria-label="确认放弃文章收集" disabled={article.saving || !!task?.note_id || !!task?.duplicate_note_id} onClick={() => { if (discardId) void article.discard(discardId).then(done => { if (done) setDiscardId(null); }); }}>{article.saving ? "处理中" : "放弃"}</button>
+      </>}>
+      <p className={ui.description}>{task?.title || "待收集文章"}</p>
+      <p className={ui.description}>只放弃本次文章收集，原分享内容和已有笔记仍保留。此操作无法撤销。</p>
+    </MobileSheet>
   </section>;
 }

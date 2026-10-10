@@ -1449,6 +1449,7 @@ pub fn run() {
             commands::mobile_article_begin,
             commands::mobile_article_get,
             commands::mobile_article_pending,
+            commands::mobile_article_discard,
             commands::mobile_article_for_note,
             commands::mobile_article_put,
             commands::mobile_article_ack_sources,

@@ -175,6 +175,34 @@ fn article_content(task: &MobileArticle, link_only: bool) -> String {
 }
 
 impl DataStore {
+    pub fn mobile_article_discard(&self, id: &str, revision: u32) -> Result<(), String> {
+        let mut conn = self.lock_conn();
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM mobile_article_tasks WHERE id=?)", [id], |r| r.get(0),
+        ).map_err(|e| e.to_string())?;
+        // Deletion may have committed before an IPC reply was lost. An exact-id
+        // retry acknowledges that result without touching a replacement task.
+        if !exists { return Ok(()); }
+        let task = task_on(&tx, id)?;
+        // A lost save receipt must never turn discard into deletion of a saved
+        // article's metadata. The original note/share are outside this transaction.
+        if task.note_id.is_some() || task.duplicate_note_id.is_some() {
+            return Err("这篇文章已经保存，请保留原笔记并退出".into());
+        }
+        if task.revision != revision {
+            return Err("文章收集已更新，请核对后再次确认放弃".into());
+        }
+        tx.execute("DELETE FROM mobile_article_assets WHERE task_id=?", [id])
+            .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM mobile_article_sources WHERE task_id=?", [id])
+            .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM mobile_article_tasks WHERE id=?", [id])
+            .map_err(|e| e.to_string())?;
+        // Delayed fetches check task_on before writing; removing identity here
+        // prevents their result from recreating a user-discarded queue entry.
+        tx.commit().map_err(|e| e.to_string())
+    }
     pub fn mobile_article_get(&self, id: &str) -> Result<MobileArticle, String> {
         task_on(&self.lock_conn(), id)
     }

@@ -33,5 +33,5 @@ export function useKnowledgeArticleReading(noteId: string, active: boolean, cont
   const recoverAll = async () => {
     for (const image of missing) { if (!await recover(image.url)) break; }
   };
-  return { task, sources, missing: missing.length, busy, error, recover, recoverAll, retry: () => setRetry(v=>v+1) };
+  return { noteId, task, sources, missing: missing.length, busy, error, recover, recoverAll, retry: () => setRetry(v=>v+1) };
 }

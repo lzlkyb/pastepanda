@@ -15,6 +15,7 @@ export const mobileArticleBegin = (url: string, sourceId?: string) => invoke<Mob
 export const mobileArticleGet = (id: string) => invoke<MobileArticle>("mobile_article_get", { id });
 export const mobileArticleAckSources = (id: string, sources: string[]) => invoke<MobileArticle>("mobile_article_ack_sources", { id, sources });
 export const mobileArticlePending = () => invoke<MobileArticle[]>("mobile_article_pending");
+export const mobileArticleDiscard = (id: string, revision: number) => invoke<void>("mobile_article_discard", { id, revision });
 export const mobileArticleForNote = (id: string) => invoke<MobileArticle | null>("mobile_article_for_note", { id });
 export const mobileArticlePut = (id: string, fields: MobileArticleFields) => invoke<MobileArticle>("mobile_article_put", { id, fields: {
   revision: fields.revision, title: fields.title, body: fields.body, remarks: fields.remarks,
