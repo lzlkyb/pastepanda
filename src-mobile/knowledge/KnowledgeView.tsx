@@ -111,9 +111,10 @@ export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onT
           {inbox?.processing && <MobileNotice tone="pending" title="正在整理分享内容…" />}
           {inbox?.error && <MobileNotice error title="待收集内容暂不可用" detail={inbox.error} action={<button className={ui.textButton} onClick={() => void inbox.refresh()}>重新读取</button>} />}
           {inbox?.notice && dismissedInboxNotice !== inbox.notice && <MobileToast placement="flow" compact tone="info" title="收集提示" detail={inbox.notice} onDismiss={() => setDismissedInboxNotice(inbox.notice)} />}
-          <KnowledgePending active={active && !editing && !maintaining && !article.open} draftTitle={draft.draft?.title} editTitle={edit.draft?.title}
+          <KnowledgePending active={active && !editing && !maintaining && !article.open}
+            draft={draft.draft ? { id: draft.draft.id, title: draft.draft.title, busy: draft.saving, locked: draft.locked, error: draft.error, discard: draft.discard, resume: () => { rememberScroll(); setEditing(true); setSelected(null); } } : undefined}
+            edit={edit.draft ? { id: edit.draft.id, title: edit.draft.title, busy: edit.saving, locked: edit.locked, error: edit.error, discard: edit.discard, resume: () => { rememberScroll(); setMaintaining(true); } } : undefined}
             articles={article.pending} incoming={inbox?.items || []}
-            onDraft={() => { rememberScroll(); setEditing(true); setSelected(null); }} onEdit={() => { rememberScroll(); setMaintaining(true); }}
             onArticle={id => { rememberScroll(); void article.begin(undefined, undefined, id); }} onIncoming={() => { rememberScroll(); showCollection(); }} />
           <KnowledgeList items={list.items} loading={list.loading} error={list.error} cancelled={list.cancelled} scrollElement={listScroll} onCancel={list.cancel} hasMore={list.hasMore} view={view} query={query} folder={folder} tag={tag} selected={selected}
             onQuery={value => { setQuery(value); resetScroll(); }} onView={value => { setView(value); resetScroll(); }} onFilter={() => setFilterOpen(true)}

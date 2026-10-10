@@ -6,3 +6,10 @@
 .tasks button { min-height: 48px; border: 0; border-radius: 12px; padding: 12px; background: var(--section-bg); color: var(--text-primary); font: inherit; text-align: left; overflow-wrap: anywhere; }
 .tasks small { display: block; color: var(--text-secondary); font-size: var(--mobile-font-secondary); margin-top: 4px; line-height: 1.5; }
 .summary:active, .tasks button:active { background: var(--accent-light); }
+.draft { display: flex; flex-wrap: wrap; gap: 8px; }
+.draft > button:first-child { flex: 1 1 10rem; min-width: 0; }
+.draft > button > span { display: block; white-space: nowrap; }
+.tasks .discard { color: var(--danger); white-space: nowrap; align-self: stretch; }
+.explanation { flex-basis: 100%; margin: 0; color: var(--text-secondary); font-size: var(--mobile-font-secondary); line-height: 1.5; }
+.title { color: var(--text-primary); font-weight: 600; overflow-wrap: anywhere; margin-block: 0 12px; }
+@media (max-height: 400px) { :global(html[data-mobile-layout="landscape"]) .result { max-height: calc(var(--mobile-viewport-height, 100dvh) * 0.25); overflow-y: auto; } }

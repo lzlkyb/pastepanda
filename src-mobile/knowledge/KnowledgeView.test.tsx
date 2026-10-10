@@ -40,10 +40,12 @@ beforeEach(() => {
       case "mobile_knowledge_meta": case "mobile_knowledge_visit": return metadata;
       case "mobile_knowledge_draft_get": return draft;
       case "mobile_knowledge_draft_put": draft = args.draft; return draft;
+      case "mobile_knowledge_draft_clear": draft = null; return;
       case "mobile_knowledge_draft_commit": { const n = { ...original, id: draft!.id, title: draft!.title, content: draft!.content }; notes.push(n); draft = null; return n; }
       case "mobile_knowledge_edit_get": return edit;
       case "mobile_knowledge_edit_begin": { const n = notes.find(n => n.id === args.noteId)!; edit = { id: "edit", revision: 1, note_id: n.id, base_version: "base", base_note: n, title: n.title, content: n.content, folder_id: null, tag_ids: [], updated_at: "" }; return edit; }
       case "mobile_knowledge_edit_put": edit = args.draft; return edit;
+      case "mobile_knowledge_edit_clear": edit = null; return;
       case "mobile_knowledge_edit_commit": { const n = { ...notes[0], title: edit!.title, content: edit!.content, updated_at: "2026-10-08T09:00:00Z" }; notes[0] = n; edit = null; return { status: "saved", note: n, relinked: 0 }; }
       case "get_kb_sync_status": return false;
       case "kb_sync_devices": return { devices: [], last: [], conflict_backlog: 0 };
@@ -202,4 +204,59 @@ it("从待处理继续草稿后返回，保留列表原滚动位置", async () =
   await screen.findByRole("button", { name: /待处理/ });
   expect(scroll.scrollTop).toBe(221);
   expect(onTaskChange).toHaveBeenLastCalledWith(false);
+});
+
+it("待处理草稿可先取消放弃，再确认清除；原笔记与列表位置保留", async () => {
+  draft = { id: captureId, revision: 1, title: "未完草稿", content: "保留正文" };
+  const { container } = render(<KnowledgeView active />);
+  const summary = await screen.findByRole("button", { name: /待处理/ });
+  const scroll = container.querySelector('[class*="scroll"]') as HTMLElement;
+  scroll.scrollTop = 221;
+  fireEvent.click(summary);
+  fireEvent.click(screen.getByRole("button", { name: "放弃草稿" }));
+  expect(invoke).not.toHaveBeenCalledWith("mobile_knowledge_draft_clear", expect.anything());
+  fireEvent.click(screen.getByRole("button", { name: "保留草稿" }));
+  expect(draft?.content).toBe("保留正文");
+  fireEvent.click(screen.getByRole("button", { name: "放弃草稿" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认放弃草稿" }));
+  await screen.findByText("已放弃草稿");
+  expect(invoke).toHaveBeenCalledWith("mobile_knowledge_draft_clear", { id: captureId, revision: 1 });
+  expect(draft).toBeNull(); expect(notes).toEqual([original]);
+  fireEvent.click(screen.getByRole("button", { name: "关闭面板" }));
+  expect(screen.queryByRole("button", { name: /待处理/ })).toBeNull();
+  expect(scroll.scrollTop).toBe(221);
+});
+
+it("待处理修改可独立放弃，不删除原笔记或另一份新建草稿", async () => {
+  draft = { id: captureId, revision: 1, title: "独立草稿", content: "新内容" };
+  edit = { id: "edit", revision: 3, note_id: original.id, base_version: "base", base_note: original, title: "修改标题", content: "未保存修改", folder_id: null, tag_ids: [], updated_at: "" };
+  render(<KnowledgeView active />);
+  fireEvent.click(await screen.findByRole("button", { name: /待处理 · 2 项/ }));
+  fireEvent.click(screen.getByRole("button", { name: "放弃修改" }));
+  await screen.findByText("原笔记不受影响，仅清除这份未保存的修改。此操作无法撤销。");
+  fireEvent.click(screen.getByRole("button", { name: "确认放弃修改" }));
+  await screen.findByText("已放弃修改");
+  expect(invoke).toHaveBeenCalledWith("mobile_knowledge_edit_clear", { id: "edit", revision: 3 });
+  expect(edit).toBeNull(); expect(draft?.title).toBe("独立草稿"); expect(notes).toEqual([original]);
+  expect(screen.getByRole("button", { name: /继续写/ })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "放弃修改" })).toBeNull();
+});
+
+it("放弃草稿失败在确认处显示错误并可重试，不吞掉恢复入口", async () => {
+  draft = { id: captureId, revision: 1, title: "未完草稿", content: "保留正文" };
+  const baseline = vi.mocked(invoke).getMockImplementation()!;
+  let fail = true;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "mobile_knowledge_draft_clear" && fail) throw new Error("手机存储暂不可用");
+    return baseline(command, args);
+  });
+  render(<KnowledgeView active />);
+  fireEvent.click(await screen.findByRole("button", { name: /待处理/ }));
+  fireEvent.click(screen.getByRole("button", { name: "放弃草稿" }));
+  fireEvent.click(screen.getByRole("button", { name: "确认放弃草稿" }));
+  await screen.findByRole("alert");
+  expect(draft?.content).toBe("保留正文"); expect(notes).toEqual([original]);
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "确认放弃草稿" }));
+  await screen.findByText("已放弃草稿"); expect(draft).toBeNull();
 });
