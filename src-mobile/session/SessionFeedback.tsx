@@ -1,4 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { mobileFeedbackIdentity, mobileFeedbackReadingTime } from "@/lib/utils";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
+import { useMobileFeedbackMotion } from "../ui/useMobileFeedbackMotion";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { MobileSheet } from "../ui/MobileSheet";
 import type { useSessionClipboard } from "./useSessionClipboard";
@@ -10,6 +13,22 @@ import styles from "./SessionFeedback.module.css";
 import { useMobileNoticeTimer } from "../ui/useMobileNoticeTimer";
 
 type Issue = { feedback: MobileFeedback; dismiss: () => void; action?: ReactNode };
+function FeedbackSummary({ issue, compact, count, urgent, onOpen, onFocus, onHover }: {
+  issue: Issue; compact: boolean; count: number; urgent: boolean; onOpen: () => void;
+  onFocus: (value: boolean) => void; onHover: (value: boolean) => void;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  useMobileFeedbackMotion(root, root, issue.feedback.tone);
+  return <div ref={root} className={`${styles.summary} ${compact ? styles.compact : ""}`} role={urgent ? "alert" : "status"} aria-atomic="true"
+    onPointerEnter={() => onHover(true)} onPointerLeave={() => onHover(false)}
+    onFocusCapture={() => onFocus(true)} onBlurCapture={event => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocus(false);
+    }}>
+    <span>{issue.feedback.title}</span>
+    <button type="button" onClick={onOpen}>{count > 1 ? `${count} 条提示` : "详情"}</button>
+    <button type="button" onClick={issue.dismiss} aria-label="关闭提示">关闭</button>
+  </div>;
+}
 /** One compact summary outside the video; details never stack over remote targets. */
 export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSendFailDismiss,
   blocked = false, compact = false, onOpenChange, setting, settings, onSettingDismiss, onSettingOpen,
@@ -29,6 +48,7 @@ export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSend
 }) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const issues: Issue[] = [];
   if (sendFailed) issues.push({ feedback: { tone: "error", title: "输入发送失败", detail: "请检查连接；恢复后继续操作。" }, dismiss: onSendFailDismiss });
   if (orient.hint) issues.push({ feedback: { tone: "error", title: "显示方向未能切换", detail: orient.hint }, dismiss: orient.clearHint });
@@ -41,23 +61,20 @@ export function SessionFeedback({ pointer, orient, clipboard, sendFailed, onSend
   if (pointer.hint) issues.push({ feedback: { tone: pointer.hintTone, title: pointer.hint }, dismiss: pointer.clearHint });
   const first = issues.find(issue => issue.feedback.tone === "error") ?? issues.find(issue => issue.feedback.tone === "warning") ?? issues[0];
   const hasIssues = !!first;
-  useEffect(() => { if (!hasIssues) setOpen(false); }, [hasIssues]);
+  useEffect(() => {
+    if (!hasIssues) setOpen(false);
+    if (!hasIssues || blocked) { setFocused(false); setHovered(false); }
+  }, [hasIssues, blocked]);
   const detailsOpen = open && !!first && !blocked;
   useEffect(() => { onOpenChange?.(detailsOpen); return () => onOpenChange?.(false); }, [detailsOpen, onOpenChange]);
   const dismiss = first?.dismiss;
-  const title = first?.feedback.title;
+  const title = first && mobileFeedbackIdentity(first.feedback.tone, first.feedback.title, first.feedback.detail);
   const ordinary = first?.feedback.tone === "info" || first?.feedback.tone === "success";
-  useMobileNoticeTimer(ordinary, title, dismiss ?? (() => {}), blocked || open || focused);
-  if (!first) return null;
+  useMobileNoticeTimer(ordinary, title, dismiss ?? (() => {}), blocked || open || focused || hovered, undefined,
+    mobileFeedbackReadingTime(!!first?.action, !!first?.feedback.detail));
   return <>
-    {!blocked && <div className={`${styles.summary} ${compact ? styles.compact : ""}`} role={first.feedback.tone === "error" ? "alert" : "status"} aria-atomic="true"
-      onFocusCapture={() => setFocused(true)} onBlurCapture={event => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
-      }}>
-      <span>{first.feedback.title}</span>
-      <button type="button" onClick={() => setOpen(true)}>{issues.length > 1 ? `${issues.length} 条提示` : "详情"}</button>
-      <button type="button" onClick={first.dismiss} aria-label="关闭提示">关闭</button>
-    </div>}
+    <MobileFeedbackSlot>{!blocked && first ? <FeedbackSummary issue={first} compact={compact} count={issues.length} urgent={!!sendFailed}
+      onOpen={() => setOpen(true)} onFocus={setFocused} onHover={setHovered} /> : null}</MobileFeedbackSlot>
     <MobileSheet open={detailsOpen} title="会话提示" onClose={() => setOpen(false)}>
       {issues.map((issue, index) => <MobileNotice key={`${index}:${issue.feedback.title}`} {...issue.feedback}
         onDismiss={issue.dismiss} action={issue.action} />)}

@@ -7,7 +7,7 @@ it("文字提交失败保留草稿，失败反馈在输入区可见", async () =
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "保留这段文字" } });
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
   expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("保留这段文字");
-  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("未能提交"));
+  await waitFor(() => expect(screen.getByText("文字未能提交，请重试").closest('[role="status"]')).toBeTruthy());
 });
 it("中文草稿不会逐字发送，明确提交后才发送整串", async () => {
   const send = vi.fn().mockResolvedValue(undefined);
@@ -29,7 +29,7 @@ it("异步失败保留草稿并允许重试，在发送结束前不能重复提�
   expect(send).toHaveBeenCalledTimes(1);
   expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("保留草稿");
   await act(async () => reject(new Error("offline")));
-  expect(screen.getByRole("alert").textContent).toContain("未能提交");
+  expect(screen.getByText("文字未能提交，请重试").closest('[role="status"]')).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "发送" }));
   await waitFor(() => expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(""));
   expect(send).toHaveBeenCalledTimes(2);

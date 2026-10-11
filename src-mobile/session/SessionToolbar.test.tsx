@@ -71,7 +71,7 @@ it("断开必须明确确认，失败仍留在确认面板", async () => {
   fireEvent.click(screen.getByRole("button", { name: "确认断开" }));
   expect(p.onEnd).toHaveBeenCalledTimes(1);
   view.rerender(<SessionToolbar {...p} endError="断开失败" />);
-  expect(screen.getByRole("alert").textContent).toContain("断开失败");
+  expect(screen.getByText("断开失败").closest('[role="status"]')).toBeTruthy();
   expect(screen.getByRole("button", { name: "继续连接" })).toBeTruthy();
 });
 

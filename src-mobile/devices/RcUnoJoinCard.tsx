@@ -49,7 +49,8 @@ export function RcUnoJoinCard({
   const [input, setInput] = useState("");
   const [pass, setPass] = useState("");
   const [showPass, setShowPass] = useState(false);
-  const passHintId = useId();
+  const fieldHintId = useId();
+  const [validatedMode, setValidatedMode] = useState<CredMode | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,6 +63,16 @@ export function RcUnoJoinCard({
   const parsed = useMemo(() => (credMode === "code" ? parseUnoInput(input) : null), [credMode, input]);
   const shapeOk = parsed ? unoCodeShapeOk(parsed.code) : true;
   const passOk = credMode === "pass" && unoPassCharsOk(pass);
+  // Keep incomplete typing neutral; both credential modes share the same validation timing.
+  const fieldError = credMode === "code"
+    ? !parsed ? "认不出无人值守码：请粘 8 位展示码或 PPU- 开头的完整串。"
+      : !shapeOk ? "码里有无效字符（0/O、1/I/L 会自动纠正；其余请核对原码）。" : ""
+    : !passOk ? `密码长度不符合要求，请输入 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。` : "";
+  const showFieldError = validatedMode === credMode && !!fieldError;
+  const fieldHint = showFieldError ? fieldError : credMode === "code"
+    ? "输入 8 位展示码或 PPU- 开头的完整串。"
+    : `密码需为 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。`;
+  const chooseMode = (mode: CredMode) => { setCredMode(mode); setValidatedMode(null); setErr(""); };
 
   // 目标三来源（优先级）：面板锁定的 > 完整串自带的 > 列表里认的
   const target = fixedTarget ?? parsed?.nodeId ?? picked;
@@ -85,10 +96,12 @@ export function RcUnoJoinCard({
       return;
     }
     setErr("");
+    setValidatedMode(null);
     setInput(text);
   };
 
   const connect = async () => {
+    setValidatedMode(credMode);
     if (!canConnect || !target) return;
     setBusy(true);
     setErr("");
@@ -124,9 +137,9 @@ export function RcUnoJoinCard({
       <div className={styles.pairHint}>凭接入码或密码直连无人值守的电脑（电脑前不用有人确认）</div>
 
       <div className={styles.unoModes} role="radiogroup" aria-label="凭证类型">
-        <MobileChoice value="code" checked={credMode === "code"} disabled={busy} onSelect={() => setCredMode("code")}
+        <MobileChoice value="code" checked={credMode === "code"} disabled={busy} onSelect={() => chooseMode("code")}
           title="接入码" description="使用电脑提前提供的接入码" />
-        <MobileChoice value="pass" checked={credMode === "pass"} disabled={busy} onSelect={() => setCredMode("pass")}
+        <MobileChoice value="pass" checked={credMode === "pass"} disabled={busy} onSelect={() => chooseMode("pass")}
           title="固定密码" description="使用长期值守电脑的密码" />
       </div>
 
@@ -135,27 +148,22 @@ export function RcUnoJoinCard({
           <textarea
             className={styles.unoInput}
             aria-label="无人值守接入码"
+            aria-describedby={fieldHintId}
+            aria-invalid={showFieldError}
+            onFocus={() => setValidatedMode(null)}
+            onBlur={() => setValidatedMode("code")}
             placeholder="粘贴 8 位码（7K2M-9PQX）或完整串（PPU- 开头）"
             value={input}
             disabled={busy}
             onChange={(e) => {
               setInput(e.target.value);
+              setValidatedMode(null);
               setErr("");
             }}
           />
           <button type="button" className={styles.ghostBtn} disabled={busy} onClick={() => setScanning(true)}>
             扫一扫（扫电脑上出示的码）
           </button>
-          {input.trim() && !parsed && (
-            <MobileNotice error compact>
-              认不出无人值守码：请粘 8 位展示码或 PPU- 开头的完整串。
-            </MobileNotice>
-          )}
-          {parsed && !shapeOk && (
-            <MobileNotice error compact>
-              码里有无效字符（0/O、1/I/L 会自动纠正；其余请核对原码）。
-            </MobileNotice>
-          )}
           {parsed?.nodeId && (
             <div className={styles.unoFp}>机器指纹 {fingerprintOf(parsed.nodeId)}</div>
           )}
@@ -166,23 +174,28 @@ export function RcUnoJoinCard({
           type={showPass ? "text" : "password"}
           className={styles.unoInput}
           aria-label="对方的固定密码"
-          aria-describedby={passHintId}
-          aria-invalid={!!pass && !passOk}
+          aria-describedby={fieldHintId}
+          aria-invalid={showFieldError}
+          onFocus={() => setValidatedMode(null)}
+          onBlur={() => setValidatedMode("pass")}
           autoComplete="current-password"
           disabled={busy}
           placeholder="对方设置的固定密码"
           value={pass}
           onChange={(e) => {
             setPass(e.target.value);
+            setValidatedMode(null);
             setErr("");
           }}
         />
         <button type="button" className={styles.ghostBtn} disabled={busy} aria-pressed={showPass} onClick={() => setShowPass((value) => !value)}>
           {showPass ? "隐藏密码" : "显示密码"}
         </button>
-        <div id={passHintId}>{pass && !passOk ? <MobileNotice error compact>{`密码长度不符合要求，请输入 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。`}</MobileNotice> : <p className={styles.dirHint}>{`密码需为 ${UNO_PASS_MIN_CHARS}～${UNO_PASS_MAX_CHARS} 个字符。`}</p>}</div>
         </>
       )}
+      <p id={fieldHintId} className={styles.unoFieldHint} data-invalid={showFieldError} aria-live="polite" aria-atomic="true">
+        <span key={fieldHint} className={styles.unoFieldText}>{fieldHint}</span>
+      </p>
 
       {target && <div className={styles.unoFp}>连接对象：{targetName}{targetInfo && <RcDeviceMeta os={targetInfo.os} />}</div>}
 

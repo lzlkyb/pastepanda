@@ -6,7 +6,7 @@ import { copyToClipboard } from "@/lib/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { KnowledgeReader } from "./KnowledgeReader";
 
-vi.mock("@/lib/utils", () => ({ copyToClipboard: vi.fn(), knowledgeErrorText: () => "本机操作未能完成，请重试。" }));
+vi.mock("@/lib/utils", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/utils")>(), copyToClipboard: vi.fn(), knowledgeErrorText: () => "本机操作未能完成，请重试。" }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../ui/useMobileBack", () => ({ useMobileBack: vi.fn() }));
 vi.mock("../ui/MobileSheet", () => ({ MobileSheet: ({ open, title, children, footer, onClose }: { open: boolean; title: string; children: ReactNode; footer: ReactNode; onClose: () => void }) => open ? <aside role="dialog" aria-label={title}><button onClick={onClose}>关闭面板</button>{children}{footer}</aside> : null }));
@@ -26,7 +26,7 @@ beforeEach(() => {
   });
   vi.mocked(copyToClipboard).mockResolvedValue(true);
 });
-afterEach(() => { cleanup(); vi.clearAllMocks(); });
+afterEach(() => { cleanup(); vi.clearAllMocks(); Object.defineProperty(navigator, "onLine", { value: true, configurable: true }); });
 
 it("数据库失败区别于空/已删除，不暴露私有路径；重试可恢复", async () => {
   failure = "note_get";
@@ -136,4 +136,16 @@ it("元数据加载失败仍阅读正文且不能误改未知常用状态", asyn
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "重试偏好" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "加入手机常用" }).hasAttribute("disabled")).toBe(false));
+});
+it("多项非关键阅读提示聚合成一条，可展开恢复动作，正文仍可读", async () => {
+  Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+  failure = "mobile_knowledge_meta";
+  render(<KnowledgeReader noteId="n1" active onBack={vi.fn()} />);
+  await screen.findByText("原始正文");
+  const expand = screen.getByRole("button", { name: "查看阅读提示" });
+  expect(screen.queryByText("阅读偏好未能加载")).toBeNull();
+  expect(screen.getByText("有 2 项阅读提示")).toBeTruthy();
+  fireEvent.click(expand);
+  expect(screen.getByRole("button", { name: "重试偏好" })).toBeTruthy();
+  expect(screen.getByText("手机当前离线；外部链接和图片可能无法加载。")).toBeTruthy();
 });

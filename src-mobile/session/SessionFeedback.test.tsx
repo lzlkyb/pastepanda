@@ -10,7 +10,7 @@ it("重要错误保留，成功消息等待可见后才开始计时", () => {
   const clearError = vi.fn(), clearSuccess = vi.fn();
   const pointer = { hint: "已切换为直接点击", hintTone: "success" as const, clearHint: clearSuccess };
   const view = render(<SessionFeedback pointer={pointer} orient={{ hint: "请检查自动旋转设置", clearHint: clearError }} clipboard={clipboard} onSendFailDismiss={() => {}} />);
-  expect(screen.getByRole("alert").textContent).toContain("显示方向未能切换");
+  expect(screen.getByRole("status").textContent).toContain("显示方向未能切换");
   act(() => vi.advanceTimersByTime(30000));
   expect(clearError).not.toHaveBeenCalled(); expect(clearSuccess).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
@@ -58,9 +58,22 @@ it("不同设置的详情各自返回对应设置入口", () => {
     clipboard={clipboard} onSendFailDismiss={vi.fn()} onSettingOpen={openSetting}
     settings={[{ key: "quality", feedback: { tone: "error", title: "画质未能切换" } },
       { key: "audio", feedback: { tone: "error", title: "声音未能切换" } }]} />);
-  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getAllByRole("status")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "2 条提示" }));
   const audio = screen.getByText("声音未能切换").closest("section")!;
   fireEvent.click(within(audio).getByRole("button", { name: "查看设置" }));
   expect(openSetting).toHaveBeenCalledWith("audio");
+});
+
+it("关闭已聚焦的最后一条提示后，新结果不会继承旧的计时暂停", () => {
+  vi.useFakeTimers();
+  const dismiss = vi.fn();
+  const props = { orient: { hint: "", clearHint: vi.fn() }, onSendFailDismiss: vi.fn(), clipboard };
+  const view = render(<SessionFeedback {...props} pointer={{ hint: "第一个结果", hintTone: "success", clearHint: dismiss }} />);
+  fireEvent.focus(screen.getByRole("button", { name: "关闭提示" }));
+  view.rerender(<SessionFeedback {...props} pointer={{ hint: "", hintTone: "success", clearHint: dismiss }} />);
+  act(() => vi.advanceTimersByTime(200));
+  view.rerender(<SessionFeedback {...props} pointer={{ hint: "新结果", hintTone: "success", clearHint: dismiss }} />);
+  act(() => vi.advanceTimersByTime(4000));
+  expect(dismiss).toHaveBeenCalledOnce();
 });

@@ -138,10 +138,10 @@ describe("B 方案配对流程", () => {
     render(<RcPairCard onPaired={vi.fn()} />);
     enter();
     submit();
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
     expect(screen.getByRole("button", { name: "开始配对" })).toBeEnabled();
     enter("87654321");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("配对未能完成")).toBeNull();
   });
   it("成功只回调一次，父级更新回调不会加速轮询", async () => {
     vi.useFakeTimers();
@@ -173,10 +173,10 @@ describe("B 方案配对流程", () => {
     rc.code.mockRejectedValueOnce("网络连接失败");
     render(<RcPairCard onPaired={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     await waitFor(() => expect(screen.getByLabelText("我的配对码")).toHaveTextContent("4182 0620"));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("配对未能完成")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "隐藏配对码" }));
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     await waitFor(() => expect(screen.getByLabelText("我的配对码")).toBeTruthy());

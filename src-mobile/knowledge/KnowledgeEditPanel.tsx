@@ -2,6 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
 import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
+import { MobileConfirmSheet } from "../ui/MobileConfirmSheet";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
+import { useKnowledgeDraftExit } from "./useKnowledgeDraftExit";
 import { KnowledgeEditorShell } from "./KnowledgeEditorShell";
 import { KnowledgeMarkdown } from "./KnowledgeMarkdown";
 import { KnowledgeClassification } from "./KnowledgeClassification";
@@ -20,28 +23,32 @@ export function KnowledgeEditPanel({ edit, active, onBack, onSaved, onPickImages
   const [classification, setClassification] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
   const [previewFeedback, setPreviewFeedback] = useState(false);
-  const leave = () => { void edit.flush().then(onBack).catch(() => undefined); };
-  useMobileBack(active && !preview && !classification && !conflictOpen, leave, true);
+  const exit = useKnowledgeDraftExit(edit.flush, onBack);
+  const leave = exit.leave;
+  useMobileBack(active && !preview && !classification && !conflictOpen && !exit.error, leave, true);
   useEffect(() => { if (edit.conflict) setConflictOpen(true); }, [edit.conflict]);
   if (!edit.draft) return null;
-  const readonly = edit.saving || edit.locked;
+  const readonly = edit.saving || edit.locked || exit.busy;
   const save = async (copy = false) => {
     const result = await edit.save(copy);
     if (result) onSaved(result.note.id, result.copied, result.relinked);
   };
   return <KnowledgeEditorShell heading="修改笔记" idPrefix="knowledge-edit" title={edit.draft.title} content={edit.draft.content}
-    readonly={readonly} saving={edit.saving} status={edit.status || "输入会保留为本机修改草稿。"}
+    readonly={readonly} saving={edit.saving || exit.busy} status={exit.busy ? "正在保存修改草稿…" : edit.status || "输入会保留为本机修改草稿。"}
     saveLabel={edit.saving ? "正在保存…" : edit.locked ? "重试核对保存" : "保存修改到手机"}
     onBack={leave} onPreview={() => setPreview(true)} onTitle={value => edit.update("title", value)} onContent={value => edit.update("content", value)}
     onClassification={() => setClassification(true)} onPickImages={onPickImages} onSave={() => void save()}
     feedback={<>
-      {operationNotice && <MobileNotice compact {...operationNotice} />}{collectionNotice}
-      {edit.error && <MobileNotice compact error title={edit.locked ? "保存结果待核对" : "修改仍保留"} detail={edit.error} />}
+      <MobileFeedbackSlot>{operationNotice && <MobileNotice compact {...operationNotice} />}</MobileFeedbackSlot>{collectionNotice}
+      <MobileFeedbackSlot>{edit.error ? <MobileNotice compact error title={edit.locked ? "保存结果待核对" : "修改仍保留"} detail={edit.error} /> : null}</MobileFeedbackSlot>
       {!edit.error && edit.conflict && <MobileNotice compact tone="warning" title={edit.conflict.status === "deleted" ? "原笔记已不在本机" : "原笔记已有新版本"} detail="手机修改仍保留，可以另存一篇。" action={<button className={ui.textButton} onClick={() => setConflictOpen(true)}>处理版本变化</button>} />}
     </>}>
     <MobileSheet open={preview && active} title="修改预览" onClose={() => { setPreview(false); setPreviewFeedback(false); }} footer={previewFeedback ? <MobileNotice title="当前是草稿预览" detail="保存后可在全文中打开链接。" /> : undefined}>
       <h2>{edit.draft.title || "未命名笔记"}</h2><KnowledgeMarkdown content={edit.draft.content} active={active && preview} onLink={() => setPreviewFeedback(true)} />
     </MobileSheet>
+    <MobileConfirmSheet open={active && !!exit.error} title="草稿尚未保存" danger={false}
+      description="手机修改仍保留在当前页面。继续编辑，或重试保存草稿后离开。" error={exit.error}
+      cancelLabel="继续编辑" confirmLabel="重试保存后离开" busy={exit.busy} onCancel={exit.cancel} onConfirm={exit.leave} />
     <KnowledgeClassification open={classification && active} folder={edit.draft.folder_id} tags={edit.draft.tag_ids} onClose={() => setClassification(false)} onApply={(folder, tags) => {
       edit.update("folder_id", folder); edit.update("tag_ids", tags); setClassification(false);
     }} />
