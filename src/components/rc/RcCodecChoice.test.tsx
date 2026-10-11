@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { RcCodecChoice } from "./RcCodecChoice";
 import type { RcCodecChoice as Choice } from "@/hooks/useRcCodecChoice";
@@ -7,6 +8,11 @@ const choice: Choice = {
   value: "av1", actualLabel: "H.264", pending: false, disabled: false, mac: true, pick: vi.fn(async () => {}),
 };
 describe("编码菜单的可见反馈", () => {
+  it("深色更多面板的当前值继承亮字色，不落到亮主题的深字色", () => {
+    const css = readFileSync("src/components/rc/RemoteComputer.module.css", "utf8");
+    expect(css).toMatch(/\.capMore \.menuCur\s*\{[^}]*color:\s*inherit;/);
+    expect(css).toContain(".capMore .menuBtn:hover:not(:disabled),");
+  });
   it("请求和实际接收分开显示；纯鼠标能选择 H.264", () => {
     render(<RcCodecChoice choice={choice} />);
     expect(screen.getByRole("status").textContent).toContain("实际接收：H.264");
