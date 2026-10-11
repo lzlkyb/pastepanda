@@ -7,6 +7,7 @@
 .reader button svg, .sheetActions button svg { flex: none; }
 .scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 16px; }
 .scroll > section { margin-bottom: 12px; }
+.readingDetails { display: grid; gap: 8px; }
 .article { max-width: 720px; margin: auto; overflow-wrap: anywhere; font-size: var(--mobile-font-body); line-height: 1.75; }
 .article h1 { font-size: 1.6em; line-height: 1.3; margin: 8px 0 24px; }
 .meta { font-size: var(--mobile-font-secondary); color: var(--text-secondary); line-height: 1.6; margin: 0 0 8px; overflow-wrap: anywhere; }

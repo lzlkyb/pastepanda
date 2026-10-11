@@ -29,6 +29,7 @@ function renderView(status: Record<string, unknown>) {
     busy: false,
     setEnabled: api.setEnabled,
     clearHistory: api.clear,
+    clearError: vi.fn(),
   } as unknown as UseRc;
   render(<RcSettingsView rc={rc} onOpenSandbox={() => {}} />);
 }
@@ -68,7 +69,7 @@ it("偏好存储失败不假装选中或保存，面板内保留恢复说明", (
   fireEvent.click(screen.getByRole("button", { name: /操作习惯/ }));
   const stored = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
   fireEvent.click(screen.getByRole("radio", { name: /浮动鼠标/ }));
-  expect(screen.getByRole("alert").textContent).toContain("未能保存");
+  expect(screen.getByText(/^操作习惯未能保存/).closest('[role="status"]')?.textContent).toContain("未能保存");
   expect(screen.getByRole("radio", { name: /^触控板/ }).getAttribute("aria-checked")).toBe("true");
   stored.mockRestore();
 });
@@ -105,7 +106,7 @@ describe("会话历史", () => {
     api.history.mockRejectedValueOnce("boom");
     renderView({});
     fireEvent.click(screen.getByRole("button", { name: /会话历史/ }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/操作未能完成/);
+    expect((await screen.findByText("会话历史未能加载")).closest('[role="status"]')?.textContent).toMatch(/操作未能完成/);
     expect(screen.queryByText(/boom/)).toBeNull();
     // 🔴 先排队成功值再点重试：点击同步触发 reload，队列空了就会落到
     // 无默认实现的 mock 上（返回 undefined），list 变 undefined 直接崩渲染。
@@ -122,6 +123,7 @@ describe("会话历史", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "清空" }));
     expect(api.clear).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "保留记录" })).toBe(document.activeElement);
 
     fireEvent.click(screen.getByRole("button", { name: "确认清空" }));
     await waitFor(() => expect(api.clear).toHaveBeenCalledTimes(1));
@@ -129,6 +131,14 @@ describe("会话历史", () => {
 });
 
 describe("远程通道开关", () => {
+  it("成功结果留在开关附近，不弹大块页面通知", async () => {
+    renderView({ enabled: true });
+    fireEvent.click(screen.getByRole("switch", { name: "远程通道" }));
+    const result = await screen.findByText("远程通道已关闭");
+    expect(result.closest('[role="status"]')).toBeTruthy();
+    expect(result.parentElement?.parentElement?.querySelector('[role="switch"]')).toBeTruthy();
+    expect(result.closest('section[aria-live]')).toBeNull();
+  });
   it("开 → 点关闭 → setEnabled(false)", async () => {
     renderView({ enabled: true });
     fireEvent.click(await screen.findByRole("switch", { name: "远程通道" }));

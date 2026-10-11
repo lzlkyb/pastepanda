@@ -24,10 +24,11 @@ it("等待和恢复阶段说清状态，保留取消与返回入口，恢复后�
   fireEvent.click(screen.getByRole("button", { name: "取消连接" }));
   expect(onReturn).toHaveBeenCalledOnce();
   view.rerender(<SessionFrameState text="正在恢复画面…" hasFrame onReturn={onReturn} />);
-  expect(screen.getByRole("status").textContent).toContain("输入已暂停");
+  expect(screen.getByRole("alert").textContent).toContain("输入已暂停");
   expect(screen.getByRole("button", { name: "返回设备" })).toBeTruthy();
   view.rerender(<SessionFrameState text="" hasFrame onReturn={onReturn} />);
   expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("① 甲+乙：等待期给真标水位+步进点，当前段呼吸、已过段打勾", () => {

@@ -8,6 +8,7 @@ import { MobileToast } from "../ui/MobileToast";
 import { MobileSheet } from "../ui/MobileSheet";
 import { useMobileBack } from "../ui/useMobileBack";
 import { KnowledgeMarkdown, type KnowledgeHeading } from "./KnowledgeMarkdown";
+import { KnowledgeReadingNotices } from "./KnowledgeReadingNotices";
 import { useKnowledgeReading } from "./useKnowledgeReading";
 import { mobileKnowledgeShareSend } from "@/lib/api/mobileKnowledgeShare";
 import { KnowledgeAssetSheet } from "./KnowledgeAssetSheet";
@@ -24,7 +25,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
   onFillArticle?: (id: string) => void;
 }) {
   const reading = useKnowledgeReading(noteId, active);
-  const { note, meta, setMeta, loading, error, missing, newer } = reading;
+  const { note, meta, setMeta, loading, missing } = reading;
   const articleReading = useKnowledgeArticleReading(noteId, active, note?.content || "", reading.reload);
   const article = useRef<HTMLDivElement>(null);
   const preview = useRef<HTMLElement>(null);
@@ -154,13 +155,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
     </div>}
     <div ref={article} className={styles.scroll} onScroll={event => reading.onScroll(event.currentTarget)}>
       <KnowledgeArticleReadingNotice article={articleReading} onFill={onFillArticle} onOriginal={href => void followLink(href, false)} />
-      {loading && !note && <MobileNotice tone="pending" title="正在读取本机正文…" />}
-      {error && <MobileNotice tone="error" title="未能读取笔记" detail={reading.errorDetail} action={<button type="button" onClick={() => void reading.reload()}>重试读取</button>} />}
-      {!reading.online && note && <MobileNotice compact tone="info" title="正在阅读本机内容" detail="手机当前离线；外部链接和图片可能无法加载。" />}
-      {missing && <MobileNotice tone="warning" title="这篇笔记已不在本机知识库中" detail={note ? "当前页面保留已打开的内容，返回后可重新搜索。" : "可能已删除或尚未同步，请返回搜索或检查同步状态。"} />}
-      {newer && <MobileNotice tone="info" title="本机正文已更新" detail="继续阅读当前版本，或手动载入新版。" action={<button type="button" onClick={() => void reading.reload()}>载入新版</button>} />}
-      {reading.metaError && <MobileNotice tone="warning" title="阅读偏好未能加载" detail="正文仍可阅读；常用状态和上次位置暂不可用。" action={<button type="button" onClick={() => void reading.check()}>重试偏好</button>} />}
-      {reading.positionError && <MobileNotice tone="warning" title="阅读位置未能保存" detail="正文仍可阅读，返回此页时可能从开头开始。" action={<button type="button" onClick={reading.savePosition}>重试保存位置</button>} />}
+      <KnowledgeReadingNotices reading={reading} />
       {note && <article className={styles.article}>
         <p className={styles.meta}>本机内容 · 更新于 {new Date(note.updated_at).toLocaleString()}</p>
         <h1>{note.title || "未命名笔记"}</h1>

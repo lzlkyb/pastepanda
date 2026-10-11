@@ -56,7 +56,7 @@ export function KnowledgePending(props: Props) {
       <Inbox size={20} aria-hidden="true" /><span>待处理 · {count} 项{failures > 0 && <small>{failures} 篇文章需要重试</small>}</span><ChevronRight size={18} aria-hidden="true" />
     </button>}
     <MobileSheet open={open && props.active} title={target ? `放弃${noun}？` : "待处理"} onClose={close}
-      footer={(busy || failed && target || notice) ? <div className={styles.result}>{target ? busy ? <MobileNotice compact tone="pending" title={`正在放弃${noun}…`} /> : <MobileNotice compact error title={`${noun}仍保留`} detail={target.error || "未能清除，请重试。"} /> : <MobileNotice compact tone="success" title={notice} />}</div> : undefined}
+      footer={(busy || failed && target || notice) ? <div className={styles.result}>{target ? busy ? <MobileNotice compact tone="pending" title={`正在放弃${noun}…`} /> : <MobileNotice compact error urgency="assertive" title={`${noun}仍保留`} detail={target.error || "未能清除，请重试。"} /> : <MobileNotice compact tone="success" title={notice} />}</div> : undefined}
       actions={target && <>
       <button type="button" className={ui.secondary} aria-label={`保留${noun}`} disabled={busy} onClick={keep}>保留</button>
       <button type="button" className={ui.danger} aria-label={busy ? `正在放弃${noun}` : `确认放弃${noun}`} disabled={busy || target.busy || target.locked} onClick={() => void discard()}>{busy ? "处理中" : "放弃"}</button>

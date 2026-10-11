@@ -33,7 +33,10 @@ it("成功到时收起且再次打开不重现，失败不会到时消失", asyn
   vi.useFakeTimers();
   // Rerendering through an event gives the visible-time hook its fake clock.
   fireEvent.click(screen.getByRole("button", { name: "关闭工具" })); fireEvent.click(screen.getByRole("button", { name: "打开工具" }));
-  act(() => vi.advanceTimersByTime(4000)); expect(screen.queryByText("电脑已接受画质设置")).toBeNull();
+  // 带恢复动作的回执按 B 方案给 6 秒阅读时长；4 秒时仍在，6 秒收起。
+  act(() => vi.advanceTimersByTime(4000));
+  expect(screen.getByText("电脑已接受画质设置")).toBeVisible();
+  act(() => vi.advanceTimersByTime(2000)); expect(screen.queryByText("电脑已接受画质设置")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "关闭工具" })); fireEvent.click(screen.getByRole("button", { name: "打开工具" }));
   expect(screen.queryByText("电脑已接受画质设置")).toBeNull();
   vi.useRealTimers(); api.apply.mockRejectedValueOnce(new Error("连接中断"));

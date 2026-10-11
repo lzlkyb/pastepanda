@@ -88,9 +88,10 @@ describe("接入码（方案 B）", () => {
     );
   });
 
-  it("认不出的码 → 明说，不静默", async () => {
+  it("认不出的码 → 失焦后明说，不静默", async () => {
     renderCard({});
     fireEvent.change(screen.getByLabelText("无人值守接入码"), { target: { value: "https://x.com/a" } });
+    fireEvent.blur(screen.getByLabelText("无人值守接入码"));
     expect(screen.getByText(/认不出无人值守码/)).toBeTruthy();
   });
 });

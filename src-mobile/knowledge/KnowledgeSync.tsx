@@ -5,6 +5,7 @@ import { MobileToast } from "../ui/MobileToast";
 import { useMobileBack } from "../ui/useMobileBack";
 import { MobileChoice } from "../ui/MobileChoice";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
 import { useKnowledgeSync } from "./useKnowledgeSync";
 import type { KbDevice } from "@/hooks/useKbSync";
 import ui from "../ui/MobileUi.module.css";
@@ -31,7 +32,7 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
       : "仅本机使用 · 可授权电脑同步";
   const feedback = sync.feedback;
   const receipt = feedback && (feedback.tone === "info" || feedback.tone === "success"
-    ? <MobileToast placement="flow" compact {...feedback} onDismiss={sync.dismissFeedback} />
+    ? <MobileToast placement={open ? "flow" : "floating"} compact {...feedback} onDismiss={sync.dismissFeedback} />
     : <MobileNotice compact {...feedback} onDismiss={sync.busy ? undefined : sync.dismissFeedback} />);
   return (
     <div className={styles.host}>
@@ -41,13 +42,13 @@ export function KnowledgeSync({ active, onChanged }: { active: boolean; onChange
         <span className={styles.entryLabel}>同步</span>
         <ChevronRight size={18} aria-hidden="true" />
       </button>
-      {active && !open && receipt}
+      <MobileFeedbackSlot>{active && !open ? receipt : null}</MobileFeedbackSlot>
       <MobileSheet
         open={open}
         onClose={() => setOpen(false)}
         title="知识库同步"
         description="阅读和新建先保存在手机。知识库授权与远控配对相互独立。"
-        footer={receipt}
+        footer={<MobileFeedbackSlot>{receipt}</MobileFeedbackSlot>}
       >
         <div className={styles.panel}>
           {!sync.ready && (

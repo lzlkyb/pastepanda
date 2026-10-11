@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>手机反馈 · B 方案 — PastePanda</title>
+  <link rel="stylesheet" href="mobile-feedback-B-2026-10-11.css">
+  <script src="mobile-feedback-B-2026-10-11.js" defer></script>
+</head>
+<body>
+  <header class="review-head">
+    <div><h1>让反馈有分寸。</h1><p>PastePanda 手机端 · B 方案交互设计稿</p></div>
+    <div class="review-tools">
+      <button id="theme" type="button">切换深色</button>
+      <label><input id="reduce" type="checkbox">减少动态效果</label>
+    </div>
+  </header>
+  <main class="workbench">
+    <aside class="scenarios" aria-label="反馈场景">
+      <h2>试一试不同的反馈</h2>
+      <p class="aside-intro">同一套组件，不同的注意力。</p>
+      <div id="scenario-list"></div>
+      <div class="prototype-note"><strong>仅演示，不连接真实设备</strong><p>页面结构取自现有手机端。设备、文件和笔记内容为示例，所有操作只影响本页。</p></div>
+    </aside>
+    <section class="preview" aria-label="手机交互预览">
+      <div class="device-frame">
+        <div class="phone" id="phone">
+          <div class="statusbar" aria-hidden="true"><span>9:41</span><span class="status-symbols"><span class="signal"></span><span class="battery"></span></span></div>
+          <div id="app" class="app"></div>
+          <div id="snackbar-slot" class="snackbar-slot" aria-live="polite" aria-atomic="true"></div>
+          <div id="modal-slot" class="modal-slot"></div>
+          <nav id="navigation" class="navigation" aria-label="主要导航"></nav>
+          <div class="home-indicator" aria-hidden="true"></div>
+        </div>
+      </div>
+      <p class="preview-caption">直接点击手机里的按钮，查看完整反馈过程。</p>
+    </section>
+    <aside class="explanation" aria-label="当前场景规则">
+      <div class="explanation-head"><span id="level" class="level"></span><h2 id="scene-title"></h2><p id="scene-description"></p></div>
+      <dl id="rules"></dl>
+      <button id="replay" class="replay" type="button">重新演示</button>
+      <p class="motion-note">短位移进入 · 原位更新 · 退出后卸载<br>关键问题保留，普通成功轻轻离开。</p>
+      <div class="event-log"><h3>本次反馈</h3><p id="event" role="status">等待操作</p></div>
+    </aside>
+  </main>
+  <footer class="review-footer"><span>保留实底表面、系统字体和现有四项导航；调整反馈组件与交互。</span><a href="../docs/手机端通知与报错-调研与分级方案-2026-10-11.md">查看分级方案</a></footer>
+</body>
+</html>

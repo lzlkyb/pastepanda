@@ -20,6 +20,7 @@
   --mobile-surface: var(--section-bg);
   --mobile-scrim: var(--overlay-bg);
   --mobile-shadow: 0 8px 24px color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --mobile-notice-shadow: 0 2px 6px color-mix(in srgb, var(--text-primary) 6%, transparent), 0 12px 28px color-mix(in srgb, var(--text-primary) 12%, transparent);
   --mobile-layer-nav: 100;
   --mobile-layer-notice: 200;
   --mobile-layer-overlay: 400;

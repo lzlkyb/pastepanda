@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useRcHistory } from "@/hooks/useRcHistory";
 import type { UseRc } from "@/hooks/useRc";
 import { formatDuration, formatWhen } from "@/lib/rcSessionStats";
-import { useMobileBack } from "../ui/useMobileBack";
+import { MobileConfirmSheet } from "../ui/MobileConfirmSheet";
 import { MobileNotice } from "../ui/MobileNotice";
 import { rcErrorText } from "../devices/rcErrorText";
 import ui from "../ui/MobileUi.module.css";
@@ -13,7 +13,6 @@ export function RcMobileHistory({ rc }: { rc: UseRc }) {
   const [confirm, setConfirm] = useState(false);
   const [clearing, setClearing] = useState(false);
   const locked = useRef(false);
-  useMobileBack(confirm, () => { if (!clearing) setConfirm(false); }, true, 20);
   const clear = async () => {
     if (locked.current) return;
     locked.current = true;
@@ -30,7 +29,7 @@ export function RcMobileHistory({ rc }: { rc: UseRc }) {
   };
   return (
     <>
-      {rc.error && <MobileNotice error title="历史记录操作未能完成" detail={rcErrorText(rc.error)} onDismiss={rc.clearError} />}
+      {rc.error && !confirm && <MobileNotice error title="历史记录操作未能完成" detail={rcErrorText(rc.error)} onDismiss={rc.clearError} />}
       {history.loading ? (
         <p className={ui.empty}>正在获取…</p>
       ) : history.err ? (
@@ -65,23 +64,12 @@ export function RcMobileHistory({ rc }: { rc: UseRc }) {
               </li>
             ))}
           </ul>
-          {confirm ? (
-            <div className={styles.choices}>
-              <MobileNotice tone="warning">清空后无法恢复，是否继续？</MobileNotice>
-              <button type="button" className={ui.danger} disabled={clearing} onClick={() => void clear()}>
-                {clearing ? "正在清空…" : "确认清空"}
-              </button>
-              <button type="button" className={ui.secondary} disabled={clearing} onClick={() => setConfirm(false)}>
-                保留记录
-              </button>
-            </div>
-          ) : (
-            <button type="button" className={ui.textButton} onClick={() => setConfirm(true)}>
-              清空
-            </button>
-          )}
+          <button type="button" className={ui.textButton} onClick={() => { rc.clearError(); setConfirm(true); }}>清空</button>
         </>
       )}
+      <MobileConfirmSheet open={confirm} title="清空会话历史？" description="这些会话记录将被删除，清空后无法恢复。"
+        confirmLabel="确认清空" cancelLabel="保留记录" busy={clearing} error={rc.error ? rcErrorText(rc.error) : undefined}
+        onCancel={() => setConfirm(false)} onConfirm={() => void clear()} />
     </>
   );
 }

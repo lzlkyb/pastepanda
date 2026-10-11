@@ -1,9 +1,9 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 /** Shared visible reading time for ordinary outcomes; errors never expire. */
-export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss: () => void, paused = false, host?: RefObject<HTMLElement | null>) {
-  const remaining = useRef(4000);
-  useEffect(() => { remaining.current = 4000; }, [title, enabled]);
+export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss: () => void, paused = false, host?: RefObject<HTMLElement | null>, duration = 4000) {
+  const remaining = useRef(duration);
+  useEffect(() => { remaining.current = duration; }, [title, enabled, duration]);
   useEffect(() => {
     if (!enabled) return;
     let started = 0;
@@ -39,5 +39,5 @@ export function useMobileNoticeTimer(enabled: boolean, title: ReactNode, dismiss
       window.removeEventListener("resize", update); window.removeEventListener("orientationchange", update);
       window.visualViewport?.removeEventListener("resize", update);
     };
-  }, [enabled, title, dismiss, paused, host]);
+  }, [enabled, title, dismiss, paused, host, duration]);
 }

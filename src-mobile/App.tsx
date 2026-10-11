@@ -12,6 +12,7 @@ import { KnowledgeView } from "./knowledge/KnowledgeView";
 import { useKnowledgeInbox } from "./knowledge/useKnowledgeInbox";
 import { MobileNotice } from "./ui/MobileNotice";
 import { MobileToast } from "./ui/MobileToast";
+import { MobileToastProvider } from "./ui/MobileToastQueue";
 import { MobileUpdateBanner } from "./ui/MobileUpdateBanner";
 import { MobileUpdateProvider } from "./ui/MobileUpdate";
 import { useMobileAppearance } from "./ui/useMobileAppearance";
@@ -75,7 +76,7 @@ export default function App() {
   const fileFeedbackVisible = tab !== "files" && (!!file.error && !repeatedFileError || !!fileNotice) && !pending;
   return (
     <MobileUpdateProvider>
-      <>
+      <MobileToastProvider>
       {sandbox && <TouchSandbox onExit={() => setSandbox(false)} />}
       {!sandbox && activeSession && (
         <RcMobileSession
@@ -164,7 +165,7 @@ export default function App() {
               正在连接 {session.display_name || session.peer_name}，等待电脑确认
             </MobileNotice>
           )}
-          {fileFeedbackVisible && (fileNoticeDismissable ? <MobileToast placement="flow" tone="info" title={fileNotice?.text}
+          {fileFeedbackVisible && (fileNoticeDismissable ? <MobileToast tone="info" title={fileNotice?.text}
             onDismiss={dismissFileNotice} action={<button className={ui.textButton} onClick={() => selectTab("files")}>查看</button>} /> : <MobileNotice
               error={!!file.error && !repeatedFileError || !!fileNotice?.error}
               action={
@@ -208,7 +209,7 @@ export default function App() {
           ))}
         </nav>
       </div>
-      </>
+      </MobileToastProvider>
     </MobileUpdateProvider>
   );
 }

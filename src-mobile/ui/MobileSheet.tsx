@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
+import { MobileFeedbackScope } from "./MobileFeedbackScope";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, X } from "lucide-react";
 import { useMobileBack } from "./useMobileBack";
@@ -18,6 +19,7 @@ export function MobileSheet({
   children,
   footer,
   actions,
+  initialFocusRef,
   bodyClassName,
   contentClassName,
 }: {
@@ -36,6 +38,7 @@ export function MobileSheet({
   footer?: ReactNode;
   /** Primary actions stay reachable independently of long feedback on short screens. */
   actions?: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
   bodyClassName?: string;
   contentClassName?: string;
 }) {
@@ -80,8 +83,9 @@ export function MobileSheet({
             aria-busy={closeDisabled || undefined}
             onEscapeKeyDown={event => { if (closeDisabled) event.preventDefault(); }}
             onPointerDownOutside={event => { if (closeDisabled) event.preventDefault(); }}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               restoreFocus.current = document.activeElement as HTMLElement;
+              if (initialFocusRef?.current) { event.preventDefault(); initialFocusRef.current.focus(); }
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
@@ -100,15 +104,18 @@ export function MobileSheet({
                 <span>{closeDisabled ? closeBusyLabel : onBack ? "关闭全部" : "关闭"}</span>
               </button>
             </header>
+            <MobileFeedbackScope>
             <div className={`${styles.sheetBody} ${bodyClassName ?? ""}`}>
             {content.description && (
               <Dialog.Description id={descriptionId} className={styles.description}>
                 {content.description}
               </Dialog.Description>
             )}
-            {content.children}</div>
+            {content.children}
+            </div>
             {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
             {content.actions && <div className={styles.sheetActions}>{content.actions}</div>}
+            </MobileFeedbackScope>
           </Dialog.Content>
         </Dialog.Portal>
       )}

@@ -6,6 +6,8 @@ import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileToast } from "../ui/MobileToast";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
+import { useMobileNoticeTimer } from "../ui/useMobileNoticeTimer";
 import { POINTER_MODES, type PointerMode } from "../session/pointerModes";
 import { readPointerPreference, savePointerPreference } from "../session/pointerPreference";
 import { MobileUpdateSection } from "./MobileUpdateSection";
@@ -36,6 +38,7 @@ export function RcSettingsView({
   const [pointerResult, setPointerResult] = useState<{ title: string; error?: boolean } | null>(null);
   const [notice, setNotice] = useState("");
   const dismissNotice = useCallback(() => setNotice(""), []);
+  useMobileNoticeTimer(!!notice, notice, dismissNotice, !active);
   const ownsError = active && panel === "history";
   useEffect(() => {
     onErrorScopeChange?.(ownsError);
@@ -65,7 +68,6 @@ export function RcSettingsView({
   };
   return (
     <MobilePage title="设置" subtitle="按自己的习惯使用 PastePanda" pageNotice={pageNotice}>
-      {active && notice && <MobileToast placement="flow" tone="success" title={notice} onDismiss={dismissNotice} />}
       <div className={styles.settingsLayout}>
       <section>
       <h2 className={ui.sectionHeading}>连接与记录</h2>
@@ -74,7 +76,7 @@ export function RcSettingsView({
           <ShieldCheck size={22} aria-hidden="true" />
           <span className={styles.rowText}>
             <strong>远程通道</strong>
-            <small>{enabled === null ? "状态未知" : enabled ? "可连接电脑和传输文件；暂不支持被控" : "已关闭连接"}</small>
+            <small role="status" aria-live="polite">{active && notice ? notice : enabled === null ? "状态未知" : enabled ? "可连接电脑和传输文件；暂不支持被控" : "已关闭连接"}</small>
           </span>
           {enabled !== null && (
             <button
@@ -143,7 +145,9 @@ export function RcSettingsView({
       <MobileSheet open={active && panel === "pointer"} title="操作习惯"
         description="触控板为初始默认。这里或会话中切换方式，都会记为这部手机下次连接的默认选择。"
         onClose={() => setPanel(null)}
-        footer={pointerResult && <MobileNotice compact tone={pointerResult.error ? "error" : "success"} title={pointerResult.title} />}>
+        footer={<MobileFeedbackSlot>{pointerResult ? (pointerResult.error
+          ? <MobileNotice compact error title={pointerResult.title} />
+          : <MobileToast placement="flow" compact tone="success" title={pointerResult.title} onDismiss={() => setPointerResult(null)} />) : null}</MobileFeedbackSlot>}>
         <div className={styles.choices} role="radiogroup" aria-label="默认操作方式">
           {(Object.keys(POINTER_MODES) as PointerMode[]).map(mode => <MobileChoice key={mode} value={mode}
             checked={pointerMode === mode} onSelect={() => pickPointer(mode)} title={POINTER_MODES[mode].label}

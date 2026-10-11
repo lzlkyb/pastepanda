@@ -28,20 +28,20 @@ describe("文件请求的同域结果", () => {
   it("返回 false 不显示成功，保留失败说明并允许原动作重试", async () => {
     const { respond, onHandled } = setup(vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true));
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "接受" })));
-    expect(screen.getByRole("alert")).toHaveTextContent("请重试");
+    expect(screen.getByRole("status")).toHaveTextContent("请重试");
     expect(screen.queryByText("已接受文件请求，等待传输")).toBeNull();
     expect(onHandled).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "接受" })).toBeEnabled();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "接受" })));
     expect(respond).toHaveBeenCalledTimes(2);
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("文件请求未能处理")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("等待传输");
   });
   it("拒绝抛错显示可重试失败，锁释放且不调用成功回调", async () => {
     const { onHandled } = setup(vi.fn().mockRejectedValue(new Error("network")));
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "拒绝" })));
-    expect(screen.getByRole("alert")).toHaveTextContent("文件请求未能处理");
-    expect(screen.getByRole("alert")).toHaveTextContent("请重试");
+    expect(screen.getByRole("status")).toHaveTextContent("文件请求未能处理");
+    expect(screen.getByRole("status")).toHaveTextContent("请重试");
     expect(screen.getByRole("button", { name: "拒绝" })).toBeEnabled();
     expect(onHandled).not.toHaveBeenCalled();
   });

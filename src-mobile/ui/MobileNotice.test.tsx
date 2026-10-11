@@ -1,13 +1,17 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setupMotionClock } from "./mobileMotionTestUtils";
 import { MobileNotice } from "./MobileNotice";
 import { MobileToast } from "./MobileToast";
+import { MobileToastProvider } from "./MobileToastQueue";
 
-afterEach(() => { cleanup(); delete document.body.dataset.mobileSheets; vi.useRealTimers(); vi.restoreAllMocks(); });
+// These cases isolate reading time; animated presence is covered by the lifecycle suite.
+beforeEach(() => { setupMotionClock().reduced.matches = true; });
+afterEach(() => { cleanup(); delete document.body.dataset.mobileSheets; vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("错误有警报语义，处理状态不宣称完成；关闭和恢复动作独立", () => {
   const dismiss = vi.fn(), retry = vi.fn();
-  const view = render(<MobileNotice tone="error" title="未能连接" detail="请检查连接状态" onDismiss={dismiss}
+  const view = render(<MobileNotice tone="error" urgency="assertive" title="未能连接" detail="请检查连接状态" onDismiss={dismiss}
     action={<button onClick={retry}>重试</button>} technical="请求未完成，错误类别：连接中断" />);
   expect(screen.getByRole("alert").textContent).toContain("请检查连接状态");
   const details = screen.getByText("查看详情").closest("details")!;
@@ -108,16 +112,18 @@ it("切去另一个主页面时保留提示阅读时间，返回后继续", asyn
   expect(dismiss).toHaveBeenCalledOnce();
 });
 
-it("浮动反馈只显示一条，错误优先；关闭同样结果会合并移除", () => {
-  const success = vi.fn(), error = vi.fn(), duplicate = vi.fn();
-  render(<><MobileToast title="已复制" tone="success" onDismiss={success} />
-    <MobileToast title="连接失败" tone="error" onDismiss={error} />
-    <MobileToast title="连接失败" tone="error" onDismiss={duplicate} /></>);
-  expect(screen.getAllByRole("alert")).toHaveLength(1);
-  expect(screen.queryByRole("status")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
-  expect(error).toHaveBeenCalledOnce(); expect(duplicate).toHaveBeenCalledOnce();
-  expect(success).not.toHaveBeenCalled();
+it("浮动普通反馈排队只显示一条；关闭同样结果会合并移除，错误保持持久通知", () => {
+  vi.useFakeTimers(); setupMotionClock();
+  const success = vi.fn(), duplicate = vi.fn(), error = vi.fn();
+  render(<MobileToastProvider><MobileToast title="已复制" tone="success" onDismiss={success} />
+    <MobileToast title="已复制" tone="success" onDismiss={duplicate} />
+    <MobileToast title="连接失败" tone="error" onDismiss={error} /></MobileToastProvider>);
+  const queued = screen.getAllByRole("status").find(node => node.textContent?.includes("已复制"));
+  expect(queued).toBeTruthy();
+  fireEvent.click(within(queued!).getByRole("button", { name: "关闭提示" }));
+  act(() => vi.advanceTimersByTime(200));
+  expect(success).toHaveBeenCalledOnce(); expect(duplicate).toHaveBeenCalledOnce();
+  expect(error).not.toHaveBeenCalled();
 });
 
 it("阅读页用CSS隐藏列表时，列表上的提示也暂停到期", async () => {

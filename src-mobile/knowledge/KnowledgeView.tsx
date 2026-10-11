@@ -92,7 +92,7 @@ export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onT
     if (!url) return;
     rememberScroll(); collection.close(); void article.begin(url, incoming);
   }, [active, article, incoming, collectionTarget, appliedIncomingId, collection]);
-  const collectionNotice = <>{collection.collectionSuccess && <MobileToast placement="flow" compact tone="success" title={collection.collectionSuccess} onDismiss={collection.dismissSuccess} />}{!!inbox?.items.length && <MobileNotice compact title={`有 ${inbox.items.length} 条待收集内容`} detail="当前输入仍保留。" action={<button className={ui.textButton} onClick={showCollection}>查看收集内容</button>} />}</>;
+  const collectionNotice = <>{collection.collectionSuccess && <MobileToast compact tone="success" title={collection.collectionSuccess} onDismiss={collection.dismissSuccess} />}{!!inbox?.items.length && <MobileNotice compact title={`有 ${inbox.items.length} 条待收集内容`} detail="当前输入仍保留。" action={<button className={ui.textButton} onClick={showCollection}>查看收集内容</button>} />}</>;
   const operationNotice: MobileFeedback | undefined = inbox?.error ? { tone: "error", title: "收集操作未能完成", detail: inbox.error } : inbox?.processing ? { tone: "pending", title: "正在整理分享内容…" } : inbox?.notice ? { tone: "info", title: "收集提示", detail: inbox.notice } : undefined;
   const clear = () => { setQuery(""); setFolder("all"); setTag(""); resetScroll(); };
   return <div ref={taskRoot} className={styles.root} data-mobile-task-root data-return-source={selected && (editing || maintaining || article.open) ? "reader" : "list"}>
@@ -110,7 +110,7 @@ export function KnowledgeView({ active, pageNotice, inbox, onTaskChange }: { onT
           {!edit.ready && edit.error && <MobileNotice error title="修改草稿暂时无法读取" detail={edit.error} action={<button className={ui.textButton} onClick={() => void edit.retryLoad()}>重新读取</button>} />}
           {inbox?.processing && <MobileNotice tone="pending" title="正在整理分享内容…" />}
           {inbox?.error && <MobileNotice error title="待收集内容暂不可用" detail={inbox.error} action={<button className={ui.textButton} onClick={() => void inbox.refresh()}>重新读取</button>} />}
-          {inbox?.notice && dismissedInboxNotice !== inbox.notice && <MobileToast placement="flow" compact tone="info" title="收集提示" detail={inbox.notice} onDismiss={() => setDismissedInboxNotice(inbox.notice)} />}
+          {inbox?.notice && dismissedInboxNotice !== inbox.notice && <MobileToast compact tone="info" title="收集提示" detail={inbox.notice} onDismiss={() => setDismissedInboxNotice(inbox.notice)} />}
           <KnowledgePending active={active && !editing && !maintaining && !article.open}
             draft={draft.draft ? { id: draft.draft.id, title: draft.draft.title, busy: draft.saving, locked: draft.locked, error: draft.error, discard: draft.discard, resume: () => { rememberScroll(); setEditing(true); setSelected(null); } } : undefined}
             edit={edit.draft ? { id: edit.draft.id, title: edit.draft.title, busy: edit.saving, locked: edit.locked, error: edit.error, discard: edit.discard, resume: () => { rememberScroll(); setMaintaining(true); } } : undefined}

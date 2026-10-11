@@ -42,7 +42,7 @@ export const KnowledgeImageCanvas = forwardRef<ImageCanvasHandle, { src: string;
         }} onError={() => { setFailed(true); onFailure(true); }} />
       </PinchViewport>
     </div>
-    {failed && <MobileNotice compact error title="图片未能打开" detail="正文仍保留，可重新读取图片。" action={<button className={ui.textButton} onClick={() => { setFailed(false); onFailure(false); setEpoch(v => v + 1); }}>重新读取</button>} />}
+    {failed && <MobileNotice compact error urgency="assertive" title="图片未能打开" detail="正文仍保留，可重新读取图片。" action={<button className={ui.textButton} onClick={() => { setFailed(false); onFailure(false); setEpoch(v => v + 1); }}>重新读取</button>} />}
     {!failed && <p className={styles.hint}>双指缩放，放大后拖动</p>}
   </div>;
 });

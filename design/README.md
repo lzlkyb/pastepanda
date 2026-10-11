@@ -56,9 +56,9 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `mobile-touch-2026-10-02/` | 5 | 141 KB |  |
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
 | `mobile-ui-unification-2026-10-09/` | 2 | 182 KB |  |
-| `*.html`（根目录） | 338 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 343 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（338 份，按主题分组）
+## 设计稿清单（343 份，按主题分组）
 
 ### 视觉与品牌（25）
 
@@ -105,12 +105,13 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`PastePanda-流程图-全屏编辑版-重设计`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-%E5%85%A8%E5%B1%8F%E7%BC%96%E8%BE%91%E7%89%88-%E9%87%8D%E8%AE%BE%E8%AE%A1.html) | 2026-08-13 | 36 KB |
 | [`PastePanda-流程图-UI精修-方案乙`](./PastePanda-%E6%B5%81%E7%A8%8B%E5%9B%BE-UI%E7%B2%BE%E4%BF%AE-%E6%96%B9%E6%A1%88%E4%B9%99.html) | 2026-08-13 | 42 KB |
 
-### 截图与标注（39）
+### 截图与标注（40）
 
 *截图子系统：选区状态机、工具栏、标注工具、取文字/OCR、贴图、长截图、遮罩。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`macOS贴图-交互预览`](./macOS%E8%B4%B4%E5%9B%BE-%E4%BA%A4%E4%BA%92%E9%A2%84%E8%A7%88.html) | 2026-10-09 近期 | 8 KB |
 | [`PastePanda-截图出口面板图标统一-设计稿`](./PastePanda-%E6%88%AA%E5%9B%BE%E5%87%BA%E5%8F%A3%E9%9D%A2%E6%9D%BF%E5%9B%BE%E6%A0%87%E7%BB%9F%E4%B8%80-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-02 近期 | 39 KB |
 | [`PastePanda-截图AI弹层整改-1比1-设计稿`](./PastePanda-%E6%88%AA%E5%9B%BEAI%E5%BC%B9%E5%B1%82%E6%95%B4%E6%94%B9-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-02 近期 | 47 KB |
 | [`PastePanda-截图整改后-1比1-设计稿`](./PastePanda-%E6%88%AA%E5%9B%BE%E6%95%B4%E6%94%B9%E5%90%8E-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-01 近期 | 45 KB |
@@ -306,7 +307,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`mobile-update-camera-focus-2026-10-10`](./mobile-update-camera-focus-2026-10-10.html) | 2026-10-10 近期 | 16 KB |
+| [`mobile-update-camera-focus-2026-10-10`](./mobile-update-camera-focus-2026-10-10.html) | — | 16 KB |
 | [`远程电脑-连接建立阶段化-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B%E9%98%B6%E6%AE%B5%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-07 近期 | 61 KB |
 | [`mobile-update-notes-sheet-2026-10-07`](./mobile-update-notes-sheet-2026-10-07.html) | 2026-10-07 近期 | 31 KB |
 | [`远程电脑-手机锁屏明示-S1-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%89%8B%E6%9C%BA%E9%94%81%E5%B1%8F%E6%98%8E%E7%A4%BA-S1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 25 KB |
@@ -421,19 +422,23 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`ui-1to1-restoration-draft`](./ui-1to1-restoration-draft.html) | 2026-08-06 | 91 KB |
 | [`search-box-unify`](./search-box-unify.html) | 2026-08-06 | 16 KB |
 
-### 未分类（47）
+### 未分类（51）
 
 *文件名没命中任何规则。给个更贴主题的文件名，或去脚本 `RULES` 里补一条。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`mobile-notice-exits-fix-2026-10-10`](./mobile-notice-exits-fix-2026-10-10.html) | — | 5 KB |
+| [`mobile-interaction-system-2026-10-10`](./mobile-interaction-system-2026-10-10.html) | — | 7 KB |
+| [`mobile-focus-upgrade-2026-10-10`](./mobile-focus-upgrade-2026-10-10.html) | — | 3 KB |
 | [`mobile-controlled-pager-demo-2026-10-11`](./mobile-controlled-pager-demo-2026-10-11.html) | — | 0 KB |
 | [`mobile-controlled-pager-2026-10-11`](./mobile-controlled-pager-2026-10-11.html) | — | 3 KB |
 | [`mobile-back-sheet-polish-2026-10-11`](./mobile-back-sheet-polish-2026-10-11.html) | — | 6 KB |
-| [`mobile-notice-exits-fix-2026-10-10`](./mobile-notice-exits-fix-2026-10-10.html) | 2026-10-10 | 5 KB |
-| [`mobile-interaction-system-2026-10-10`](./mobile-interaction-system-2026-10-10.html) | 2026-10-10 | 7 KB |
-| [`mobile-focus-upgrade-2026-10-10`](./mobile-focus-upgrade-2026-10-10.html) | 2026-10-10 | 3 KB |
-| [`mobile-article-collection-2026-10-09`](./mobile-article-collection-2026-10-09.html) | 2026-10-10 | 3 KB |
+| [`mobile-article-collection-2026-10-09`](./mobile-article-collection-2026-10-09.html) | — | 3 KB |
+| [`macos-av1-codec-menu`](./macos-av1-codec-menu.html) | — | 4 KB |
+| [`mobile-feedback-live-2026-10-11`](./mobile-feedback-live-2026-10-11.html) | 2026-10-11 | 0 KB |
+| [`mobile-feedback-B-2026-10-11`](./mobile-feedback-B-2026-10-11.html) | 2026-10-11 | 3 KB |
+| [`屏幕录制-默认整屏一步开录-甲案-设计稿`](./%E5%B1%8F%E5%B9%95%E5%BD%95%E5%88%B6-%E9%BB%98%E8%AE%A4%E6%95%B4%E5%B1%8F%E4%B8%80%E6%AD%A5%E5%BC%80%E5%BD%95-%E7%94%B2%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-10 | 49 KB |
 | [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | 2026-10-08 | 6 KB |
 | [`mobile-knowledge-collection-attachments-2026-10-08`](./mobile-knowledge-collection-attachments-2026-10-08.html) | 2026-10-08 | 8 KB |
 | [`mobile-commercial-upgrade-2026-10-07`](./mobile-commercial-upgrade-2026-10-07.html) | 2026-10-08 | 57 KB |
@@ -475,8 +480,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`待办灵动岛-液态玻璃-3a设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%B6%B2%E6%80%81%E7%8E%BB%E7%92%83-3a%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 | 13 KB |
 | [`md-outline-jump-microanim-方案2`](./md-outline-jump-microanim-%E6%96%B9%E6%A1%882.html) | 2026-09-20 | 11 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 3 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 0 份。
 
 ---
 
-_共 338 份设计稿。重新生成：`npm run gen:design-index`_
+_共 343 份设计稿。重新生成：`npm run gen:design-index`_

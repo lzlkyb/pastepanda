@@ -14,6 +14,7 @@ import { useMobileDeviceConnect } from "./useMobileDeviceConnect";
 import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
 import { MobileToast } from "../ui/MobileToast";
 import ui from "../ui/MobileUi.module.css";
 import styles from "./RcDevices.module.css";
@@ -82,7 +83,7 @@ export function RcDevicesView({
         </button>
       }
     >
-      {rc.targetsError && (
+      <MobileFeedbackSlot>{rc.targetsError ? (
         <MobileNotice
           error
           title="设备列表未能更新"
@@ -93,20 +94,20 @@ export function RcDevicesView({
             </button>
           }
         />
-      )}
-      {active && notice && <MobileToast placement="flow" tone="success" title={notice} onDismiss={dismissNotice} />}
-      {active && connection.peer && !pickedTarget && !unoJoin && (connection.error || rc.error) && (
+      ) : null}</MobileFeedbackSlot>
+      {active && notice && <MobileToast tone="success" title={notice} onDismiss={dismissNotice} />}
+      <MobileFeedbackSlot>{active && connection.peer && !pickedTarget && !unoJoin && (connection.error || rc.error) ? (
         <MobileNotice error title={`未能连接 ${rcDisplayName(connectionTarget ?? {}, "目标设备")}`} detail={connection.error || rcErrorText(rc.error)}
           onDismiss={connection.clearError}
           action={<button className={ui.textButton} disabled={connection.blocked || !connectionTarget} onClick={() => {
             if (connectionTarget) void connection.request(connectionTarget, "control");
           }}>重试</button>} />
-      )}
-      {probeError && targets.length > 0 && (
+      ) : null}</MobileFeedbackSlot>
+      <MobileFeedbackSlot>{probeError && targets.length > 0 ? (
         <MobileNotice tone="warning" title="在线状态检查失败"
           detail="设备的可用性可能不是最新，可重新检查。"
           action={<button className={ui.textButton} onClick={probe}>重新检查</button>} />
-      )}
+      ) : null}</MobileFeedbackSlot>
       {inbound.map((k) => (
         <RcInboundAskCard
           key={k.peer}
@@ -121,12 +122,12 @@ export function RcDevicesView({
             {rc.busy ? "正在结束…" : "结束连接"}
           </button>} />
       )}
-      {pending && (
+      <MobileFeedbackSlot>{pending ? (
         <MobileNotice tone="pending" title={`正在连接 ${rcDisplayName(pending, "电脑")}…`} detail="等待电脑端确认，受信任设备将自动通过。"
           action={<button className={ui.secondary} disabled={rc.busy} onClick={() => void rc.cancel()}>
             取消连接
           </button>} />
-      )}
+      ) : null}</MobileFeedbackSlot>
       <RcChannelNotice rc={rc} />
       <div className={ui.sectionHead}>
         <span>已配对设备</span>

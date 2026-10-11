@@ -147,28 +147,29 @@ it("真实弹层内传文件等背景解锁后进入文件页并保留目标电�
 it("设备面板认领错误后页面不重复显示，关闭后错误仍可处理", () => {
   state.error = "连接未能完成，请重试";
   render(<App />);
-  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  // 页面级错误反馈走温和播报（role=status），条数才是本用例要钉的去重结果
+  expect(screen.getAllByRole("status")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "打开设备面板" }));
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "关闭设备面板" }));
-  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getAllByRole("status")).toHaveLength(1);
 });
 
 it("同一后台故障由设备反馈承载，不再叠加页面和文件提示", () => {
   state.error = "invoke failed"; state.targetsError = "tauri_internal unavailable"; state.fileError = "invoke failed";
   render(<App />);
   // Device view is mocked; its own retry notice owns this cause.
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
   expect(screen.queryByRole("button", { name: "查看" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "设置" }));
-  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getAllByRole("status")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "查看" })).toBeNull();
 });
 
 it("文件和更新提示共用一个布局容器，避免两条浮层占据相同位置", () => {
   state.fileError = "电脑未能接收文件"; state.update = true;
   render(<App />);
-  expect(screen.getByRole("alert").parentElement).toBe(screen.getByText("更新提示").parentElement);
+  expect(screen.getByRole("status").parentElement).toBe(screen.getByText("更新提示").parentElement);
   expect(screen.getByRole("button", { name: "查看" })).toBeTruthy();
 });
 

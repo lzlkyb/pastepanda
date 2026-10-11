@@ -119,7 +119,7 @@ it("a lost quick-save reply recovered in the editor never saves a later unrelate
   });
   render(<KnowledgeView active inbox={source} />);
   fireEvent.click(await screen.findByRole("button", { name: "保存到手机" }));
-  await within(screen.getByRole("dialog", { name: "收集内容预览" })).findByRole("alert");
+  await within(screen.getByRole("dialog", { name: "收集内容预览" })).findByText("收集内容仍保留");
   fireEvent.click(screen.getByRole("button", { name: "关闭面板" }));
   fireEvent.click(screen.getByRole("button", { name: "重试保存到手机" }));
   await screen.findByText("已保存到手机");
