@@ -209,7 +209,7 @@ export function RcSessionView({
 
   const codecChoice = useRcCodecChoice({
     sessionId: session.id, peerHevc: rc.status?.peer_hevc, peerAv1: rc.status?.peer_av1,
-    actualCodec: frames.codec, quality: prefs.qPick, connected: link.state === "connected",
+    actualCodec: frames.hasFrame ? frames.codec : "", quality: prefs.qPick, connected: link.state === "connected",
     onQuality: prefs.setQPick, onStatus: say,
   });
 

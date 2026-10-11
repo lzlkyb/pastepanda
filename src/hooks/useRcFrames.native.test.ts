@@ -47,6 +47,16 @@ describe("没有 WebCodecs AV1 的原生接收", () => {
     expect(rcSendInput).not.toHaveBeenCalledWith({ kind: "set_codec", codec: "h264" });
     h.unmount();
   });
+  it("请求 AVC 回退不能提前宣称已经收到 H.264 帧", async () => {
+    const f: RcBinFrame = { codec: "av1", key: true, full: true, width: 2, height: 2,
+      rect: null, at_ms: 100, cap_ms: 0, enc_ms: 0, data: new Uint8Array([1, 2]) };
+    feed.batches = [[f, f, f]];
+    const h = mount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    expect(rcSendInput).toHaveBeenCalledWith({ kind: "set_codec", codec: "h264" });
+    expect(h.result.current.codec).toBe("av1");
+    h.unmount();
+  });
   it("窗口隐藏时不取帧，卸载后不持续调用原生解码", async () => {
     feed.visible = false;
     const h = mount();

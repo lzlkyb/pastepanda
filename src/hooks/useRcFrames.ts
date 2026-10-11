@@ -171,7 +171,7 @@ export function useRcFrames(
       waitingSinceMs = 0;
       h264?.close();
       h264 = null;
-      setCodec("h264");
+      // A fallback request does not establish the codec of received frames.
       void rcSendInput({ kind: "set_codec", codec: "h264" }).catch(() => {});
     };
 
