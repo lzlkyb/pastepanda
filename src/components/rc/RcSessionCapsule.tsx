@@ -30,6 +30,7 @@ import type { RcKeyMode } from "@/lib/rcKeyMode";
 import type { UseRc } from "@/hooks/useRc";
 import type { useRcInput } from "@/hooks/useRcInput";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
+import type { RcCodecChoice } from "@/hooks/useRcCodecChoice";
 import type { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
 import { useRcCapsuleReveal } from "@/hooks/useRcCapsuleReveal";
 import { useRcHoverReveal } from "@/hooks/useRcHoverReveal";
@@ -54,6 +55,7 @@ export function RcSessionCapsule({
   link,
   input,
   send,
+  codecChoice,
   quality,
   scopePick,
   bitrate,
@@ -85,6 +87,7 @@ export function RcSessionCapsule({
   link: RcLinkSnapshot;
   input: RcInput;
   send: RcSend;
+  codecChoice?: RcCodecChoice;
   /** 会话内生效的画质档 / 画面范围 / 码率倍率（下拉当前值）。 */
   quality: string;
   scopePick: string;
@@ -209,7 +212,7 @@ export function RcSessionCapsule({
             className={styles.capBtn}
             aria-expanded={moreOpen}
             aria-haspopup="true"
-            title="更多：码率 / 声音 / 剪贴板 / 文件 / 指针 / 重连"
+            title="更多：编码 / 码率 / 声音 / 剪贴板 / 文件 / 指针 / 重连"
             onClick={() => setMoreOpen((v) => !v)}
           >
             <MoreHorizontal size={13} aria-hidden="true" />
@@ -242,6 +245,7 @@ export function RcSessionCapsule({
         {moreOpen && (
           <RcCapsuleMore
             rc={rc}
+            codecChoice={codecChoice}
             canControl={canControl}
             bitrate={bitrate}
             bitrateOptions={send.bitrateOptions}

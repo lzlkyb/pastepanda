@@ -86,5 +86,10 @@ export function useSessionSettings(sessionId?: string) {
     if (selected === latest) setLatest(null);
   }, [latest]);
   const notices = (Object.keys(items) as RcSettingKey[]).filter(key => visible[key]).map(key => ({ key, feedback: items[key]!.feedback }));
-  return { confirmed, items, latest, notices, feedback: latest ? items[latest]?.feedback : undefined, pick, retry, dismiss };
+  // Confirmation drives choices permanently; only ordinary receipts expire. A dismissed
+  // failure summary still has its recovery beside the setting that caused it.
+  const feedbackItems = Object.fromEntries((Object.keys(items) as RcSettingKey[])
+    .filter(key => visible[key] || items[key]?.status !== "accepted")
+    .map(key => [key, items[key]])) as Partial<Record<RcSettingKey, SessionSettingState>>;
+  return { confirmed, items, feedbackItems, latest, notices, feedback: latest ? items[latest]?.feedback : undefined, pick, retry, dismiss };
 }

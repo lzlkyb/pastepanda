@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>受控横滑 B · 实施预览</title><link rel="stylesheet" href="../src/styles/theme.css"><link rel="stylesheet" href="mobile-controlled-pager-2026-10-11.css"></head>
+<body><main class="review"><section class="brief"><p class="eyebrow">PastePanda / 已确认 B</p><h1>滑动自然，返回有来源。</h1><p>分页、知识库、返回和弹层复用正式组件。设备、文件、设置使用示例内容；存储在当前页面内存中，不连接真实电脑、不修改真实笔记。</p>
+<label for="size">屏幕尺寸</label><select id="size"><option value="normal">竖屏 · 390 × 650</option><option value="small">小屏 · 320 × 560</option><option value="landscape">横屏 · 650 × 320</option></select>
+<label class="check"><input id="large" type="checkbox">大字号</label>
+<div class="controls"><button data-back="start">返回预览 50%</button><button data-back="cancel">取消并回位</button><button data-back="commit">确认返回</button></div>
+<p class="meta">返回按钮模拟原生事件，仅验证视觉与状态；不能替代 Android 系统边缘、触控采样和帧率验收。</p>
+<ol><li>普通页面横滑，底部点击也能切换。</li><li>文件页横向内容与输入不切 Tab。</li><li>知识库打开全文后隐藏主导航，返回露出来源。</li><li>页头拖动弹层，正文独立滚动，短拖回弹。</li></ol>
+<a href="mobile-back-sheet-polish-2026-10-11.html">查看已确认的返回与弹层补充稿</a></section>
+<section class="stage"><iframe id="preview" src="mobile-controlled-pager-demo-2026-10-11.html" title="手机受控横滑组件预览"></iframe><p class="meta">正式交互组件 · 示例数据 · 未做真机手感验收</p></section></main>
+<script type="module">
+const frame=document.getElementById('preview');
+document.getElementById('size').addEventListener('change',event=>frame.dataset.size=event.target.value);
+document.getElementById('large').addEventListener('change',event=>frame.contentDocument.documentElement.classList.toggle('large-type',event.target.checked));
+for(const button of document.querySelectorAll('[data-back]'))button.addEventListener('click',()=>{
+ const phase=button.dataset.back;
+ frame.contentWindow.dispatchEvent(new CustomEvent('mobile-native-back',{detail:{phase,progress:0,edge:'left'}}));
+ if(phase==='start')frame.contentWindow.dispatchEvent(new CustomEvent('mobile-native-back',{detail:{phase:'progress',progress:.5,edge:'left'}}));
+});
+</script></body></html>

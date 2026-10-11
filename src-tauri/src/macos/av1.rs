@@ -25,7 +25,7 @@ struct Api {
     close: Close,
     free: Free,
 }
-fn library_paths(exe: PathBuf) -> Vec<PathBuf> {
+pub(super) fn library_paths(exe: PathBuf) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if let Some(contents) = exe.parent().and_then(|p| p.parent()) {
         if contents.file_name().is_some_and(|p| p == "Contents") {

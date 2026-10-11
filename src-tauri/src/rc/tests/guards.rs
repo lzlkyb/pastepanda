@@ -5,6 +5,17 @@
 
 use super::window;
 
+#[test]
+fn viewer_drain_serializes_queue_consumption_before_native_decode() {
+    let src = include_str!("../service/frames_clip.rs");
+    let start = src.find("pub fn drain_frames_for_viewer").unwrap();
+    let end = src[start..].find("pub(in crate::rc) fn clear_outbox").unwrap() + start;
+    let body = src[start..end].split_whitespace().collect::<String>();
+    let lock = body.find("self.viewer_drain.lock()").expect("queue drain and native decode must share one serial guard");
+    assert!(lock < body.find("self.drain_frames()").unwrap());
+    assert!(lock < body.find(".batch(session,frames)").unwrap());
+}
+
 /// P1-1：`audio_reset` 必须接进 `end_session`——否则被控端的 audio_muted /
 /// spk_muted_by_peer 跨会话残留，下一场会话静默无声且无任何提示。
 /// 这正是 wiring-gap 的形态：函数有、测试有、生产路径没人调。

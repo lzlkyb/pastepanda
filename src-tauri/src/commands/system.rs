@@ -654,85 +654,11 @@ pub fn get_monitor_status(app: tauri::AppHandle) -> Result<bool, String> {
 /// 重新注册全局热键（前端保存设置后调用）
 #[tauri::command]
 pub fn reregister_hotkeys(app: tauri::AppHandle, store: State<DataStore>) -> Result<(), String> {
-    let config = store.get_config()?;
-    let show_window = config
-        .get("hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+V")
-        .to_string();
-    let seq_paste = config
-        .get("sequential_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+Q")
-        .to_string();
-    let stack_toggle = config
-        .get("stack_toggle_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+K")
-        .to_string();
-    let stack_paste = config
-        .get("stack_paste_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+P")
-        .to_string();
-    let quick_paste = config
-        .get("quick_paste_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Alt+V")
-        .to_string();
-    let screenshot = config
-        .get("screenshot_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+A")
-        .to_string();
-    let daily_note = config
-        .get("daily_note_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+D")
-        .to_string();
-    let todo_island = config
-        .get("todo_island_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Alt+T")
-        .to_string();
-    let screen_record = config
-        .get("rec_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+R")
-        .to_string();
-    let rec_mark = config
-        .get("rec_mark_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+M")
-        .to_string();
-    let rec_pause = config
-        .get("rec_pause_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Ctrl+Alt+Space")
-        .to_string();
-    let rec_stop = config
-        .get("rec_stop_hotkey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    // 全局热键是桌面专属（hotkey_manager 模块在 mobile 不编译）；手机端诚实报不支持
+    // Desktop owns hotkey_manager; mobile keeps the existing unsupported result.
     #[cfg(desktop)]
     {
-        let hotkey_config = crate::hotkey_manager::HotkeyConfig {
-            show_window,
-            seq_paste,
-            index_prefix: "Ctrl+Alt".to_string(),
-            stack_toggle,
-            stack_paste,
-            quick_paste,
-            screenshot,
-            daily_note,
-            todo_island,
-            screen_record,
-            rec_pause,
-            rec_stop,
-            rec_mark,
-        };
+        let config = store.get_config()?;
+        let hotkey_config = crate::hotkey_manager::HotkeyConfig::from_saved(&config);
         crate::hotkey_manager::reregister_global_hotkeys(&app, &hotkey_config)
     }
     #[cfg(mobile)]
