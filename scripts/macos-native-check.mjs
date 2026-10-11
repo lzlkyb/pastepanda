@@ -38,6 +38,8 @@ function run(command, args, timeout) {
   }
 }
 try {
+  console.log("\nChecking Keychain consent policy (mocked Security calls only)");
+  run(process.execPath, ["scripts/macos-keychain-check.mjs"], 60000);
   for (const [name, sources] of probes) {
     console.log(`\nChecking ${name} (fixtures only)`);
     const binary = path.join(output, name);
@@ -46,7 +48,7 @@ try {
       ...frameworks.flatMap(framework => ["-framework", framework]), "-o", binary], 60000);
     run(binary, name === "remote_video" ? [path.join(cache, "macos-vt-packets.json")] : name === "remote_audio" ? [path.join(cache, "macos-aac-packets.json")] : [], 15000);
   }
-  console.log("\nAll fourteen native fixture probes passed. Desktop capture, permissions and audio hearing still need actual application validation.");
+  console.log("\nAll fourteen native fixture probes and the Keychain consent probe passed. Desktop capture, permissions and audio hearing still need actual application validation.");
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;
