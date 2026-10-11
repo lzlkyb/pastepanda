@@ -20,6 +20,8 @@
 import { Power, Pointer, Keyboard, MousePointerClick } from "lucide-react";
 import type { UseRc } from "@/hooks/useRc";
 import { RcDropdown, type RcDropdownOption } from "./RcDropdown";
+import { RcCodecChoice } from "./RcCodecChoice";
+import type { RcCodecChoice as CodecChoice } from "@/hooks/useRcCodecChoice";
 import { RcAudioBar } from "./RcAudioBar";
 import { RcClipboardBar } from "./RcClipboardBar";
 import { RcFileBar } from "./RcFileBar";
@@ -27,6 +29,7 @@ import styles from "./RemoteComputer.module.css";
 
 export function RcCapsuleMore({
   rc,
+  codecChoice,
   canControl,
   bitrate,
   bitrateOptions,
@@ -48,6 +51,7 @@ export function RcCapsuleMore({
   busy,
 }: {
   rc: UseRc;
+  codecChoice?: CodecChoice;
   canControl: boolean;
   /** Q5：当前码率倍率（50–200，100 = 跟随链路）。 */
   bitrate: number;
@@ -102,6 +106,8 @@ export function RcCapsuleMore({
           />
         )}
       </div>
+
+      {codecChoice && <RcCodecChoice choice={codecChoice} />}
 
       {canControl && (
         <>

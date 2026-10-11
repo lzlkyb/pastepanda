@@ -33,7 +33,8 @@ import { useRcRemoteSend } from "@/hooks/useRcRemoteSend";
 import { useRcWindowFit } from "@/hooks/useRcWindowFit";
 import { RcSessionStage } from "./RcSessionStage";
 import { RcSessionCapsule } from "./RcSessionCapsule";
-import { RcHud } from "./RcHud";
+import { RcSessionDetails } from "./RcSessionDetails";
+import { useRcCodecChoice } from "@/hooks/useRcCodecChoice";
 import styles from "./RemoteComputer.module.css";
 
 export function RcSessionView({
@@ -206,6 +207,12 @@ export function RcSessionView({
     onStatus: (m, k) => say(m, k),
   });
 
+  const codecChoice = useRcCodecChoice({
+    sessionId: session.id, peerHevc: rc.status?.peer_hevc, peerAv1: rc.status?.peer_av1,
+    actualCodec: frames.codec, quality: prefs.qPick, connected: link.state === "connected",
+    onQuality: prefs.setQPick, onStatus: say,
+  });
+
   return (
     <div className={styles.sessionWrap} ref={wrapRef}>
       {/* 错误面板住在全屏元素的子树里（见 errorSlot 注释），收起/关闭都归它自己 */}
@@ -243,6 +250,7 @@ export function RcSessionView({
         link={link}
         input={input}
         send={send}
+        codecChoice={codecChoice}
         quality={prefs.qPick}
         scopePick={prefs.scopePick}
         bitrate={prefs.bitratePick}
@@ -266,31 +274,8 @@ export function RcSessionView({
         onRequestControl={onRequestControl ? () => void requestControl() : undefined}
         stageRef={screenRef}
         detail={
-          <RcHud
-            codec={frames.codec}
-            fps={frames.fps}
-            rttMs={link.rttMs}
-            frameLatencyMs={frames.latencyMs}
-            lossPermille={rc.status?.loss_permille}
-            bitrateKbps={frames.bitrateKbps}
-            segCapMs={frames.segCapMs}
-            segEncMs={frames.segEncMs}
-            segNetMs={frames.segNetMs}
-            segDecMs={frames.segDecMs}
-            respMs={frames.respMs}
-            quality={prefs.qPick}
-            /* 🔴 自动档的落点只有**推流那台机器**知道。这里只在本机作为被控端
-                推流（inbound_active）时拿得到生效档；出站会话显示「由对方决定」。 */
-            activeQuality={
-              session.phase === "inbound_active" ? rc.status?.active_quality : undefined
-            }
-            peerDriven={session.phase !== "inbound_active"}
-            scope={prefs.scopePick}
-            linkState={link.state}
-            pathKind={rc.status?.path_kind ?? ""}
-            pointerLocked={input.pointerLocked}
-            frameSize={frames.size}
-          />
+          <RcSessionDetails session={session} rc={rc} frames={frames} link={link}
+            quality={prefs.qPick} scope={prefs.scopePick} pointerLocked={input.pointerLocked} />
         }
       />
     </div>

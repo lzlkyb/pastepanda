@@ -3809,3 +3809,11 @@
 .pairQr[data-ready="0"] {
   display: none;
 }
+
+/* Encoding status follows the deep glass panel's existing foreground. */
+.capCodecStatus {
+  margin: 8px 4px;
+  font-size: 11px;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
