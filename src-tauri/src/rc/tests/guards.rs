@@ -13,7 +13,7 @@ fn viewer_drain_serializes_queue_consumption_before_native_decode() {
     let body = src[start..end].split_whitespace().collect::<String>();
     let lock = body.find("self.viewer_drain.lock()").expect("queue drain and native decode must share one serial guard");
     assert!(lock < body.find("self.drain_frames()").unwrap());
-    assert!(lock < body.find(".batch(session, frames)").unwrap());
+    assert!(lock < body.find(".batch(session,frames)").unwrap());
 }
 
 /// P1-1：`audio_reset` 必须接进 `end_session`——否则被控端的 audio_muted /

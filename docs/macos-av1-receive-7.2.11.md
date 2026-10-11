@@ -34,6 +34,7 @@ Chromium HTTP 测量**不代表 Tauri WebKit IPC**，更不代表双电脑真实
 - 原生 `av1_receive_probe.c`：旧库缺解码符号时失败，新库解出连续画面、强制关键帧独立恢复、时间戳、透明通道、颜色与坏包边界。
 - `all_interframe_codecs_wait_for_key_after_outbox_overflow`：旧 HEVC 分支先失败，统一预测编码保护后通过。
 - `viewer_drain_serializes_queue_consumption_before_native_decode`：新增异步路径缺串行守卫时先失败，串行消费＋解码后通过。
+- `pending_viewer_waits_without_consuming_frames_or_reporting_decode_failure`：连接／等待批准阶段返回空批次而不报解码故障；先红后绿。
 - HUD／被控通知的 AV1 文案：两项先显示 JPEG 而失败，单一名称源修复后通过。未知编码不会读取对象原型属性。
 
 红／绿日志保存在本机 `.cache/av1-receive-*.log`。源代码测试不能替代真实权限、设备或听音验收。

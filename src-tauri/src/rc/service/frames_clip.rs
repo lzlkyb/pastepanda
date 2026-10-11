@@ -46,6 +46,11 @@ impl RcService {
         let _serial = self.viewer_drain.lock().unwrap_or_else(|p| p.into_inner());
         let frames = {
             let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if matches!(inner.session.as_ref(), Some(s) if s.id == session && s.phase == SessionPhase::OutboundPending) {
+                // Viewers mount while dialing/awaiting approval. This is an
+                // ordinary empty wait, not a decode failure; do not drain yet.
+                return Ok((Vec::new(), Vec::new()));
+            }
             if !matches!(inner.session.as_ref(), Some(s) if s.id == session && s.phase == SessionPhase::OutboundActive) {
                 return Err("远程会话已改变".into());
             }

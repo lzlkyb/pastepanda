@@ -44,6 +44,20 @@ fn viewer_cannot_drain_a_replacement_or_inbound_session() {
     assert_eq!(svc.drain_frames().len(), 1);
 }
 
+#[test]
+fn pending_viewer_waits_without_consuming_frames_or_reporting_decode_failure() {
+    let svc = RcService::new(store());
+    set_session(&svc, active_session("connecting", SessionPhase::OutboundPending));
+    svc.push_outbox(crate::rc::video::VideoFrame {
+        width: 64, height: 64, jpeg: vec![1], at_ms: 1, full: true, rect: None,
+        codec: crate::rc::video::FrameCodec::Jpeg, key: true, cap_ms: 0, enc_ms: 0,
+    });
+    let (frames, native) = svc.drain_frames_for_viewer("connecting").expect("连接尚未建立只是等待，不是解码故障");
+    assert!(frames.is_empty() && native.is_empty());
+    set_session(&svc, active_session("connecting", SessionPhase::OutboundActive));
+    assert_eq!(svc.drain_frames_for_viewer("connecting").unwrap().0.len(), 1);
+}
+
 #[tokio::test]
 async fn independent_media_refreshes_only_its_own_session_heartbeat() {
     let svc = std::sync::Arc::new(RcService::new(store()));
