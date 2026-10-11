@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * result 态的出口面板（完成截图后选择去向）。
  *
@@ -154,14 +155,14 @@ export function ResultActions({
         icon={Copy}
         label="复制图片"
         sub="写入剪贴板历史"
-        hint="Ctrl+C"
+        hint={`${primaryShortcutLabel("c")}`}
         onClick={onCopyImage}
       />
       <ExitRow
         icon={Download}
         label="保存到图库"
         sub="另存为图片文件"
-        hint="Ctrl+S"
+        hint={`${primaryShortcutLabel("s")}`}
         onClick={onSaveToGallery}
       />
       <ExitRow
@@ -223,7 +224,7 @@ export function ResultActions({
               cls="insert"
               label="插入到当前文档"
               sub={editorTarget.split(/[\\/]/).pop() ?? ""}
-              hint="Ctrl+Enter"
+              hint={`${primaryShortcutLabel("enter")}`}
               onClick={onInsertToEditor}
             />
           )}

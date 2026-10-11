@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { FolderFilter } from "@/lib/api";
 import { useAppStore } from "@/stores/appStore";
-import { formatHotkey } from "@/components/settings/HotkeyRecorder";
+import { activeConfiguredHotkey, configuredShortcutLabel } from "@/lib/utils";
 import { isDailyFilter } from "./DailySection";
 import styles from "../KnowledgeView.module.css";
 
@@ -111,7 +111,9 @@ export function NoteListEmpty({
   const hint = kw
     ? "换个词试试。搜的是标题与正文，也支持拼音首字母。"
     : daily
-      ? `复制一段内容后按 ${formatHotkey(dailyHotkey || "ctrl+alt+d")}，它就直接进今天这条；或者右键卡片选「追加到今日速记」。`
+      ? activeConfiguredHotkey(dailyHotkey, "ctrl+alt+d")
+        ? `复制一段内容后按 ${configuredShortcutLabel(dailyHotkey, "ctrl+alt+d")}，它就直接进今天这条；或者右键卡片选「追加到今日速记」。`
+        : "速记热键已禁用。可在记录模式右键卡片，选「追加到今日速记」。"
       : inFolder
         ? "这个文件夹还是空的。把笔记拖进来，或者直接在这里新建一条。"
         : "在记录模式右键一张卡片、选「转为笔记」，它就会出现在这里。";

@@ -992,17 +992,31 @@ async fn test_tools_list_over_the_wire() {
 }
 
 #[tokio::test]
-async fn test_notifications_initialized_answers_with_null_id() {
-    // HTTP 传输下必须回一个体，否则客户端会卡在握手第二步。
+async fn test_notifications_initialized_returns_accepted_without_body() {
+    // Streamable HTTP §Sending Messages requires 202 and no JSON-RPC response.
     let base = spawn_server().await;
-    let (status, v) = rpc(
-        &base,
-        json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
-    )
-    .await;
-    assert_eq!(status, 200);
-    assert!(v["id"].is_null());
-    assert!(v["result"].is_object());
+    let response = reqwest::Client::new().post(format!("{base}/mcp"))
+        .bearer_auth(TOKEN)
+        .json(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 202);
+    assert!(response.bytes().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_notifications_keep_authentication_and_explicit_null_id_is_a_request() {
+    let base = spawn_server().await;
+    let client = reqwest::Client::new();
+    let notification = json!({"jsonrpc":"2.0","method":"notifications/initialized"});
+    assert_eq!(client.post(format!("{base}/mcp")).json(&notification).send().await.unwrap().status(), 401);
+    let ignored = client.post(format!("{base}/mcp")).bearer_auth(TOKEN)
+        .json(&json!({"jsonrpc":"2.0","method":"notifications/future"})).send().await.unwrap();
+    assert_eq!(ignored.status(), 202);
+    assert!(ignored.bytes().await.unwrap().is_empty());
+    let request = client.post(format!("{base}/mcp")).bearer_auth(TOKEN)
+        .json(&json!({"jsonrpc":"2.0","id":null,"method":"tools/list"})).send().await.unwrap();
+    assert_eq!(request.status(), 200);
+    assert!(request.json::<Value>().await.unwrap()["result"]["tools"].is_array());
 }
 
 #[tokio::test]

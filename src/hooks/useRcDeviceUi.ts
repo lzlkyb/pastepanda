@@ -7,7 +7,7 @@
  * `syncPeer` 走渲染期比对 + setState（与原先 RcA2DeviceDetail 内写法一致）：
  * effect 版本会先渲染一帧上一台的展开态再收，视觉上闪一下。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { TagColorKey } from "@/lib/rcDeviceTags";
 
 export interface RcDeviceOrgDraft {
@@ -18,8 +18,11 @@ export interface RcDeviceOrgDraft {
 }
 
 export function useRcDeviceUi() {
-  const [editingName, setEditingName] = useState(false);
-  const [draftName, setDraftName] = useState("");
+  const [editingName, setEditingNameState] = useState(false);
+  const [draftName, setDraftNameState] = useState("");
+  const draftNameRef = useRef("");
+  const nameRequest = useRef(0);
+  const nameInFlight = useRef(false);
   const [savingName, setSavingName] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [manageFor, setManageFor] = useState<string | null>(null);
@@ -32,6 +35,35 @@ export function useRcDeviceUi() {
       ...current,
       [peer]: { ...(current[peer] ?? { remark, tagName: "", pickedColor: "blue", saving: false }), ...patch },
     }));
+  };
+
+  const setDraftName = (name: string) => {
+    draftNameRef.current = name;
+    setDraftNameState(name);
+  };
+  const invalidateNameSave = () => {
+    nameRequest.current++;
+    nameInFlight.current = false;
+    setSavingName(false);
+  };
+  const setEditingName = (editing: boolean) => {
+    if (!editing) invalidateNameSave();
+    setEditingNameState(editing);
+  };
+  // Keep request ownership in the persistent workbench, including cancel and peer changes.
+  const beginNameSave = (): number | null => {
+    if (nameInFlight.current) return null;
+    nameInFlight.current = true;
+    setSavingName(true);
+    return ++nameRequest.current;
+  };
+  const isNameSaveCurrent = (request: number, submittedDraft?: string) =>
+    nameInFlight.current && request === nameRequest.current &&
+    (submittedDraft === undefined || draftNameRef.current === submittedDraft);
+  const finishNameSave = (request: number) => {
+    if (!isNameSaveCurrent(request)) return;
+    nameInFlight.current = false;
+    setSavingName(false);
   };
 
   /** 换设备才重置；切页再回来（同一台）保留草稿。 */
@@ -49,7 +81,9 @@ export function useRcDeviceUi() {
     draftName,
     setDraftName,
     savingName,
-    setSavingName,
+    beginNameSave,
+    isNameSaveCurrent,
+    finishNameSave,
     manageOpen,
     setManageOpen,
     syncPeer,

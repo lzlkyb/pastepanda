@@ -108,7 +108,7 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         <SettingTile hue="paste">⚡</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>快捷粘贴</div>
-          <div className={`${styles.sRowDesc}`}>在光标处弹出面板，快速选择并粘贴（类 Win+V）</div>
+          <div className={`${styles.sRowDesc}`}>在光标处弹出面板，选择内容后粘贴</div>
         </div>
         <HotkeyRecorder value={config.quick_paste_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "quick_paste_hotkey")} onChange={async (v) => {
           const oldVal = config.quick_paste_hotkey ?? "";

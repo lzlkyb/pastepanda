@@ -34,7 +34,8 @@
           "$APPDATA/**"
         ]
       }
-    }
+    },
+    "macOSPrivateApi": true
   },
   "plugins": {
     "updater": {

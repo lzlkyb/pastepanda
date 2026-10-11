@@ -88,6 +88,11 @@ export function RcAudioBar({
           {audioOn ? "对方已静音" : "双方都静音"}
         </span>
       )}
+      {peer?.err && (
+        <span className={`${styles.fb} ${styles.fbBad}`} role="alert">
+          系统声音：{peer.err}
+        </span>
+      )}
       {/* G3-C：只在可控会话摆——「只看」下对端必拒，摆了就是假按钮 */}
       {canControl && (
         <>
@@ -106,12 +111,7 @@ export function RcAudioBar({
             <VolumeOff size={14} aria-hidden="true" />
             对方外放
           </button>
-          {/* 对端执行失败的原因随快照带回（它对端没有能显示这条的横幅） */}
-          {peer?.err && (
-            <span className={`${styles.fb} ${styles.fbBad}`} title={peer.err}>
-              对方无法切换扬声器
-            </span>
-          )}
+
         </>
       )}
     </>

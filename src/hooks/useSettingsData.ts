@@ -6,7 +6,7 @@ import { resolveSource } from "@/lib/source-mappings";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 /** .md 关联状态以系统注册表为准，不落 AppConfig（避免设置与注册表脱节） */
-export type MdAssocStatus = "unregistered" | "registered" | "default";
+export type MdAssocStatus = "unregistered" | "registered" | "default" | "unsupported" | "available";
 
 interface UseSettingsDataParams {
   config: AppConfig;
@@ -140,7 +140,7 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const s = await invoke<string>("get_md_association_status");
-      if (s === "default" || s === "registered" || s === "unregistered") setMdAssoc(s);
+      if (s === "default" || s === "registered" || s === "unregistered" || s === "unsupported" || s === "available") setMdAssoc(s);
     } catch {
       /* 查询失败保持当前状态 */
     }
@@ -159,12 +159,12 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
     setMdAssocBusy(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("set_md_association", { enable });
-      toast(enable ? "已注册 .md 打开方式，请在设置页中点击 .md 一行并选择 PastePanda" : "已取消 .md 文件关联", "success");
+      const message = await invoke<string>("set_md_association", { enable });
+      toast(message || (enable ? "已注册 .md 打开方式，请在系统设置中选择 PastePanda" : "已取消 .md 文件关联"), "success");
       await refreshMdAssoc();
     } catch (e) {
       logger.warn("设置 .md 关联失败", e);
-      toast(".md 文件关联设置失败", "error");
+      toast(`文件关联设置失败：${String(e)}`, "error");
     } finally {
       setMdAssocBusy(false);
     }

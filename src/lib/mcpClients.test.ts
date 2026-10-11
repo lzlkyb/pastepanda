@@ -493,3 +493,15 @@ describe("stdioBridgeNote：把后端那四个布尔翻成一句人话", () => {
     }
   });
 });
+
+
+describe("Claude Desktop platform paths", () => {
+  it("uses the native Mac path for both discovery and configuration", async () => {
+    const { claudeDesktopPaths } = await import("./utils");
+    expect(claudeDesktopPaths("MacIntel")).toEqual({
+      detectPath: "~/Library/Application Support/Claude",
+      configPath: "~/Library/Application Support/Claude/claude_desktop_config.json",
+    });
+    expect(claudeDesktopPaths("Win32").configPath).toBe("~/AppData/Roaming/Claude/claude_desktop_config.json");
+  });
+});

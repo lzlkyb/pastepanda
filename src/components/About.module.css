@@ -72,6 +72,11 @@
   color: var(--orange);
   border: 1px solid var(--orange-border);
 }
+.unchecked {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+.muted { background: var(--text-secondary); }
 .aboutStatusDot {
   width: 6px;
   height: 6px;

@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { EditorView } from "@codemirror/view";
-import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { useToast } from "@/components/Toast";
 import { useLatest } from "@/hooks/useLatest";
 import { languageFileExtension } from "./languages";
@@ -28,6 +28,8 @@ import { insertPastedImages as savePastedImages } from "../mdImagePaste";
 import { useFileWatch } from "../useFileWatch";
 import { useAutoSaveFile } from "./useAutoSaveFile";
 import { useCloseSave } from "./useCloseSave";
+import { useDocumentSaveAs } from "./useDocumentSaveAs";
+import { persistEditorSource } from "@/lib/editorSource";
 import type { FullscreenTypeSpec } from "./types";
 
 interface Opts {
@@ -63,7 +65,7 @@ export interface DocumentFileApi {
   handleDocChange: (next: string) => void;
   handlePastedImages: (files: File[], view: EditorView) => void;
   handleSave: () => Promise<void>;
-  handleSaveAs: () => Promise<void>;
+  handleSaveAs: () => Promise<boolean>;
   handleOpen: () => Promise<void>;
   handleReloadFromDisk: () => Promise<void>;
   /** 关闭前保存。true = 已处置完毕（可关闭）；false = 取消或写盘失败（不要关） */
@@ -226,45 +228,23 @@ export function useDocumentFile({
   };
 
   // ─── File Operations ────────────────────────────────
-  const handleSaveAs = useCallback(async () => {
-    try {
-      const selectedPath = await save({
-        defaultPath: fileName,
-        filters: [spec.fileFilter],
-      });
-      if (!selectedPath) return;
-      // 与手动保存走同一条路：这里虽然 dialog 插件已把选中路径加进了 scope（用 writeFile
-      // 也能成），但两条写入路径共存只会让「为什么这个能存那个不能」更难查。
-      await invoke("write_text_file_full", { path: selectedPath, text });
-      // 另存为换了路径，重建 mtime 基准（hook 里路径变会先把基准置 0）
-      await fileWatch.markSynced(selectedPath);
-      setCurrentFilePath(selectedPath);
-      setFileName(selectedPath.split(/[\\/]/).pop() || spec.defaultFileName);
-      setInitialContent(text);
-      // 另存为的暴露面最大：`save()` 是系统对话框，可能停很久，用户很容易
-      // 在这期间继续打字。基线仍用写下去的 text，脏否要看「此刻的文本」。
-      setIsDirty(latestTextRef.current !== text);
-      setAutoSaveError(false); // 另存为换了可写的新路径，旧路径的失败标记已无意义
-      toast("已保存", "success");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast("保存失败: " + msg, "error");
-    }
-    // fileWatch 每渲染都是新对象（useFileWatch 未 useMemo），补上会让本回调每渲染重建
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, fileName, spec, toast]);
+  const handleSaveAs = useDocumentSaveAs({
+    text, fileName, spec, latestText: latestTextRef, markSynced: fileWatch.markSynced,
+    setCurrentFilePath, setEffectiveSourceId, setFileName, setInitialContent,
+    setIsDirty, setAutoSaveError, notify: toast,
+  });
 
   const handleSave = useCallback(async () => {
     // 1) 来自剪贴板卡片：回写数据库（主窗口经 history-item-updated 事件刷新）
     if (effectiveSourceId) {
       setIsSaving(true);
       try {
-        await invoke("update_history", { id: effectiveSourceId, text });
+        const target = await persistEditorSource(effectiveSourceId, text);
         setInitialContent(text);
         // 用「此刻的文本」判脏：await 期间用户可能又改了（不能无条件置干净）
         setIsDirty(latestTextRef.current !== text);
         setAutoSaveError(false); // 手动存成功说明目标可写，清掉自动保存的失败标记
-        toast("已保存", "success");
+        toast(target === "clipboard" ? "已复制到剪贴板" : "已保存", "success");
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
         toast("保存失败: " + msg, "error");
@@ -275,7 +255,8 @@ export function useDocumentFile({
     }
     // 2) 无文件路径：另存为（弹系统对话框可能停很久，不算「保存中」）
     if (!currentFilePath) {
-      return handleSaveAs();
+      await handleSaveAs();
+      return;
     }
     // 3) 来自文件：写文件 + 按设置开关决定是否写入剪贴板历史
     try {
@@ -351,6 +332,7 @@ export function useDocumentFile({
     currentFilePath,
     text,
     fileWatch,
+    saveUntitled: handleSaveAs,
   });
 
   // code 类型：按 languageName 从 language-data 懒加载语言模式的那条 effect

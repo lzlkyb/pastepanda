@@ -15,12 +15,15 @@ import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { FileWatch } from "../useFileWatch";
+import { persistEditorSource } from "@/lib/editorSource";
+import { useLatest } from "@/hooks/useLatest";
 
 export interface CloseSaveOptions {
   effectiveSourceId: string | null;
   currentFilePath: string | null;
   text: string;
   fileWatch: FileWatch;
+  saveUntitled: () => Promise<boolean>;
 }
 
 export function useCloseSave({
@@ -28,20 +31,22 @@ export function useCloseSave({
   currentFilePath,
   text,
   fileWatch,
+  saveUntitled,
 }: CloseSaveOptions): () => Promise<boolean> {
   const { checkNow, markSynced } = fileWatch;
+  const latestText = useLatest(text);
 
   return useCallback(async (): Promise<boolean> => {
     if (effectiveSourceId) {
       try {
-        await invoke("update_history", { id: effectiveSourceId, text });
-        return true;
+        await persistEditorSource(effectiveSourceId, text);
+        return latestText.current === text;
       } catch {
         return false;
       }
     }
-    // 未命名文档：没有落盘目标，无处可存，视为已处置（与原行为一致）
-    if (!currentFilePath) return true;
+    // 「保存并关闭」不能把无路径草稿当成已保存；取消另存为仍留在编辑器。
+    if (!currentFilePath) return saveUntitled();
     if (await checkNow()) {
       const overwrite = await ask(
         "这个文件已被外部程序修改。\n\n保存并关闭会覆盖掉外部的改动。",
@@ -57,12 +62,12 @@ export function useCloseSave({
     try {
       await invoke("write_text_file_full", { path: currentFilePath, text });
       await markSynced(currentFilePath);
-      return true;
+      return latestText.current === text;
     } catch {
       return false;
     }
     // 依赖里放 checkNow/markSynced 而不是 fileWatch 对象：方法身份稳定
     // （markSynced 恒定、checkNow 只在 filePath 变时才换），既不会多余重跑，
     // 也不会在 useFileWatch 改内部依赖时静默失联。
-  }, [effectiveSourceId, currentFilePath, text, checkNow, markSynced]);
+  }, [effectiveSourceId, currentFilePath, text, checkNow, markSynced, saveUntitled, latestText]);
 }

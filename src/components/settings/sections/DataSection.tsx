@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 import type { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { ToggleRow, SettingTile } from "../ToggleRow";
@@ -155,7 +156,7 @@ export function DataSection({
                 <p>📌 <b>时间范围</b>：全部 / 超过 7·30·90 天</p>
                 <p>📌 <b>类型</b>：全部 / 文本 / 图片 / 文件</p>
                 <p>📌 <b>来源应用</b>：只清理来自指定应用的记录</p>
-                <p>💡 实时统计匹配条数，可展开预览；置顶记录自动跳过，删除后可 Ctrl+Z 撤销</p>
+                <p>{`💡 实时统计匹配条数，可展开预览；置顶记录自动跳过，删除后可 ${primaryShortcutLabel("z")} 撤销`}</p>
               </>}
             />
           </div>

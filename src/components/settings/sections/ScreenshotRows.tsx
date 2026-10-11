@@ -117,7 +117,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>面板布局</div>
           <div className={`${styles.sRowDesc}`}>
-            {config.quick_paste_layout === "list" ? "单栏列表，贴近原生 Win+V，同屏可览更多条" : "双栏网格，卡片预览更多内容"}
+            {config.quick_paste_layout === "list" ? "单栏列表，同屏可查看更多条记录" : "双栏网格，卡片预览更多内容"}
           </div>
         </div>
         <div className={styles.sSegGroup}>

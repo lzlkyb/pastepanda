@@ -325,3 +325,35 @@ describe("设置页快捷键在弹框在场时让路", () => {
     expect(src).toContain('window.addEventListener("keydown", onKey, true)');
   });
 });
+
+describe("录屏小节同义名称", () => {
+  function RecordingHarness() {
+    const s = useSettingsSearch();
+    return <>
+      <input data-testid="q" onChange={(e) => s.setFilter(e.target.value)} />
+      <span data-testid="count" ref={s.countRef} />
+      <span data-testid="summary" ref={s.summaryRef} />
+      <div data-testid="sections" ref={s.containerRef}>
+        <div className={styles.sSection}>屏幕录制</div>
+        <div className={styles.sRow}><div className={styles.sRowLabel}>默认画质档</div></div>
+        <div className={styles.sRow}><div className={styles.sRowLabel}>录屏热键</div></div>
+        <div className={styles.sRow}><div className={styles.sRowLabel}>保存目录</div></div>
+        <div className={styles.sSection}>数据管理</div>
+        <div className={styles.sRow}><div className={styles.sRowLabel}>导出数据</div></div>
+      </div>
+    </>;
+  }
+  it.each(["录屏", "录屏设置", "screen recording"])("搜 %s 显示录屏整节，不只显示热键", (q) => {
+    const { container } = render(<RecordingHarness />);
+    search(container, q);
+    expect(getText(container, "count")).toBe("3 项");
+    for (const label of ["默认画质档", "录屏热键", "保存目录"]) {
+      const row = Array.from(container.querySelectorAll('.' + styles.sRow))
+        .find((node) => node.textContent === label) as HTMLElement;
+      expect(row.style.display).not.toBe("none");
+    }
+    const unrelated = Array.from(container.querySelectorAll('.' + styles.sRow))
+      .find((node) => node.textContent === "导出数据") as HTMLElement;
+    expect(unrelated.style.display).toBe("none");
+  });
+});

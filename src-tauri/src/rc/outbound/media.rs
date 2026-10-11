@@ -94,7 +94,7 @@ async fn receive_audio(
     mut stream: iroh::endpoint::RecvStream,
     header: Vec<u8>,
 ) {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows",target_os="macos"))]
     {
         let Some((cfg, _)) = crate::rc::audio::try_parse_stream_header(&header) else {
             return;
@@ -116,6 +116,7 @@ async fn receive_audio(
             if stream.read_exact(&mut body).await.is_err() || !svc.session_id_is(&id) {
                 break;
             }
+            if body[0]!=1 {break;}
             svc.note_inbound();
             svc.audio_push(
                 u64::from_le_bytes(body[1..9].try_into().unwrap()),
@@ -123,6 +124,6 @@ async fn receive_audio(
             );
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows",target_os="macos")))]
     let _ = (svc, id, &mut stream, header);
 }

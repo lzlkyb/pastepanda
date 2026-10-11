@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, X, ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { primaryShortcutLabel, cn } from "@/lib/utils";
 import styles from "./TabBar.module.css";
 
 export interface TabItem {
@@ -105,7 +105,7 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew, canAdd, maxTa
                 type="button"
                 className={styles.tabX}
                 aria-label={`关闭 ${t.fileName}`}
-                title="关闭 Ctrl+W"
+                title={`关闭 ${primaryShortcutLabel("w")}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onClose(t.id);
@@ -138,7 +138,7 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew, canAdd, maxTa
       <button
         type="button"
         className={styles.addBtn}
-        title={canAdd ? "新建空白文档 Ctrl+T" : `最多同时打开 ${maxTabs} 个文档`}
+        title={canAdd ? `新建空白文档 ${primaryShortcutLabel("t")}` : `最多同时打开 ${maxTabs} 个文档`}
         aria-label="新建文档"
         disabled={!canAdd}
         onClick={onNew}

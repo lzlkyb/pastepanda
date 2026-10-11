@@ -11,6 +11,7 @@
  * 恰恰是能在源码里一眼看出的形状，静态守卫够用且不会因运行时缺失而假绿。
  */
 import { describe, expect, it } from "vitest";
+import { primaryShortcutLabel } from "@/lib/utils";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -87,10 +88,14 @@ describe("① 图标槽里必须是组件", () => {
 describe("② .k 只放快捷键", () => {
   const src = readFileSync(resolve(dir, "ResultActions.tsx"), "utf8");
 
-  it("出口面板里 hint= 的值一律是 Ctrl/Enter/Esc 组合键", () => {
-    const hints = [...src.matchAll(/hint="([^"]+)"/g)].map((m) => m[1]);
-    expect(hints.length).toBeGreaterThan(0);
-    for (const h of hints) expect(h, `hint="${h}" 不是快捷键`).toMatch(/^(Ctrl|Alt|Shift|Enter|Esc)\b/);
+  it("出口面板的提示均为平台正确的快捷键", () => {
+    const staticHints = [...src.matchAll(/hint="([^"]+)"/g)].map(m => m[1]);
+    const nativeKeys = [...src.matchAll(/hint=\{`\$\{primaryShortcutLabel\("([^"]+)"\)\}`\}/g)].map(m => m[1]);
+    expect(staticHints.length + nativeKeys.length).toBe(3);
+    for (const platform of ["MacIntel", "Win32"]) {
+      const hints = [...staticHints, ...nativeKeys.map(key => primaryShortcutLabel(key, platform))];
+      for (const hint of hints) expect(hint).toMatch(/^(Ctrl|Command|Alt|Shift|Enter|Esc)\b/);
+    }
   });
 
   it("`.k` 的渲染点只有一处，且内容只可能是 hint（不接受行内字面量）", () => {

@@ -1,5 +1,8 @@
 //! G3 — 会话音频：被控端系统声音 → 发起端播放。
 //!
+//! Mac 14+ uses ScreenCaptureKit at 48 kHz stereo and the system AAC-LC encoder.
+//! The Windows implementation and its latency measurements below are platform-specific.
+//!
 //! 三段式：
 //! - **采集**：WASAPI 环回（默认渲染设备、共享模式）——远程「用电脑」听到的
 //!   就是对方机器正在播的声音；没有渲染设备（无头机）= 没有音频，不报错。
@@ -23,18 +26,20 @@
 //! 加上前端 60ms 起播缓冲与轮询抖动，端到端声音延迟量级 **~150ms**——远程办公够用，
 //! 不适合节奏游戏。要压得更低得换 Opus（多带 C 库，体积代价）或把播放游标压到 30ms。
 
-#![cfg(target_os = "windows")]
-
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+#[cfg(target_os = "windows")]
 use windows::Win32::Media::Audio::{
-    eMultimedia, eRender, EDataFlow, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
-    AUDCLNT_STREAMFLAGS_LOOPBACK, IAudioCaptureClient, IAudioClient, IMMDevice,
-    IMMDeviceEnumerator, MMDeviceEnumerator, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
+    eMultimedia, eRender, EDataFlow, IAudioCaptureClient, IAudioClient, IMMDevice,
+    IMMDeviceEnumerator, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, WAVEFORMATEX, WAVEFORMATEXTENSIBLE,
 };
+#[cfg(target_os = "windows")]
 use windows::Win32::Media::MediaFoundation::*;
+#[cfg(target_os = "windows")]
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL};
 
 /// 音频流魔数（版本号缀在末尾：协议不兼容时对端认不出，直接关流）。
@@ -71,9 +76,7 @@ mod serde_b64 {
     }
     pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
         let s = String::deserialize(d)?;
-        STANDARD
-            .decode(s)
-            .map_err(serde::de::Error::custom)
+        STANDARD.decode(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -114,9 +117,14 @@ impl AudioRx {
 /// 编码侧 → 写流任务的消息。
 #[derive(Debug)]
 pub enum AudioOut {
+    /// Capture/codec failed: report to the viewer and stop this audio stream.
+    Error(String),
     /// 编码器刚打开（或重开）：先写流头。
     Cfg(AudioCfg),
-    Pkt { pts_ms: u64, data: Vec<u8> },
+    Pkt {
+        pts_ms: u64,
+        data: Vec<u8>,
+    },
 }
 
 /// 有界音频队列容量（约 64 × AAC 帧 ≈ 1.3s @48k）。
@@ -172,7 +180,9 @@ pub fn audio_channel() -> (AudioTx, AudioQueueRx) {
         tx_count: std::sync::atomic::AtomicUsize::new(1),
     });
     (
-        AudioTx { inner: Arc::clone(&inner) },
+        AudioTx {
+            inner: Arc::clone(&inner),
+        },
         AudioQueueRx { inner },
     )
 }
@@ -187,8 +197,20 @@ impl AudioTx {
         }
         {
             let mut q = self.inner.q.lock().unwrap_or_else(|p| p.into_inner());
-            // 🔴 B6：满丢最旧保最新——挤掉的是队头（最旧），不是刚编码出的这条。
-            if q.len() >= AUDIO_CHAN_CAP && q.pop_front().is_some() {
+            // A new configuration invalidates queued packets from the previous encoder.
+            // Preserve the header when dropping old PCM/AAC backlog, or a slow consumer never decodes.
+            if matches!(&msg, AudioOut::Cfg(_) | AudioOut::Error(_)) {
+                q.clear();
+            }
+            if q.len() >= AUDIO_CHAN_CAP {
+                if let Some(index) = q
+                    .iter()
+                    .position(|item| matches!(item, AudioOut::Pkt { .. }))
+                {
+                    q.remove(index);
+                } else {
+                    q.pop_front();
+                }
                 let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
                 if n == 1 || n.is_multiple_of(50) {
                     log::warn!("[RC] 音频队列已满，丢最旧包计数 {n}");
@@ -243,6 +265,14 @@ impl AudioQueueRx {
         }
     }
 
+    pub(crate) fn clear_pending(&mut self) {
+        self.inner
+            .q
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
+    }
+
     /// 当前积压数（测试与诊断用）。
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
@@ -252,11 +282,7 @@ impl AudioQueueRx {
 
 /// 生产侧入口：满则**丢最旧**保最新（B6），不堆积、不阻塞采集线程。
 /// 返回 `false` = 通道已关（会话结束，采集线程应退出）。
-pub fn try_push_audio(
-    tx: &AudioTx,
-    msg: AudioOut,
-    dropped: &std::sync::atomic::AtomicU64,
-) -> bool {
+pub fn try_push_audio(tx: &AudioTx, msg: AudioOut, dropped: &std::sync::atomic::AtomicU64) -> bool {
     tx.push(msg, dropped)
 }
 
@@ -348,18 +374,71 @@ pub fn stereo_f32_to_s16(src: &[f32]) -> Vec<i16> {
     src.iter().map(|v| f32_to_s16(*v)).collect()
 }
 
+/// 由采样率/声道构造 AAC AudioSpecificConfig（AAC-LC）。
+///
+/// windows 0.58 没带 `MF_MT_AAC_AUDIO_SPECIFIC_DATA` 常量，而 ASC 本身是
+/// 确定性位串（MSB 起）：AOT(5)=2(LC) | 采样率表序号(4) | 声道数(4) |
+/// frameLen/dependsOnCoreCoder/extensionFlag 三个 0 → 正好 16 位两字节。
+/// 对拍已知值：44.1k 立体声 = `0x12 0x10`（经典 "1210"）、48k 立体声 = `0x11 0x90`。
+/// 采样率不在 ISO 14496-3 表 1.9 内（显式 24 位写法）不支持——收件箱 AAC
+/// 编码器本身也只收表内采样率，SetInputType 会先一步失败。
+pub(in crate::rc) fn asc_for(sr: u32, ch: u32) -> Option<Vec<u8>> {
+    const FREQ_INDEX: [(u32, u32); 12] = [
+        (96000, 0),
+        (88200, 1),
+        (64000, 2),
+        (48000, 3),
+        (44100, 4),
+        (32000, 5),
+        (24000, 6),
+        (22050, 7),
+        (16000, 8),
+        (12000, 9),
+        (11025, 10),
+        (8000, 11),
+    ];
+    let idx = FREQ_INDEX.iter().find(|(f, _)| *f == sr)?.1;
+    if ch == 0 || ch > 15 {
+        return None;
+    }
+    let word: u16 = (2u16 << 11) | ((idx as u16) << 7) | ((ch as u16) << 3); // AOT=2 (AAC-LC)
+    Some(vec![(word >> 8) as u8, (word & 0xFF) as u8])
+}
+
 // ── MF 收件箱 AAC 编码器（同步 MFT）────────────────────────────────────
 
-mod encode;
+#[cfg(target_os = "windows")]
 mod capture;
+#[cfg(target_os = "windows")]
+mod encode;
 
+#[cfg(target_os = "windows")]
 pub use encode::*;
 // mf_err 给 capture 子模块用（经 use super::* 可见）。
-use encode::mf_err;
+#[cfg(target_os = "windows")]
 pub use capture::*;
+#[cfg(target_os = "windows")]
+use encode::mf_err;
 
-#[cfg(test)]
-use encode::asc_for;
-
+#[cfg(target_os = "macos")]
+#[path = "../macos/remote_audio.rs"]
+mod mac_capture;
 #[cfg(test)]
 mod tests;
+#[cfg(target_os = "macos")]
+pub use mac_capture::*;
+
+/// Apply one deadline to both acquiring stream credit and delivering its header.
+pub async fn open_stream(
+    conn: &iroh::endpoint::Connection,
+    cfg: &AudioCfg,
+) -> Option<iroh::endpoint::SendStream> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let mut stream = conn.open_uni().await.ok()?;
+        stream.write_all(&encode_stream_header(cfg)).await.ok()?;
+        Some(stream)
+    })
+    .await
+    .ok()
+    .flatten()
+}

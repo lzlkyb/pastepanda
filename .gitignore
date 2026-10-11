@@ -101,6 +101,10 @@ rd_files.json
 # 宣传视频渲染素材/产物（体积大且可由 scripts/promo-* 再生）
 videos/
 
+# macOS build cache, isolated from Windows and Android
+src-tauri/target-macos/
+src-tauri/target-macos-intel/
+
 # ── 2026-10-08 入库审计补的四条（逐条用 git check-ignore 问过「未忽略」才加）──
 # cargo vendor 每次重跑都会留「补丁前副本」；仓里那两个 Cargo.toml.orig 就是这么进来的，
 # 编译链不读它们，只有 vendor 出来的 Cargo.toml 第 10 行一句注释提到。

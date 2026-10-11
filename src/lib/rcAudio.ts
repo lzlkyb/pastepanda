@@ -22,17 +22,24 @@ export class RcAudioPlayer {
   private ctx: AudioContext | null = null;
   private cfgKey = "";
   private cursor = 0;
+  private failedCfg = "";
+  private cancelGesture: (() => void) | null = null;
+  constructor(private readonly onError?: (message: string) => void) {}
+  private report(message: string) {
+    if (this.failedCfg === this.cfgKey && this.failedCfg) return;
+    this.failedCfg = this.cfgKey;
+    this.onError?.(message);
+  }
 
   /** 消费一批 drain 数据（40ms 一拍由 useRcAudio 驱动）。 */
   consume(buf: ArrayBuffer) {
     const { cfg, items } = parseAudioBatch(buf);
     if (cfg) this.ensureDecoder(cfg);
-    if (items.length === 0) return;
+    if (items.length === 0 || (this.failedCfg && this.failedCfg === this.cfgKey)) return;
     // 解码器就绪前收到的帧直接丢：没有上下文的 AAC 帧解了也是噪声
-    if (!this.dec || !this.ctx) {
-      if (!this.ctx) this.ensureCtx();
-      if (!this.dec) return;
-    }
+    if (!this.dec) return;
+    if (!this.ctx && !this.ensureCtx()) return;
+    if (this.ctx?.state !== "running") return;
     for (const f of items) {
       try {
         this.dec.decode(
@@ -50,6 +57,8 @@ export class RcAudioPlayer {
   }
 
   close() {
+    this.cancelGesture?.();
+    this.cancelGesture = null;
     try {
       this.dec?.close();
     } catch {
@@ -62,12 +71,13 @@ export class RcAudioPlayer {
     }
     this.cursor = 0;
     this.cfgKey = "";
+    this.failedCfg = "";
   }
 
   /** cfg 变了（asc/采样率/声道）才重配——每次 drain 都带 cfg，不能每次重建。 */
   private ensureDecoder(cfg: RcAudioCfg) {
     const key = `${cfg.sr}:${cfg.ch}:${hash8(cfg.asc)}`;
-    if (key === this.cfgKey && this.dec) return;
+    if (key === this.cfgKey && (this.dec || this.failedCfg === key)) return;
     try {
       this.dec?.close();
     } catch {
@@ -75,9 +85,10 @@ export class RcAudioPlayer {
     }
     this.dec = null;
     this.cfgKey = key;
+    this.failedCfg = "";
     this.cursor = 0; // 新流：调度游标归零
     if (typeof AudioDecoder === "undefined") {
-      console.warn("[RC 音频] 本环境无 WebCodecs AudioDecoder，静音处理");
+      this.report("当前系统不支持远控声音播放");
       return;
     }
     try {
@@ -91,6 +102,7 @@ export class RcAudioPlayer {
             /* ignore */
           }
           this.dec = null;
+          this.report("无法播放对方的声音，请重新开启声音后重试");
         },
       });
       this.dec.configure({
@@ -102,21 +114,28 @@ export class RcAudioPlayer {
     } catch (e) {
       console.warn("[RC 音频] 解码器配置失败（静音处理）：", e);
       this.dec = null;
+      this.report("无法播放对方的声音，请重新开启声音后重试");
     }
   }
 
   private ensureCtx(): AudioContext | null {
     if (this.ctx) return this.ctx;
-    if (typeof AudioContext === "undefined") return null;
+    if (typeof AudioContext === "undefined") { this.report("当前系统无法启用声音播放"); return null; }
     try {
       this.ctx = new AudioContext();
       // 自动播放策略：会话由用户点击发起通常已解锁；万一仍 suspended，
       // 挂一次性手势恢复——点任意处开始出声。
       if (this.ctx.state === "suspended") {
-        void this.ctx.resume().catch(() => armGestureResume(this.ctx as AudioContext));
+        const ctx = this.ctx;
+        void ctx.resume().catch(() => {
+          if (this.ctx !== ctx) return;
+          this.cancelGesture?.();
+          this.cancelGesture = armGestureResume(ctx);
+        });
       }
       return this.ctx;
     } catch {
+      this.report("无法启用声音播放，请重新开启声音后重试");
       return null;
     }
   }
@@ -124,7 +143,7 @@ export class RcAudioPlayer {
   /** AudioData → AudioBuffer → 按游标排播。 */
   private schedule(ad: AudioData) {
     const ctx = this.ensureCtx();
-    if (!ctx) {
+    if (!ctx || ctx.state !== "running") {
       ad.close();
       return;
     }
@@ -170,6 +189,7 @@ function armGestureResume(ctx: AudioContext) {
     window.removeEventListener("pointerdown", resume);
   };
   window.addEventListener("pointerdown", resume);
+  return () => window.removeEventListener("pointerdown", resume);
 }
 
 /** FNV-1a 8bit：cfg 变更检测用（asc 通常 2~5 字节，防碰撞足够）。 */

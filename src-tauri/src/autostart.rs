@@ -106,7 +106,9 @@ pub fn sync_on_boot(config_enabled: bool) -> Result<BootSync, String> {
             Ok(if acted { BootSync::CleanedGhost } else { BootSync::None })
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    { crate::macos::startup::sync_on_boot(config_enabled) }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
         let _ = config_enabled;
         Ok(BootSync::None)
@@ -216,7 +218,11 @@ pub fn clear_approved_flag() -> Result<(), String> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
+pub fn effective_enabled() -> Result<bool, String> {
+    crate::macos::startup::effective_enabled()
+}
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn effective_enabled() -> Result<bool, String> {
     Ok(false)
 }

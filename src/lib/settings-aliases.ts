@@ -68,6 +68,11 @@ export const SETTING_ALIASES: Record<string, string[]> = {
   "按类型定制": ["模板"],
 };
 
+/** 小节的同义名称仅展开该节；不把宽泛关键词扩散到其他设置行。 */
+export const SETTING_SECTION_ALIASES: Record<string, string[]> = {
+  "屏幕录制": ["录屏", "录屏设置", "screen recording"],
+};
+
 /** 取某一行标题对应的别名；没登记就返回空数组 */
 export function aliasesFor(label: string): string[] {
   return SETTING_ALIASES[label] ?? [];

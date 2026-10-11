@@ -17,7 +17,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
-import { errText } from "@/lib/utils";
+import { configuredShortcutLabel, primaryShortcutLabel, errText, primaryModifierHeld } from "@/lib/utils";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
 import { Timeline } from "@/components/Timeline";
@@ -101,7 +101,7 @@ const VirtualCardRow = memo(function VirtualCardRow({
         const p = thumbnailSourcePath(item);
         return p && imageState?.status === "error" ? () => onRetryImage(p) : undefined;
       })()}
-      onClick={(e: React.MouseEvent) => onItemClick(item.id, e.ctrlKey, e.shiftKey)}
+      onClick={(e: React.MouseEvent) => onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)}
       onDoubleClick={() => onItemDoubleClick(item.id)}
       onEdit={onEdit}
       onEditTags={onEditTags}
@@ -777,7 +777,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 {/* 图标压在 guideIcon 的 accent-light 底上，浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */}
                 <div className={styles.guideCard}>
                   <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Copy size={18} style={{ color: "var(--accent-strong)" }} /></div>
-                  <div className={styles.guideText}><div className={styles.guideLabel}>自动记录</div><div className={styles.guideDesc}>Ctrl+C 复制内容自动保存</div></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>自动记录</div><div className={styles.guideDesc}>{`${primaryShortcutLabel("c")} 复制内容自动保存`}</div></div>
                 </div>
                 <div className={styles.guideCard}>
                   <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Search size={18} style={{ color: "var(--accent-strong)" }} /></div>
@@ -785,7 +785,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 </div>
                 <div className={styles.guideCard}>
                   <div className={styles.guideIcon} style={{ background: "var(--accent-light)" }}><Zap size={18} style={{ color: "var(--accent-strong)" }} /></div>
-                  <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>{sequentialHotkey || "ctrl+alt+q"} 逐条粘贴</div></div>
+                  <div className={styles.guideText}><div className={styles.guideLabel}>依次粘贴</div><div className={styles.guideDesc}>{configuredShortcutLabel(sequentialHotkey, "ctrl+alt+q")} · 可从工具打开依次粘贴</div></div>
                 </div>
                 <div className={styles.guideFooterHint}>
                   💡 按 <kbd>?</kbd> 查看所有快捷键 · 点击右上角 <span style={{ color: "var(--accent)" }}>⚙</span> 打开设置 → 帮助
@@ -856,7 +856,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                   aria-label="对比差异">
                   <GitCompare size={12} /> 对比
                 </button>
-                <button onClick={() => { void handleBatchDelete(); }} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title="删除选中记录（Ctrl+Z 可撤销）" aria-label="删除选中记录">
+                <button onClick={() => { void handleBatchDelete(); }} className={`${styles.batchBtn} ${styles.batchBtnDanger}`} title={`删除选中记录（${primaryShortcutLabel("z")} 可撤销）`} aria-label="删除选中记录">
                   <Trash2 size={12} /> 删除
                 </button>
               </div>

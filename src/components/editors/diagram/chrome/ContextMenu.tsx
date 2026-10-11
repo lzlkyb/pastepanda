@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 右键菜单：节点 / 连线 / 画布三种上下文。
  *
@@ -104,10 +105,10 @@ export function ContextMenu({
         {t.kind === "node" && (
           <>
             <button className={css.menuItem} onClick={run(() => actions.duplicateNode(t.id))}>
-              <CopyPlus size={14} /> 副本<span className={css.menuKbd}>Ctrl+D</span>
+              <CopyPlus size={14} /> 副本<span className={css.menuKbd}>{`${primaryShortcutLabel("d")}`}</span>
             </button>
             <button className={css.menuItem} onClick={run(actions.copySelected)}>
-              <Copy size={14} /> 复制<span className={css.menuKbd}>Ctrl+C</span>
+              <Copy size={14} /> 复制<span className={css.menuKbd}>{`${primaryShortcutLabel("c")}`}</span>
             </button>
             {actions.aiOn && !t.group && (
               <>
@@ -159,7 +160,7 @@ export function ContextMenu({
               <Plus size={14} /> 在此添加节点
             </button>
             <button className={css.menuItem} disabled={!actions.hasClipboard()} onClick={run(actions.pasteClipboard)}>
-              <ClipboardPaste size={14} /> 粘贴<span className={css.menuKbd}>Ctrl+V</span>
+              <ClipboardPaste size={14} /> 粘贴<span className={css.menuKbd}>{`${primaryShortcutLabel("v")}`}</span>
             </button>
             <div className={css.menuSep} />
             <button className={css.menuItem} onClick={run(actions.layout)}>

@@ -33,7 +33,8 @@ pub(super) enum StreamCodec {
     Auto,
     ForceJpeg,
     Hevc,
-    /// P2.3：AV1（对端 caps 报 av1_hw 才会被 UI 放出；编码端打不开会话内回落）。
+    /// AV1: advertised by peer caps; Mac uses SVT software encoding, Windows
+    /// uses FF hardware candidates. Initialization failure falls back to AVC.
     Av1,
 }
 

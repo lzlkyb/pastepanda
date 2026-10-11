@@ -76,6 +76,6 @@ describe("RcAudioBar", () => {
 
   it("对端执行失败的原因显示出来（它那边没有横幅）", () => {
     setup({ local_mute: false, spk_mute: false, err: "没有默认播放设备" });
-    expect(screen.getByText("对方无法切换扬声器")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("没有默认播放设备");
   });
 });

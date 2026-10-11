@@ -29,13 +29,7 @@ pub const H264_PROFILE_HIGH: u32 = 100;
 
 /// Q3：视频编码标准。决定 MFT 枚举的输出 subtype、profile/level 标注
 /// 与前端 WebCodecs 解码串；码控/低延迟/强制关键帧的 ICodecAPI 键两家通用。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VideoCodec {
-    H264,
-    Hevc,
-    /// P2.3：AV1（FF 硬编专属；MF 无 AV1，open_chain 在 MF 前就拒绝）。
-    Av1,
-}
+pub use super::video_params::{bitrate_for, bitrate_for_width, fps_bitrate_factor, VideoCodec};
 
 impl VideoCodec {
     /// MFT 枚举与输出媒体类型的 subtype。
@@ -46,23 +40,6 @@ impl VideoCodec {
             // AV1 无 MF 实现——open_chain 在 MF 前就拒绝 Av1，此分支不可达；
             // 取值只为 match 完整性。
             Self::Av1 => &MFVideoFormat_H264,
-        }
-    }
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::H264 => "h264",
-            Self::Hevc => "hevc",
-            Self::Av1 => "av1",
-        }
-    }
-
-    pub fn of_str(s: &str) -> Option<Self> {
-        match s {
-            "h264" => Some(Self::H264),
-            "hevc" => Some(Self::Hevc),
-            "av1" => Some(Self::Av1),
-            _ => None,
         }
     }
 }
@@ -141,52 +118,7 @@ pub fn webcodecs_hevc_str(width: u32, height: u32, fps: u32) -> String {
     format!("hev1.1.6.L{level_idc}.B0")
 }
 
-/// 按编码宽度选目标码率（bit/s）基准。4K 局域网给足带宽，避免糊成马赛克。
-/// 表按 30fps 标定；实际码率 = 基准 × [`fps_bitrate_factor`]。
-pub fn bitrate_for_width(width: u32) -> u32 {
-    match width {
-        w if w >= 3200 => 22_000_000,
-        w if w >= 2560 => 14_000_000,
-        w if w >= 1920 => 8_000_000,
-        w if w >= 1600 => 5_000_000,
-        w if w >= 1200 => 3_000_000,
-        _ => 1_500_000,
-    }
-}
-
-/// 审查 D3（2026-09-19）：码率基准按 30fps 标定，帧率翻倍不抬码率 = 每帧
-/// 码率腰斩——fps120 档 1080p 只剩 66Kbit/帧，画面明显发糊。业界同档
-/// （Moonlight 1080p60/120）给 15~40Mbps，这里 60fps ×1.6、120fps ×2.6
-/// （1080p ≈ 21Mbps），跨网时仍由 RTT/丢包的 scale_pct 往下压。
-///
-/// 2026-09-22 补 144/165（fps144/fps165 档）：沿 60→120 的斜率（每 +60fps
-/// +100 点）外推——144→300、165→335。1080p165 ≈ 26.8Mbps（线上含 FEC
-/// ≈ 33Mbps），千兆有线局域网无压力；跨网仍靠 scale_pct 自适应往下压。
-/// 240 及以上刻意不做：编码预算 4.2ms 贴硬编极限、1080p240 贴死 L5.2
-/// 宏块率上限（1.96M / 2.07M），受众极窄——档位表到 165 为止。
-pub fn fps_bitrate_factor(fps: u32) -> u64 {
-    match fps {
-        0..=30 => 100,
-        31..=60 => 160,
-        61..=120 => 260,
-        121..=144 => 300,
-        _ => 335,
-    }
-}
-
-/// 宽度 + 帧率 → 目标码率（bit/s）。
-pub fn bitrate_for(width: u32, fps: u32) -> u32 {
-    ((bitrate_for_width(width) as u64 * fps_bitrate_factor(fps)) / 100) as u32
-}
-
-pub struct H264Packet {
-    /// 原始采集时刻；硬编可能延迟数帧出包，不能用当前输入帧的时刻代替。
-    pub at_ms: i64,
-    pub data: Vec<u8>,
-    pub key: bool,
-    pub width: u32,
-    pub height: u32,
-}
+pub use super::video_params::VideoPacket as H264Packet;
 
 mod ff;
 /// P2.3：AV1 硬编可用性（FF 候选链探测，caps 上报用）。

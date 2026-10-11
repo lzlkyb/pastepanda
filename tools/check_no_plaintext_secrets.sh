@@ -50,7 +50,7 @@ SELF="$(basename "$0")"
 
 # 排除构建产物与依赖（否则扫 node_modules / target 会慢到不可用）
 # 名字按「整棵子树里 0 个被 git 追踪的文件」挑选，下面有断言兜着，不是口头承诺。
-EX=(--exclude-dir=node_modules --exclude-dir=target --exclude-dir=target-android
+EX=(--exclude-dir=node_modules --exclude-dir=target --exclude-dir=target-android --exclude-dir=target-macos --exclude-dir=target-macos-intel
     --exclude-dir=gen --exclude-dir=.cache --exclude-dir=.git
     --exclude-dir=dist --exclude-dir=__pycache__)
 

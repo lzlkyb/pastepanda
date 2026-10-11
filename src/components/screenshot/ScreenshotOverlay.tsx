@@ -1,3 +1,4 @@
+import { capturePixelRatio } from "@/lib/utils";
 /**
  * ScreenshotOverlay — 截图标注全流程组件（选区 → 标注 → OCR 融入 → 结果出口）。
  *
@@ -603,7 +604,7 @@ export function ScreenshotOverlay() {
   } | null>(null);
   const moveSnapshotRef = useRef<Annotation[] | null>(null);
 
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = capturePixelRatio(screen?.width);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draftRef = useRef<Annotation | null>(null);
   const phaseRef = useRef<Phase>("select");

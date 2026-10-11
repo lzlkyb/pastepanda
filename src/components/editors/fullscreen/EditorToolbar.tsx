@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 全屏编辑器工具栏（纯展示）
  *
@@ -93,7 +94,7 @@ export function EditorToolbar({
       key: "focus",
       label: "专注模式",
       icon: <Crosshair size={14} />,
-      kbd: "Ctrl+Shift+F",
+      kbd: `${primaryShortcutLabel("shift+f")}`,
       onSelect: onFocusMode,
     },
     "sep",
@@ -139,7 +140,7 @@ export function EditorToolbar({
           className={`${styles.tbBtn} ${styles.tbBtnPrimary}`}
           onClick={onSave}
           disabled={isSaving}
-          title={isSaving ? "正在保存" : "保存 Ctrl+S"}
+          title={isSaving ? "正在保存" : `保存 ${primaryShortcutLabel("s")}`}
         >
           <Save size={14} />
           <span>{isSaving ? "… 保存中" : "保存"}</span>

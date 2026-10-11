@@ -108,12 +108,50 @@ impl Drop for KeepAwake {
 
 /// 非 Windows：能力整体是 Windows 电源 API 专属。**明确不保活**（返回 `None`），
 /// 设置项那条路径由 `rc_set_keep_awake` 直接报错拦住，静默成功会让开关切到假状态。
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub struct KeepAwake;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
 impl KeepAwake {
     pub fn start() -> Option<Self> {
         None
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub struct KeepAwake {
+    system: u32,
+    display: u32,
+}
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn pp_mac_awake_start(system: *mut u32, display: *mut u32) -> i32;
+    fn pp_mac_awake_stop(system: u32, display: u32);
+}
+#[cfg(target_os = "macos")]
+impl KeepAwake {
+    pub fn start() -> Option<Self> {
+        // Tests never change the user's power assertions.
+        #[cfg(test)]
+        {
+            None
+        }
+        #[cfg(not(test))]
+        {
+            let (mut system, mut display) = (0, 0);
+            let code = unsafe { pp_mac_awake_start(&mut system, &mut display) };
+            if code == 0 && system != 0 && display != 0 {
+                Some(Self { system, display })
+            } else {
+                log::warn!("Mac 会话防休眠未能启用（{code}）");
+                None
+            }
+        }
+    }
+}
+#[cfg(target_os = "macos")]
+impl Drop for KeepAwake {
+    fn drop(&mut self) {
+        unsafe { pp_mac_awake_stop(self.system, self.display) }
     }
 }

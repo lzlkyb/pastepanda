@@ -130,11 +130,11 @@ impl RcService {
             // G3：本机静音。字段本身不带 cfg（与 peer_hevc 同例，跨平台可编译），
             // 非 Windows 上没有音频链路，恒 false。
             audio_local_mute: {
-                #[cfg(target_os = "windows")]
+                #[cfg(any(target_os="windows",target_os="macos"))]
                 {
                     self.audio_local_mute()
                 }
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(not(any(target_os="windows",target_os="macos")))]
                 {
                     false
                 }

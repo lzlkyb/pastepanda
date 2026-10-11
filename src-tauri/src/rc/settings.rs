@@ -202,9 +202,9 @@ impl RcService {
             match ev {
                 InputEvent::SetQuality { quality } => self.set_stream_quality(quality)?,
                 InputEvent::AudioOn { on } => {
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os="windows",target_os="macos"))]
                     self.set_audio_muted(!*on);
-                    #[cfg(not(target_os = "windows"))]
+                    #[cfg(not(any(target_os="windows",target_os="macos")))]
                     if tracked && *on {
                         return Err("对方系统不支持传输电脑声音".into());
                     }

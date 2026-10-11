@@ -38,7 +38,7 @@ export function markAiOnboardingSeen() {
 const STEPS = [
   { icon: "⧉", title: "复制任意内容", desc: "网页、代码、长文、带敏感信息的文本……复制即捕获。" },
   { icon: "✦", title: "主窗口直接用 AI", desc: "复制后列表上方出现 ✦ AI 快捷区，点「翻译 / 总结 / 改写」直接出结果。" },
-  { icon: "🎁", title: "变换面板还有更多", desc: "脱敏、链接摘要、回复草稿、自定义动作——复制后按 Ctrl+Shift+V 都能找到。" },
+  { icon: "🎁", title: "变换面板还有更多", desc: "脱敏、链接摘要、回复草稿、自定义动作——复制后右键记录、选择「变换」即可使用。" },
   { icon: "🔥", title: "免费额度 + 每日签到", desc: "内置 Agnes 送 10 万 token，每天签到越签越多——设置 → AI 可切换。" },
 ];
 

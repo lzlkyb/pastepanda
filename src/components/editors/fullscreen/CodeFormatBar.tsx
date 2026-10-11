@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 /**
  * 代码类型专属格式栏：注释/缩进/清理。
  * 注释与缩进经 ShellBridge 调 CodeMirror 命令（跟随当前语言语法），
@@ -20,7 +21,7 @@ export function CodeFormatBar({ bridge }: { bridge: ShellBridge }) {
   const { toggleComment, indentMore, indentLess, text, replaceDoc, openSearch } = bridge;
   return (
     <>
-      <button className={styles.fmtBtnText} title="查找 Ctrl+F" onClick={openSearch}>
+      <button className={styles.fmtBtnText} title={`查找 ${primarySearchShortcut()}`} onClick={openSearch}>
         <Search size={13} />
         <span>查找</span>
       </button>

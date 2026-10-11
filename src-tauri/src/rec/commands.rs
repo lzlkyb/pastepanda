@@ -4,12 +4,12 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::events;
 use super::quality::{output_file_name, RecQuality};
-use super::session::{self, RecOpts};
 use super::scan;
+use super::session::{self, RecOpts};
 use super::trim;
 use super::{close_windows, open_control_window, open_preview_window, open_selector_window};
 use crate::data_store::DataStore;
@@ -63,8 +63,8 @@ pub async fn rec_start(
         return Err("已有录制在进行".into());
     }
     // 画质档：非法值宁可报错也不默默换档（用户自选画质是硬需求）
-    let quality = RecQuality::of_str(&req.quality)
-        .ok_or_else(|| format!("未知画质档：{}", req.quality))?;
+    let quality =
+        RecQuality::of_str(&req.quality).ok_or_else(|| format!("未知画质档：{}", req.quality))?;
     if req.w < 16 || req.h < 16 {
         return Err("选区太小（至少 16×16）".into());
     }
@@ -78,12 +78,23 @@ pub async fn rec_start(
         quality,
         sys_audio: req.sys_audio,
         mic_audio: req.mic_audio,
-        click_highlight: cfg.get("rec_click_highlight").and_then(|v| v.as_bool()).unwrap_or(true),
-        event_sidecar: cfg.get("rec_event_sidecar").and_then(|v| v.as_bool()).unwrap_or(true),
+        click_highlight: cfg
+            .get("rec_click_highlight")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        event_sidecar: cfg
+            .get("rec_event_sidecar")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
     };
     let path = decide_output_path(&app, &store)?;
     session::start(app.clone(), opts, path.clone())?;
-    open_control_window(&app, (req.x, req.y, req.w, req.h));
+    if let Err(error) = open_control_window(&app, (req.x, req.y, req.w, req.h)) {
+        // 控制条是停止入口；创建失败不能留下无出口的后台采集。保留已有内容。
+        log::warn!("[Rec] {error}，停止并保存本次录制");
+        session::stop(false)?;
+        return Err(error);
+    }
     Ok(())
 }
 
@@ -100,14 +111,14 @@ pub fn rec_pause(app: AppHandle, paused: bool) -> Result<(), String> {
 
 /// 虚拟屏物理几何（选区窗坐标换算基点；与截图 ScreenInfo 同口径 camelCase）。
 #[tauri::command]
-pub fn rec_virtual_screen() -> serde_json::Value {
-    let (x, y, w, h) = super::virtual_screen_metrics();
-    serde_json::json!({
+pub fn rec_virtual_screen(app: AppHandle) -> Result<serde_json::Value, String> {
+    let (x, y, w, h) = super::selector_screen_metrics(&app)?;
+    Ok(serde_json::json!({
         "originX": x,
         "originY": y,
         "width": w,
         "height": h,
-    })
+    }))
 }
 
 #[tauri::command]
@@ -156,7 +167,10 @@ pub fn rec_hud_take() -> Option<serde_json::Value> {
 
 /// 「最近录制」列表：扫保存目录最近 5 条（不入库）。
 #[tauri::command]
-pub fn rec_list_files(app: AppHandle, store: State<'_, DataStore>) -> Result<Vec<serde_json::Value>, String> {
+pub fn rec_list_files(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+) -> Result<Vec<serde_json::Value>, String> {
     let dir = save_dir(&app, &store)?;
     Ok(scan::scan_recent(&dir, 5)
         .into_iter()
@@ -181,7 +195,11 @@ pub fn rec_delete_file(
 
 /// 用系统播放器打开录屏产物（同删除的白名单校验，防任意路径打开）。
 #[tauri::command]
-pub fn rec_open_file(app: AppHandle, store: State<'_, DataStore>, path: String) -> Result<(), String> {
+pub fn rec_open_file(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    path: String,
+) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let dir = save_dir(&app, &store)?;
     scan::validate_rec_path(&dir, Path::new(&path))?;
@@ -216,23 +234,26 @@ fn validated_rec_path(
 
 /// 视频轨关键帧索引（播放域毫秒）——预览窗时间轴的吸附刻度。
 #[tauri::command]
-pub fn rec_keyframes(
+pub async fn rec_keyframes(
     app: AppHandle,
     store: State<'_, DataStore>,
     path: String,
 ) -> Result<serde_json::Value, String> {
     let p = validated_rec_path(&app, &store, &path)?;
-    let kf = trim::scan_keyframes(&p)?;
+    let kf = tauri::async_runtime::spawn_blocking(move || trim::scan_keyframes(&p))
+        .await
+        .map_err(|e| e.to_string())??;
     Ok(serde_json::json!({
         "durationMs": kf.duration_ms,
         "keyframesMs": kf.keyframes_ms,
+        "warning": kf.warning,
     }))
 }
 
 /// 关键帧对齐无损剪切（后端再按宁多勿少吸附一次）：产物落**新文件**
 /// （原名 + `_剪`，冲突加序号），原文件不动。返回实际入出点（吸附后）。
 #[tauri::command]
-pub fn rec_trim(
+pub async fn rec_trim(
     app: AppHandle,
     store: State<'_, DataStore>,
     path: String,
@@ -252,9 +273,16 @@ pub fn rec_trim(
         dst = dir.join(format!("{stem}_剪{n}.mp4"));
         n += 1;
     }
-    let (bytes, in_m, out_m) = trim::trim(&src, in_ms, out_ms, &dst)?;
+    let trim_source = src.clone();
+    let trim_destination = dst.clone();
+    let (bytes, in_m, out_m) = tauri::async_runtime::spawn_blocking(move || {
+        trim::trim(&trim_source, in_ms, out_ms, &trim_destination)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     // sidecar 跟着剪：事件重映射进 [in, out)，落「_剪」同名 .events.json
     events::write_sidecar_for_trim(&src, &dst, in_m, out_m);
+    let _ = app.emit("rec-files-changed", ());
     Ok(serde_json::json!({
         "path": dst.to_string_lossy(),
         "bytes": bytes,

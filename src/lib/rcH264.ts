@@ -90,7 +90,7 @@ export function webcodecsAv1For(w: number, h: number, fps = 0): string {
             : lumaSr > 17_567_232
               ? 9 // 4.1
               : 8; // 4.0
-  return `av01.0.0${levelIdx}M.08`;
+  return `av01.0.${String(levelIdx).padStart(2, "0")}M.08`;
 }
 
 export class H264Decoder {

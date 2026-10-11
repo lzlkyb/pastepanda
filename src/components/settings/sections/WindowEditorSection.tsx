@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * 设置页「系统与编辑」分区（2026-09-29 分区重排 方案A；原名「窗口与编辑器」，6 字会被
  * 左菜单截成省略号，见 `meta.ts` 的宽度约束）。
@@ -73,11 +74,11 @@ export function WindowEditorSection({
           <p>⚠️ 关闭后需手动点击 X 隐藏窗口</p>
         </>}
       />
-      <ToggleRow icon="🚀" hue="system" label="开机自启" desc="Windows 启动时自动运行" value={config.auto_startup}
+      <ToggleRow icon="🚀" hue="system" label="开机自启" desc="登录系统后自动运行" value={config.auto_startup}
         tooltip="开机后自动在后台运行，托盘图标常驻"
         detailTitle="开机自启"
         detail={<>
-          <p>Windows 启动时自动运行 PastePanda。</p>
+          <p>登录系统后自动运行 PastePanda。</p>
           <p>📌 启动后自动最小化到托盘，不影响开机速度</p>
           <p>💡 <b>推荐开启</b>，不用担心忘记启动</p>
         </>}
@@ -96,7 +97,7 @@ export function WindowEditorSection({
               detailTitle="托盘右键菜单"
               detail={<>
                 <p>右键点击托盘图标时弹出的菜单样式，切换后立即生效，无需重启。</p>
-                <p>📌 <b>原生菜单（推荐）</b>：由 Windows 系统渲染，任何缩放/DPI/主题下都能显示，粘贴成功或失败会闪一下托盘图标角标</p>
+                <p>📌 <b>原生菜单（推荐）</b>：由系统提供菜单，粘贴成功或失败会闪一下托盘图标角标</p>
                 <p>📌 <b>自绘弹窗</b>：应用内的玻璃弹窗样式，最近记录带图片缩略图</p>
                 <p>⚠️ 若曾遇到「右键托盘没有反应/菜单显示不出」，切换为原生菜单可彻底避开</p>
               </>}
@@ -116,7 +117,7 @@ export function WindowEditorSection({
         </select>
       </div>
       <ToggleRow icon="💾" hue="save" label="编辑器自动保存" desc="全屏编辑器中停止输入后自动回写内容" value={config.md_auto_save} onChange={(v) => updateAndSave({ md_auto_save: v })}
-        tooltip="开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 Ctrl+S"
+        tooltip={`开启后，在全屏 Markdown 编辑器中输入停顿约 1 秒后，内容自动保存（卡片回写数据库 / 文件写回磁盘），无需手动按 ${primaryShortcutLabel("s")}`}
         detailTitle="编辑器自动保存"
         detail={<>
           <p>在全屏 Markdown 编辑器中编辑时，停止输入约 1 秒后自动保存内容。</p>
@@ -148,14 +149,17 @@ export function WindowEditorSection({
               detail={<>
                 <p>将 PastePanda 注册为 .md 文件的打开方式，并引导你在系统设置中确认为默认程序。</p>
                 <p>📌 <b>生效后</b>：双击任意 .md 文件，直接用 PastePanda 全屏编辑器打开</p>
-                <p>📌 开启后会打开系统「默认应用」设置页并定位到 PastePanda，点击 .md 一行选择 PastePanda 即可</p>
+                <p>📌 Windows 开启后会打开系统「默认应用」设置页并定位到 PastePanda，点击 .md 一行选择 PastePanda 即可</p>
+                <p>Mac 开启后设为默认程序，关闭后恢复开启前的默认程序。</p>
                 <p>⚠️ Windows 不允许应用静默设为默认，需手动确认一次</p>
               </>}
             />
           </div>
           <div className={`${styles.sRowDesc}`}>
             {mdAssoc === "default" ? "已是 .md 默认打开方式 ✓"
+              : mdAssoc === "available" ? "开启后，双击 .md 文件使用 PastePanda 编辑"
               : mdAssoc === "registered" ? "已注册打开方式，尚未设为默认"
+              : mdAssoc === "unsupported" ? "此平台暂未提供文件关联，请在应用内打开文件"
               : mdAssoc === "loading" ? "检测中…"
               : "双击 .md 文件直接用 PastePanda 编辑"}
           </div>
@@ -166,11 +170,11 @@ export function WindowEditorSection({
           </button>
         )}
         <button
-          className={`${styles.sToggle} ${mdAssoc !== "unregistered" && mdAssoc !== "loading" ? styles.on : styles.off}`}
-          disabled={mdAssocBusy || mdAssoc === "loading"}
-          onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "loading")}>
+          className={`${styles.sToggle} ${(mdAssoc === "default" || mdAssoc === "registered") ? styles.on : styles.off}`}
+          disabled={mdAssocBusy || mdAssoc === "loading" || mdAssoc === "unsupported"}
+          onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "available" || mdAssoc === "loading")}>
           <span className={styles.sToggleThumb} />
-          <span className={styles.sToggleLabel}>{mdAssoc !== "unregistered" && mdAssoc !== "loading" ? "开" : "关"}</span>
+          <span className={styles.sToggleLabel}>{(mdAssoc === "default" || mdAssoc === "registered") ? "开" : "关"}</span>
         </button>
       </div>
       <NoteTemplateRows config={config} updateAndSave={updateAndSave} />

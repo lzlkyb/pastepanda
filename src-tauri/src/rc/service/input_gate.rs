@@ -277,7 +277,11 @@ impl RcService {
         };
         self.input_gate.lock_requested.store(on, Ordering::SeqCst);
         let err = if on && !actual {
-            Some("本机输入监视未运行，无法锁定".to_string())
+            #[cfg(target_os="macos")]
+            let message="本机输入拦截未运行，请检查辅助功能权限后重新连接";
+            #[cfg(not(target_os="macos"))]
+            let message="本机输入监视未运行，无法锁定";
+            Some(message.to_string())
         } else {
             None
         };

@@ -1,0 +1,63 @@
+name: macOS signed release artifacts
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  universal:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Prepare notarization key
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$APPLE_API_PRIVATE_KEY" || { echo 'Missing APPLE_API_PRIVATE_KEY'; exit 1; }
+          key_path="$RUNNER_TEMP/pastepanda-notarization.p8"
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          printf 'APPLE_API_KEY_PATH=%s\n' "$key_path" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run macos:release:check
+      - name: Build AV1 runtime before application regression
+        run: |
+          brew install cmake nasm
+          npm run macos:av1:build
+          npm run macos:av1:test
+      - run: npm test
+      - name: Native probes and backend tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LIBCLANG_PATH="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          export CARGO_TARGET_DIR="$PWD/src-tauri/target-macos"
+          npm run macos:test:native
+          cargo test --manifest-path src-tauri/Cargo.toml
+      - run: npm run macos:release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PastePanda-macOS-notarized-universal
+          path: dist/macos-release/
+          if-no-files-found: error
+      - name: Remove temporary notarization key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/pastepanda-notarization.p8"

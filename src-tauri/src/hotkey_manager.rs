@@ -70,6 +70,60 @@ impl Default for HotkeyConfig {
     }
 }
 
+impl HotkeyConfig {
+    /// 启动与设置保存后共用同一份默认值；空串是用户显式禁用，不能回退。
+    pub fn from_saved(saved: &serde_json::Value) -> Self {
+        let mut config = Self::default();
+        for (key, target) in [
+            ("hotkey", &mut config.show_window),
+            ("sequential_hotkey", &mut config.seq_paste),
+            ("stack_toggle_hotkey", &mut config.stack_toggle),
+            ("stack_paste_hotkey", &mut config.stack_paste),
+            ("quick_paste_hotkey", &mut config.quick_paste),
+            ("screenshot_hotkey", &mut config.screenshot),
+            ("daily_note_hotkey", &mut config.daily_note),
+            ("todo_island_hotkey", &mut config.todo_island),
+            ("rec_hotkey", &mut config.screen_record),
+            ("rec_pause_hotkey", &mut config.rec_pause),
+            ("rec_stop_hotkey", &mut config.rec_stop),
+            ("rec_mark_hotkey", &mut config.rec_mark),
+        ] {
+            if let Some(value) = saved.get(key).and_then(|v| v.as_str()) {
+                *target = value.to_string();
+            }
+        }
+        config
+    }
+}
+
+#[cfg(test)]
+mod saved_config_tests {
+    use super::HotkeyConfig;
+    use serde_json::json;
+
+    #[test]
+    fn missing_or_invalid_screenshot_uses_current_default() {
+        assert_eq!(HotkeyConfig::from_saved(&json!({})).screenshot, "Ctrl+Q");
+        assert_eq!(HotkeyConfig::from_saved(&json!({"screenshot_hotkey":null})).screenshot, "Ctrl+Q");
+        assert_eq!(HotkeyConfig::from_saved(&json!({"screenshot_hotkey":false})).screenshot, "Ctrl+Q");
+    }
+
+    #[test]
+    fn saved_values_and_explicit_disable_survive_reload() {
+        let config = HotkeyConfig::from_saved(&json!({
+            "hotkey":"Command+Shift+V", "screenshot_hotkey":"", "rec_hotkey":"Ctrl+Alt+X",
+            "rec_pause_hotkey":"", "rec_stop_hotkey":"Ctrl+Alt+S", "rec_mark_hotkey":""
+        }));
+        assert_eq!(config.show_window, "Command+Shift+V");
+        assert_eq!(config.screenshot, "");
+        assert_eq!(config.screen_record, "Ctrl+Alt+X");
+        assert_eq!(config.rec_pause, "");
+        assert_eq!(config.rec_stop, "Ctrl+Alt+S");
+        assert_eq!(config.rec_mark, "");
+        assert_eq!(config.seq_paste, HotkeyConfig::default().seq_paste);
+    }
+}
+
 /// 将前端格式（ctrl+shift+v）转为 Tauri Shortcut 格式（Ctrl+Shift+V）
 fn normalize_hotkey(s: &str) -> String {
     s.split('+')
@@ -78,8 +132,8 @@ fn normalize_hotkey(s: &str) -> String {
             match p.as_str() {
                 "ctrl" | "control" => "Ctrl".to_string(),
                 "shift" => "Shift".to_string(),
-                "alt" => "Alt".to_string(),
-                "meta" | "super" | "cmd" => "Meta".to_string(),
+                "alt" | "option" => "Alt".to_string(),
+                "meta" | "super" | "cmd" | "command" | "win" => "Meta".to_string(),
                 // 功能键
                 k if k.starts_with("f") && k.len() >= 2 => {
                     let mut c = p.chars();
@@ -397,14 +451,14 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
 
     // 屏幕录制。统一入口 rec_toggle 已含「录制中再按 = 停止」分支（rec/mod.rs）。
     // 只 emit 不做事会导致录制状态判定分裂，直接调 rec 模块（同截图热键直调 open_screenshot_window）。
-    // rec 模块 Windows 专属（lib.rs cfg(windows)），非桌面/非 Windows 下热键注册保留但回调空转。
+    // Windows 和 Mac 桌面共享入口，各平台会话负责采集与编码。
     if config.screen_record.trim().is_empty() {
         log::info!("[HotkeyManager] 录屏热键已禁用（留空），跳过注册");
     } else if let Ok(shortcut) = parse_shortcut(&config.screen_record) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
                 log::info!("[HotkeyManager] 录屏热键触发");
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 crate::rec::open_selector_window(app);
             }
         }) {
@@ -426,7 +480,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_pause) {
         match gs.on_shortcut(shortcut, move |app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     let st = crate::rec::session::status();
                     if st.recording {
@@ -455,7 +509,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_stop) {
         match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     if crate::rec::session::status().recording {
                         if let Err(e) = crate::rec::session::stop(false) {
@@ -482,7 +536,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
     } else if let Ok(shortcut) = parse_shortcut(&config.rec_mark) {
         match gs.on_shortcut(shortcut, move |_app, _shortcut, event| {
             if event.state == ShortcutState::Pressed {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 {
                     if crate::rec::session::status().recording {
                         crate::rec::session::send_mark();

@@ -133,7 +133,7 @@ export interface RcStatus {
   peer_fps120?: boolean;
   /** 发起端视角：被控端是否支持 HEVC 硬编（Q3 caps）。4K60 档门控用。 */
   peer_hevc?: boolean;
-  /** P2.3：发起端视角——被控端 caps 声明的 AV1 硬编可用性。 */
+  /** 对端 AV1 编码器可用：Windows 硬件编码或 Mac SVT 软件编码。 */
   peer_av1?: boolean;
   /** 发起端视角：被控端主屏刷新率（Hz）。0 = 未上报。 */
   peer_refresh_hz?: number;

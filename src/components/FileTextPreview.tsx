@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 /**
  * FileTextPreview — 文件详情弹框的文本预览主体（语法高亮 + 行号 + 面板内搜索）。
  *
@@ -100,7 +101,7 @@ export function TextPreviewBody({ data, path }: { data: TextPreviewData; path: s
       <div className="file-preview-toolbar">
         <button className="fpt-btn" onClick={copyFull} title="复制文件全文"><Copy size={12} /> 复制全文</button>
         <button className="fpt-btn" onClick={openInFullscreen} title="在编辑器中打开"><ExternalLink size={12} /> 编辑器打开</button>
-        <button className="fpt-btn" onClick={() => { setShowSearch((s) => !s); setTimeout(() => searchInputRef.current?.focus(), 0); }} title="搜索 (Ctrl+F)"><Search size={12} /> 搜索</button>
+        <button className="fpt-btn" onClick={() => { setShowSearch((s) => !s); setTimeout(() => searchInputRef.current?.focus(), 0); }} title={`搜索 (${primarySearchShortcut()})`}><Search size={12} /> 搜索</button>
         {showSearch && (
           <span className="file-search">
             <input

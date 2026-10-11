@@ -1,3 +1,4 @@
+import { configuredShortcutLabel, primaryShortcutLabel, activeConfiguredHotkey } from "@/lib/utils";
 /**
  * 剪贴板栈 API — 栈模式切换、栈粘贴、全部粘贴
  */
@@ -29,8 +30,8 @@ export function toggleStackMode() {
     // 主窗口的横幅与 toast 他一条都看不到，反馈必须由浮标承载。
     // （设置里把浮标关了就没有这条通道 —— 下面那次调用自己判开关，直接不显示。）
     void hudStackModeEntered();
-    const pasteKey = store.config.stack_paste_hotkey || "ctrl+alt+p";
-    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈模式已开启 · Ctrl+C 收集 · ${pasteKey} 粘贴`, type: "info" } }));
+    const pasteKey = activeConfiguredHotkey(store.config.stack_paste_hotkey, "ctrl+alt+p") ? `${configuredShortcutLabel(store.config.stack_paste_hotkey, "ctrl+alt+p")} 粘贴` : "点击粘贴栈按钮粘贴";
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `栈模式已开启 · ${primaryShortcutLabel("c")} 收集 · ${pasteKey}`, type: "info" } }));
   } else {
     store.exitStackMode();
     syncStackModeToBackend(false);

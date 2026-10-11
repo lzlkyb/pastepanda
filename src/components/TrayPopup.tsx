@@ -1,3 +1,4 @@
+import { configuredShortcutLabel, primaryShortcutLabel } from "@/lib/utils";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ThemeKey, DEFAULT_THEME } from "@/lib/theme";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
@@ -160,7 +161,7 @@ export function TrayPopup() {
   // 与 SkinScene 读同一份 store，保证场景与弹窗内容主题一致
   const themeKey = (useAppStore((s) => s.config.theme) || DEFAULT_THEME) as ThemeKey;
   // 审查：显示热键提示用真实配置（此前硬编码 "Ctrl+Alt+V"，用户自定义后误导）
-  const showHotkey = (useAppStore((s) => s.config.hotkey) as string | undefined) || "Ctrl+Alt+V";
+  const showHotkey = configuredShortcutLabel(useAppStore((s) => s.config.hotkey), "ctrl+alt+v");
   // 浮标开关：关掉时托盘不再摆「调整浮标位置…」这一项（口径与 hudBridge 的 hudEnabled 一致）
   const hudOn = useAppStore((s) => isHudEnabled(s.config.stack_hud_enabled));
   const [toast, setToast] = useState<ToastState>({ visible: false, message: "", type: "info" });
@@ -484,7 +485,7 @@ export function TrayPopup() {
       iconClass: "icon-purple",
       iconSvg: <IconSettings />,
       label: "设置…",
-      hint: "Ctrl+S",
+      hint: primaryShortcutLabel("s"),
       onClick: doSettings,
     },
     {

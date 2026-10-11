@@ -3,8 +3,13 @@
 use super::*;
 
 /// 元数据与 JPEG 必须在同一条流保持顺序。
-pub async fn write_jpeg_frame(s: &mut iroh::endpoint::SendStream, frame: &Encoded) -> Result<(), String> {
-    if let Some(rect) = frame.rect { write_dirty_meta(s, rect).await?; }
+pub async fn write_jpeg_frame(
+    s: &mut iroh::endpoint::SendStream,
+    frame: &Encoded,
+) -> Result<(), String> {
+    if let Some(rect) = frame.rect {
+        write_dirty_meta(s, rect).await?;
+    }
     write_vts_meta(s, frame.frame.at_ms, frame.frame.cap_ms, frame.frame.enc_ms).await?;
     write_jpeg(s, &frame.frame.jpeg).await
 }
@@ -25,7 +30,12 @@ pub const VIDEO_MAGIC: &[u8; 6] = b"PPVID1";
 /// 写独立视频流头：`PPVID1` + u32 LE json 长度 + json（`t:"vhdr"`、`c`:编码
 /// 标准）。裸字节直写（不走 `write_raw_stall` 的长度前缀——流头自描述，
 /// 与音频流头同构）。宽高/时序随每帧 meta 走，流头只承担「这条流是什么」。
-pub async fn write_vhdr(s: &mut iroh::endpoint::SendStream, codec_label: &str) -> Result<(), String> {
+pub async fn write_vhdr(
+    s: &mut iroh::endpoint::SendStream,
+    codec_label: &str,
+) -> Result<(), String> {
+    let codec_label =
+        crate::rc::video_params::wire_codec_label(codec_label).ok_or("未知视频编码标准")?;
     let json = serde_json::json!({ "t": "vhdr", "c": codec_label });
     let b = serde_json::to_vec(&json).map_err(|e| e.to_string())?;
     let mut out = Vec::with_capacity(VIDEO_MAGIC.len() + 4 + b.len());
@@ -42,7 +52,9 @@ pub fn try_parse_vhdr(buf: &[u8]) -> Option<String> {
         return None;
     }
     let n = u32::from_le_bytes(
-        buf[VIDEO_MAGIC.len()..VIDEO_MAGIC.len() + 4].try_into().ok()?,
+        buf[VIDEO_MAGIC.len()..VIDEO_MAGIC.len() + 4]
+            .try_into()
+            .ok()?,
     ) as usize;
     if n == 0 || n > 4096 || buf.len() < VIDEO_MAGIC.len() + 4 + n {
         return None;
@@ -115,7 +127,9 @@ pub async fn write_h264(
     // P2.3：编码标准标签（"h264" / "hevc" / "av1"），进元数据 `c` 字段。
     codec_label: &str,
 ) -> Result<(), String> {
-    if data.is_empty() {
+    let codec_label =
+        crate::rc::video_params::wire_codec_label(codec_label).ok_or("未知视频编码标准")?;
+    if codec_label == "jpeg" || data.is_empty() {
         return Err("空 H.264 包".into());
     }
     let mut meta = serde_json::json!({

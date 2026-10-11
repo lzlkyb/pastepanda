@@ -50,9 +50,10 @@ use std::time::Instant;
 use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "android")]
-use super::update::{is_download_too_slow, SPEED_GRACE_SECS};
-#[cfg(target_os = "android")]
-use super::update::retry_with_backoff;
+use super::update::{
+    format_source_failures, is_download_too_slow, last_good_source, move_matching_to_front,
+    record_good_source, retry_with_backoff, MANIFEST_CHECK_TIMEOUT_SECS, SPEED_GRACE_SECS,
+};
 
 /// Gitee 镜像上的 apk manifest（只在读不到 tauri.conf.json 的 apkEndpoints 时兜底）。
 #[cfg(target_os = "android")]
@@ -193,7 +194,14 @@ fn apk_endpoints(app: &tauri::AppHandle) -> Vec<String> {
         log::warn!("[Update-apk] 配置里没读到 apkEndpoints，退回内置 Gitee 源");
         return vec![GITEE_APK_MANIFEST_URL.to_string()];
     }
-    configured
+    let mut eps = configured;
+    // 与桌面同款：检查阶段成功的源，下载阶段别再重头试一遍（见 `move_matching_to_front`）。
+    if let Some(last_good) = last_good_source() {
+        if move_matching_to_front(&mut eps, |u| u == &last_good) {
+            log::info!("[Update-apk] 优先复用上次成功的更新源: {last_good}");
+        }
+    }
+    eps
 }
 
 #[cfg(target_os = "android")]
@@ -206,8 +214,11 @@ fn http_client() -> Result<reqwest::Client, String> {
 
 #[cfg(target_os = "android")]
 async fn fetch_manifest(client: &reqwest::Client, endpoint: &str) -> Result<ApkManifest, String> {
+    // ❗ 超时挂在**这个请求**上，不挂在 client 上：同一个 client 还跑 APK 下载，
+    //   一个 15s 的总超时会把几百 MB 的包掐死。桌面端同理见 `MANIFEST_CHECK_TIMEOUT_SECS`。
     let resp = client
         .get(endpoint)
+        .timeout(Duration::from_secs(MANIFEST_CHECK_TIMEOUT_SECS))
         .send()
         .await
         .map_err(|e| format!("请求失败: {e}"))?
@@ -244,7 +255,7 @@ async fn check_one_source(
 pub async fn check_apk_update(app: &tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
     let client = http_client()?;
     let current = app.package_info().version.to_string();
-    let mut last_error = String::new();
+    let mut attempts: Vec<(String, String)> = Vec::new();
     let eps = apk_endpoints(app);
     for (i, ep) in eps.iter().enumerate() {
         log::info!("[Update-apk] 检查源 {}/{ep_count}: {ep}", i + 1, ep_count = eps.len());
@@ -254,21 +265,25 @@ pub async fn check_apk_update(app: &tauri::AppHandle) -> Result<Option<serde_jso
         .await
         {
             Ok(Some(m)) => {
+                record_good_source(ep);
                 log::info!("[Update-apk] 发现新版本 v{} (源: {ep})", m.version);
                 return Ok(Some(serde_json::json!({
                     "version": m.version,
                     "body": m.notes,
                 })));
             }
-            Ok(None) => return Ok(None),
+            Ok(None) => {
+                record_good_source(ep);
+                return Ok(None);
+            }
             Err(e) => {
-                last_error = e;
-                log::warn!("[Update-apk] 源 {ep} 失败: {last_error}");
+                log::warn!("[Update-apk] 源 {ep} 失败: {e}");
+                attempts.push((ep.clone(), e));
                 continue;
             }
         }
     }
-    Err(format!("所有更新源均失败: {last_error}"))
+    Err(format_source_failures(&attempts))
 }
 
 #[cfg(target_os = "android")]
@@ -445,18 +460,22 @@ pub fn spawn_apk_update(app: tauri::AppHandle) {
         };
         let current = app.package_info().version.to_string();
         let groups = apk_endpoints(&app);
-        let mut last_error = String::new();
+        let mut attempts: Vec<(String, String)> = Vec::new();
 
         for (i, ep) in groups.iter().enumerate() {
             let update = match check_one_source(&client, ep, &current).await {
-                Ok(Some(m)) => m,
+                Ok(Some(m)) => {
+                    record_good_source(ep);
+                    m
+                }
                 Ok(None) => {
+                    record_good_source(ep);
                     let _ = app.emit("update:uptodate", ());
                     return;
                 }
                 Err(e) => {
                     log::warn!("[Update-apk] 源 {ep} 检查失败: {e}");
-                    last_error = e;
+                    attempts.push((ep.clone(), e));
                     continue;
                 }
             };
@@ -476,12 +495,12 @@ pub fn spawn_apk_update(app: tauri::AppHandle) {
                             "source": ep, "avg_bps": avg_bps,
                         }),
                     );
-                    last_error = format!("源 {ep} 下载过慢（约 {} KB/s）", avg_bps / 1024);
+                    attempts.push((ep.clone(), format!("下载过慢（约 {} KB/s）", avg_bps / 1024)));
                     continue;
                 }
                 ApkDownload::Failed(e) => {
                     log::warn!("[Update-apk] 源 {ep} 下载失败: {e}");
-                    last_error = e;
+                    attempts.push((ep.clone(), e));
                     continue;
                 }
             };
@@ -502,14 +521,14 @@ pub fn spawn_apk_update(app: tauri::AppHandle) {
                 }
                 Err(e) => {
                     log::warn!("[Update-apk] 拉起安装器失败: {e}");
-                    last_error = e;
+                    attempts.push((ep.clone(), e));
                     continue;
                 }
             }
         }
         let _ = app.emit(
             "update:error",
-            serde_json::json!({ "message": format!("所有更新源均失败: {last_error}") }),
+            serde_json::json!({ "message": format_source_failures(&attempts) }),
         );
     });
 }

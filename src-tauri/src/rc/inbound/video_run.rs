@@ -25,18 +25,27 @@ impl InboundVideo {
                 //（与它写给对端 HUD 的是同一组数——两侧口径天然一致，不会出现
                 // 「日志说 30ms、HUD 说 80ms」这种自相矛盾）
                 let send_t0 = std::time::Instant::now();
-                #[cfg(target_os = "windows")]
+                #[cfg(any(target_os = "windows", target_os = "macos"))]
                 let media_sent = if self.peer_media_plane {
-                    if !self.send_jpeg_plane(&enc_out).await { return Step::End; }
+                    if !self.send_jpeg_plane(&enc_out).await {
+                        return Step::End;
+                    }
                     true
-                } else { false };
-                #[cfg(not(target_os = "windows"))]
+                } else {
+                    false
+                };
+                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                 let media_sent = false;
                 if !media_sent {
                     let mut guard = self.send.lock().await;
-                    if crate::rc::video::write_jpeg_frame(&mut guard, &enc_out).await.is_err() {
+                    if crate::rc::video::write_jpeg_frame(&mut guard, &enc_out)
+                        .await
+                        .is_err()
+                    {
                         drop(guard);
-                        self.svc.force_end_if_session(&self.my_id, "画面推送失败").await;
+                        self.svc
+                            .force_end_if_session(&self.my_id, "画面推送失败")
+                            .await;
                         return Step::End;
                     }
                 }
@@ -55,6 +64,14 @@ impl InboundVideo {
                 }
             }
             Ok(Err(e)) => {
+                #[cfg(target_os = "macos")]
+                {
+                    self.svc
+                        .force_end_if_session(&self.my_id, &format!("Mac 屏幕采集失败：{e}"))
+                        .await;
+                    return Step::End;
+                }
+                #[cfg(not(target_os = "macos"))]
                 log::debug!("[RC] 截帧失败：{e}");
             }
             Err(e) => {
@@ -72,7 +89,7 @@ impl InboundVideo {
         self.spawn_datagram_reader();
         self.spawn_stats_sampler();
         // G3：对端申请了系统声音 → 音频采集 + 专用流（Windows 宿主专属，mobile 无音频）
-        #[cfg(target_os = "windows")]
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
         self.spawn_audio_task();
         // 会话刚建立：立刻可推流，等首个心跳
         self.svc.touch_activity();
@@ -115,14 +132,31 @@ impl InboundVideo {
             // 无入站证据达到 5 分钟才收口，健康心跳不受后台时长限制。
             let bg_since = self.svc.peer_background_since();
             if let Some(reason) = self.svc.inbound_disconnect_reason() {
-                log::info!("[RC] {reason}，自动结束会话，恢复窗口={}ms",
-                    self.svc.heartbeat_timeout_ms());
+                log::info!(
+                    "[RC] {reason}，自动结束会话，恢复窗口={}ms",
+                    self.svc.heartbeat_timeout_ms()
+                );
                 self.svc.force_end_if_session(&self.my_id, reason).await;
                 break;
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             if let Some(pipe) = &mut self.media_pipe {
                 pipe.set_paused(self.svc.media_paused());
+            }
+            #[cfg(target_os = "macos")]
+            if bg_since > 0
+                || self.svc.should_pause_stream()
+                || self.svc.video_paused()
+                || self.svc.media_paused()
+            {
+                self.enc
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .suspend_capture();
+                self.mac_video
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .suspend();
             }
             if bg_since > 0 {
                 // 对端在后台：整圈跳过——不采集、不编码、不发送。
@@ -169,13 +203,15 @@ impl InboundVideo {
             }
             // 暂停必须先于问门：暂停期没有「想发而发不下」的帧，一次空转都不许记成需求
             // 证据（`note_drop` 会把 app-limited 判反，P3 会拿着假需求去翻倍预算）。
-            if self.svc.media_paused() { continue; }
+            if self.svc.media_paused() {
+                continue;
+            }
             // P1-6：每圈顺手比一次光标形状（GetCursorInfo 微秒级）。
             // 🔴 必须排在媒体闸**之前**：光标走控制流，跟媒体预算毫无竞争，被闸饿掉的
             // 那段时间里发起端看到的是**冻住的指针 + 旧形状**（拖动时尤其明显）。限频在
             // `cursor_should_send`（位置 40ms、形状/可见性翻转即时），闸关着空转也不会灌流。
             self.maybe_send_cursor().await;
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             if self.peer_video_plane || self.peer_media_plane {
                 match self.media_gate() {
                     super::media_pipe::Gate::Open => {}
@@ -201,16 +237,30 @@ impl InboundVideo {
                 // gpu_disabled 是 Windows 宿主字段（mobile 恒 false：无硬编可判死）
                 #[cfg(target_os = "windows")]
                 let gpu_disabled = self.gpu_disabled;
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(target_os = "macos")]
+                let gpu_disabled = self
+                    .mac_video_retry
+                    .is_some_and(|at| std::time::Instant::now() < at);
+                #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                 let gpu_disabled = false;
-                effective_interval_ms(
-                    opts.profile.interval_ms,
-                    opts.virtual_screen,
-                    gpu_disabled,
-                )
+                effective_interval_ms(opts.profile.interval_ms, opts.virtual_screen, gpu_disabled)
             };
-            let boost_gap = std::time::Duration::from_millis(
-                boost_gap_ms(interval).max(1000 / self.svc.media_fps_limit(&self.my_id) as u64));
+            let media_fps = self.svc.media_fps_limit(&self.my_id);
+            #[cfg(target_os = "macos")]
+            let media_fps = crate::rc::video_params::mac_encoder_fps(
+                super::video::want_stream_codec(opts.profile.hevc, &opts.codec),
+                media_fps,
+            );
+            let media_gap = 1000 / u64::from(media_fps);
+            #[cfg(target_os = "macos")]
+            let media_gap = if super::video::want_stream_codec(opts.profile.hevc, &opts.codec)
+                == crate::rc::video_params::VideoCodec::Av1
+            {
+                1000_u64.div_ceil(u64::from(media_fps))
+            } else {
+                media_gap
+            };
+            let boost_gap = std::time::Duration::from_millis(boost_gap_ms(interval).max(media_gap));
             let frame_start = {
                 let now = tokio::time::Instant::now();
                 let min_next = self.last_frame_at + boost_gap;
@@ -285,8 +335,12 @@ impl InboundVideo {
                 ),
             });
             if scale > self.pace_scale {
-                log::info!("[RC] 编码跑不满档位间隔（EMA {}/{}ms），放大到 {}x",
-                    ema_ms, interval * scale as u64, scale);
+                log::info!(
+                    "[RC] 编码跑不满档位间隔（EMA {}/{}ms），放大到 {}x",
+                    ema_ms,
+                    interval * scale as u64,
+                    scale
+                );
             }
             self.work_ema_ms = ema_ms;
             self.pace_scale = scale;
@@ -309,8 +363,9 @@ impl InboundVideo {
             // 动画期间每圈都活跃，于是被以 60fps 连续抓取；旧实现只在输入
             // 事件那一瞬间提一帧，200ms 的动画总共只抓到 2 帧。
             next_tick = frame_start
-                + std::time::Duration::from_millis(next_period_ms(active, interval, self.pace_scale)
-                    .max(1000 / self.svc.media_fps_limit(&self.my_id) as u64));
+                + std::time::Duration::from_millis(
+                    next_period_ms(active, interval, self.pace_scale).max(media_gap),
+                );
         }
         #[cfg(target_os = "windows")]
         self.discard_media_stream();

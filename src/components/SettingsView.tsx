@@ -1,3 +1,4 @@
+import { primarySearchShortcut } from "@/lib/utils";
 import { Fragment, useEffect } from "react";
 import { ArrowLeft, Settings as SettingsIcon, Search as SearchIcon, X } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -146,7 +147,7 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
             className={styles.settingsSearchInput}
             type="text"
             value={search.filter}
-            placeholder="搜索设置  Ctrl+F"
+            placeholder={`搜索设置  ${primarySearchShortcut()}`}
             onChange={(e) => search.setFilter(e.target.value)}
           />
           {/* 命中计数：子节点故意留空，文本由 useSettingsSearch 的 effect 直接写入 */}

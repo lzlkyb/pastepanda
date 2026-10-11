@@ -193,11 +193,10 @@ mod imp {
         let hud_on = crate::stack_hud::is_enabled();
         let rc = RC_ITEM.lock().ok().and_then(|g| g.clone());
         let show_hotkey = SHOW_HOTKEY.lock().map(|s| s.clone()).unwrap_or_default();
-        // 🔴 rec 模块是 windows-only，非 Windows 平台没有「重录上次区域」项
-        //（同 fdf2c55 修过的 CI 坑：windows-only 引用必须挂 cfg）
-        #[cfg(windows)]
+        // Windows 与 Mac 共用 rec 接口；其他平台没有录屏模块。
+        #[cfg(any(windows, target_os = "macos"))]
         let rec_last = crate::rec::session::last_opts().map(|o| (o.w, o.h));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         let rec_last = None;
         MenuSnapshot { monitoring, hud_on, rc, recents, show_hotkey, rec_last }
     }
@@ -211,6 +210,7 @@ mod imp {
         parts.push(format!("m={}", snap.monitoring));
         parts.push(format!("h={}", snap.hud_on));
         parts.push(format!("hk={}", snap.show_hotkey));
+        parts.push(format!("rec={:?}", snap.rec_last));
         parts.push(match &snap.rc {
             Some(rc) => format!("rc={}|{}", rc.label, rc.disabled),
             None => "rc=-".into(),
@@ -436,20 +436,20 @@ mod imp {
             // 重录上次区域：沿用上次区域与参数直入倒计时（rec/mod.rs 的 open_rerecord）
             let a = app.clone();
             std::thread::spawn(move || {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 if let Err(e) = crate::rec::open_rerecord(&a) {
                     log::warn!("[TrayMenu] 重录上次区域失败: {e}");
                 }
-                #[cfg(not(windows))]
+                #[cfg(not(any(windows, target_os = "macos")))]
                 let _ = a;
             });
         } else if id == ID_SCREEN_REC {
             // 录屏统一入口：录制中=停止，否则开选区窗（rec/mod.rs 的 open_selector_window）
             let a = app.clone();
             std::thread::spawn(move || {
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "macos"))]
                 crate::rec::open_selector_window(&a);
-                #[cfg(not(windows))]
+                #[cfg(not(any(windows, target_os = "macos")))]
                 let _ = a;
             });
         } else if id == ID_PINNED {

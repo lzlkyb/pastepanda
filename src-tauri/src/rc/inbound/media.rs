@@ -106,9 +106,10 @@ impl MediaWriter {
         }
     }
 
+    #[cfg(any(target_os="windows",target_os="macos"))]
     pub(super) async fn send_via_video_plane(
         &mut self,
-        p: &crate::rc::encode_h264::H264Packet,
+        p: &crate::rc::video_params::VideoPacket,
         sq: u32,
         ts: i64,
         cap_ms: u16,

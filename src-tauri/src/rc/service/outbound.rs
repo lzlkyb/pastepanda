@@ -177,7 +177,7 @@ impl RcService {
                     }
                     svc.clear_frame();
                     svc.clear_outbox();
-                    #[cfg(target_os = "windows")]
+                    #[cfg(any(target_os = "windows",target_os="macos"))]
                     svc.audio_reset();
                     svc.note_rtt(0);
                     // 🔴 取消竞态收口（2026-09-20 审计 P2-3）：从 cancelled 判定到
@@ -392,7 +392,7 @@ impl RcService {
             // 旧对端 serde 忽略未知字段照常受理。
             fec_rs: vid_dgram_capability(),
             // G3：本端支持音频。会话中由 AudioOn 开关；被控端无渲染设备时自动无声
-            audio: Some(true),
+            audio: Some(cfg!(any(target_os="windows",target_os="macos"))),
             // 「传输分 plane」（2026-10-03）：本端支持在独立单向流上收视频。
             // 被控端置位后才把 H.264 写到专属 uni 流（积压可整段重建丢弃）；
             // 旧被控端忽略此位照常受理（视频留在会话半流，行为同今天）。

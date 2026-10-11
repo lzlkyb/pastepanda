@@ -1,3 +1,4 @@
+import { primaryShortcutLabel } from "@/lib/utils";
 /**
  * DeepCleanDialog.tsx — 深度清理弹窗（方案 A：组合条件 + 实时计数 + 预览）。
  *
@@ -347,7 +348,7 @@ export function DeepCleanDialog({ open, onClose }: DeepCleanDialogProps) {
                     <div className={styles.matchDesc}>
                       {countErr
                         ? "没能算出命中条数，这不代表没有符合条件的记录，请重试"
-                        : "自动跳过置顶记录 · 删除后可 Ctrl+Z 撤销"}
+                        : `自动跳过置顶记录 · 删除后可 ${primaryShortcutLabel("z")} 撤销`}
                     </div>
                   </div>
                   {countErr ? (

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { RcAudioPlayer } from "@/lib/rcAudio";
 import { parseAudioBatch } from "@/lib/api/rc";
 
 /** 按后端 `rc_drain_audio` 的小端布局拼一条批（type 0 = cfg JSON，1 = AAC 帧）。 */
@@ -100,5 +101,43 @@ describe("parseAudioBatch", () => {
   it("零长度 payload 的条目被跳过（不是帧）", () => {
     const { items } = parseAudioBatch(build([{ type: 1, ptsMs: 3, data: [] }]));
     expect(items).toEqual([]);
+  });
+});
+
+describe("remote audio errors", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  it("reports missing decoder once instead of retrying every drain, and resets on close", () => {
+    vi.stubGlobal("AudioDecoder", undefined);
+    const report = vi.fn(); const player = new RcAudioPlayer(report);
+    const batch = build([{ type: 0, json: cfgJson() }, { type: 1, ptsMs: 0, data: [1, 2] }]);
+    for (let i = 0; i < 25; i++) player.consume(batch);
+    expect(report).toHaveBeenCalledTimes(1); expect(report).toHaveBeenCalledWith("当前系统不支持远控声音播放");
+    player.close(); player.consume(batch); expect(report).toHaveBeenCalledTimes(2); player.close();
+  });
+  it("unconfigured packets never open an audio device or report a playback failure", () => {
+    vi.stubGlobal("AudioDecoder", undefined); const context = vi.fn(); vi.stubGlobal("AudioContext", context);
+    const report = vi.fn(); const player = new RcAudioPlayer(report);
+    player.consume(build([{ type: 1, ptsMs: 0, data: [1, 2] }]));
+    expect(context).not.toHaveBeenCalled(); expect(report).not.toHaveBeenCalled(); player.close();
+  });
+  it("suspended playback drops packets and removes its gesture listener on close", async () => {
+    const decode = vi.fn(); const ctx = { state: "suspended", resume: vi.fn(() => Promise.reject(new Error("gesture required"))), close: vi.fn(() => Promise.resolve()) };
+    vi.stubGlobal("AudioDecoder", class { configure() {} close() {} decode = decode; });
+    vi.stubGlobal("AudioContext", class { constructor() { return ctx; } });
+    vi.stubGlobal("EncodedAudioChunk", class {});
+    const add = vi.spyOn(window, "addEventListener"), remove = vi.spyOn(window, "removeEventListener");
+    const player = new RcAudioPlayer(); const batch = build([{ type: 0, json: cfgJson() }, { type: 1, ptsMs: 0, data: [1] }]);
+    for (let i = 0; i < 25; i++) player.consume(batch); await Promise.resolve();
+    expect(decode).not.toHaveBeenCalled(); const gesture = add.mock.calls.find(([type]) => type === "pointerdown")!;
+    ctx.state = "running"; player.consume(batch); expect(decode).toHaveBeenCalledOnce();
+    player.close(); expect(remove).toHaveBeenCalledWith("pointerdown", gesture[1]); expect(ctx.close).toHaveBeenCalledOnce();
+  });
+  it("reports rejected codec configuration once and can reconfigure a different stream", () => {
+    const configure = vi.fn(() => { throw new Error("unsupported codec"); });
+    vi.stubGlobal("AudioDecoder", class { configure = configure; close() {} });
+    const report = vi.fn(); const player = new RcAudioPlayer(report);
+    const first = build([{ type: 0, json: cfgJson() }]); player.consume(first); player.consume(first);
+    expect(configure).toHaveBeenCalledTimes(1); expect(report).toHaveBeenCalledTimes(1);
+    player.consume(build([{ type: 0, json: cfgJson("Eog=") }])); expect(configure).toHaveBeenCalledTimes(2); expect(report).toHaveBeenCalledTimes(2); player.close();
   });
 });

@@ -103,7 +103,12 @@ mod imp {
     }
 }
 
-#[cfg(all(not(windows), not(target_os = "android")))]
+#[cfg(target_os = "macos")]
+mod imp {
+    pub use crate::macos::secret_store::{protect, unprotect};
+}
+
+#[cfg(all(not(windows), not(target_os = "android"), not(target_os = "macos")))]
 mod imp {
     // 非 Windows 平台不提供「明文落盘」的回退实现 —— 宁可不能用，
     // 也不能默默把密钥/令牌写成明文（规则 #15.3：失败不静默）。

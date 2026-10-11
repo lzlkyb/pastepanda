@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { X, Copy, Download } from "lucide-react";
 import { useToast } from "@/components/Toast";
@@ -6,6 +6,7 @@ import { useDialogAnim } from "@/lib/dialogMotion";
 import { errText } from "@/lib/utils";
 import styles from "./QRCodeDialog.module.css";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useQrCanvas } from "@/hooks/useQrCanvas";
 
 /**
  * 二维码生成对话框
@@ -14,37 +15,11 @@ import { FocusTrap } from "@/components/FocusTrap";
  */
 export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
+  const { ready, error, empty, textBytes, tooLong, retry } = useQrCanvas(canvasRef, text, 360);
   const { toast } = useToast();
   const anim = useDialogAnim();
 
   const isUrl = /^https?:\/\//i.test(text.trim());
-  // 修复 U29：检测文本是否超出二维码容量（UTF-8 字节数），给出具体失败原因
-  const textBytes = new TextEncoder().encode(text).length;
-  const tooLong = textBytes > 2000;
-
-  // 生成二维码
-  useEffect(() => {
-    let cancelled = false;
-    setReady(false);
-    setError(false);
-    import("qrcode").then((QRCode) => {
-      if (cancelled || !canvasRef.current) return;
-      QRCode.toCanvas(canvasRef.current, text, {
-        width: 360,
-        margin: 2,
-        color: { dark: "#0F172A", light: "#FFFFFF" },
-        errorCorrectionLevel: "M",
-      }, (err) => {
-        if (cancelled) return;
-        if (err) { setError(true); return; }
-        setReady(true);
-      });
-    }).catch(() => { if (!cancelled) setError(true); });
-    return () => { cancelled = true; };
-  }, [text, retryKey]);
 
   // 键盘关闭
   useEffect(() => {
@@ -101,14 +76,14 @@ export function QRCodeDialog({ text, onClose }: { text: string; onClose: () => v
           <div className={styles.qrBody}>
             <div className={styles.qrCanvasWrap}>
               <canvas ref={canvasRef} className={styles.qrCanvas} style={{ opacity: ready ? 1 : 0 }} />
-              {!ready && !error && <div className={styles.qrLoading}>生成中…</div>}
+              {!ready && !error && <div className={styles.qrLoading}>{empty ? "等待文本内容" : "生成中…"}</div>}
               {error && (
                 <div className={styles.qrError}>
                   <div className={styles.qrErrorMsg}>
                     {tooLong ? `文本过长（${textBytes} 字节），超出二维码容量` : "生成失败"}
                   </div>
                   {!tooLong && (
-                    <button className={styles.qrRetryBtn} onClick={() => setRetryKey((k) => k + 1)}>
+                    <button className={styles.qrRetryBtn} onClick={retry}>
                       重试
                     </button>
                   )}

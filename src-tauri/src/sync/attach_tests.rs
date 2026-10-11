@@ -420,7 +420,8 @@ fn test_w1_带图笔记同步后对端能打开这张图() {
     // ② B 的正文指向 B 的路径，不是 A 的
     let got = p.b.note_get(&n.id).unwrap().expect("对端该有这一篇");
     assert!(
-        got.content.contains(&url_in(&p.b_images, &name)),
+        // Master canonicalizes legacy four-slash POSIX URLs on import.
+        got.content.contains(&url_in(&p.b_images, &name).replacen("file:////", "file:///", 1)),
         "引用没改成本机路径：{}",
         got.content
     );
@@ -464,6 +465,25 @@ fn test_w1_同一批增量重放不生冲突副本() {
     assert_eq!((again.assets_landed, again.assets_deduped), (0, 1));
 
     let _ = std::fs::remove_dir_all(&p.root);
+}
+
+#[test]
+fn unix_references_preserve_boundaries_and_exclude_remote_urls(){
+    for prefix in ["file:///Users/Name%20Space/app","file:////Users/Name Space/app","/home/user/app"] {
+        let content=format!("中文<img src=\"{prefix}/images/{HASH}.png\">![x]({prefix}/images/{HASH}.png)");
+        assert_eq!(scan_local_refs(&content).len(),1);let portable=to_portable(&content);
+        assert_eq!(portable,format!("中文<img src=\"pp-asset:{HASH}.png\">![x](pp-asset:{HASH}.png)"));
+    }
+    for prefix in ["https://example.com","//example.com","file://server/app","https://example.com/a"] {
+        let content=format!("<img src=\"{prefix}/images/{HASH}.png\">");assert!(scan_local_refs(&content).is_empty(), "remote reference: {content}");assert_eq!(to_portable(&content),content);
+    }
+    let images=Path::new("/Users/Name Space/app/images");let original=format!("<img src=\"file:////Users/Name Space/app/images/{HASH}.png\">");
+    // Imports use the canonical POSIX URL introduced on master. Legacy four-slash
+    // capture URLs must keep the same portable identity (the sync echo comparator).
+    let canonical = original.replace("file:////", "file:///");
+    let landed = to_local(&to_portable(&original), images);
+    assert_eq!(landed, canonical);
+    assert_eq!(to_portable(&landed), to_portable(&original));
 }
 
 #[test]

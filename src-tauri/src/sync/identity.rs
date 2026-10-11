@@ -74,13 +74,16 @@ impl NodeIdentity {
         if path.exists() {
             let cipher = std::fs::read(&path).map_err(|e| format!("读身份文件失败：{}", e))?;
             let plain = crate::dpapi::unprotect(&cipher, ENTROPY).map_err(|e| {
-                format!(
+                #[cfg(target_os = "macos")]
+                { format!("身份文件暂时无法解密（{e}）。不会自动换新身份。请先检查 PastePanda 的系统钥匙串授权；不要删除身份文件或加密密钥，以免已配对设备失去关联。身份文件：{}", path.display()) }
+                #[cfg(not(target_os = "macos"))]
+                { format!(
                     "身份文件解不开（{}）。**不会自动换新身份**——那会让所有已配对设备\
                      突然认不出这台机器。请确认是不是换过 Windows 账户或重装过系统；\
                      确实要重建的话，删掉 {} 再启动。",
                     e,
                     path.display()
-                )
+                ) }
             })?;
             let seed: [u8; SEED_LEN] = plain
                 .as_slice()

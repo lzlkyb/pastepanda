@@ -69,6 +69,11 @@ impl FileTeeLogger {
         }
         let filter = b.build();
         let max = filter.filter();
+        #[cfg(target_os = "macos")]
+        let path = std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join("Library/Logs/com.pastepanda.app/rc.log"))
+            .unwrap_or_else(|| std::env::temp_dir().join("pastepanda-rc.log"));
+        #[cfg(not(target_os = "macos"))]
         let path = std::env::var("APPDATA")
             .map(|d| PathBuf::from(d).join("com.pastepanda.app").join("rc.log"))
             .unwrap_or_else(|_| PathBuf::from("rc.log"));

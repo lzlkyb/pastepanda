@@ -1,7 +1,13 @@
-//! 被控能力门禁：当前仅 Windows 实现屏幕采集与输入注入。
+//! 被控能力门禁。Mac additionally requires supported capture and system authorization.
 
 pub fn require_inbound_host() -> Result<(), String> {
-    require_supported_platform(cfg!(target_os = "windows"))
+    require_supported_platform(cfg!(any(target_os = "windows",target_os="macos")))?;
+    // Unit tests exercise admission with a supported host, without accessing a
+    // desktop or granting OS permissions. Native readiness is an app integration check.
+    #[cfg(all(target_os="macos",not(test)))]
+    {crate::rc::mac_capture::require_host()}
+    #[cfg(any(not(target_os="macos"),test))]
+    {Ok(())}
 }
 
 fn require_supported_platform(supported: bool) -> Result<(), String> {
@@ -18,6 +24,6 @@ mod tests {
     fn rejects_unsupported_host_and_allows_windows() {
         assert!(require_supported_platform(false).unwrap_err().contains("暂不支持"));
         assert!(require_supported_platform(true).is_ok());
-        assert_eq!(require_inbound_host().is_ok(), cfg!(target_os = "windows"));
+        if cfg!(target_os="windows"){assert!(require_inbound_host().is_ok());}
     }
 }

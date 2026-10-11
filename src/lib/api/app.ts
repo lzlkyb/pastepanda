@@ -20,7 +20,8 @@ export async function getAppVersion(): Promise<string> {
 /** 获取应用名称 */
 export async function getAppName(): Promise<string> {
   try {
-    return await invoke<string>("get_app_name");
+    const name = await invoke<string>("get_app_name");
+    return name === "PastePanda AV1 Preview" ? "PastePanda" : name;
   } catch {
     return "PastePanda";
   }

@@ -44,7 +44,7 @@ export function McpTab() {
         const ok = await confirmDialog({
           title: "开启知识库 MCP 服务？",
           message:
-            "开启后，本机任何能拿到访问令牌的程序都可以读取、修改和删除你的笔记。服务默认只监听 127.0.0.1；若再打开局域网访问，局域网内拿到令牌的机器也能连接。删除只进回收站，随时可恢复；每次写入都会计入调用记录。开启后可以在面板里逐项关掉写权限。",
+            "开启后，本机任何能拿到访问令牌的程序都可以读取、修改和删除你的笔记。服务默认只监听 127.0.0.1；若再打开局域网访问，局域网内拿到令牌的机器也能连接。删除只进回收站，随时可恢复；每次写入都会计入调用记录。开启后可以在面板里逐项关掉写权限。Mac 首次开启或调试包更新后，可能需要你在 macOS 钥匙串窗口中确认此应用的访问。",
           confirmText: "开启服务",
           variant: "warning",
         });
@@ -81,7 +81,14 @@ export function McpTab() {
         }
         onChange={(v) => void handleToggleMcp(v)}
       />
-      {/* 关态只有上面那一行开关；开了才展开面板（同 LanSyncPanel 的做法）。 */}
+      {/* 启动失败时 running 仍为 false，不能把错误藏进仅运行时挂载的面板。 */}
+      {!mcp.status.running && mcp.startError && (
+        <div role="alert" className={styles.mcpAlert}>
+          <span>{mcp.startError}</span>
+          <button type="button" onClick={mcp.dismissError}>知道了</button>
+        </div>
+      )}
+      {/* 开态展开接入面板；启动失败的关态仍保留错误原因。 */}
       {mcp.status.running && (
         <McpServerPanel
           status={mcp.status}

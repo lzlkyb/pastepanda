@@ -1,3 +1,5 @@
+import { claudeDesktopPaths } from "./utils";
+
 /**
  * mcpClients.ts — MCP 客户端注册表。接入格式的**唯一真相**。
  *
@@ -556,16 +558,8 @@ export const MCP_CLIENTS: McpClientDef[] = [
   {
     id: "claude-desktop",
     name: "Claude Desktop",
-    /**
-     * `%APPDATA%\Claude\claude_desktop_config.json`（`~` 由后端展开）。
-     *
-     * 🔴 这是 **Windows** 那份路径；macOS 在 `~/Library/Application Support/Claude/`。
-     *   本表其余条目用的是两家同形的 `~/...`，这一条不是。写错的后果不严重
-     *   （探测拿不到目录 ⇒ 归进「本机没检测到」，而确认框会把展开后的绝对路径
-     *   原样显示出来，用户点接入前看得见），但真出 mac 版时要按 OS 挑路径。
-     */
-    configPath: "~/AppData/Roaming/Claude/claude_desktop_config.json",
-    detectPath: "~/AppData/Roaming/Claude",
+    // 官方路径依据见 evidence；探测与写入共用平台适配。
+    ...claudeDesktopPaths(),
     /**
      * 🔴 全表里**唯一一个 stdio**：它的配置文件只认 stdio 条目，
      * 写带 `url` 的远程条目会被**静默丢弃**（严重时加载出零个工具）。

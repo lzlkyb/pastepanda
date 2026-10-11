@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Sparkles, Loader2, CalendarDays } from "lucide-react";
 import { aiRun } from "@/lib/api/ai";
 import { noteAppendDaily } from "@/lib/api/noteDaily";
+import { useAiStatus } from "@/hooks/useAiStatus";
 import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { contentTypeLabel } from "@/lib/actionLabels";
 import { segmentByGap, EVENT_GAP_SECS } from "@/lib/events";
@@ -43,6 +44,7 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+  const aiStatus = useAiStatus();
   const { backdrop, panel } = useDialogAnim();
   const [date, setDate] = useState(() => toIsoDate(new Date()));
   const [rows, setRows] = useState<DayMetaRow[] | null>(null);
@@ -213,7 +215,7 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
                   </div>
                 </div>
 
-                <div className={styles.aiBox}>
+                {aiStatus.status === "on" && <div className={styles.aiBox}>
                   <div className={styles.aiLabel}>✨ AI 小结</div>
                   {aiText ? (
                     <>
@@ -239,6 +241,8 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
                     </>
                   )}
                 </div>
+
+                }
 
                 <div className={styles.actionsRow}>
                   <button className={styles.aiBtn} onClick={() => setDate(prevDay(date))}>

@@ -21,12 +21,8 @@
   z-index: 2;
   padding: 4px 0 10px;
   /* 吸顶时不透出下面滚动的卡片（含 chips 行） */
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--app-bg, #f4f6f9) 96%, transparent) 0%,
-    color-mix(in srgb, var(--app-bg, #f4f6f9) 96%, transparent) 78%,
-    transparent 100%
-  );
+  /* --app-bg 是场景渐变，不能放进 color-mix；用实底覆盖滚动内容。 */
+  background: var(--section-bg);
 }
 
 .search {
@@ -362,6 +358,7 @@
 
 .nameRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -371,13 +368,17 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .kbd {
   flex-shrink: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 10px;
   font-weight: 600;
   font-family: ui-monospace, Consolas, monospace;

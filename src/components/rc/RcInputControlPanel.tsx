@@ -110,6 +110,11 @@ export function RcInputControlPanel({
           </button>
         )}
       </div>
+      {(granted || lockActive) && /Mac/i.test(navigator.platform) && (
+        <span className={styles.inputLockNow} role="status">
+          按 Control+Option+Esc 可立即解除输入锁定，PastePanda 窗口内仍可操作。
+        </span>
+      )}
       {lockActive && (
         <span className={styles.inputLockNow} role="status" aria-live="polite">
           对方现在锁着你的键盘鼠标（远程操作照常）
