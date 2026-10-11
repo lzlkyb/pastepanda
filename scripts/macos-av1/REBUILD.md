@@ -1,6 +1,6 @@
 # Rebuilding the replaceable AV1 library
 
-This directory accompanies the exact FFmpeg/SVT source archives, license texts,
+This directory accompanies the exact FFmpeg/SVT/dav1d source archives, license texts,
 bridge sources and build scripts in `Contents/Resources/licenses/av1`.
 The application dynamically loads `Contents/Frameworks/libpastepanda_av1.dylib`.
 
@@ -8,9 +8,9 @@ To rebuild without the application repository, create an empty project directory
 
 1. Copy the four `macos-*.mjs` / JSON build files into `scripts/` and this entire
    `macos-av1` directory into `scripts/macos-av1/`.
-2. Copy `av1_bridge.c` and `av1_bridge.h` into `src-tauri/src/macos/`.
-3. Copy the two unmodified source archives into `.cache/macos-av1-build/`.
-4. Use Node.js 20+, Xcode command-line tools, CMake and NASM (for Intel).
+2. Copy `av1_bridge.c`, `av1_decode_bridge.c` and `av1_bridge.h` into `src-tauri/src/macos/`.
+3. Copy the three unmodified source archives into `.cache/macos-av1-build/`.
+4. Use Node.js 20+, Xcode command-line tools, CMake, Meson, Ninja, Python 3 and NASM (for Intel).
    Run `npm init -y` and `npm install openpgp@6.2.2`, then
    `node scripts/macos-av1-build.mjs --arch universal`.
 

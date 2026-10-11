@@ -1,6 +1,7 @@
 //! macOS paste adapter. Target IDs are process IDs, never Windows HWNDs.
 pub mod screen;
 pub(crate) mod av1;
+pub(crate) mod av1_receive;
 pub mod screen_layout;
 pub mod open;
 pub mod file_assoc;

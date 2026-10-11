@@ -108,6 +108,7 @@ fn setting_event(key: &str, value: &str) -> Result<InputEvent, String> {
         ) => Ok(InputEvent::SetQuality {
             quality: value.into(),
         }),
+        ("codec", "h264" | "hevc" | "av1" | "jpeg") => Ok(InputEvent::SetCodec { codec: value.into() }),
         ("audio", "on" | "off") => Ok(InputEvent::AudioOn { on: value == "on" }),
         ("key_mode", "type" | "direct") => Ok(InputEvent::SetKeyMode { mode: value.into() }),
         _ => Err("不支持的设置或设置值".into()),
@@ -117,6 +118,7 @@ fn setting_event(key: &str, value: &str) -> Result<InputEvent, String> {
 pub(in crate::rc) fn event_setting(ev: &InputEvent) -> Option<(&str, &str)> {
     match ev {
         InputEvent::SetQuality { quality } => Some(("quality", quality)),
+        InputEvent::SetCodec { codec } => Some(("codec", codec)),
         InputEvent::AudioOn { on } => Some(("audio", if *on { "on" } else { "off" })),
         InputEvent::SetKeyMode { mode } => Some(("key_mode", mode)),
         _ => None,
@@ -201,6 +203,7 @@ impl RcService {
             }
             match ev {
                 InputEvent::SetQuality { quality } => self.set_stream_quality(quality)?,
+                InputEvent::SetCodec { codec } => self.set_stream_codec(codec)?,
                 InputEvent::AudioOn { on } => {
                     #[cfg(any(target_os="windows",target_os="macos"))]
                     self.set_audio_muted(!*on);
@@ -309,6 +312,20 @@ mod tests {
         svc.clear_outbound_link().await;
         assert!(receiver.await.unwrap().is_err());
         assert!(svc.settings.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn codec_receipt_accepts_view_and_rejects_unknown_stale_requests() {
+        let svc = service(super::super::protocol::Capability::View);
+        for codec in ["h264", "hevc", "av1", "jpeg"] {
+            let event = setting_event("codec", codec).unwrap();
+            assert_eq!(event_setting(&event), Some(("codec", codec)));
+            for tracked in [false, true] {
+                assert!(svc.apply_inbound_setting("old", "peer", &event, tracked).is_err());
+                assert_eq!(svc.apply_inbound_setting("current", "peer", &event, tracked).unwrap(), codec);
+            }
+        }
+        assert!(setting_event("codec", "unknown").is_err());
     }
 
     #[test]

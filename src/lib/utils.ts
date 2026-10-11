@@ -1117,3 +1117,14 @@ export function knowledgeArticleErrorText(error: unknown): string {
   if (/图片.*(?:读取|不可用|中断|变化)/.test(raw)) return "这张图片暂时无法读取，可以重试或查看原文。正文仍保留。";
   return knowledgeErrorText(error);
 }
+
+/** Shared presentation for RC codec notifications, HUD and waiting stage. */
+export function remoteCodecLabel(codec: string): string {
+  switch (codec) {
+    case "h264": return "H.264";
+    case "hevc": return "HEVC";
+    case "av1": return "AV1";
+    case "jpeg": return "JPEG";
+    default: return "未知编码";
+  }
+}

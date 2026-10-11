@@ -25,6 +25,8 @@ export interface RcFramePayload {
 
 /** 旧 JSON 轮询路径的帧已废弃，新路径：批量原始二进制（无 base64 / JSON 开销）。 */
 export interface RcBinFrame {
+  /** Native AV1 RGBA; metadata counts compressed wire bytes, not raw IPC. */
+  native?: { wireBytes: number; decodeMs: number };
   codec: "jpeg" | "h264" | "hevc" | "av1";
   key: boolean;
   full: boolean;
