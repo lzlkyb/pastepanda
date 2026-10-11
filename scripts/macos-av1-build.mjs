@@ -53,6 +53,17 @@ async function source(spec) {
   return directory;
 }
 const svt = await source(sources.svt); const ffmpeg = await source(sources.ffmpeg);
+const dav1d = await source(sources.dav1d);
+const decoderTools = path.join(cache, "decoder-tools");
+if (existsSync(decoderTools)) {
+  env.PYTHONPATH = `${decoderTools}${path.delimiter}${env.PYTHONPATH ?? ""}`;
+  env.PATH = `${path.join(decoderTools, "bin")}${path.delimiter}${env.PATH}`;
+}
+const python = process.env.PYTHON ?? "python3";
+const meson = (params, capture = false) => existsSync(path.join(decoderTools, "mesonbuild"))
+  ? run(python, ["-m", "mesonbuild.mesonmain", ...params], root, capture)
+  : run(process.env.MESON ?? "meson", params, root, capture);
+meson(["--version"], true);
 const targets = arch === "universal" ? ["arm64", "x86_64"] : [arch];
 const libraries = [];
 for (const target of targets) {
@@ -64,6 +75,28 @@ for (const target of targets) {
   run(cmake, ["-S", svt, "-B", build, "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_APPS=OFF", "-DBUILD_SHARED_LIBS=OFF", "-DBUILD_TESTING=OFF", "-DSVT_AV1_LTO=OFF", "-DCMAKE_POSITION_INDEPENDENT_CODE=ON", `-DCMAKE_OUTPUT_DIRECTORY=${path.join(build, "out")}`, `-DCMAKE_OSX_ARCHITECTURES=${target}`, "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0", `-DCMAKE_INSTALL_PREFIX=${prefix}`, ...(target === "x86_64" ? [`-DCMAKE_ASM_NASM_COMPILER=${nasm}`] : [])]);
   run(cmake, ["--build", build, "--parallel", "6"]); run(cmake, ["--install", build]);
   if (run("xcrun", ["lipo", "-archs", path.join(prefix, "lib/libSvtAv1Enc.a")], root, true) !== target) throw new Error("SVT archive architecture mismatch");
+  // Meson cross files pin both C and assembler architecture, including Intel
+  // built on Apple Silicon. Never use -march=native in distributed binaries.
+  const davBuild = path.join(cache, `dav1d-${target}`);
+  const cross = path.join(cache, `dav1d-${target}.ini`);
+  writeFileSync(cross, `[binaries]
+c = ['clang', '-arch', '${target}', '-mmacosx-version-min=12.0']
+ar = 'ar'
+strip = 'strip'
+nasm = '${nasm}'
+[host_machine]
+system = 'darwin'
+cpu_family = '${target === "arm64" ? "aarch64" : "x86_64"}'
+cpu = '${target}'
+endian = 'little'
+[built-in options]
+c_args = ['-fPIC', '-mmacosx-version-min=12.0']
+c_link_args = ['-arch', '${target}', '-mmacosx-version-min=12.0']
+`);
+  meson(["setup", ...(existsSync(path.join(davBuild, "build.ninja")) ? ["--reconfigure"] : []), davBuild, dav1d, "--cross-file", cross, `--prefix=${prefix}`, "--libdir=lib", "--buildtype=release", "--default-library=static", "-Db_staticpic=true", "-Denable_tools=false", "-Denable_tests=false", "-Denable_examples=false", "-Denable_docs=false"]);
+  meson(["compile", "-C", davBuild, "-j", "6"]);
+  meson(["install", "-C", davBuild]);
+  if (run("xcrun", ["lipo", "-archs", path.join(prefix, "lib/libdav1d.a")], root, true) !== target) throw new Error("dav1d archive architecture mismatch");
   const ffbuild = path.join(cache, `ff-${sources.ffmpeg.version}-${target}`); mkdirSync(ffbuild, { recursive: true });
   env.PP_SVT_PREFIX = prefix;
   const pkg = path.join(ffbuild, "pkg-config");
@@ -71,7 +104,7 @@ for (const target of targets) {
   // Node's generated extensionless shim must explicitly be ESM.
   writeFileSync(path.join(ffbuild, "package.json"), '{"type":"module"}\n');
   const flags = `-arch ${target} -mmacosx-version-min=12.0 -fPIC`;
-  const options = ["--disable-autodetect", "--disable-everything", "--disable-programs", "--disable-doc", "--disable-network", "--disable-iconv", "--disable-securetransport", "--disable-videotoolbox", "--disable-shared", "--enable-static", "--enable-pic", "--disable-avformat", "--disable-avdevice", "--disable-avfilter", "--disable-swresample", "--enable-avcodec", "--enable-avutil", "--enable-swscale", "--enable-libsvtav1", "--enable-encoder=libsvtav1", "--disable-x86asm", `--arch=${target === "arm64" ? "aarch64" : target}`, "--target-os=darwin", "--enable-cross-compile", "--cc=clang", "--cxx=clang++", `--extra-cflags=${flags}`, `--extra-ldflags=${flags}`, `--pkg-config=${pkg}`, `--prefix=${prefix}`];
+  const options = ["--disable-autodetect", "--disable-everything", "--disable-programs", "--disable-doc", "--disable-network", "--disable-iconv", "--disable-securetransport", "--disable-videotoolbox", "--disable-shared", "--enable-static", "--enable-pic", "--disable-avformat", "--disable-avdevice", "--disable-avfilter", "--disable-swresample", "--enable-avcodec", "--enable-avutil", "--enable-swscale", "--enable-libsvtav1", "--enable-encoder=libsvtav1", "--enable-libdav1d", "--enable-decoder=libdav1d", "--disable-x86asm", `--arch=${target === "arm64" ? "aarch64" : target}`, "--target-os=darwin", "--enable-cross-compile", "--cc=clang", "--cxx=clang++", `--extra-cflags=${flags}`, `--extra-ldflags=${flags}`, `--pkg-config=${pkg}`, `--prefix=${prefix}`];
   const fingerprint = createHash("sha256").update(JSON.stringify([sources.ffmpeg, options])).digest("hex");
   const configured = path.join(ffbuild, "configuration.sha256");
   if (!existsSync(configured) || readFileSync(configured, "utf8") !== fingerprint) {
@@ -80,9 +113,9 @@ for (const target of targets) {
   }
   run("make", ["-j6"], ffbuild); run("make", ["install"], ffbuild);
   const exports = path.join(cache, "av1.exports");
-  writeFileSync(exports, ["pp_av1_abi", "pp_av1_open", "pp_av1_encode", "pp_av1_close", "pp_av1_free"].map(name => `_${name}`).join("\n") + "\n");
+  writeFileSync(exports, ["pp_av1_abi", "pp_av1_open", "pp_av1_encode", "pp_av1_close", "pp_av1_free", "pp_av1_decode_open", "pp_av1_decode", "pp_av1_decode_close"].map(name => `_${name}`).join("\n") + "\n");
   const library = path.join(cache, `libpastepanda_av1-${target}.dylib`);
-  run("xcrun", ["clang", "-dynamiclib", "-O2", "-fvisibility=hidden", "-arch", target, "-mmacosx-version-min=12.0", `-I${prefix}/include`, "src-tauri/src/macos/av1_bridge.c", `${prefix}/lib/libavcodec.a`, `${prefix}/lib/libswscale.a`, `${prefix}/lib/libavutil.a`, `${prefix}/lib/libSvtAv1Enc.a`, "-lm", "-lpthread", "-Wl,-dead_strip", `-Wl,-exported_symbols_list,${exports}`, "-Wl,-install_name,@rpath/libpastepanda_av1.dylib", "-o", library]);
+  run("xcrun", ["clang", "-dynamiclib", "-O2", "-fvisibility=hidden", "-arch", target, "-mmacosx-version-min=12.0", `-I${prefix}/include`, "src-tauri/src/macos/av1_bridge.c", "src-tauri/src/macos/av1_decode_bridge.c", `${prefix}/lib/libavcodec.a`, `${prefix}/lib/libswscale.a`, `${prefix}/lib/libavutil.a`, `${prefix}/lib/libSvtAv1Enc.a`, `${prefix}/lib/libdav1d.a`, "-lm", "-lpthread", "-Wl,-dead_strip", `-Wl,-exported_symbols_list,${exports}`, "-Wl,-install_name,@rpath/libpastepanda_av1.dylib", "-o", library]);
   libraries.push(library);
 }
 const library = path.join(runtime, "libpastepanda_av1.dylib");
@@ -96,6 +129,8 @@ const dependencies = run("otool", ["-L", library], root, true).split("\n").map(l
 if (dependencies.some(file => !file.startsWith("/usr/lib/") && !file.startsWith("/System/Library/"))) throw new Error("AV1 library has unbundled dependencies");
 const licenses = path.join(runtime, "licenses"); mkdirSync(licenses, { recursive: true });
 copyFileSync(path.join(ffmpeg, "COPYING.LGPLv2.1"), path.join(licenses, "FFmpeg-LGPL-2.1.txt"));
+copyFileSync(path.join(dav1d, "COPYING"), path.join(licenses, "dav1d-BSD-2-Clause.txt"));
+copyFileSync(path.join(root, "src-tauri/src/macos/av1_decode_bridge.c"), path.join(licenses, "av1_decode_bridge.c"));
 copyFileSync(path.join(svt, "LICENSE.md"), path.join(licenses, "SVT-AV1-LICENSE.md"));
 copyFileSync(path.join(svt, "PATENTS.md"), path.join(licenses, "SVT-AV1-PATENTS.md"));
 // Ship the exact unmodified sources and our bridge for the replaceable LGPL library.

@@ -160,6 +160,21 @@ fn h264_frame(key: bool) -> VideoFrame {
 }
 
 #[test]
+fn all_interframe_codecs_wait_for_key_after_outbox_overflow() {
+    for codec in [FrameCodec::H264, FrameCodec::Hevc, FrameCodec::Av1] {
+        let frame = |key| { let mut f = h264_frame(key); f.codec = codec; f };
+        let mut outbox = FrameOutbox::new();
+        outbox.push(frame(true));
+        for _ in 0..FrameOutbox::CAP { outbox.push(frame(false)); }
+        assert_eq!(outbox.drain().len(), FrameOutbox::CAP - 1, "{codec:?}");
+        outbox.push(frame(false));
+        assert!(outbox.drain().is_empty(), "{codec:?} broken references must wait for key");
+        outbox.push(frame(true)); outbox.push(frame(false));
+        assert_eq!(outbox.drain().len(), 2);
+    }
+}
+
+#[test]
 fn outbox_溢出丢P帧后拦截到下一个key() {
     let mut ob = FrameOutbox::new();
     ob.push(h264_frame(true));

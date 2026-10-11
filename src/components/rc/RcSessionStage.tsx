@@ -13,6 +13,7 @@
  * 换第二条控制条（RcFullscreenHotbar 退役），两态同一条胶囊；顶栏 `.viewTop` 在
  * 全屏时整条退场（身份/窗口键并入胶囊），画面盒回到整个屏幕。
  */
+import { remoteCodecLabel } from "@/lib/utils";
 import { rcCanControl } from "@/lib/rcCapability";
 import { Eye, Loader2 } from "lucide-react";
 import { useEffect } from "react";
@@ -91,8 +92,8 @@ export function RcSessionStage({
   } = frames;
 
   const placeholderSub =
-    codec === "h264"
-      ? "对方正在用 H.264 推流"
+    codec !== "jpeg"
+      ? `对方正在用 ${remoteCodecLabel(codec)} 推流`
       : `对方编码中 · ${qualityLabel(qPick)}档`;
   const onKeyDown = (e: React.KeyboardEvent) => input.onKeyDown(e);
   const onKeyUp = (e: React.KeyboardEvent) => input.onKeyUp(e);

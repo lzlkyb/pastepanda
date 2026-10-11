@@ -26,6 +26,24 @@ fn set_session(svc: &RcService, s: Session) {
     svc.inner.lock().unwrap_or_else(|p| p.into_inner()).session = Some(s);
 }
 
+#[test]
+fn viewer_cannot_drain_a_replacement_or_inbound_session() {
+    let svc = RcService::new(store());
+    let frame = crate::rc::video::VideoFrame {
+        width: 64, height: 64, jpeg: vec![1], at_ms: 1, full: true, rect: None,
+        codec: crate::rc::video::FrameCodec::Jpeg, key: true, cap_ms: 0, enc_ms: 0,
+    };
+    set_session(&svc, active_session("current", SessionPhase::OutboundActive));
+    svc.push_outbox(frame.clone());
+    assert!(svc.drain_frames_for_viewer("stale").is_err());
+    let (frames, native) = svc.drain_frames_for_viewer("current").unwrap();
+    assert_eq!(frames.len(), 1); assert!(native.is_empty());
+    set_session(&svc, active_session("current", SessionPhase::InboundActive));
+    svc.push_outbox(frame);
+    assert!(svc.drain_frames_for_viewer("current").is_err());
+    assert_eq!(svc.drain_frames().len(), 1);
+}
+
 #[tokio::test]
 async fn independent_media_refreshes_only_its_own_session_heartbeat() {
     let svc = std::sync::Arc::new(RcService::new(store()));

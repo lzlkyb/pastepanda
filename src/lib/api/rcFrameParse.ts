@@ -39,6 +39,7 @@ export function parseFrameBatch(buf: ArrayBuffer): RcBinFrame[] {
   for (let i = 0; i < count; i++) {
     if (off + 44 > u8.length) break;
     const codecByte = v.getUint8(off);
+    if (![0, 1, 2, 3, 0x83].includes(codecByte)) break;
     const key = v.getUint8(off + 1) === 1;
     const full = v.getUint8(off + 2) === 1;
     const hasRect = v.getUint8(off + 3) === 1;
@@ -60,17 +61,25 @@ export function parseFrameBatch(buf: ArrayBuffer): RcBinFrame[] {
     off += 44;
     if (off + len > u8.length) break;
     // 视图而非拷贝：底层 ArrayBuffer 在本轮应用完成前一直存活
-    const data = new Uint8Array(buf, off, len);
+    let native: RcBinFrame["native"];
+    const rgba = codecByte === 0x83;
+    if (rgba) {
+      if (!width || !height || width > 1920 || height > 1920 || width * height > 1920 * 1080 ||
+          hasRect || !full || len !== 8 + width * height * 4) break;
+      native = { wireBytes: v.getUint32(off, true), decodeMs: v.getUint32(off + 4, true) / 1000 };
+    }
+    const data = new Uint8Array(buf, off + (rgba ? 8 : 0), len - (rgba ? 8 : 0));
     off += len;
     out.push({
       codec:
-        codecByte === 3
+        codecByte === 3 || rgba
           ? "av1"
           : codecByte === 2
             ? "hevc"
             : codecByte === 1
               ? "h264"
               : "jpeg",
+      ...(native ? { native } : {}),
       key,
       full,
       at_ms: atMs,
@@ -86,8 +95,8 @@ export function parseFrameBatch(buf: ArrayBuffer): RcBinFrame[] {
 }
 
 /** 批量取走后端攒下的全部待显示帧（H.264 P 帧与脏块帧必须全序不丢）。 */
-export function rcDrainFrames(): Promise<ArrayBuffer> {
-  return invoke<ArrayBuffer>("rc_drain_frames");
+export function rcDrainFrames(sessionId?: string): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("rc_drain_frames", { sessionId });
 }
 
 /**

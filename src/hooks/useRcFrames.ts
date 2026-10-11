@@ -356,7 +356,7 @@ export function useRcFrames(
 
     const tick = async () => {
       try {
-        const frames = parseFrameBatch(await rcDrainFrames());
+        const frames = parseFrameBatch(await rcDrainFrames(sessionId));
         if (!alive) return;
         if (frames.length === 0) {
           // 空转退避：静止时少跑 IPC；一有事件立刻回 16ms
@@ -387,6 +387,23 @@ export function useRcFrames(
         for (const f of frames.slice(frameApplyStart(frames))) {
           // 🔴 再审计 A7：批内任一 await 期间卸载，剩余帧一律放弃
           if (!alive) return;
+          if (f.native) {
+            const decT0 = performance.now();
+            if (canvas.width !== f.width || canvas.height !== f.height) {
+              canvas.width = f.width; canvas.height = f.height;
+              contentRef.current = { w: f.width, h: f.height };
+              setSize({ w: f.width, h: f.height });
+            }
+            const pixels = new Uint8ClampedArray(f.data.buffer, f.data.byteOffset, f.data.byteLength);
+            ctx.putImageData(new ImageData(pixels, f.width, f.height), 0, 0);
+            h264?.close(); h264 = null;
+            h264Miss = 0; waitingKey = false; waitingSinceMs = 0;
+            curStd = "av1"; setCodec("av1");
+            stats.current.noteDecode(f.native.decodeMs + performance.now() - decT0);
+            noteBytes(f.native.wireBytes); noteLatency(f.at_ms, f.cap_ms, f.enc_ms); noteResponse();
+            noteFrameShown(f.at_ms);
+            continue;
+          }
           if (f.codec !== "jpeg") {
             // P0-2：等关键帧期间拦下 delta 帧
             if (waitingKey && !f.key) {

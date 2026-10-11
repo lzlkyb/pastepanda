@@ -235,6 +235,9 @@ pub enum FrameCodec {
 }
 
 impl FrameCodec {
+    /// Every predictive codec needs its keyframe/reference chain intact.
+    pub fn interframe(self) -> bool { self != Self::Jpeg }
+
     /// IPC 批量帧头里的 `codec u8`。前端 `parseFrameBatch` 按同一张表读。
     pub fn as_u8(self) -> u8 {
         match self {

@@ -49,6 +49,12 @@ beforeEach(() => {
 });
 
 describe("RcControlBanner 胶囊 + 抽屉（2026-09-24 方案 B）", () => {
+  it("AV1 编码通知不能误写成 JPEG", () => {
+    const { container } = renderBanner({ streamNotice: { kind: "codec", name: "av1" } });
+    fireEvent.click(container.querySelector<HTMLButtonElement>(`.${styles.ctrlPillMain}`)!);
+    expect(container.textContent).toContain("对方把编码切成了「AV1」");
+    expect(container.textContent).not.toContain("「JPEG」");
+  });
   it("① 胶囊：计时器在 live region 外；who + pill 在同一个 .whoLive 里", () => {
     const { container } = renderBanner();
     const live = container.querySelector(`.${styles.whoLive}`);
