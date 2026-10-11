@@ -1,0 +1,7 @@
+.feedback-preview { height: 100%; overflow-y: auto; padding: 16px 16px var(--mobile-nav-clearance); }
+.feedback-preview header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.feedback-preview h1 { margin: 0; font-size: var(--mobile-title-size); }
+.preview-caption { color: var(--text-secondary); font-size: var(--mobile-font-secondary); margin: 12px 0 24px; }
+.preview-nav { position: fixed; bottom: var(--mobile-nav-bottom); left: 16px; right: 16px; display: flex; justify-content: space-around; padding: 16px 12px; border-radius: var(--mobile-radius-group); background: var(--card-bg); color: var(--text-secondary); box-shadow: var(--mobile-shadow); font-size: var(--mobile-font-secondary); }
+html[data-mobile-layout="landscape"] .feedback-preview { padding-right: var(--mobile-side-clearance); padding-bottom: 16px; }
+html[data-mobile-layout="landscape"] .preview-nav { top: 16px; bottom: 16px; left: auto; right: 8px; width: 64px; flex-direction: column; align-items: center; }
