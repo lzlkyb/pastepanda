@@ -7,18 +7,25 @@
   background: var(--mobile-surface);
 }
 .pane, .tabContent { min-height: 0; min-width: 0; overflow: hidden; }
-.tabContent { height: 100%; }
+.tabContent { height: 100%; display: flex; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; }
+.tabContent::-webkit-scrollbar { display: none; }
+.tabContent[data-pager-enabled="false"], .tabContent[data-touch-blocked="true"] { overflow-x: hidden; }
+.tabContent[data-moving="true"] > section { pointer-events: none; }
 .pagePane {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   padding: env(safe-area-inset-top, 0px) max(var(--mobile-page-inset), env(safe-area-inset-right, 0px)) 24px max(var(--mobile-page-inset), env(safe-area-inset-left, 0px));
-  touch-action: pan-y pinch-zoom;
+  touch-action: pan-x pan-y pinch-zoom;
 }
 .pagePane[hidden] { display: none; }
 .pagePane[hidden] * { animation-play-state: paused; }
+.pagePane[aria-hidden="true"] * { animation-play-state: paused; }
 .tabbar {
   z-index: var(--mobile-layer-nav);
   display: flex;

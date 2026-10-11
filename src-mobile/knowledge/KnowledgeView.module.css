@@ -56,4 +56,4 @@
 /* The inert native preview may reveal the source visually; React's hidden state stays untouched. */
 .root[data-preview-source="true"] > .root[hidden] { display: block !important; position: absolute; inset: 0; }
 .root[data-preview-source="true"] .workspace[hidden] { display: grid !important; position: absolute; inset: 0; }
-.root[data-preview-source="true"] .workspace[data-reading="true"] .listPane { display: flex; position: absolute; inset: 0; pointer-events: none; }
+.root[data-preview-source="true"][data-return-source="list"] .workspace[data-reading="true"] .listPane { display: flex; position: absolute; inset: 0; pointer-events: none; }

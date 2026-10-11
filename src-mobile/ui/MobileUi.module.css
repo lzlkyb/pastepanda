@@ -138,16 +138,13 @@
   margin: 0 0 24px;
 }
 .overlay {
+  opacity: var(--mobile-sheet-scrim, 1);
   position: fixed;
   inset: 0;
   z-index: var(--mobile-layer-overlay);
   background: var(--mobile-scrim);
-  animation: fadeIn 150ms cubic-bezier(0.2, 0, 0, 1);
-  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 .overlay[data-state="closed"] {
-  animation: none;
-  opacity: 0;
   pointer-events: none;
 }
 .sheet {

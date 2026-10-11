@@ -19,6 +19,7 @@ import { useMobileViewport } from "./ui/useMobileViewport";
 import { MOBILE_DESTINATIONS, type MobileDestination } from "./ui/mobileDestinations";
 import { useMobileNavigation } from "./ui/useMobileNavigation";
 import { MobileScene } from "./ui/MobileScene";
+import { useMobilePager } from "./ui/useMobilePager";
 import ui from "./ui/MobileUi.module.css";
 import styles from "./App.module.css";
 
@@ -53,6 +54,7 @@ export default function App() {
     seenShareRequest.current = openRequestId; selectTab("knowledge");
   }, [openRequestId, activeSession, sandbox, selectTab]);
   const focused = tab === "knowledge" && knowledgeTask;
+  const pager = useMobilePager(DESTINATION_IDS, tab, selectTab, !focused && !sandbox && !activeSession);
   const pending = session?.phase === "outbound_pending";
   const rcMessage = rc.error ? rcErrorText(rc.error) : null;
   const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
@@ -93,13 +95,15 @@ export default function App() {
       )}
       <div className={styles.root} data-focused={focused} hidden={sandbox || activeSession}>
         <main className={styles.pane}>
-          <div className={styles.tabContent}>
+          <div ref={pager.contentRef} className={styles.tabContent} data-pager-enabled={!focused && !sandbox && !activeSession} {...pager.events}>
             {/* Keep one instance per destination: retain drafts, scroll and ongoing transfers. */}
             {MOBILE_DESTINATIONS.map(({ id, label }) => (
               <MobileScene
                 key={id}
                 className={`${styles.pagePane} ${id === "knowledge" ? styles.knowledgePane : ""}`}
                 label={label}
+                paged
+                interactive={tab === id && !pager.moving && !sandbox && !activeSession}
                 active={tab === id && !sandbox && !activeSession}
               >
                 {id === "devices" && (
@@ -185,7 +189,7 @@ export default function App() {
               aria-current={tab === id ? "page" : undefined}
               aria-label={label}
               aria-describedby={badgeCounts[id] > 0 ? `mobile-badge-${id}` : undefined}
-              onClick={() => selectTab(id)}
+              onClick={() => pager.navigate(id)}
             >
               <span className={styles.tabIcon}>
                 <Icon size={23} aria-hidden="true" />

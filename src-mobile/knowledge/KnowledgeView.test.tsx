@@ -8,6 +8,8 @@ import type { MobileKnowledgeEditDraft } from "@/lib/api/mobileKnowledgeEdit";
 import type { MobileKnowledgeIncoming } from "@/lib/api/mobileKnowledgeShare";
 import type { useKnowledgeInbox } from "./useKnowledgeInbox";
 import { KnowledgeView } from "./KnowledgeView";
+import { readFileSync } from "node:fs";
+const sourceCss = readFileSync("src-mobile/knowledge/KnowledgeView.module.css", "utf8");
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../ui/useMobileBack", () => ({ useMobileBack: vi.fn() }));
@@ -56,6 +58,19 @@ beforeEach(() => {
   });
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("从全文修改时返回预览是原全文，只有阅读返回才露出列表", async () => {
+  const h = render(<KnowledgeView active />);
+  fireEvent.click(await screen.findByRole("button", { name: /原笔记/ }));
+  await screen.findByRole("heading", { name: "原笔记" });
+  const root = h.container.querySelector<HTMLElement>("[data-mobile-task-root]")!;
+  expect(root.dataset.returnSource).toBe("list");
+  fireEvent.click(screen.getByRole("button", { name: "更多" }));
+  fireEvent.click(await screen.findByRole("button", { name: "修改笔记" }));
+  await screen.findByRole("heading", { name: "修改笔记" });
+  expect(root.dataset.returnSource).toBe("reader");
+  // A CSS-only reveal must not override the actual reader source of an edit/article task.
+  expect(sourceCss).toMatch(/\.root\[data-preview-source="true"\]\[data-return-source="list"\].*\.listPane/);
+});
 it("reopening an unconsumed article share uses article preview again",async()=>{
   const source=inbox([{...incoming,text:"https://example.com/article"}]);
   const baseline=vi.mocked(invoke).getMockImplementation()!;

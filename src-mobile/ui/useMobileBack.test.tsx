@@ -14,6 +14,45 @@ afterEach(async () => {
 function native(phase: string, progress = 0) {
   act(() => window.dispatchEvent(new CustomEvent("mobile-native-back", { detail: { phase, progress, edge: "left" } })));
 }
+it("取消返回的回位期间仍保留来源预览，完成后恢复交互", async () => {
+  setupMotionClock();
+  let finished: (() => void) | null = null;
+  function Detail() {
+    const ref = useRef<HTMLElement>(null);
+    useMobileBack(true, () => {}, true, 0, ref);
+    return <div data-mobile-task-root data-testid="source"><section ref={node => {
+      ref.current = node;
+      if (node) node.animate = () => ({ cancel() {}, set onfinish(value: () => void) { finished = value; } }) as unknown as Animation;
+    }} /></div>;
+  }
+  const view = render(<Detail />), source = view.getByTestId("source");
+  native("start"); native("progress", .5); native("cancel");
+  expect(source.dataset.previewSource).toBe("true");
+  expect(source.inert).toBe(true);
+  act(() => { if (finished) finished(); });
+  expect(source.dataset.previewSource).toBeUndefined();
+  expect(source.inert).toBe(false);
+});
+
+it("返回提交等待异步历史事件时保持预览，不先跳回原位", () => {
+  const base = history.state;
+  setupMotionClock();
+  function Detail() {
+    const ref = useRef<HTMLElement>(null);
+    useMobileBack(true, () => {}, true, 0, ref);
+    return <section ref={ref} data-testid="preview" />;
+  }
+  const view = render(<Detail />), element = view.getByTestId("preview");
+  Object.defineProperty(element, "clientWidth", { value: 390 });
+  const traversal = vi.spyOn(history, "back").mockImplementation(() => {});
+  native("start"); native("progress", .5);
+  const offset = element.style.getPropertyValue("--mobile-back-offset");
+  native("commit");
+  const waitingOffset = element.style.getPropertyValue("--mobile-back-offset");
+  act(() => { history.replaceState(base, ""); window.dispatchEvent(new PopStateEvent("popstate", {state:base})); });
+  traversal.mockRestore();
+  expect(waitingOffset).toBe(offset);
+});
 it("原生进度与取消不执行业务，提交仅返回一次", async () => {
   setupMotionClock();
   const back = vi.fn();

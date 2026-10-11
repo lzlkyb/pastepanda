@@ -1,8 +1,22 @@
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { MobileSheet } from "./ui/MobileSheet";
+const scrollDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 390, left: 0, right: 390 } as DOMRect);
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: function(this: HTMLElement, options: ScrollToOptions) {
+    this.scrollLeft = options.left ?? 0;
+    // This suite covers business state; gesture timing is independently covered by useMobilePager tests.
+    if (options.behavior === "smooth") this.dispatchEvent(new Event("scrollend"));
+  } });
+});
+afterEach(() => {
+  if (scrollDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollTo", scrollDescriptor);
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+});
 
 const state = vi.hoisted(() => ({ update: false, targetsError: null as string | null, fileError: null as string | null, error: null as string | null, session: null as null | { id: string; phase: string; capability: string; peer_name: string }, pending: [] as { peer: string; first_seen_ms: number }[] }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); state.session = null; state.pending = []; state.error = null; state.targetsError = null; state.fileError = null; state.update = false; rcMocks.cancel.mockClear(); });
@@ -184,17 +198,15 @@ it("跨页的文件准备状态可关闭，发送失败与待确认请求不给�
   expect(failNotice.getAttribute("data-tone")).toBe("error");
   view.unmount();
 });
-it("内容横滑和滚动不会改变主导航，只有点击目的地才切页", () => {
+it("主页面横滑落定切导航，局部纵向滚动与底部点击均保留", () => {
   render(<App />);
   const pager = document.querySelector("main > div") as HTMLElement;
-  pager.scrollLeft = 400;
-  fireEvent.scroll(pager);
-  fireEvent(pager, new Event("scrollend"));
   fireEvent.touchStart(pager, { touches: [{ clientX: 300, clientY: 180 }] });
-  fireEvent.touchEnd(pager, { changedTouches: [{ clientX: 40, clientY: 180 }] });
-  expect(screen.getByRole("region", { name: "设备" })).toBeTruthy();
-  expect(screen.queryByRole("region", { name: "文件" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "文件" }));
+  pager.scrollLeft = 390;
+  fireEvent.scroll(pager);
+  expect(screen.getByRole("button", { name: "设备" }).getAttribute("aria-current")).toBe("page");
+  fireEvent.touchEnd(pager, { touches: [], changedTouches: [{ clientX: 40, clientY: 180 }] });
+  fireEvent(pager, new Event("scrollend"));
   const files = screen.getByRole("region", { name: "文件" });
   expect(files.hasAttribute("inert")).toBe(false);
   expect(screen.queryByRole("region", { name: "设备" })).toBeNull();

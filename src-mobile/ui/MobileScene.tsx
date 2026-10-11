@@ -3,15 +3,15 @@ import { createSceneMotion } from "./mobileSceneMotion";
 import styles from "./MobileScene.module.css";
 
 /** Keep destination instances mounted while immediately disabling the departing scene. */
-export function MobileScene({ active, className = "", label, children }: { active: boolean; className?: string; label: string; children: ReactNode }) {
+export function MobileScene({ active, paged = false, interactive = active, className = "", label, children }: { active: boolean; paged?: boolean; interactive?: boolean; className?: string; label: string; children: ReactNode }) {
   const ref = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
-    if (!active || !ref.current) return;
+    if (!active || paged || !ref.current) return;
     const motion = createSceneMotion(ref.current);
     motion.enter("tab");
     return () => motion.dispose();
-  }, [active]);
-  return <section ref={ref} hidden={!active} inert={!active} aria-hidden={!active} aria-label={label} className={`${styles.scene} ${className}`}>{children}</section>;
+  }, [active, paged]);
+  return <section ref={ref} hidden={!active && !paged} inert={!interactive} aria-hidden={!interactive} aria-label={label} className={`${styles.scene} ${className}`}>{children}</section>;
 }
 
 export function useTaskScene(ref: React.RefObject<HTMLElement | null>, task: string, active: boolean) {

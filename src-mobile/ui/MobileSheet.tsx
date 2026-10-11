@@ -41,7 +41,7 @@ export function MobileSheet({
 }) {
   const landscape = useMobileLayout();
   const back = () => { if (!closeDisabled) (onBack ?? onClose)(); };
-  const { present, sheetRef, ...dragEvents } = useSheetDrag(open, back, landscape);
+  const { present, sheetRef, overlayRef, ...dragEvents } = useSheetDrag(open, back, landscape);
   const saved = useRef({ title, description, children, footer, actions });
   const restoreFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -71,7 +71,7 @@ export function MobileSheet({
     >
       {present && (
         <Dialog.Portal forceMount>
-          <Dialog.Overlay forceMount className={styles.overlay} />
+          <Dialog.Overlay forceMount ref={overlayRef} className={styles.overlay} />
           <Dialog.Content
             forceMount
             ref={sheetRef}

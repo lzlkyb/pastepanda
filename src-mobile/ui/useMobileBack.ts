@@ -10,7 +10,7 @@ let stopNative: (() => void) | undefined;
 let nativeGesture: string | undefined;
 let pendingNative: string | undefined;
 let preview: { id: string; motion?: ReturnType<typeof createSceneMotion>; source?: HTMLElement; sourceInert?: boolean } | undefined;
-let canceling: { motion: ReturnType<typeof createSceneMotion>; timer: number } | undefined;
+let canceling: { motion: ReturnType<typeof createSceneMotion>; timer: number; restore: () => void } | undefined;
 
 function topLayer() {
   return layers.filter(item => item.installed).reduce<Layer | undefined>(
@@ -18,17 +18,24 @@ function topLayer() {
   );
 }
 function resetPreview(cancel = false) {
-  if (canceling) { window.clearTimeout(canceling.timer); canceling.motion.dispose(); canceling = undefined; }
+  if (canceling) { window.clearTimeout(canceling.timer); canceling.motion.dispose(); canceling.restore(); canceling = undefined; }
   const previous = preview; preview = undefined;
-  delete document.body.dataset.mobileBack;
-  if (previous?.source) { delete previous.source.dataset.previewSource; previous.source.inert = previous.sourceInert ?? false; }
-  if (cancel) previous?.motion?.cancelPreview();
+  const restore = () => {
+    delete document.body.dataset.mobileBack;
+    if (previous?.source) { delete previous.source.dataset.previewSource; previous.source.inert = previous.sourceInert ?? false; }
+  };
   // Cancellation animation owns only its DOM node, never a history operation.
   if (cancel && previous?.motion) {
     const motion = previous.motion;
-    canceling = { motion, timer: window.setTimeout(() => { motion.dispose(); canceling = undefined; }, 200) };
+    const finish = () => {
+      if (canceling?.motion !== motion) return;
+      window.clearTimeout(canceling.timer); canceling = undefined; motion.dispose(); restore();
+    };
+    // The source must remain beneath the moving foreground until cancellation has visibly settled.
+    if (motion.cancelPreview(finish)) canceling = { motion, timer: window.setTimeout(finish, 200), restore };
+    else { motion.dispose(); restore(); }
   }
-  else previous?.motion?.dispose();
+  else { previous?.motion?.dispose(); restore(); }
 }
 function syncNative() {
   configureNativeBack(layers.length > 0);
@@ -52,9 +59,9 @@ function syncNative() {
     else {
       const valid = !!nativeGesture && nativeGesture === topLayer()?.id;
       nativeGesture = undefined;
-      resetPreview();
       // Native preview is side-effect free; only a committed, still-current target pops history.
       if (valid && !removing && !pendingNative && topLayer()) { pendingNative = topLayer()!.id; history.back(); }
+      else if (!pendingNative) resetPreview();
     }
   });
 }
@@ -91,6 +98,7 @@ function onPop() {
     return;
   }
   if (history.state?.mobileBackLayer === currentEntry) return;
+  resetPreview();
   // React runs child effects before parent effects. Registration time cannot
   // decide whether a page destination outranks its details or open sheet.
   const committed = pendingNative; pendingNative = undefined;

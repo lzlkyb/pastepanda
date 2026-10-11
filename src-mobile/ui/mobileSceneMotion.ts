@@ -6,7 +6,8 @@ export function createSceneMotion(element: HTMLElement) {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
   let animation: Animation | undefined;
   const stop = () => { animation?.cancel(); animation = undefined; };
-  const settle = () => { stop(); element.style.removeProperty("--mobile-back-offset"); };
+  const clearPreview = () => { for (const name of ["--mobile-back-offset", "--mobile-back-scale", "--mobile-back-radius"]) element.style.removeProperty(name); };
+  const settle = () => { stop(); clearPreview(); };
   const hidden = () => { if (document.hidden) settle(); };
   const preference = () => { if (reduced.matches) settle(); };
   document.addEventListener("visibilitychange", hidden);
@@ -23,19 +24,25 @@ export function createSceneMotion(element: HTMLElement) {
     },
     preview(progress: number, edge: "left" | "right") {
       stop();
-      element.style.setProperty("--mobile-back-offset", reduced.matches ? "0px" : `${Math.min(96, element.clientWidth * 0.18) * progress * (edge === "left" ? 1 : -1)}px`);
+      const amount = reduced.matches ? 0 : Math.max(0, Math.min(1, progress));
+      element.style.setProperty("--mobile-back-offset", `${Math.min(96, element.clientWidth * 0.18) * amount * (edge === "left" ? 1 : -1)}px`);
+      element.style.setProperty("--mobile-back-scale", String(1 - .04 * amount));
+      element.style.setProperty("--mobile-back-radius", `${16 * amount}px`);
     },
-    cancelPreview() {
+    cancelPreview(done?: () => void) {
       const offset = element.style.getPropertyValue("--mobile-back-offset") || "0px";
+      const scale = element.style.getPropertyValue("--mobile-back-scale") || "1";
+      const radius = element.style.getPropertyValue("--mobile-back-radius") || "0px";
       settle();
-      if (reduced.matches || document.hidden || !element.animate) return;
-      animation = element.animate([{ translate: `${offset} 0` }, { translate: "0px 0" }], { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" });
+      if (reduced.matches || document.hidden || !element.animate) return false;
+      animation = element.animate([{ translate: `${offset} 0`, scale, borderRadius: radius }, { translate: "0px 0", scale: "1", borderRadius: "0px" }], { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" });
       const current = animation;
-      current.onfinish = () => { if (animation === current) stop(); };
+      current.onfinish = () => { if (animation === current) { stop(); done?.(); } };
+      return true;
     },
     dispose() {
       stop();
-      if (owners.get(element) === motion) { element.style.removeProperty("--mobile-back-offset"); owners.delete(element); }
+      if (owners.get(element) === motion) { clearPreview(); owners.delete(element); }
       document.removeEventListener("visibilitychange", hidden); reduced.removeEventListener("change", preference);
     },
   };
