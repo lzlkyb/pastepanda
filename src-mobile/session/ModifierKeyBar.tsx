@@ -19,7 +19,7 @@ export function ModifierKeyBar({
   onFunctionKey,
   keyMode,
   onPickKeyMode,
-  setting, onRetryMode,
+  setting, onRetryMode, onSettingDismiss,
 }: {
   open: boolean;
   onHide: () => void;
@@ -31,6 +31,7 @@ export function ModifierKeyBar({
   onPickKeyMode: (mode: MobileKeyMode) => void;
   setting?: SessionSettingState;
   onRetryMode?: () => void;
+  onSettingDismiss?: () => void;
 }) {
   const [more, setMore] = useState(false);
   const [draft, setDraft] = useState("");
@@ -145,10 +146,10 @@ export function ModifierKeyBar({
         {hint && (
           <MobileNotice compact tone={hintTone} title={hint} />
         )}
-        {!more && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} />}
+        {!more && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} onDismiss={onSettingDismiss} />}
       </section>
       <MobileSheet open={more && open} title="扩展按键" onClose={() => setMore(false)}
-        footer={setting && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} />}>
+        footer={setting && <SessionSettingFeedback state={setting} onRetry={() => onRetryMode?.()} onDismiss={onSettingDismiss} />}>
         <div className={styles.panelActions}>
           <div className={styles.modRow}>
             {MOD_KEYS.slice(2).map((key) => (

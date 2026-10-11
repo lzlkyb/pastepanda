@@ -120,11 +120,17 @@ it("横屏收起仍有可见工具入口，键盘展开替换工具栏", () => {
   expect(screen.queryByRole("navigation", { name: "会话工具" })).toBeNull();
 });
 
-it("横屏辅助按键与工具在同一侧栏，收起工具不会丢掉辅助操作", () => {
-  render(<SessionToolbar {...props()} landscape visible={false} mouseAssist={<button>左键</button>} />);
-  expect(screen.getByRole("button", { name: "左键" })).toBeInTheDocument();
+it("紧凑横屏隐藏辅助操作，展开后恢复；沉浸入口能重新打开工具", () => {
+  const p = props(); const restore = vi.fn(); const immersive = vi.fn();
+  const view = render(<SessionToolbar {...p} landscape visible={false} mouseAssist={<button>左键</button>} onImmersive={immersive} />);
+  expect(screen.queryByRole("button", { name: "左键" })).toBeNull();
   expect(screen.getByRole("button", { name: "工具" })).toHaveAttribute("aria-expanded", "false");
-  expect(screen.queryByRole("button", { name: "触控板" })).toBeNull();
+  view.rerender(<SessionToolbar {...p} landscape visible mouseAssist={<button>左键</button>} onImmersive={immersive} />);
+  expect(screen.getByRole("button", { name: "左键" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "沉浸画面" })); expect(immersive).toHaveBeenCalledOnce();
+  view.rerender(<SessionToolbar {...p} landscape visible={false} immersive onRestoreTools={restore} />);
+  expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "工具" })); expect(restore).toHaveBeenCalledOnce();
 });
 
 it("横屏退出在收起、请求和键盘状态下始终可达，并保留二次确认", () => {

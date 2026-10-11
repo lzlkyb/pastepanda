@@ -87,3 +87,15 @@ it("不同设置的失败独立保留，关闭一条摘要不会清掉另一条�
   expect(result.current.notices.map(item => item.key)).toEqual(["audio"]);
   expect(result.current.items.quality?.status).toBe("error");
 });
+it("关闭成功回执不清确认值，工具再打开不重现，其他设置错误仍可恢复", async () => {
+  api.apply.mockRejectedValueOnce(new Error("网络中断")).mockResolvedValueOnce({ status: "accepted", value: "on" });
+  const { result } = renderHook(() => useSessionSettings("s"));
+  await act(async () => { await result.current.pick("quality", "sharp"); await result.current.pick("audio", "on"); });
+  act(() => result.current.dismiss("audio"));
+  expect(result.current.confirmed.audio).toBe("on");
+  expect(result.current.feedbackItems.audio).toBeUndefined();
+  expect(result.current.feedbackItems.quality?.status).toBe("error");
+  act(() => result.current.dismiss("quality"));
+  expect(result.current.feedbackItems.quality?.status).toBe("error");
+  expect(result.current.notices).toHaveLength(0);
+});

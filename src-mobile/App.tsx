@@ -18,12 +18,15 @@ import { useMobileAppearance } from "./ui/useMobileAppearance";
 import { useMobileViewport } from "./ui/useMobileViewport";
 import { MOBILE_DESTINATIONS, type MobileDestination } from "./ui/mobileDestinations";
 import { useMobileNavigation } from "./ui/useMobileNavigation";
+import { MobileScene } from "./ui/MobileScene";
+import { useMobilePager } from "./ui/useMobilePager";
 import ui from "./ui/MobileUi.module.css";
 import styles from "./App.module.css";
 
 const DESTINATION_IDS = MOBILE_DESTINATIONS.map(({ id }) => id);
 
 export default function App() {
+  const [knowledgeTask, setKnowledgeTask] = useState(false);
   const [sandbox, setSandbox] = useState(false);
   const [filePeer, setFilePeer] = useState<string | null>(null);
   const [fileNotice, setFileNotice] = useState<{ text: string; error: boolean } | null>(null);
@@ -50,6 +53,8 @@ export default function App() {
     if (!openRequestId || activeSession || sandbox || seenShareRequest.current === openRequestId) return;
     seenShareRequest.current = openRequestId; selectTab("knowledge");
   }, [openRequestId, activeSession, sandbox, selectTab]);
+  const focused = tab === "knowledge" && knowledgeTask;
+  const pager = useMobilePager(DESTINATION_IDS, tab, selectTab, !focused && !sandbox && !activeSession);
   const pending = session?.phase === "outbound_pending";
   const rcMessage = rc.error ? rcErrorText(rc.error) : null;
   const targetMessage = tab === "devices" && rc.targetsError ? rcErrorText(rc.targetsError) : null;
@@ -88,18 +93,18 @@ export default function App() {
           file={file}
         />
       )}
-      <div className={styles.root} hidden={sandbox || activeSession}>
+      <div className={styles.root} data-focused={focused} hidden={sandbox || activeSession}>
         <main className={styles.pane}>
-          <div className={styles.tabContent}>
+          <div ref={pager.contentRef} className={styles.tabContent} data-pager-enabled={!focused && !sandbox && !activeSession} {...pager.events}>
             {/* Keep one instance per destination: retain drafts, scroll and ongoing transfers. */}
             {MOBILE_DESTINATIONS.map(({ id, label }) => (
-              <section
+              <MobileScene
                 key={id}
                 className={`${styles.pagePane} ${id === "knowledge" ? styles.knowledgePane : ""}`}
-                hidden={tab !== id}
-                aria-label={label}
-                aria-hidden={tab !== id || sandbox || activeSession}
-                inert={tab !== id || sandbox || activeSession}
+                label={label}
+                paged
+                interactive={tab === id && !pager.moving && !sandbox && !activeSession}
+                active={tab === id && !sandbox && !activeSession}
               >
                 {id === "devices" && (
                   <RcDevicesView
@@ -125,7 +130,7 @@ export default function App() {
                     onStatus={onFileStatus}
                   />
                 )}
-                {id === "knowledge" && <KnowledgeView active={tab === id && !sandbox && !activeSession} pageNotice={tab === id ? pageNotice : undefined} inbox={knowledgeInbox} />}
+                {id === "knowledge" && <KnowledgeView active={tab === id && !sandbox && !activeSession} pageNotice={tab === id ? pageNotice : undefined} inbox={knowledgeInbox} onTaskChange={setKnowledgeTask} />}
                 {id === "settings" && (
                   <RcSettingsView
                     pageNotice={tab === id ? pageNotice : undefined}
@@ -137,7 +142,7 @@ export default function App() {
                     onErrorScopeChange={settingsErrorScope}
                   />
                 )}
-              </section>
+              </MobileScene>
             ))}
           </div>
         </main>
@@ -173,9 +178,9 @@ export default function App() {
                 : fileNotice?.text}
             </MobileNotice>
           )}
-          {tab !== "settings" && <MobileUpdateBanner quiet={pending || fileFeedbackVisible} />}
+          {tab !== "settings" && !focused && <MobileUpdateBanner quiet={pending || fileFeedbackVisible} />}
         </div>
-        <nav className={styles.tabbar} aria-label="主要导航">
+        <nav hidden={focused} className={styles.tabbar} aria-label="主要导航">
           {MOBILE_DESTINATIONS.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -184,7 +189,7 @@ export default function App() {
               aria-current={tab === id ? "page" : undefined}
               aria-label={label}
               aria-describedby={badgeCounts[id] > 0 ? `mobile-badge-${id}` : undefined}
-              onClick={() => selectTab(id)}
+              onClick={() => pager.navigate(id)}
             >
               <span className={styles.tabIcon}>
                 <Icon size={23} aria-hidden="true" />

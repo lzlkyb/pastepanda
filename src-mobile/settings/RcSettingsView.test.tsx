@@ -73,6 +73,16 @@ it("偏好存储失败不假装选中或保存，面板内保留恢复说明", (
   stored.mockRestore();
 });
 
+it("手势指南覆盖四种操作方式并使用现有入口名称", () => {
+  renderView({ enabled: true });
+  fireEvent.click(screen.getByRole("button", { name: /手势使用指南/ }));
+  expect(screen.getByText(/^触控板模式/)).toBeTruthy();
+  expect(screen.getByText(/^直接点击模式/)).toBeTruthy();
+  expect(screen.getByText(/^独立触控板模式/)).toBeTruthy();
+  expect(screen.getByText(/^浮动鼠标模式/)).toBeTruthy();
+  expect(screen.queryByText(/触控板／直接点击/)).toBeNull();
+});
+
 describe("会话历史", () => {
   it("渲染对端 / 方向 / 时长", async () => {
     api.history.mockResolvedValueOnce(HISTORY);

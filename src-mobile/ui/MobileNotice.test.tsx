@@ -94,3 +94,53 @@ it("被弹层挡住时保留剩余计时，弹层关闭后继续", async () => {
   act(() => vi.advanceTimersByTime(1));
   expect(dismiss).toHaveBeenCalledTimes(1);
 });
+
+it("切去另一个主页面时保留提示阅读时间，返回后继续", async () => {
+  vi.useFakeTimers();
+  const dismiss = vi.fn();
+  const view = render(<section hidden={false}><MobileToast placement="flow" tone="success" title="本页已保存" onDismiss={dismiss} /></section>);
+  act(() => vi.advanceTimersByTime(1000));
+  await act(async () => view.rerender(<section hidden><MobileToast placement="flow" tone="success" title="本页已保存" onDismiss={dismiss} /></section>));
+  act(() => vi.advanceTimersByTime(10000));
+  expect(dismiss).not.toHaveBeenCalled();
+  await act(async () => view.rerender(<section hidden={false}><MobileToast placement="flow" tone="success" title="本页已保存" onDismiss={dismiss} /></section>));
+  act(() => vi.advanceTimersByTime(3000));
+  expect(dismiss).toHaveBeenCalledOnce();
+});
+
+it("浮动反馈只显示一条，错误优先；关闭同样结果会合并移除", () => {
+  const success = vi.fn(), error = vi.fn(), duplicate = vi.fn();
+  render(<><MobileToast title="已复制" tone="success" onDismiss={success} />
+    <MobileToast title="连接失败" tone="error" onDismiss={error} />
+    <MobileToast title="连接失败" tone="error" onDismiss={duplicate} /></>);
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
+  expect(error).toHaveBeenCalledOnce(); expect(duplicate).toHaveBeenCalledOnce();
+  expect(success).not.toHaveBeenCalled();
+});
+
+it("阅读页用CSS隐藏列表时，列表上的提示也暂停到期", async () => {
+  vi.useFakeTimers();
+  const css = document.createElement("style"); css.textContent = '[data-reading="true"] .test-list {display:none}'; document.head.append(css);
+  const dismiss = vi.fn();
+  const view = render(<div data-reading="false"><section className="test-list"><MobileToast placement="flow" title="列表结果" onDismiss={dismiss} /></section></div>);
+  act(() => vi.advanceTimersByTime(1000));
+  await act(async () => view.rerender(<div data-reading="true"><section className="test-list"><MobileToast placement="flow" title="列表结果" onDismiss={dismiss} /></section></div>));
+  act(() => vi.advanceTimersByTime(10000));
+  css.remove();
+  expect(dismiss).not.toHaveBeenCalled();
+});
+
+it("旋转使响应式列表隐藏时重新判断可见性，计时暂停", () => {
+  vi.useFakeTimers();
+  const readStyle = window.getComputedStyle.bind(window); let narrow = false;
+  vi.spyOn(window, "getComputedStyle").mockImplementation(node => node.classList.contains("responsive-list")
+    ? { display: narrow ? "none" : "block", visibility: "visible" } as CSSStyleDeclaration : readStyle(node));
+  const dismiss = vi.fn();
+  render(<section className="responsive-list"><MobileToast placement="flow" title="宽屏列表提示" onDismiss={dismiss} /></section>);
+  act(() => vi.advanceTimersByTime(1000));
+  act(() => { narrow = true; window.dispatchEvent(new Event("resize")); });
+  act(() => vi.advanceTimersByTime(10000));
+  expect(dismiss).not.toHaveBeenCalled();
+});

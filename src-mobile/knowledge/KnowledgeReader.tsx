@@ -12,17 +12,22 @@ import { useKnowledgeReading } from "./useKnowledgeReading";
 import { mobileKnowledgeShareSend } from "@/lib/api/mobileKnowledgeShare";
 import { KnowledgeAssetSheet } from "./KnowledgeAssetSheet";
 import { KnowledgeImageViewer } from "./KnowledgeImageViewer";
+import { useKnowledgeArticleReading } from "./useKnowledgeArticleReading";
+import { KnowledgeArticleReadingNotice } from "./KnowledgeArticleReadingNotice";
 import styles from "./KnowledgeReader.module.css";
 
-export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpenNote, initialNotice, onEdit }: {
+export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpenNote, initialNotice, onEdit, onFillArticle }: {
   noteId: string; onBack: () => void; onCommonChanged?: () => void; active: boolean;
   onOpenNote?: (id: string) => void;
   initialNotice?: MobileFeedback;
   onEdit?: (id: string) => Promise<boolean>;
+  onFillArticle?: (id: string) => void;
 }) {
   const reading = useKnowledgeReading(noteId, active);
   const { note, meta, setMeta, loading, error, missing, newer } = reading;
+  const articleReading = useKnowledgeArticleReading(noteId, active, note?.content || "", reading.reload);
   const article = useRef<HTMLDivElement>(null);
+  const preview = useRef<HTMLElement>(null);
   const restored = useRef<string | null>(null);
   const request = useRef(0);
   const linkRequest = useRef(0);
@@ -40,7 +45,7 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
   const reloadImage = useRef<(() => void) | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [localImageCount, setLocalImageCount] = useState(0);
-  useMobileBack(active && !sheet && !asset && !image, onBack);
+  useMobileBack(active && !sheet && !asset && !image, onBack, false, 0, preview);
   useEffect(() => {
     ++request.current; ++linkRequest.current; restored.current = null; setSheet(null); setFeedback(initialNotice || null); setHeadings([]);
     setLinkFeedback(null); setTargets([]); setUrl(""); setCopyBusy(false); setCommonBusy(false); setLinkBusy(false);
@@ -132,13 +137,23 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
     finally { if (token === request.current) setActionBusy(false); }
   };
 
-  return <section className={styles.reader} aria-label="笔记全文">
+  return <section ref={preview} className={styles.reader} aria-label="笔记全文">
     <header className={styles.header}>
       <button type="button" onClick={() => { reading.savePosition(); onBack(); }}><ArrowLeft size={20} aria-hidden="true" /><span>返回</span></button>
-      <span className={styles.headerTitle}>知识库</span>
+      <div className={styles.headerTools}>
+        <button type="button" disabled={!note || !meta || commonBusy || missing} aria-label={meta?.common ? "手机常用" : "加入手机常用"} aria-pressed={!!meta?.common} onClick={() => void toggleCommon()}><Star size={20} aria-hidden="true" /><span>{meta?.common ? "已常用" : "常用"}</span></button>
+        <button type="button" disabled={!note} onClick={() => setSheet("toc")}><List size={20} aria-hidden="true" /><span>目录</span></button>
+
       <button type="button" disabled={!note} onClick={() => { setFeedback(null); setLocalImageCount(article.current?.querySelectorAll("[data-local-image]").length || 0); setSheet("more"); }}><MoreHorizontal size={20} aria-hidden="true" /><span>更多</span></button>
+      </div>
     </header>
+    {feedback && !sheet && <div className={styles.actionFeedback}>
+      {!sheet && feedback && (feedback.tone === "success" || feedback.tone === "info"
+        ? <MobileToast placement="flow" compact {...feedback} onDismiss={() => setFeedback(null)} />
+        : <MobileNotice compact {...feedback} onDismiss={feedback.tone !== "pending" ? () => setFeedback(null) : undefined} />)}
+    </div>}
     <div ref={article} className={styles.scroll} onScroll={event => reading.onScroll(event.currentTarget)}>
+      <KnowledgeArticleReadingNotice article={articleReading} onFill={onFillArticle} onOriginal={href => void followLink(href, false)} />
       {loading && !note && <MobileNotice tone="pending" title="正在读取本机正文…" />}
       {error && <MobileNotice tone="error" title="未能读取笔记" detail={reading.errorDetail} action={<button type="button" onClick={() => void reading.reload()}>重试读取</button>} />}
       {!reading.online && note && <MobileNotice compact tone="info" title="正在阅读本机内容" detail="手机当前离线；外部链接和图片可能无法加载。" />}
@@ -150,18 +165,9 @@ export function KnowledgeReader({ noteId, onBack, onCommonChanged, active, onOpe
         <p className={styles.meta}>本机内容 · 更新于 {new Date(note.updated_at).toLocaleString()}</p>
         <h1>{note.title || "未命名笔记"}</h1>
         {!!note.tags.length && <p className={styles.tags}>{note.tags.map(tag => <span key={tag.id}>#{tag.name}</span>)}</p>}
-        {note.content ? <KnowledgeMarkdown content={note.content} active={active && !image && !sheet} onLink={(href, internal) => void followLink(href, internal)} onHeadings={setHeadings} onMissingImage={(src, reload) => { reloadImage.current = reload; setAsset({ noteId, src }); }} onImage={(src, alt) => setImage({ src, alt })} /> : <p className={styles.meta}>这篇笔记还没有正文。</p>}
+        {note.content ? <KnowledgeMarkdown content={note.content} active={active && !image && !sheet} onLink={(href, internal) => void followLink(href, internal)} onHeadings={setHeadings} onMissingImage={(src, reload) => { reloadImage.current = reload; setAsset({ noteId, src }); }} onImage={(src, alt) => setImage({ src, alt })} articleImages={articleReading.sources} onArticleImage={articleReading.recover} /> : <p className={styles.meta}>这篇笔记还没有正文。</p>}
       </article>}
     </div>
-    <footer className={styles.footer}>
-      {!sheet && feedback && (feedback.tone === "success" || feedback.tone === "info"
-        ? <MobileToast placement="flow" compact {...feedback} onDismiss={() => setFeedback(null)} />
-        : <MobileNotice compact {...feedback} onDismiss={feedback.tone !== "pending" ? () => setFeedback(null) : undefined} />)}
-      <div className={styles.footerActions}>
-        <button type="button" disabled={!note || !meta || commonBusy || missing} aria-pressed={!!meta?.common} onClick={() => void toggleCommon()}><Star size={20} aria-hidden="true" /><span>{meta?.common ? "手机常用" : "加入手机常用"}</span></button>
-        <button type="button" disabled={!note} onClick={() => setSheet("toc")}><List size={20} aria-hidden="true" /><span>目录</span></button>
-      </div>
-    </footer>
     <MobileSheet open={!!sheet && active} title={sheet === "toc" ? "文章目录" : sheet === "link" ? "打开链接" : "阅读操作"} onClose={() => { ++linkRequest.current; setLinkBusy(false); setSheet(null); }} footer={sheet === "more" && feedback ? (feedback.tone === "success" || feedback.tone === "info" ? <MobileToast placement="flow" compact {...feedback} onDismiss={() => setFeedback(null)} /> : <MobileNotice compact {...feedback} />) : sheet === "link" && linkFeedback ? <MobileNotice {...linkFeedback} /> : undefined}>
       {sheet === "more" && <div className={styles.sheetActions}>
         {onEdit && <button type="button" disabled={actionBusy || missing} onClick={async () => {

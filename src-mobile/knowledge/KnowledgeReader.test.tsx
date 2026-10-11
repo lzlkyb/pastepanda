@@ -137,3 +137,16 @@ it("元数据加载失败仍阅读正文且不能误改未知常用状态", asyn
   fireEvent.click(screen.getByRole("button", { name: "重试偏好" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "加入手机常用" }).hasAttribute("disabled")).toBe(false));
 });
+
+it("阅读工具集中在页头，常用反馈同层可见且正文保留", async () => {
+  const { container } = render(<KnowledgeReader noteId="n1" active onBack={vi.fn()} />);
+  await screen.findByText("原始正文");
+  const common = screen.getByRole("button", { name: "加入手机常用" });
+  expect(common.closest("header")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "目录" }).closest("header")).not.toBeNull();
+  expect(container.querySelector("footer")).toBeNull();
+  fireEvent.click(common);
+  await screen.findByText("已加入手机常用");
+  expect(screen.getByText("原始正文")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "手机常用" }).textContent).toBe("已常用");
+});

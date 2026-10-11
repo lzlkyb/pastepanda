@@ -1,0 +1,7 @@
+.large-type { font-size: 150%; }
+.demoCard { margin: 12px 0; padding: 16px; border-radius: var(--mobile-radius-group); background: var(--card-bg); }
+.demoCard p { color: var(--text-secondary); font-size: var(--mobile-font-secondary); }
+.demoField { display: flex; flex-direction: column; gap: 8px; }
+.demoField input { min-height: 48px; width: 100%; min-width: 0; padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-bg); color: var(--text-primary); font: inherit; }
+.demoHorizontal { display: flex; overflow-x: auto; gap: 8px; margin: 16px 0; overscroll-behavior-x: contain; }
+.demoHorizontal > div { flex: 0 0 160px; padding: 16px; background: var(--card-bg); border-radius: 12px; }

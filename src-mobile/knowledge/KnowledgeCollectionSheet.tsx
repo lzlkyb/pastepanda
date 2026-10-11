@@ -23,9 +23,9 @@ export function KnowledgeCollectionSheet({ item, active, busy, error, hasCapture
   // Switching queued shares must replace their fields before the next visible frame.
   useLayoutEffect(() => { setTitle(item?.title || ""); setText(item?.text || ""); setDiscard(false); }, [item?.id]);
   const blocked = hasCapture && !target && !applied;
-  return <MobileSheet open={!!item && active} title={discard ? "放弃这次收集？" : "收集内容预览"} onClose={busy ? () => undefined : onClose}
-    footer={error ? <MobileNotice error title={saved ? "笔记已保存" : "收集内容仍保留"} detail={error} /> : undefined} actions={<>
-    {discard ? <><button className={ui.primary} disabled={busy} onClick={() => item && void onDiscard(item.id)}>确认放弃这次收集</button><button className={ui.secondary} disabled={busy} onClick={() => setDiscard(false)}>保留内容</button></> : <>
+  return <MobileSheet open={!!item && active} title={discard ? "放弃这次收集？" : "收集内容预览"} onClose={onClose} closeDisabled={busy} closeBusyLabel={discard ? "处理中" : "保存中"}
+    footer={error ? <MobileNotice compact error title={saved ? "笔记已保存" : "收集内容仍保留"} detail={error} /> : undefined} actions={<>
+    {discard ? <><button className={ui.secondary} disabled={busy} onClick={() => setDiscard(false)}>保留内容</button><button className={ui.danger} aria-label="确认放弃这次收集" disabled={busy} onClick={() => item && void onDiscard(item.id)}>确认放弃</button></> : <>
       <button className={ui.primary} disabled={busy || blocked || item?.status === "error"} onClick={() => item && void (target || (applied && !savePending) ? onUse : onSave)({ ...item, title, text })}>{busy ? "正在保存…" : applied && !savePending ? "重试清理收集状态" : target ? "加入当前草稿" : "保存到手机"}</button>
       {!target && !saved && <button className={ui.secondary} disabled={busy || blocked || item?.status === "error"} onClick={() => item && void onUse({ ...item, title, text })}>继续编辑</button>}
     </>}
