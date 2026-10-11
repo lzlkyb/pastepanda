@@ -40,7 +40,39 @@ impl RcService {
             .drain()
     }
 
+    /// Bound both queue consumption and late decoded output to the requesting
+    /// outbound session. Decode on a blocking worker, never the UI thread.
+    pub fn drain_frames_for_viewer(&self, session: &str) -> Result<(Vec<crate::rc::video::VideoFrame>, Vec<usize>), String> {
+        let _serial = self.viewer_drain.lock().unwrap_or_else(|p| p.into_inner());
+        let frames = {
+            let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+            if matches!(inner.session.as_ref(), Some(s) if s.id == session && s.phase == SessionPhase::OutboundPending) {
+                // Viewers mount while dialing/awaiting approval. This is an
+                // ordinary empty wait, not a decode failure; do not drain yet.
+                return Ok((Vec::new(), Vec::new()));
+            }
+            if !matches!(inner.session.as_ref(), Some(s) if s.id == session && s.phase == SessionPhase::OutboundActive) {
+                return Err("远程会话已改变".into());
+            }
+            self.drain_frames()
+        };
+        #[cfg(target_os = "macos")]
+        let result = self.av1_receiver.lock().unwrap_or_else(|p| p.into_inner()).batch(session, frames);
+        #[cfg(not(target_os = "macos"))]
+        let result = (frames, Vec::new());
+        // Receiver lock is released before taking inner: teardown uses inner
+        // and then clears receiver state, so no inverse lock ordering.
+        let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
+        if !matches!(inner.session.as_ref(), Some(s) if s.id == session && s.phase == SessionPhase::OutboundActive) {
+            return Err("远程会话已改变".into());
+        }
+        Ok(result)
+    }
+
     pub(in crate::rc) fn clear_outbox(&self) {
+        let _serial = self.viewer_drain.lock().unwrap_or_else(|p| p.into_inner());
+        #[cfg(target_os = "macos")]
+        self.av1_receiver.lock().unwrap_or_else(|p| p.into_inner()).clear();
         self.frame_outbox
             .lock()
             .unwrap_or_else(|p| p.into_inner())

@@ -2079,10 +2079,14 @@
   border-color: rgba(255, 255, 255, 0.14);
   color: rgba(232, 236, 242, 0.9);
 }
+.capMore .menuBtn:hover:not(:disabled),
 .capMore .miniBtn:hover:not(:disabled) {
   border-color: rgba(255, 255, 255, 0.24);
   /* ui-rule-ok: 深面板 hover 提亮到纯白（不随主题），同 .capBtnOn 先例 */
   color: #fff;
+}
+.capMore .menuCur {
+  color: inherit;
 }
 .capMore .miniBtnPri {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
@@ -3808,4 +3812,12 @@
 }
 .pairQr[data-ready="0"] {
   display: none;
+}
+
+/* Encoding status follows the deep glass panel's existing foreground. */
+.capCodecStatus {
+  margin: 8px 4px;
+  font-size: 11px;
+  color: inherit;
+  overflow-wrap: anywhere;
 }

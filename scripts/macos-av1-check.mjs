@@ -16,9 +16,13 @@ try {
   if (!existsSync(library)) throw new Error("Build the AV1 runtime before running the fixture check.");
   const binary = path.join(temp, "av1-probe");
   run("xcrun", ["clang", "-O2", "-mmacosx-version-min=12.0", "src-tauri/src/macos/tests/av1_probe.c", "-o", binary]);
+  const receiver = path.join(temp, "av1-receive-probe");
+  run("xcrun", ["clang", "-O2", "-mmacosx-version-min=12.0", "src-tauri/src/macos/tests/av1_receive_probe.c", "-o", receiver]);
   for (const width of [64, 1280, 1920]) {
     const stream = path.join(temp, `${width}.ivf`);
     run(binary, [library, stream, String(width)]);
+    run(receiver, [library, stream]);
+    run(receiver, [library, `${stream}.recovery.ivf`]);
     const decoder = process.env.PASTEPANDA_AV1_DECODER;
     if (decoder) {
       const decoded = run(decoder, ["-hide_banner", "-v", "error", "-c:v", "libaom-av1", "-i", stream, "-f", "framemd5", "-"], true);

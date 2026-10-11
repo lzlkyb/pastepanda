@@ -1081,3 +1081,14 @@ export function knowledgeAssetErrorText(error: unknown) {
   };
   return messages[code] || "图片未能取得，请重试。正文与已有内容仍保留。";
 }
+
+/** Shared presentation for RC codec notifications, HUD and waiting stage. */
+export function remoteCodecLabel(codec: string): string {
+  switch (codec) {
+    case "h264": return "H.264";
+    case "hevc": return "HEVC";
+    case "av1": return "AV1";
+    case "jpeg": return "JPEG";
+    default: return "未知编码";
+  }
+}

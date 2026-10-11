@@ -21,6 +21,7 @@
  * 只有按钮与面板自己的盒子是交互面。面板展开期间浮条由父组件锁显（面板 DOM
  * 在浮条 root 内，鼠标移进去不触发 onMouseLeave）。
  */
+import { remoteCodecLabel } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
 import styles from "./RemoteComputer.module.css";
@@ -156,11 +157,13 @@ export function RcHud({
   const rows: HudRow[] = [
     {
       label: "编码",
-      value: `${codec === "h264" ? "H.264" : codec === "hevc" ? "HEVC" : "JPEG"}${fps > 0 ? ` · ${fps}fps` : ""}`,
+      value: `${remoteCodecLabel(codec)}${fps > 0 ? ` · ${fps}fps` : ""}`,
       hint:
         codec === "h264"
-          ? "硬编（D3D11）或 CPU 编码，按画质档与能力选择"
-          : "浏览器解不出 H.264 时的兜底路径",
+          ? "H.264 视频流；按对方设备能力选择硬件或软件编码"
+          : codec === "hevc" || codec === "av1"
+            ? `${remoteCodecLabel(codec)} 视频流；解码失败时回退 H.264`
+            : "视频解码失败时的 JPEG 兜底路径",
     },
   ];
   if (frameSize && frameSize.w > 0 && frameSize.h > 0) {

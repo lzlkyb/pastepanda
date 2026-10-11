@@ -7,6 +7,7 @@
  * 不发送声音 / 免确认二段确认（U9）/ 立即结束。
  * 渲染时机由父组件决定（open && <RcControlDrawer …/>）。
  */
+import { remoteCodecLabel } from "@/lib/utils";
 import { rcCanControl } from "@/lib/rcCapability";
 import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
@@ -112,7 +113,7 @@ export function RcControlDrawer({
                     ? "对方开启了系统声音接收，但你已在本机静音——对方仍听不到"
                     : "对方开始接收本机系统声音（你现在播放的声音对方能听到）"
                 : streamNotice.kind === "codec"
-                  ? `对方把编码切成了「${streamNotice.name === "h264" ? "H.264" : streamNotice.name === "hevc" ? "HEVC" : "JPEG"}」`
+                  ? `对方把编码切成了「${remoteCodecLabel(streamNotice.name)}」`
                   : `对方把画质调成了「${qualityLabel(streamNotice.name)}」`}
               <button
                 type="button"
