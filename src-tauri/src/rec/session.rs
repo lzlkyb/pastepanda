@@ -234,14 +234,15 @@ fn session_ms(t0: Instant, paused_ms: u64) -> u64 {
     wall.saturating_sub(paused_ms)
 }
 
-/// 主循环的编码 + mux 上下文。真帧与静止补帧走**同一条**提交路径：开封装、
-/// 连续失败计数、写失败语义只要漏在补帧那一路，静止段就会悄悄掏空时间轴
+/// 主循环的编码 + mux 上下文。真帧与收尾尾格走**同一条**提交路径：开封装、
+/// 连续失败计数、写失败语义只要漏在尾格那一路，轨尾就会静默短一截
 /// （规则 11.1：分支逻辑收口，不要抄两份）。
 struct MuxCtx<'a> {
     enc: H264SessionEncoder,
     sink: Option<RecSink>,
-    /// 上一格的编码输入（sp.width×sp.height BGRA）：静止段拿它补帧。与 crop_buf
-    /// 分开是因为 crop_buf 上已经画了指针/涟漪，这条缓冲要原样重放上一格画面。
+    /// 上一格的编码输入（sp.width×sp.height BGRA）：**只有收尾那一格用它**
+    /// （静止期不落样，见 rec/timeline.rs）。与 crop_buf 分开是因为 crop_buf 上已经
+    /// 画了指针/涟漪，这条缓冲要原样重放上一格画面。
     /// 多一帧内存：1080p ≈ 8MB、4K ≈ 33MB。
     last_frame: Vec<u8>,
     frames_written: u64,
@@ -262,17 +263,9 @@ impl MuxCtx<'_> {
         drain_audio(&mut self.sink, self.aud_rx, self.audio_shift_ms)
     }
 
-    /// 有没有可拿来补帧的上一格画面。
+    /// 有没有可拿来收尾的上一格画面。
     fn has_last_frame(&self) -> bool {
         !self.last_frame.is_empty()
-    }
-
-    /// 用上一格画面补写这些空槽（时间戳升序）。
-    fn submit_holds(&mut self, stamps: &[i64]) -> Result<(), String> {
-        for t in stamps {
-            self.submit_last(*t)?;
-        }
-        Ok(())
     }
 
     /// 编码并写入 last_frame（take 出来再还回去：让编码期间仍能借用它）。
@@ -500,15 +493,10 @@ fn run_record(
             continue;
         }
         next_frame += frame_dur;
-        // 静止段补帧（四期 2026-10-10）：墙钟走到了、上一个样本却还停在 ~500ms 前，
-        // 就补一格上一画面。不补 = 视频轨比音频轨短掉静止时长（「时间轴卡死」）；
-        // 逐格补 = 静屏持续吃半个核（实测见 sink.rs `补帧开销_静态逐格重编`）。
-        // 节奏与口径都收在 rec/timeline.rs。
-        let holds = axis.fill_holds(session_ms(axis_t0, paused_ms) as i64, ctx.has_last_frame());
-        if let Err(e) = ctx.submit_holds(&holds) {
-            interrupted = Some(e);
-            break;
-        }
+        // 静止期不落补帧（四期 2026-10-10 二改）：墙钟走到哪，真帧的时间戳就到哪，
+        // 中间的空隙由封装写进前一个样本的 stts duration（实测见 rec/timeline.rs 顶部
+        // 与 sink.rs `稀疏时间戳_容器时长跟时间戳不跟帧数`）。过去这里每 ~500ms 把
+        // 上一格画面重编一遍（1080p30 实测 16.5ms/帧），密度对静止画面毫无增益。
         match pool.grab_rec() {
             Err(e) => {
                 grab_fail_streak += 1;
@@ -520,7 +508,7 @@ fn run_record(
                     break;
                 }
             }
-            Ok(None) => { /* 静止且指针没动：上面已按墙钟补过格 */ }
+            Ok(None) => { /* 静止且指针没动：不落样本，空隙由前一个样本的 duration 覆盖 */ }
             Ok(Some(((vw2, vh2, bgra), ptr))) => {
                 if (vw2, vh2) != (vw, vh) {
                     interrupted = Some("录制中分辨率变化（接显示器/改缩放），已保留已录部分".into());
@@ -530,14 +518,8 @@ fn run_record(
                 // 涟漪（四期 1.3）：画在指针**之前**（光标保持最上层）、裁剪后
                 // 缩放前（跟内容一起缩放）。时间基 = 本帧时间戳（墙钟槽）。
                 // 抓帧本身会阻塞（acquire 最多等 30ms），所以本帧的时刻重新取一次；
-                // 期间走掉的空槽由 arrive 一并返回，仍用上一格画面补。
-                let (extra_holds, frame_t) =
-                    axis.arrive(session_ms(axis_t0, paused_ms) as i64, ctx.has_last_frame());
-                if let Err(e) = ctx.submit_holds(&extra_holds) {
-                    interrupted = Some(e);
-                    break;
-                }
-                let frame_t = frame_t as u64;
+                // 时间戳直接落墙钟槽，静止段留下的空隙不由这里管。
+                let frame_t = axis.arrive(session_ms(axis_t0, paused_ms) as i64) as u64;
                 ripples.retain(|r| frame_t.saturating_sub(r.start_ms) < pointer::RIPPLE_DURATION_MS);
                 if opts.click_highlight && !ripples.is_empty() {
                     pointer::draw_ripples(&mut crop_buf, rw, rh, &ripples, frame_t);
@@ -590,17 +572,18 @@ fn run_record(
         }
     }
 
-    // ── 6. 收尾：补尾格 → drain 音频余量 → Finalize → 按结局发**一条**事件 ──
+    // ── 6. 收尾：补轨尾一格 → drain 音频余量 → Finalize → 按结局发**一条**事件 ──
     drop(scaler);
-    // 轨尾对齐墙钟：静止段按 ~500ms 节奏落样，最后一次落样可能比会话末尾早一个间隔，
-    // 那一段视频轨就没有样本了（成品末尾冻结 + rec-done 时长比成品短）。补一帧收尾，
-    // 一次会话只补这一次。🔴 若是在暂停中停的，当前这段暂停还没结算进 paused_ms，
-    // 直接取 session_ms 会把暂停时长算进轨尾（比真实内容长）。
+    // 轨尾对齐墙钟：静止期不落样，轨上最后一个样本可能比会话末尾早几十秒，而 MF 只能
+    // 按帧长给最后一个样本收尾 = 成品末尾比音频短、rec-done 时长与成品对不上。补这一格
+    // 是全会话唯一一次重放上一画面。🔴 若是在暂停中停的，当前这段暂停还没结算进
+    // paused_ms，直接取 session_ms 会把暂停时长算进轨尾（比真实内容长）。
     let paused_now = paused_ms + pause_started.map_or(0, |t| t.elapsed().as_millis() as u64);
-    let tail = axis.tail_hold(session_ms(axis_t0, paused_now) as i64, ctx.has_last_frame());
-    if let Err(e) = ctx.submit_holds(&tail) {
-        if interrupted.is_none() {
-            interrupted = Some(e);
+    if let Some(t) = axis.tail_hold(session_ms(axis_t0, paused_now) as i64, ctx.has_last_frame()) {
+        if let Err(e) = ctx.submit_last(t) {
+            if interrupted.is_none() {
+                interrupted = Some(e);
+            }
         }
     }
     ctx.mux_audio();

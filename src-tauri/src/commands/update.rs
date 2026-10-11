@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 // ❗ `AppHandle::config()` 是固有方法，不需要引 `Manager`（引了反而是 unused 警告）。
 use tauri::Emitter;
@@ -102,6 +102,94 @@ where
 const GITEE_MANIFEST_URL: &str =
     "https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json";
 
+/// manifest 检查的单次请求上限（秒）。
+///
+/// 取 15s 的依据（2026-10-10 实测）：三条源**健康**时响应 0.5–2.5s，而 ghproxy 被限流时
+/// 单次要挂 60s 才吐一个非 2xx。不设上限时「3 条源 ×3 次尝试」最坏要 4 分半，
+/// 期间界面只有转圈——用户看到的是「更新失败」，实际是卡在一条死源上重试。
+///
+/// ❗ 只作用于 manifest 检查，不会影响 exe 下载：插件构造 `Update` 时把下载侧的
+///   timeout 写死为 `None`（tauri-plugin-updater 2.10.1 `updater.rs:553`），
+///   慢下载由上面的看门狗负责。别把这个值当成「下载超时」去调小。
+pub const MANIFEST_CHECK_TIMEOUT_SECS: u64 = 15;
+
+/// 本次进程内「上一次真正取到 manifest 的源」。
+static LAST_GOOD_SOURCE: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+
+fn last_good_slot() -> &'static RwLock<Option<String>> {
+    LAST_GOOD_SOURCE.get_or_init(|| RwLock::new(None))
+}
+
+/// 记下成功的源。写失败不影响任何逻辑（最坏就是下次仍从配置的第一条试起）。
+pub(crate) fn record_good_source(url: &str) {
+    if let Ok(mut slot) = last_good_slot().write() {
+        *slot = Some(url.to_string());
+    }
+}
+
+pub(crate) fn last_good_source() -> Option<String> {
+    last_good_slot().read().ok().and_then(|v| v.clone())
+}
+
+/// 把满足 `pred` 的那一项提到最前，返回是否发生了移动（第 0 项命中也算没移动）。
+///
+/// 存在的理由：**「检查更新」和「下载更新」是两条独立的多源 failover**，后者不记得
+/// 前者刚才是从哪条源拿到 manifest 的。2026-10-10 14:24 就是这样出的事——
+/// 14:24:05 从 ghproxy 查到了 v7.2.11，用户 14:25 点「更新」，`start_update`
+/// 又从第 1 条 Gitee 重头跑，撞上 Gitee 通道 404 + ghproxy 限流 + GitHub 直连被墙，
+/// 一个「本来能更新」的会话被重放成了「所有源均失败」。
+pub fn move_matching_to_front<T>(items: &mut Vec<T>, pred: impl Fn(&T) -> bool) -> bool {
+    let Some(idx) = items.iter().position(pred) else {
+        return false;
+    };
+    if idx == 0 {
+        return false;
+    }
+    let item = items.remove(idx);
+    items.insert(0, item);
+    true
+}
+
+/// 源的短名，只用于失败文案——三条完整 URL 塞进 toast 是读不出东西的。
+pub fn source_name(url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let host = rest.split('/').next().unwrap_or("").to_lowercase();
+    if host.contains("gitee.com") {
+        "Gitee".to_string()
+    } else if host.contains("ghproxy") {
+        "ghproxy".to_string()
+    } else if host == "github.com" {
+        "GitHub".to_string()
+    } else {
+        host
+    }
+}
+
+/// 截断到 `max` 个字符（按字符不按字节，避免切进中文中间）。
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let kept: String = s.chars().take(max).collect();
+    format!("{kept}…")
+}
+
+/// 汇总每条源的失败原因。
+///
+/// 旧写法只带**最后一条**源的错误，而三条源的失败原因往往各不相同
+/// （Gitee 是 404、ghproxy 是限流、GitHub 是被墙）。用户报上来的「error sending
+/// request for url(...github...)」因此完全指不到真正坏掉的那条通道。
+pub fn format_source_failures(attempts: &[(String, String)]) -> String {
+    if attempts.is_empty() {
+        return "没有可用的更新源".to_string();
+    }
+    let parts: Vec<String> = attempts
+        .iter()
+        .map(|(url, err)| format!("{}→{}", source_name(url), clip(err, 120)))
+        .collect();
+    format!("所有更新源均失败: {}", parts.join(" | "))
+}
+
 /// 解析环境变量覆盖的更新端点
 /// `PASTEPANDA_UPDATE_ENDPOINT` 逗号分隔的 URL 列表，优先级最高
 fn resolve_env_endpoints() -> Option<Vec<String>> {
@@ -169,7 +257,15 @@ fn candidate_endpoint_groups(app: &tauri::AppHandle) -> Vec<Vec<String>> {
         return vec![vec![GITEE_MANIFEST_URL.to_string()]];
     }
     log::info!("[Update] 共 {} 层兜底：{:?}", configured.len(), configured);
-    configured.into_iter().map(|u| vec![u]).collect()
+    let mut groups: Vec<Vec<String>> = configured.into_iter().map(|u| vec![u]).collect();
+    // 先试上次成功的那条源（详见 `move_matching_to_front`）。
+    if let Some(last_good) = last_good_source() {
+        let hit = |g: &Vec<String>| g.first().map(String::as_str) == Some(last_good.as_str());
+        if move_matching_to_front(&mut groups, hit) {
+            log::info!("[Update] 优先复用上次成功的更新源: {}", last_good);
+        }
+    }
+    groups
 }
 
 /// 构建 Updater 实例。
@@ -199,6 +295,7 @@ fn build_updater(
     app.updater_builder()
         .endpoints(parsed)
         .map_err(|e| format!("更新源配置无效（需 https）: {e}"))?
+        .timeout(Duration::from_secs(MANIFEST_CHECK_TIMEOUT_SECS))
         .build()
         .map_err(|e| format!("Updater 初始化失败: {e}"))
 }
@@ -337,7 +434,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
     {
         let groups = candidate_endpoint_groups(&app);
 
-        let mut last_error = String::new();
+        let mut attempts: Vec<(String, String)> = Vec::new();
 
         for (i, group) in groups.iter().enumerate() {
             let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
@@ -351,7 +448,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
             let updater = match build_updater(&app, group) {
                 Ok(u) => u,
                 Err(e) => {
-                    last_error = e;
+                    attempts.push((source_label.to_string(), e));
                     continue;
                 }
             };
@@ -362,6 +459,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
             .await
             {
                 Ok(Some(update)) => {
+                    record_good_source(source_label);
                     log::info!(
                         "[Update] 发现新版本 v{} (源: {})",
                         update.version,
@@ -373,18 +471,21 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<serde_json::Va
                     })));
                 }
                 Ok(None) => {
+                    // 拿到 manifest 只是版本不比当前新——这条源同样是活的，照样记下来。
+                    record_good_source(source_label);
                     log::info!("[Update] 已是最新版本 (源: {})", source_label);
                     return Ok(None);
                 }
                 Err(e) => {
-                    last_error = e.to_string();
-                    log::warn!("[Update] 源 {} 失败: {}", source_label, last_error);
+                    let err = e.to_string();
+                    log::warn!("[Update] 源 {} 失败: {}", source_label, err);
+                    attempts.push((source_label.to_string(), err));
                     continue;
                 }
             }
         }
 
-        Err(format!("所有更新源均失败: {}", last_error))
+        Err(format_source_failures(&attempts))
     }
 }
 
@@ -413,7 +514,7 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
         let _ = app.emit("update:checking", ());
 
         let groups = candidate_endpoint_groups(&app);
-        let mut last_error = String::new();
+        let mut attempts: Vec<(String, String)> = Vec::new();
 
         for (i, group) in groups.iter().enumerate() {
             let source_label = group.first().map(|s| s.as_str()).unwrap_or("custom");
@@ -427,7 +528,7 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
             let updater = match build_updater(&app, group) {
                 Ok(u) => u,
                 Err(e) => {
-                    last_error = e;
+                    attempts.push((source_label.to_string(), e));
                     continue;
                 }
             };
@@ -439,14 +540,19 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
                 })
                 .await
                 {
-                    Ok(Some(u)) => u,
+                    Ok(Some(u)) => {
+                        record_good_source(source_label);
+                        u
+                    }
                     Ok(None) => {
+                        record_good_source(source_label);
                         let _ = app.emit("update:uptodate", ());
                         return;
                     }
                     Err(e) => {
-                        last_error = e.to_string();
-                        log::warn!("[Update] 源 {} 检查失败: {}", source_label, last_error);
+                        let err = e.to_string();
+                        log::warn!("[Update] 源 {} 检查失败: {}", source_label, err);
+                        attempts.push((source_label.to_string(), err));
                         continue;
                     }
                 };
@@ -487,8 +593,7 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
                     // Downloaded 不应逃出 download_with_speed_guard（内部已 install）。
                     // 真出现了就当失败去切源/报错，绝不能静默 return 假装装好了。
                     DownloadOutcome::Downloaded(_) => {
-                        last_error = "内部状态异常：下载完成但未安装".to_string();
-                        last_dl_err = last_error.clone();
+                        last_dl_err = "内部状态异常：下载完成但未安装".to_string();
                     }
                     DownloadOutcome::TooSlow { avg_bps } => {
                         log::warn!(
@@ -505,20 +610,19 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
                                 "threshold_bps": MIN_DOWNLOAD_SPEED_BPS,
                             }),
                         );
-                        last_error =
-                            format!("源 {} 下载过慢（约 {} KB/s）", source_label, avg_bps / 1024);
+                        last_dl_err = format!("下载过慢（约 {} KB/s）", avg_bps / 1024);
                         switched = true;
                         break;
                     }
                     DownloadOutcome::Failed(e) => {
                         last_dl_err = e;
-                        last_error = last_dl_err.clone();
                     }
                 }
             }
             if !switched {
-                log::warn!("[Update] 源 {} 下载失败: {}", source_label, last_error);
+                log::warn!("[Update] 源 {} 下载失败: {}", source_label, last_dl_err);
             }
+            attempts.push((source_label.to_string(), last_dl_err));
             continue;
         }
 
@@ -526,7 +630,7 @@ fn spawn_desktop_update(app: tauri::AppHandle) {
         let _ = app.emit(
             "update:error",
             serde_json::json!({
-                "message": format!("所有更新源均失败: {}", last_error)
+                "message": format_source_failures(&attempts)
             }),
         );
     });
@@ -584,5 +688,180 @@ mod tests {
         assert!(is_download_too_slow(8.1, bytes));
         // 同样字节若 elapsed 更长更慢，必然判慢
         assert!(is_download_too_slow(10.0, bytes));
+    }
+
+    // ===== 源位记忆 / 失败汇总（2026-10-10「三条源全灭」事故的回归用例） =====
+
+    /// 与 tauri.conf.json 的 `plugins.updater.endpoints` 同构的三条源。
+    fn three_groups() -> Vec<Vec<String>> {
+        [
+            "https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json",
+            "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater-ghproxy.json",
+            "https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json",
+        ]
+        .iter()
+        .map(|u| vec![u.to_string()])
+        .collect()
+    }
+
+    /// 取源码里某个 `fn` 的函数体文本（按行切，LF/CRLF 检出都能用）。
+    /// 只测纯函数的话，把**调用点**删掉照样全绿——下面几条守卫钉的就是调用点。
+    fn fn_body(sig_prefix: &str) -> String {
+        let src = include_str!("update.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let start = lines
+            .iter()
+            .position(|l| l.trim_start().starts_with(sig_prefix))
+            .unwrap_or_else(|| panic!("找不到 {sig_prefix}"));
+        let rest = &lines[start + 1..];
+        let end = rest
+            .iter()
+            .position(|l| l.trim_end() == "}")
+            .expect("函数结尾的顶格花括号");
+        lines[start..start + 1 + end].join("\n")
+    }
+
+    #[test]
+    fn 上次成功的源会被提到首位且不多不少() {
+        let ghproxy = "https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater-ghproxy.json";
+        let mut groups = three_groups();
+        let moved = move_matching_to_front(&mut groups, |g| {
+            g.first().map(String::as_str) == Some(ghproxy)
+        });
+        assert!(moved, "第 2 条源命中时必须真的换位");
+        assert_eq!(groups.len(), 3, "轮转不许丢源");
+        assert!(groups[0][0].starts_with("https://ghproxy.net/"));
+        // 其余两源保持原有相对顺序：Gitee 仍排在 GitHub 前面
+        assert!(groups[1][0].contains("gitee.com"));
+        assert!(groups[2][0].starts_with("https://github.com"));
+    }
+
+    #[test]
+    fn 命中的源本来就在首位则不算移动() {
+        let mut groups = three_groups();
+        let moved = move_matching_to_front(&mut groups, |g| g[0].contains("gitee.com"));
+        assert!(!moved);
+        assert!(groups[0][0].contains("gitee.com"));
+    }
+
+    #[test]
+    fn 没记到成功源时顺序原样不动() {
+        let mut groups = three_groups();
+        let snapshot = groups.clone();
+        let moved = move_matching_to_front(&mut groups, |_| false);
+        assert!(!moved, "没有任何命中却动了顺序 = 配置顺序被静默改写");
+        assert_eq!(groups, snapshot);
+    }
+
+    #[test]
+    fn 失败文案要带上每条源各自的原因() {
+        let attempts = vec![
+            ("https://gitee.com/lzul/pastepanda/raw/releases/latest/updater-gitee.json".to_string(), "Could not fetch a valid release JSON from the remote".to_string()),
+            ("https://ghproxy.net/https://github.com/lzlkyb/pastepanda/releases/latest/download/updater-ghproxy.json".to_string(), "error sending request".to_string()),
+            ("https://github.com/lzlkyb/pastepanda/releases/latest/download/updater.json".to_string(), "timeout".to_string()),
+        ];
+        let msg = format_source_failures(&attempts);
+        // 三条都要出现，且各带自己的原因——只报最后一条是这次事故查不回来的原因之一。
+        assert!(msg.contains("Gitee→") && msg.contains("ghproxy→") && msg.contains("GitHub→"));
+        assert!(msg.contains("release JSON"), "第 1 条源的原因被吞了: {msg}");
+        assert!(msg.contains("timeout"), "最后一条源的原因丢了: {msg}");
+    }
+
+    #[test]
+    fn 一条源都没试过不许说所有源失败() {
+        assert_eq!(format_source_failures(&[]), "没有可用的更新源");
+    }
+
+    #[test]
+    fn 源短名按主机映射_未知主机退回域名() {
+        assert_eq!(source_name("https://gitee.com/x/raw/a.json"), "Gitee");
+        assert_eq!(source_name("https://ghproxy.net/https://github.com/x"), "ghproxy");
+        assert_eq!(source_name("https://github.com/x/y"), "GitHub");
+        assert_eq!(source_name("https://mirror.example.com/a.json"), "mirror.example.com");
+    }
+
+    #[test]
+    fn 超长原因会截断且不会切进中文中间() {
+        let long = "错".repeat(200);
+        let clipped = clip(&long, 10);
+        assert_eq!(clipped.chars().count(), 11, "10 个字符 + 省略号");
+        assert!(clipped.ends_with('…'));
+        assert_eq!(clip("短", 10), "短");
+    }
+
+    #[test]
+    fn build_updater必须给manifest检查设超时() {
+        // 静态守卫：超时是「一条死源吃掉 4 分半」的直接原因，删掉这行不会有别的测试变红，
+        // 除非把源码本身钉住（AppHandle 不在单测里可得）。
+        let body = fn_body("fn build_updater(");
+        assert!(
+            body.contains(".timeout(Duration::from_secs(MANIFEST_CHECK_TIMEOUT_SECS))"),
+            "manifest 检查回到了「无超时」：{body}"
+        );
+        assert!(
+            MANIFEST_CHECK_TIMEOUT_SECS > 0 && MANIFEST_CHECK_TIMEOUT_SECS < 30,
+            "超时档要显著小于实测的 60s 挂死，又得容得下 2.5s 的健康响应"
+        );
+    }
+
+    #[test]
+    fn 端点顺序要按上次成功的源轮转() {
+        let body = fn_body("fn candidate_endpoint_groups(");
+        assert!(
+            body.contains("last_good_source()") && body.contains("move_matching_to_front(&mut groups"),
+            "candidate_endpoint_groups 不再复用上次成功的源：下载阶段会重放整条 failover（2026-10-10 事故）"
+        );
+    }
+
+    #[test]
+    fn 两条检查路径都必须记下成功的源() {
+        for sig in ["pub async fn check_update(", "fn spawn_desktop_update("] {
+            let body = fn_body(sig);
+            assert!(
+                body.contains("record_good_source(source_label)"),
+                "{sig} 没记下成功的源，下一轮又会从配置第 1 条重放"
+            );
+        }
+    }
+
+    #[test]
+    fn 源全灭的文案只由汇总函数产出() {
+        // 调用点自己拼一次 = 退回「只报最后一条源」，事故就查不回来了。
+        // 只数生产代码里的非注释行——本条断言自己的文案不该被算进来。
+        let production = || {
+            include_str!("update.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .unwrap_or("")
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+        };
+        assert_eq!(
+            production().filter(|l| l.contains("所有更新源均失败")).count(),
+            1,
+            "这句只允许出现在 format_source_failures 的返回值里一次"
+        );
+        for sig in [
+            "pub async fn check_update(",
+            "fn spawn_desktop_update(",
+        ] {
+            assert!(
+                fn_body(sig).contains("format_source_failures(&attempts)"),
+                "{sig} 没走汇总，失败原因又会只剩最后一条源"
+            );
+        }
+        let apk = include_str!("update_android.rs");
+        let apk_lines = || {
+            apk.split("#[cfg(test)]")
+                .next()
+                .unwrap_or("")
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("//"))
+        };
+        assert_eq!(
+            apk_lines().filter(|l| l.contains("所有更新源均失败")).count(),
+            0,
+            "apk 路径要共用桌面的汇总，别各写一份"
+        );
     }
 }
