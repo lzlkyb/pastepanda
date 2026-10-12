@@ -81,8 +81,15 @@ impl MfH264Encoder {
         self.bitrate = bps;
         true
     }
-    pub fn open(codec: VideoCodec, width: u32, height: u32, fps: u32, bitrate: u32) -> Result<Self, String> {
-        Self::open_inner(codec, width, height, fps, bitrate, None, false)
+    pub fn open(
+        codec: VideoCodec,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate: u32,
+        skip_hw: bool,
+    ) -> Result<Self, String> {
+        Self::open_inner(codec, width, height, fps, bitrate, None, false, skip_hw)
     }
 
     /// 本地录制（rec/）专用：质量导向码控。峰值受限 VBR（均值 = 档位码率当目标、
@@ -94,12 +101,16 @@ impl MfH264Encoder {
         height: u32,
         fps: u32,
         bitrate: u32,
+        skip_hw: bool,
     ) -> Result<Self, String> {
-        Self::open_inner(codec, width, height, fps, bitrate, None, true)
+        Self::open_inner(codec, width, height, fps, bitrate, None, true, skip_hw)
     }
 
     /// P1：D3D11 零拷贝模式。编码器绑定 D3D 设备（MF_SA_D3D11_AWARE 的
     /// 硬件 MFT），输入用 GPU 纹理包装的 sample。
+    ///
+    /// 恒走硬件档（没有 `skip_hw` 参数）：软编 MFT 不吃 D3D11 纹理，
+    /// `MFT_MESSAGE_SET_D3D_MANAGER` 直接失败——硬编被定罪后调用方改走 CPU 喂帧。
     pub fn open_gpu(
         codec: VideoCodec,
         device: &ID3D11Device,
@@ -109,7 +120,7 @@ impl MfH264Encoder {
         fps: u32,
         bitrate: u32,
     ) -> Result<Self, String> {
-        Self::open_inner(codec, width, height, fps, bitrate, Some((device, ctx)), false)
+        Self::open_inner(codec, width, height, fps, bitrate, Some((device, ctx)), false, false)
     }
 
     fn open_inner(
@@ -120,6 +131,7 @@ impl MfH264Encoder {
         bitrate: u32,
         gpu: Option<(&ID3D11Device, &ID3D11DeviceContext)>,
         vbr: bool,
+        skip_hw: bool,
     ) -> Result<Self, String> {
         unsafe {
             // 🔴 这里就是真机「硬编全败」的第一现场（2026-09-23）：本函数由 async 的
@@ -140,7 +152,7 @@ impl MfH264Encoder {
             // 要么暗中多一份拷贝。GPU 模式带 LUID 优先匹配；CPU 模式喂的是
             // 内存缓冲，无需匹配。
             let prefer_adapter = gpu.and_then(|(dev, _)| adapter_luid_of(dev));
-            let transform = create_h264_mft(prefer_adapter, codec)?;
+            let transform = create_h264_mft(prefer_adapter, codec, skip_hw)?;
 
             // 🔴 硬件 MFT 是 async：必须先解锁（MF_TRANSFORM_ASYNC_UNLOCK）再设类型，
             // 否则 SetInputType/ProcessInput 直接失败——之前同步用法在 async MFT 上

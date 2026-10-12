@@ -461,6 +461,68 @@ fn fast_direct_path_preserves_explicit_high_fps_profiles() {
     assert_eq!(flow.fps_limit(true, 14_000), 30, "中继仍限制到 30fps");
 }
 
+// ===== 内网直连（PathKind::Lan）的档位证据（2026-10-11 乙-1）=====
+//
+// 现场形态：同网段直连 cap+enc 实测 40..60ms ⇒ 真实 17..25fps ⇒ delivered 只有
+// 5.2..5.8Mbps，而 30→60 的升档门要 `kbps ≥ 9_000`。那个数只能由**更多的帧**挣出来，
+// 帧数又被这道门钉在 30 ⇒ 自锁：内网永远跑不到 60fps，代码里的档位是假的。
+// 乙-1 的口径：LAN 档不看码率证据，改看「传输层有没有真的在排队」（`Flow::congested`）。
+
+#[test]
+fn lan_upgrades_to_60fps_without_bitrate_evidence() {
+    let lan = PathInfo { relay: false, lan: true };
+    let mut flow = Flow::default();
+    flow.budget(false, 40_000);
+    flow.fps = 30;
+    flow.kbps = 4_000;
+    assert_eq!(flow.fps_limit(lan, 0), 30, "升档仍要先过时间门槛");
+    assert_eq!(flow.fps_limit(lan, 7_000), 165, "LAN 升 60fps 不该要 9Mbps 的码率证据");
+}
+
+#[test]
+fn lan_keeps_60fps_while_transport_is_clean() {
+    let lan = PathInfo { relay: false, lan: true };
+    let mut flow = Flow::default();
+    flow.budget(false, 40_000);
+    flow.fps = 60;
+    flow.kbps = 4_000;
+    // 生产者墙钟压出来的低交付（无拥塞证据）不许把 LAN 踩回 30——踩回去就是
+    // 把「自己没产帧」当成「线路窄」，档位再也没机会爬到真实上限。
+    assert_eq!(flow.fps_limit(lan, 0), 165, "无拥塞证据时 LAN 守住 60fps");
+}
+
+#[test]
+fn lan_still_drops_to_30fps_on_real_congestion() {
+    // 反例（守卫必须会红的那一半）：把 LAN 写成「无条件豁免」必须被这条打死——
+    // 同网段的 Wi-Fi 一样会真拥塞，积压逐拍上涨时 60fps 只会把卡顿换成排队。
+    let lan = PathInfo { relay: false, lan: true };
+    let o = WireOpts { ceiling: 40_000, rtt_ms: 3, ..Default::default() };
+    let mut flow = Flow::default();
+    flow.budget(false, 40_000);
+    flow.fps = 60;
+    flow.kbps = 8_000;
+    for (n, backlog) in [0i64, 130, 170, 210].iter().enumerate() {
+        wire_opts(&mut flow, (n as u64 + 1) * 1_000, *backlog, 4_000 * 25, &o);
+    }
+    assert!(flow.kbps < 7_000, "上涨的积压应已缩预算，实际 {}kbps", flow.kbps);
+    assert_eq!(flow.fps_limit(lan, 9_000), 30, "LAN 真拥塞仍要掉到 30fps");
+}
+
+#[test]
+fn direct_path_still_needs_bitrate_evidence_for_60fps() {
+    // 反例：豁免只给 LAN。公网直连（v6 那档）维持原口径，否则这道门在一次改动里
+    // 就被顺手拆掉，而它拦的是真会窄的公网路径。
+    let direct = PathInfo { relay: false, lan: false };
+    let mut flow = Flow::default();
+    flow.fps = 30;
+    flow.kbps = 8_900;
+    assert_eq!(flow.fps_limit(direct, 0), 30, "8.9Mbps 不够");
+    assert_eq!(flow.fps_limit(direct, 7_000), 30, "差 100kbps 就是不够，计时也不该走表");
+    flow.kbps = 9_000;
+    assert_eq!(flow.fps_limit(direct, 14_000), 30, "证据到位，先起时间门槛");
+    assert_eq!(flow.fps_limit(direct, 21_000), 165, "满 7s 才升");
+}
+
 #[test]
 fn budget_never_downscales_resolution_text_priority() {
     assert_eq!(scaled_dimensions(1920, 1080, 1280), (1280, 720));

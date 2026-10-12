@@ -69,6 +69,10 @@ struct OutputDup {
     ptr_shape: Vec<u8>,
     /// 最近一次取到的指针状态（None = 光标不在这块输出上 / 取形状失败）。
     ptr: Option<PtrMeta>,
+    /// 🔴 甲-②（2026-10-11）：**本次** `acquire` / `acquire_gpu` 在
+    /// `AcquireNextFrame` 里实际等了多久（ms）。诊断只读；每次进入 API 前不
+    /// 预置、返回即覆盖，所以「上一次抓取」的语义没有跨帧残留。
+    wait_ms: u64,
 }
 
 /// 指针元数据（不含形状字节——字节在 `OutputDup::ptr_shape` 里，快照时拷贝）。
@@ -104,7 +108,14 @@ impl OutputDup {
         unsafe {
             let mut info = windows::Win32::Graphics::Dxgi::DXGI_OUTDUPL_FRAME_INFO::default();
             let mut res: Option<IDXGIResource> = None;
-            match self.dup.AcquireNextFrame(timeout_ms, &mut info, &mut res) {
+            // 甲-②（2026-10-11）：单独给 `AcquireNextFrame` 计时。它是**等桌面出
+            // 新帧**的那一段（最多 timeout_ms），与后面的 staging 拷贝/Map 读回
+            // 是两种病：等屏占大头 → 该看节拍/提帧；读回占大头 → 该走零拷贝。
+            // 混在 `cap_ms` 里就永远分不出该修哪一头（task #23 卡在这）。
+            let wait_t0 = std::time::Instant::now();
+            let acquired = self.dup.AcquireNextFrame(timeout_ms, &mut info, &mut res);
+            self.wait_ms = wait_t0.elapsed().as_millis() as u64;
+            match acquired {
                 Ok(()) => {}
                 Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(false),
                 Err(e) if e.code() == DXGI_ERROR_ACCESS_LOST => {
@@ -235,7 +246,11 @@ impl OutputDup {
         unsafe {
             let mut info = windows::Win32::Graphics::Dxgi::DXGI_OUTDUPL_FRAME_INFO::default();
             let mut res: Option<IDXGIResource> = None;
-            match self.dup.AcquireNextFrame(timeout_ms, &mut info, &mut res) {
+            // 甲-②：与 CPU 路径同一把尺（口径见 [`OutputDup::wait_ms`]）。
+            let wait_t0 = std::time::Instant::now();
+            let acquired = self.dup.AcquireNextFrame(timeout_ms, &mut info, &mut res);
+            self.wait_ms = wait_t0.elapsed().as_millis() as u64;
+            match acquired {
                 Ok(()) => {}
                 Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => return Ok(None),
                 Err(e) if e.code() == DXGI_ERROR_ACCESS_LOST => {
@@ -346,6 +361,10 @@ pub struct DxgiPool {
     ptr_cache_fp: Option<(PtrMeta, u64)>,
     /// rec 专用：本次合成随帧交出的快照（grab_rec 在返回借用前 take 走）。
     last_ptr_snapshot: Option<PtrSnapshot>,
+    /// 🔴 甲-②（2026-10-11）：**本次 grab** 在 `AcquireNextFrame` 上累计的等待
+    /// （ms）。虚拟屏逐输出串行抓取，所以是各输出之和——那本来就是 `cap_ms`
+    /// 里被占掉的真实墙钟。每次 `grab*` 入口清零，只有真抓过的那次才带值。
+    last_wait_ms: u64,
 }
 
 // MTA COM；async 要求 Send。会话任务串行访问。
@@ -375,6 +394,7 @@ impl DxgiPool {
             transient_fail_streak: 0,
             ptr_cache_fp: None,
             last_ptr_snapshot: None,
+            last_wait_ms: 0,
         }
     }
 
@@ -589,7 +609,12 @@ impl DxgiPool {
                 .position(|o| o.left == 0 && o.top == 0)
                 .ok_or_else(|| "[gpu_unavailable] 找不到主显示器输出".to_string())?
         };
-        self.outs[idx].acquire_gpu(device, ctx, 30)
+        // 甲-②：零拷贝路径同样要报等待。GPU 路径没有 CPU 读回，`cap_ms` 里
+        // 剩下的几乎全是这一段——这正是「顶档帧率上不去」要看的数。
+        self.last_wait_ms = 0;
+        let grabbed = self.outs[idx].acquire_gpu(device, ctx, 30);
+        self.last_wait_ms = self.outs[idx].wait_ms;
+        grabbed
     }
 
     /// 编码器侧要用的 D3D11 设备（MFCreateDXGIDeviceManager 绑定 + VP 转换）。
@@ -599,6 +624,13 @@ impl DxgiPool {
 
     pub fn d3d_ctx(&self) -> Option<ID3D11DeviceContext> {
         self.ctx.clone()
+    }
+
+    /// 甲-②（2026-10-11）：最近一次 grab / grab_gpu 在 `AcquireNextFrame` 上
+    /// 实际等待的毫秒数。调用方（推流生产者）在**抓完那一帧之后**立刻读，
+    /// 把它从 `cap_ms` 里拆出来 —— 「慢在等桌面」与「慢在读回」是两种修法。
+    pub fn last_wait_ms(&self) -> u64 {
+        self.last_wait_ms
     }
 
     fn open(&mut self) -> Result<(), String> {
@@ -646,6 +678,9 @@ impl DxgiPool {
     /// 位置，由 `grab()` 在簿记结束后按位置取出借用——借用只在 return
     /// 表达式里诞生，不再与其后的任何 `&mut self` 操作共存。
     fn grab_inner(&mut self, virtual_screen: bool, monitor: i32, want_ptr: bool) -> Result<GrabHit, String> {
+        // 甲-②：本圈的等待从这一次抓取重新算——上面任何一条早退路径都不会留下
+        // 上一圈的旧值（`last_wait_ms` 只在 grab 入口清零，别处不写）。
+        self.last_wait_ms = 0;
         let device = self
             .device
             .as_ref()
@@ -670,6 +705,7 @@ impl DxgiPool {
                     format!("[no_output] 显示器 {monitor} 没有对应的 DXGI 输出（多 GPU？）")
                 })?;
             let fresh = self.outs[idx].acquire(device, ctx, 30)?;
+            self.last_wait_ms = self.outs[idx].wait_ms;
             if !fresh {
                 return Ok(GrabHit::None);
             }
@@ -685,6 +721,7 @@ impl DxgiPool {
                 .position(|o| o.left == 0 && o.top == 0)
                 .ok_or_else(|| "[no_output] 找不到主显示器输出".to_string())?;
             let fresh = self.outs[idx].acquire(device, ctx, 30)?;
+            self.last_wait_ms = self.outs[idx].wait_ms;
             if !fresh {
                 return Ok(GrabHit::None);
             }
@@ -706,6 +743,8 @@ impl DxgiPool {
         let mut any_fresh = false;
         for o in self.outs.iter_mut() {
             let fresh = o.acquire(device, ctx, 16)?;
+            // 甲-②：逐输出**串行**等待，所以取和（这就是本圈 cap_ms 里等掉的那部分）。
+            self.last_wait_ms += o.wait_ms;
             any_fresh = any_fresh || fresh;
             if o.buf.is_empty() {
                 continue;
@@ -852,6 +891,8 @@ fn open_outputs()
                             staging: None,
                             gpu_staging: None,
                             buf: Vec::new(),
+                            // 甲-②：抓取时刻由 `acquire` 每次覆盖，初值不参与判据。
+                            wait_ms: 0,
                             // 256KB 起步（光标形状上限内），不够时按驱动要求扩
                             ptr_shape: vec![0u8; 256 * 1024],
                             ptr: None,

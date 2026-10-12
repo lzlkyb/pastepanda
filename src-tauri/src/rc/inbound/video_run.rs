@@ -251,6 +251,9 @@ impl InboundVideo {
                 super::video::want_stream_codec(opts.profile.hevc, &opts.codec),
                 media_fps,
             );
+            // 甲-④：存给汇总行读数用（这一圈闭环给的上限）。绝不在报告路径里
+            // 现调 `media_fps_limit()`——它会推进升档锚点/冷却，等于每圈判两遍档。
+            self.perf_media_fps = media_fps;
             let media_gap = 1000 / u64::from(media_fps);
             #[cfg(target_os = "macos")]
             let media_gap = if super::video::want_stream_codec(opts.profile.hevc, &opts.codec)
@@ -350,11 +353,22 @@ impl InboundVideo {
             // 空转仍要让 `report` 有机会触发（否则静止画面时日志一片空白）。
             {
                 let t = self.perf_last;
+                // 甲-①（2026-10-11）：空转圈也记账（只记墙钟，不进分段均值）。
+                // 静止画面时以前**一行都不打**，于是「生产者每圈 30ms 全花在
+                // 等桌面更新」这件事在日志里隐形，帧率上不去只能靠猜。
                 if t.produced {
-                    self.perf.note_frame(t.cap_ms, t.enc_ms, t.send_ms, loop_ms);
+                    self.perf.note_frame(&t, loop_ms);
+                } else {
+                    self.perf.note_idle(loop_ms);
                 }
                 if let Some(line) = self.perf.report(self.perf_extra(&opts, interval)) {
                     log::info!("{line}");
+                    // 丙（2026-10-12，Issue #19）：汇总行这一拍顺手把**实际档位**报给
+                    // 发起端。症状（画面像幻灯片）是对方眼里的，原因（硬编熔断 / 换
+                    // 软编 / 抓屏熔断）在我们这台机器的日志里——规则 15.1 要求两者
+                    // 落在同一个可见性域。挂在 5s 汇总这一拍是因为它本来就每拍只走
+                    // 一次；档位没变时零额外包（判据见 `emit_pipe_if_changed`）。
+                    self.emit_pipe_if_changed().await;
                 }
             }
             // 下一帧节拍由 `next_period_ms` 决定（判据与完整理由在 `rc::pace`）：

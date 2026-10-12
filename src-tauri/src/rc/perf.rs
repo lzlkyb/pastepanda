@@ -79,6 +79,20 @@ pub struct FrameStats {
     loop_sum_ms: u64,
     loop_max_ms: u64,
     frames: u64,
+    /// 🔴 甲-①（2026-10-11）：**空转圈**（本圈没出帧）的计数与单圈耗时。
+    /// 此前空转圈一笔都不记——静止画面时 `report()` 的闸门（只看产出帧）直接
+    /// 返回 None，整场会话在日志里一片安静；而「每圈 30ms 全花在等桌面更新」
+    /// 正是 task #23（顶档只有 19–21fps）要看的那个数。
+    idle_frames: u64,
+    idle_sum_ms: u64,
+    idle_max_ms: u64,
+    /// 甲-②：`cap_ms` 里**在 `AcquireNextFrame` 中等待**的那一段（等屏）。
+    /// 扣掉它剩下的就是 staging 拷贝 + Map 读回。只统计上报了等待的那些帧
+    ///（`wait_frames` 为样本数），抓屏均值与它同一样本集，两个数能直接相减。
+    wait_sum_ms: u64,
+    wait_max_ms: u64,
+    wait_cap_sum_ms: u64,
+    wait_frames: u64,
     /// 丢帧计数（编码失败 / 无变化跳过不算丢帧，只有「该出帧但没出」才算）。
     dropped: u64,
     /// 末次汇总时的帧数（算区间帧率用）。
@@ -90,6 +104,7 @@ pub struct FrameStats {
     enc_peak_ms: u64,
     send_peak_ms: u64,
     loop_peak_ms: u64,
+    idle_peak_ms: u64,
     /// 单区间最高帧率（fps）。
     peak_fps: f64,
     /// JPEG 兜底 / 抓屏失败的**会话基线**：这两个计数器是进程级 `static`，
@@ -120,16 +135,16 @@ impl FrameStats {
 
     /// 记录一帧的分段耗时。任何一段传 `None` 表示该路径没有这段
     ///（如 GPU 零拷贝路径没有独立的 BGRA→NV12 转换耗时）。
-    pub fn note_frame(
-        &mut self,
-        cap_ms: u64,
-        enc_ms: u64,
-        send_ms: Option<u64>,
-        loop_ms: u64,
-    ) {
+    ///
+    /// 甲（2026-10-11）改为**直接吃 [`FrameTiming`]**：以前四个位置参数按
+    /// `cap, enc, send, loop` 排，新增一段（等屏）只能再挂一个尾巴参数，
+    /// 而调用点在别的文件里，挂错了不报错、只是数字串位。结构体过界，
+    /// 段与含义同源。
+    pub fn note_frame(&mut self, t: &FrameTiming, loop_ms: u64) {
         if !enabled() {
             return;
         }
+        let (cap_ms, enc_ms, send_ms) = (t.cap_ms, t.enc_ms, t.send_ms);
         self.cap_sum_ms += cap_ms;
         self.cap_max_ms = self.cap_max_ms.max(cap_ms);
         self.cap_peak_ms = self.cap_peak_ms.max(cap_ms);
@@ -141,10 +156,32 @@ impl FrameStats {
             self.send_max_ms = self.send_max_ms.max(s);
             self.send_peak_ms = self.send_peak_ms.max(s);
         }
+        // 甲-②：等屏样本单独记一份（JPEG / Mac 路径没有这一段，不填即不采样，
+        // 拿它去稀释 H.264 的均值会把「等桌面」这个信号抹平）。
+        if let Some(w) = t.wait_ms {
+            self.wait_sum_ms += w;
+            self.wait_max_ms = self.wait_max_ms.max(w);
+            self.wait_cap_sum_ms += cap_ms;
+            self.wait_frames += 1;
+        }
         self.loop_sum_ms += loop_ms;
         self.loop_max_ms = self.loop_max_ms.max(loop_ms);
         self.loop_peak_ms = self.loop_peak_ms.max(loop_ms);
         self.frames += 1;
+    }
+
+    /// 甲-①（2026-10-11）：本圈没出帧（屏幕未变化 / 被闸丢掉 / 兜底也没编出来）。
+    /// 只记墙钟，不记分段——空转圈的 cap/enc 几乎为 0，混进分段均值就会把
+    /// 「慢在编码」的真实信号稀释掉（这是当初把空转排除在外的理由，排除的
+    /// 却是不计）。
+    pub fn note_idle(&mut self, loop_ms: u64) {
+        if !enabled() {
+            return;
+        }
+        self.idle_frames += 1;
+        self.idle_sum_ms += loop_ms;
+        self.idle_max_ms = self.idle_max_ms.max(loop_ms);
+        self.idle_peak_ms = self.idle_peak_ms.max(loop_ms);
     }
 
     pub fn note_dropped(&mut self) {
@@ -157,7 +194,9 @@ impl FrameStats {
     ///
     /// 返回 `None` = 未到间隔或总开关关着。
     pub fn report(&mut self, extra: ReportExtra) -> Option<String> {
-        if !enabled() || self.frames == 0 {
+        // 甲-①：闸门从「有产出帧」改成「跑过圈」。静止桌面上一场只有空转圈的
+        // 会话，以前 5 秒都不出声——而那正是「生产者墙钟」要看的那一段。
+        if !enabled() || self.frames + self.idle_frames == 0 {
             return None;
         }
         let now = Instant::now();
@@ -188,10 +227,38 @@ impl FrameStats {
         } else {
             String::new()
         };
+        // 甲-①：空转圈单独一段。静止画面时这是唯一能看出「生产者每圈花多久」
+        // 的数——以前空转一笔不记，整场会话在日志里隐形。有账才多这几个字。
+        let idle = if self.idle_frames > 0 {
+            format!(
+                " | 空转 {} 圈 单圈均值 {} 峰值 {} ms",
+                self.idle_frames,
+                self.idle_sum_ms / self.idle_frames.max(1),
+                self.idle_max_ms
+            )
+        } else {
+            String::new()
+        };
+        // 甲-②：cap 拆成「在 `AcquireNextFrame` 里等桌面更新」+「staging 读回」。
+        // 减法只在这里用一次，且两个均值**同样本集**（`wait_frames` 那几帧的
+        // cap 合计就是 `wait_cap_sum_ms`），不会出现「等屏按 8 帧算、cap 按 20 帧算」
+        // 这种两个数没法比的假拆分。
+        let split = if self.wait_frames > 0 {
+            let w = self.wait_frames;
+            format!(
+                " | 抓屏 {} 帧样本：等屏 {} 读回 {} ms（等屏峰值 {}）",
+                w,
+                self.wait_sum_ms / w,
+                self.wait_cap_sum_ms.saturating_sub(self.wait_sum_ms) / w,
+                self.wait_max_ms
+            )
+        } else {
+            String::new()
+        };
         let s = format!(
             "[RC-PERF] 会话 {elapsed_s:.1}s | 帧 {}（本区间 {fps:.1}fps） \
              | 分段均值 cap {} enc {} send {} ms | 峰值 cap {} enc {} send {} ms \
-             | 单圈均值 {} 峰值 {} ms | 丢 {} 帧{}{}",
+             | 单圈均值 {} 峰值 {} ms | 丢 {} 帧{split}{idle}{}{}",
             self.frames,
             self.cap_sum_ms / n,
             self.enc_sum_ms / n,
@@ -215,6 +282,8 @@ impl FrameStats {
         self.enc_max_ms = 0;
         self.send_max_ms = 0;
         self.loop_max_ms = 0;
+        self.idle_max_ms = 0;
+        self.wait_max_ms = 0;
         self.peak_fps = self.peak_fps.max(fps);
         Some(s)
     }
@@ -230,7 +299,9 @@ impl FrameStats {
     /// 「这一场到底跑了多少帧、平均慢在哪」——没有它就只能靠翻日志里
     /// 那几十条 5s 汇总自己算。
     pub fn summary(&self, extra: ReportExtra) -> Option<String> {
-        if !enabled() || self.frames == 0 {
+        // 甲-①：与 `report` 同一把闸门——一场「只空转、一帧没出」的会话收尾必须
+        // 留痕，否则「画不动」在日志里连一行都没有。
+        if !enabled() || self.frames + self.idle_frames == 0 {
             return None;
         }
         let elapsed_s = self
@@ -255,10 +326,21 @@ impl FrameStats {
         } else {
             format!("\n  {ctx}")
         };
+        // 甲-①：收尾行了结「这一场画不动」的账——空转圈数与单圈墙钟。
+        let idle = if self.idle_frames > 0 {
+            format!(
+                " | 空转 {} 圈 均值 {} 峰值 {} ms",
+                self.idle_frames,
+                self.idle_sum_ms / self.idle_frames.max(1),
+                self.idle_peak_ms
+            )
+        } else {
+            String::new()
+        };
         Some(format!(
             "[RC-PERF] 本场收尾：时长 {elapsed_s:.1}s · 帧 {}（均 {avg_fps} · 峰值区间 {:.1}fps） \
              | 分段均值 cap {} enc {} send {} ms | 峰值 cap {} enc {} send {} ms \
-             | 单圈峰值 {} ms | 丢 {} 帧\n  {}{ctx_line}",
+             | 单圈峰值 {} ms | 丢 {} 帧{idle}\n  {}{ctx_line}",
             self.frames,
             self.peak_fps,
             self.cap_sum_ms / n,
@@ -288,6 +370,11 @@ pub struct FrameTiming {
     pub enc_ms: u64,
     /// 发送耗时（ms）；`None` = 这条路径没有独立的发送段。
     pub send_ms: Option<u64>,
+    /// 🔴 甲-②（2026-10-11）：`cap_ms` 里花在 `AcquireNextFrame` **等桌面出新帧**
+    /// 的那一段（ms）。`None` = 这条路径没有可比的等待段（JPEG / Mac）。
+    /// 有了它，`cap - wait` 才是「读回到底慢不慢」；以前两者揉成一个数，
+    /// 「顶档只有 19fps」答不了是节拍还是抓屏。
+    pub wait_ms: Option<u64>,
     /// 本圈是否真的推出去了一帧。
     pub produced: bool,
 }
@@ -305,7 +392,18 @@ impl FrameTiming {
             enc_ms,
             send_ms,
             produced: true,
+            ..Default::default()
         }
+    }
+
+    /// 补上「等桌面更新」那一段（只有走 DXGI duplicator 的路径报得了）。
+    /// 刻意做成链式而不是 `produced` 的第 4 个参数：JPEG / Mac 两个构造点
+    /// 不必跟着改，也不会出现「传了个 0 假装量过」。
+    pub fn with_wait(mut self, wait_ms: u64) -> Self {
+        // 等待段不可能大于整段抓屏（同一时间窗内测的），取小防住上游某天真
+        // 传进一个跨过 grab 的数——诊断数字宁可偏小，不能自相矛盾。
+        self.wait_ms = Some(wait_ms.min(self.cap_ms));
+        self
     }
 }
 
@@ -323,6 +421,12 @@ pub struct ReportExtra {
     /// 自动档实际生效档位（含判档快照）；锁档时为「锁档 <档名>（自动档已关闭…）」，
     /// 不留空——空字符串过去让「自动档被关」只能靠日志缺席反推。
     pub active_quality: String,
+    /// 🔴 甲-④（2026-10-11）：本圈走的**链路**（`内网直连` / `公网直连` / `中继`）。
+    /// 30fps 到底是闭环限的还是生产者跑不满，以前在日志里长得一样。
+    pub path: String,
+    /// 甲-④：闭环这一圈给的帧率上限（`media_fps_limit` 的返回值）。
+    /// 与 `档位 interval` 并排看才知道限流来自哪一头；0 = 没量到。
+    pub fps_cap: u32,
     /// 编码器选型报告（只在有值时附一次）。
     pub pick: Option<MftPickReport>,
 }
@@ -333,12 +437,18 @@ impl ReportExtra {
         if !self.pipeline.is_empty() {
             parts.push(format!("管线 {}", self.pipeline));
         }
+        if !self.path.is_empty() {
+            parts.push(format!("链路 {}", self.path));
+        }
         if !self.profile.is_empty() {
             let mut p = format!("档位 {}@{}ms", self.profile, self.interval_ms);
             if self.pace_scale > 1 {
                 p.push_str(&format!(" pace {}x", self.pace_scale));
             }
             parts.push(p);
+        }
+        if self.fps_cap > 0 {
+            parts.push(format!("闭环帧率上限 {}", self.fps_cap));
         }
         if !self.active_quality.is_empty() {
             parts.push(format!("实际生效 {}", self.active_quality));
@@ -428,6 +538,10 @@ pub mod counters {
 
     /// 硬编熔断次数。
     pub static ENC_FUSE: AtomicU32 = AtomicU32::new(0);
+    /// 甲-1（2026-10-12）：硬编档连败定罪、本会话改用**软编**的次数。
+    /// 与 `ENC_FUSE` 分开设：换引擎是「还在出 H.264」，熔断是「掉到 JPEG」，
+    /// 混在一个计数里就看不出阶梯到底走到哪一档。
+    pub static ENC_SW_FALLBACK: AtomicU32 = AtomicU32::new(0);
     /// 流变化再协商次数。
     pub static STREAM_CHANGE: AtomicU32 = AtomicU32::new(0);
     /// JPEG 兜底帧数（本该走硬编却回退了）。
@@ -457,8 +571,9 @@ pub mod counters {
     /// 一次性读出全部计数（供日志行）。
     pub fn snapshot() -> String {
         format!(
-            "熔断 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {} 流积压弃帧 {} 流重建 {} 编码重开 {}",
+            "熔断 {} 软编换档 {} 流变化 {} JPEG兜底 {} 抓屏失败 {} 数据报丢弃 {} 流积压弃帧 {} 流重建 {} 编码重开 {}",
             ENC_FUSE.load(Ordering::Relaxed),
+            ENC_SW_FALLBACK.load(Ordering::Relaxed),
             STREAM_CHANGE.load(Ordering::Relaxed),
             JPEG_FALLBACK.load(Ordering::Relaxed),
             CAPTURE_FAIL.load(Ordering::Relaxed),

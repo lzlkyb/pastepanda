@@ -74,11 +74,14 @@ pub(super) struct InboundVideo {
     /// R4 硬编会话；None = 不走硬编（配置 jpeg / 打不开）。
     #[cfg(target_os = "windows")]
     pub(super) h264: Option<super::encode_h264::H264SessionEncoder>,
-    /// P2-9：硬编连续失败计数。每次成功清零；连续 60 帧（~4s@15fps）失败
-    /// 说明编码器环境坏了（驱动卸载 / MFT 损坏），暂停硬编走 JPEG。
-    /// ⚠️ 2026-09-21 起**不再是永久熔断**——见 `enc_retry_after`。
+    /// 甲-3（2026-10-12）：本会话已定罪**硬编档**（连败换引擎判据生效过）。
+    ///
+    /// 计数本身在编码器里（`H264SessionEncoder::note_encode_fail`，阶梯口径
+    /// 只有一份）；这里存的必须是**能活过熔断**的那一位——熔断会把 `h264`
+    /// 置 None 停止逐帧重开，编码器对象连同它的 `hw_broken` 一起没了。
+    /// 不带这一位，冷却期满的重试又会回到硬件 MFT 再撞一遍同一堵墙。
     #[cfg(target_os = "windows")]
-    pub(super) enc_fail_streak: u32,
+    pub(super) enc_hw_broken: bool,
     /// 硬编熔断的冷却截止时刻（None = 未熔断）。到期自动重开硬编，
     /// 避免一次瞬态失败（分辨率切换 / 全屏 DRM / 显示器热插拔）把
     /// 7ms/帧 的硬编一路丢到会话结束。
@@ -87,6 +90,12 @@ pub(super) struct InboundVideo {
     /// 重试退避秒数（首次 5s，每次熔断翻倍，上限 60s）。
     #[cfg(target_os = "windows")]
     pub(super) enc_retry_backoff: u64,
+    /// 丙（2026-10-12，Issue #19）：上一次**发给发起端**的编码档位（`&'static` 档名）。
+    ///
+    /// 只在档位真变时发一帧 `vpipe`，所以这个值必须是「已送达」而不是「本圈算出来」
+    /// 的那一份——否则控制流断开期间每 5s 都会重发一遍，恢复后又看不到变化。
+    /// None = 本场还没发过（首帧之前不报：那会儿编码器还没开，报出去是假话）。
+    pub(super) last_pipe_code: Option<&'static str>,
     /// 起播宽限截止时刻（Some = 首帧还没开过硬编，正在等）。
     ///
     /// 🔴 2026-10-03：编码器过去在 `try_new` 那一刻就按 100% 开，发起端的
@@ -184,6 +193,12 @@ pub(super) struct InboundVideo {
     /// 「H.264 硬编 / JPEG 兜底」两条路径、且「抓到帧」与「没抓到（屏幕未变）」
     /// 要区分——只在一个地方收口判定，比散在两处各写一遍少一个出错点。
     pub(super) perf_last: super::perf::FrameTiming,
+    /// 🔴 甲-④（2026-10-11）：本圈闭环给的**帧率上限**（`media_fps_limit` 的返回值）。
+    /// 存下来只给汇总行读数用。以前诊断只能反推：30fps 到底是控制器限的，还是
+    /// 生产者自己 cap+enc 跑不满，两者在日志里长得一模一样。
+    /// ⚠️ 必须在算节拍的那一刻存：`media_fps_limit()` 会**推进**控制器状态
+    ///（升档锚点/冷却），汇总路径再调一次就等于每圈判两遍档。
+    pub(super) perf_media_fps: u32,
     /// 探针：本圈硬编那条路**没有**出帧、实际走的是 JPEG 兜底
     /// （`try_hardware_path` 返回 `FallThrough` 时置位，每圈起点清零）。
     ///

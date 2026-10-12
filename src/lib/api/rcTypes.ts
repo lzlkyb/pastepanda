@@ -237,6 +237,15 @@ export interface RcStatus {
    * 与 [`RcStatus.peer_input`] 用 `Option` 不同，这条没有三态：只有「此刻不推帧」。
    */
   peer_video_paused?: boolean;
+  /**
+   * 丙（2026-10-12，Issue #19）：**对端报来的编码管线档位**（发起端视角）。
+   *
+   * 稳定枚举 `hw` / `sw` / `enc_fuse` / `grab_fuse` / `single` / `no_enc` / `jpeg`，
+   * 表与措辞见 `src/lib/rcVideoPipe.ts`。空串 / 缺失 = 旧对端不发这条帧 ⇒ 什么都不摆。
+   */
+  peer_video_pipe?: string;
+  /** 档位的诊断原文（对方日志里那行中文），只进详情，不参与判据。 */
+  peer_video_pipe_label?: string;
 }
 
 /**

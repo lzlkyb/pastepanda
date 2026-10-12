@@ -670,6 +670,91 @@ fn 守卫_画面暂停五处接线成对() {
     );
 }
 
+/// 守卫：丙（2026-10-12，Issue #19）「对端编码档位回传发起端」的接线成对。
+///
+/// 这条功能的失败方式和 `vpause` 一模一样全是静默的：出帧端没调用 ⇒ 发起端永远
+/// 只看到症状（连上就糊）而每一条解释都是猜；帧名两端写岔 ⇒ 分派不进、档位丢在
+/// 半路；会话收口漏清 ⇒ 下一场开局就挂一张上一场的「对方编码降级」；判据若被第
+/// 二处 match 复制 ⇒ 中文标签与档名会对不上（规则 11.1）。双机联测跑不了，按
+/// 源码文本钉（先例见 `守卫_画面暂停五处接线成对`）。
+#[test]
+fn guard_video_pipe_state_reporting_is_paired() {
+    // ① 帧名两端成对：被控端写 `vpipe`，发起端分派 `vpipe`。
+    let gate = include_str!("../service/video_pipe.rs");
+    let outbound = include_str!("../outbound.rs");
+    assert!(
+        gate.contains("\"t\": \"vpipe\"") && outbound.contains("Some(\"vpipe\")"),
+        "vpipe 控制帧的两端字面量不成对 —— 对方档位到不了发起端眼前"
+    );
+    // ② 出帧端真的在推（唯一调用点是 5s 汇总那一拍），且只在变档时推。
+    let run = include_str!("../inbound/video_run.rs");
+    assert!(
+        run.contains("self.emit_pipe_if_changed().await"),
+        "推流循环没发档位帧 —— 被控端日志里有实况，发起端却什么都没有"
+    );
+    let video = include_str!("../inbound/video.rs");
+    assert!(
+        video.contains("if self.last_pipe_code == Some(code)"),
+        "发帧不看「与上次是否同档」—— 每 5s 往会话流塞一条无人消费的重复状态"
+    );
+    // 「上次发过的」必须是**真发出去的**那一份：记账先于回执的话，Accept 之前或
+    // 断流期间算出的那一档就永远补不回来（熔断常常正好停在不再变档的地方）。
+    assert!(
+        video.contains("if self.svc.emit_video_pipe(code, &label).await {"),
+        "档位记账没看送达回执 —— 无控制流时也算「已发」，那一档从此不再补发"
+    );
+    assert!(
+        include_str!("../service/video_pipe.rs").contains("write_frame(&mut g, &b).await.is_ok()"),
+        "emit_video_pipe 不再把写帧结果当回执 —— 上面那条记账断言就成了假话"
+    );
+    // ③ 判据只有一份：两份 `pipeline_state` 是 cfg 互斥的一对（Windows / 其余宿主），
+    //    而中文标签函数**不许自己数 `tick_jpeg`**——它一旦另起一份判据，档名与标签就
+    //    是两个时刻，发起端拿到的解释会和被控端的实况对不上（规则 11.1）。
+    //    🔴 反例取证（2026-10-12）：先前这条钉的是「标签里含 `pipeline_state().1`」，
+    //    把标签改成 `if self.tick_jpeg { … } else { self.pipeline_state().1 }` 后守卫
+    //    照样绿——判据被复制它看不见。故改为扫函数体。
+    assert_eq!(
+        video.matches("fn pipeline_state(&self)").count(),
+        2,
+        "档位判据的份数变了 —— 应是 Windows 与非 Windows 各一份，多出来就是有人复制了判据"
+    );
+    let mut label_fns = 0usize;
+    let mut at = 0usize;
+    while let Some(off) = video[at..].find("fn pipeline_label(&self)") {
+        let i = at + off;
+        label_fns += 1;
+        let tail = &video[i..];
+        let end = tail.find("\n    }").expect("pipeline_label 函数体没有收尾");
+        assert!(
+            !tail[..end].contains("tick_jpeg"),
+            "pipeline_label 自己数了 tick_jpeg —— 档名与中文标签成了两份时刻（判据须收口在 pipeline_state）"
+        );
+        at = i + 1;
+    }
+    assert_eq!(
+        label_fns, 2,
+        "pipeline_label 的份数变了（应是 Windows / 非 Windows 各一份）"
+    );
+    // ④ 会话开始/收口清位：与 vpause 同一条理由（换场路径跳过全局复位）。
+    assert!(
+        include_str!("../service/inbound_accept.rs").contains("self.video_pipe_begin();"),
+        "建立入站会话时没清档位 —— 上一场的降级会漏进下一场"
+    );
+    assert!(
+        include_str!("../session/lifecycle.rs").contains("self.video_pipe_reset();"),
+        "会话收口没清档位 —— 下一场对端一进来就看见一张过期的「对方编码降级」"
+    );
+    // ⑤ 状态投影 + 模块接线：前端拿不到字段，这条胶囊与出口条就没有数据源。
+    assert!(
+        include_str!("../service/lifecycle.rs").contains("peer_video_pipe: peer_pipe"),
+        "RcStatus 没投影 peer_video_pipe —— 发起端 UI 没有状态源"
+    );
+    assert!(
+        include_str!("../service/mod.rs").contains("mod video_pipe;"),
+        "video_pipe 模块没挂进 service —— emit/set/get 一组都不存在"
+    );
+}
+
 #[test]
 fn 守卫_暂停先废弃媒体再停止出帧() {
     let run = include_str!("../inbound/video_run.rs");
@@ -979,14 +1064,19 @@ fn 守卫_管线标签必须说真话() {
         set > fall && set - fall < 300,
         "tick_jpeg 的置位（偏移 {set}）不在 FallThrough 臂（偏移 {fall}）里 —— 兜底不会被标签抓到"
     );
-    // ② 标签本体先看「这一圈编了什么」，再看编码器对象在不在。
+    // ② 判据本体先看「这一圈编了什么」，再看编码器对象在不在。
+    //    🔴 丙（2026-10-12，Issue #19）：判据从 `pipeline_label` 搬进了 `pipeline_state`
+    //    （档名与中文标签由同一处 match 产出），这条的扫描窗口跟着换——搬家不是删守卫的理由。
+    let state = video
+        .find("fn pipeline_state(&self)")
+        .expect("档位判据函数被删 —— 档名与标签没有了统一口径");
     let label = video
-        .find("fn pipeline_label")
+        .find("fn pipeline_label(&self)")
         .expect("管线标签函数被删 —— 两个报告入口没有统一口径");
-    let body = &video[label..];
+    let body = &video[state..label];
     let gate = body
         .find("if self.tick_jpeg")
-        .expect("pipeline_label 不再以 tick_jpeg 为首要判据 —— 会退回按 h264.is_some() 谎报");
+        .expect("档位判据不再以 tick_jpeg 为首要判据 —— 会退回按 h264.is_some() 谎报");
     let why = body
         .find("JPEG（{why}）")
         .expect("兜底原因三档（无硬编/抓屏已熔断/单帧回退）被合并 —— 只剩「兜过底」这一个信息量");
@@ -1369,4 +1459,155 @@ fn 守卫_锁档必须留痕_不许静默() {
         !code.contains("String::new()"),
         "锁档分支退回空串 —— 自动档被关在汇总行里隐形"
     );
+}
+
+/// 规则 11.1（2026-10-11 乙-1）：媒体闭环的**路径判定只允许一处**。
+/// 现场形态：`media_budget_kbps` / `media_fps_limit` / `apply_media_feedback` /
+/// `note_media_received` 四处各自写过一遍 `!matches!(path_kind_str(), "lan"|"direct")`。
+/// 加「内网直连」这一档时，漏掉任何一处 = 那一处仍把 LAN 当公网直连用，
+/// 而它的症状是画质档位悄悄上不去——不崩、不报错、日志里看不出来。
+#[test]
+fn guard_media_path_judgement_is_single_source() {
+    let src = include_str!("../service/media_control.rs");
+    // 注释里写着旧口径不算数（同款教训见上面的帧龄哨兵守卫）。
+    let code: String = src
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        code.matches("self.link.path_kind").count(),
+        1,
+        "媒体闭环里出现了第二处路径判定——应只剩 `media_path()` 内部那一处"
+    );
+    assert_eq!(
+        code.matches("media_ceiling_kbps()").count(),
+        0,
+        "有调用点没传路径档位：LAN 会被公网那把 16M 尺剪掉档位意图"
+    );
+}
+
+/// 规则 23（2026-10-11 甲）：生产者的墙钟必须**归因得出来**。三条静默失效形态：
+/// ① 空转圈（屏幕没变 / 被闸丢掉）从不进统计 ⇒ 静止画面的整场会话在 `[RC-PERF]`
+///    里一片安静，「每圈 30ms 花在等桌面更新」这件事看不见；
+/// ② `cap_ms` 把 `AcquireNextFrame` 的**等屏**与 staging **读回**揉成一个数 ⇒
+///    「顶档实测只有 19fps」（task #23）到底是节拍问题还是抓屏慢，答不了；
+/// ③ 汇总行不带路径与闭环 fps 上限 ⇒ 30fps 是控制器给的还是生产者自己跑不满，
+///    两者在日志里长得一模一样。
+/// 这批全是「代码改了但埋点没跟上」，断言扫不到，用源码文本钉住。
+#[test]
+fn guard_perf_probe_can_attribute_the_producer_clock() {
+    let strip = |src: &str| -> String {
+        src.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    // ① 空转圈必须喂给探针——有且只有一个调用点（圈末的「本圈没出帧」分支）。
+    //    数 `== 1` 而不是 `>= 1`：第 2 个喂点意味着有两条退出路径各自记账，
+    //    迟早一条漏（规则 11.1 同款）。
+    let run = strip(include_str!("../inbound/video_run.rs"));
+    assert_eq!(
+        run.matches("self.perf.note_idle(").count(),
+        1,
+        "空转圈没进统计：静止画面的墙钟在日志里隐形（甲-①）"
+    );
+    // ② 记了还得印出来：汇报闸门只看产出帧的话，① 那笔账永远看不见。
+    let perf = strip(include_str!("../perf.rs"));
+    assert!(
+        perf.contains("self.frames + self.idle_frames == 0"),
+        "report/summary 的闸门仍只认产出帧——空转统计永远印不出来（甲-②）"
+    );
+    assert!(
+        perf.contains("wait_sum_ms"),
+        "汇总行没有「等屏/读回」拆分——cap 慢在等桌面还是慢在读回无法归因（甲-②）"
+    );
+    // ③ 等待时长必须真的从 DXGI 取，且只取一次（多处取 = 又一个口径分叉）。
+    let dxgi = strip(include_str!("../dxgi.rs"));
+    let video = strip(include_str!("../inbound/video.rs"));
+    assert!(
+        dxgi.contains("fn last_wait_ms"),
+        "DXGI 没上报 AcquireNextFrame 的实际等待——等屏/读回拆分只剩个 0（甲-③）"
+    );
+    assert_eq!(
+        video.matches("last_wait_ms(").count(),
+        1,
+        "生产者侧读等待的时刻不止一处，或干脆没读（甲-③）"
+    );
+    // ④ 路径与闭环 fps 上限要进汇总行，且路径走 `media_path()` 那把唯一的尺。
+    assert!(
+        perf.contains("fps_cap"),
+        "汇总行不带闭环帧率上限：30fps 是控制器给的还是生产者跑不满，分不开（甲-④）"
+    );
+    assert_eq!(
+        video.matches("media_path(").count(),
+        1,
+        "诊断标签自己另起了一套路判据（应只有 `media_path()` 一处调用）"
+    );
+}
+
+/// 守卫（2026-10-12 甲-1/3/4 + 乙-3 + 丙，Issue #19）：降级阶梯的**判据**只许有
+/// 一份，而**出口**必须真的按它走。
+///
+/// 事故形状：连败 **60** 帧才熔断，期间每帧白试同一个坏硬编；熔断后只剩 GDI 全帧
+/// JPEG（≈0.2–1.4fps 幻灯片），而冷却重试又去重探坏引擎 ⇒ 3 分钟 30 次流重建、
+/// `编码重开 131`。修复把阶梯收进 `encode_h264::encode_fail_verdict`
+/// （纯函数）+ 会话级 `enc_hw_broken`，但这两处都能被「在 video.rs 里再数一次」
+/// 悄悄改回分叉，而分叉的编译与单测都不报错——所以钉源码文本。
+#[test]
+fn guard_encode_degradation_ladder_has_one_owner() {
+    let strip = |src: &str| -> String {
+        src.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let video = strip(include_str!("../inbound/video.rs"));
+    // ① 计帧归编码器会话，调用方不许自己数（规则 11.1：两处阈值迟早分叉）。
+    assert!(
+        !video.contains("enc_fail_streak"),
+        "video.rs 又自己数连败 ⇒ 与 session 的阈值分叉（甲-1）"
+    );
+    assert!(!video.contains(">= 60"), "60 帧门槛回归 = Issue #19 的一分钟白试");
+    assert_eq!(
+        video.matches("note_encode_fail(").count(),
+        1,
+        "失败记账的出口不止一处，或一处都没有（甲-1）"
+    );
+    assert_eq!(
+        video.matches("note_encode_ok(").count(),
+        1,
+        "成功清零的出口不止一处，或一处都没有（甲-1）"
+    );
+    // ② 定罪必须活过熔断：`h264 = None` 之后重开的入口只有 `open_h264`，
+    //    两处出口都得把会话旗标递进去，否则冷却期满又回到坏硬编（甲-4）。
+    assert_eq!(
+        video.matches("opts.virtual_screen, self.enc_hw_broken").count(),
+        2,
+        "重开编码器的两处出口没有都按会话定罪选型（甲-4）"
+    );
+    assert!(video.contains("hw_broken: bool"), "open_h264 的定罪入参被删（甲-4）");
+    assert!(
+        include_str!("../inbound.rs").contains("enc_hw_broken"),
+        "InboundVideo 上的会话级定罪旗标没了 ⇒ 定罪活不过熔断（甲-4）"
+    );
+    // ③ 零拷贝在软编档下必挂（`MFT_MESSAGE_SET_D3D_MANAGER` 对软件 MFT 失败）
+    //    ⇒ 必须按引擎闸掉，否则软编档每帧「开 GPU 失败 → 回 CPU」空转。
+    assert!(
+        video.contains("!henc.uses_software_encoder()"),
+        "GPU 零拷贝没按引擎闸 ⇒ 软编档每帧白重开一次（甲-3）"
+    );
+    // ④ 乙-3：锁档必须真的关掉「为码率重开」，且**每圈**同步（一次性设会在
+    //    用户中途改画质档后失效）。
+    assert!(
+        video.contains("henc.set_bitrate_reopen_allowed(self.svc.auto_enabled())"),
+        "锁档旗标没同步进编码器 ⇒ 拥塞控制照样每次重开（乙-3）"
+    );
+    // ⑤ 丙：降级状态得能从日志里读出来——「换引擎」与「熔断」是两件事，
+    //    混成一个词就等于现场看不出阶梯走到第几档。
+    assert!(video.contains("软编MFT"), "管线标签不再区分软编档 ⇒ 看不出换了引擎（丙）");
+    assert!(video.contains("编码已熔断"), "JPEG 兜底原因仍写「无硬编」⇒ 谎报（丙）");
+    assert!(video.contains("ENC_SW_FALLBACK"), "换引擎不再单独计数（丙）");
+    let perf = strip(include_str!("../perf.rs"));
+    assert!(perf.contains("软编换档"), "5s 汇总不带换引擎计数 ⇒ 中途看不见（丙）");
 }

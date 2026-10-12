@@ -176,6 +176,7 @@ export function RcSessionCapsule({
             peerDgramInput={peerDgramInput}
             peerInput={rc.status?.peer_input}
             peerVideoPaused={rc.status?.peer_video_paused}
+            peerVideoPipe={rc.status?.peer_video_pipe}
             rttMs={rttMs}
             fps={fps}
             tab={tab}
@@ -272,6 +273,7 @@ export function RcSessionCapsule({
         peer={session.peer}
         peerInput={rc.status?.peer_input}
         peerVideoPaused={rc.status?.peer_video_paused}
+        peerVideoPipe={rc.status?.peer_video_pipe}
       />
     </div>
   );

@@ -43,8 +43,8 @@ mod tests {
     #[test]
     fn note_frame_累加均值与峰值() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, Some(1), 20);
-        s.note_frame(20, 7, Some(2), 40);
+        s.note_frame(&FrameTiming::produced(10, 5, Some(1)), 20);
+        s.note_frame(&FrameTiming::produced(20, 7, Some(2)), 40);
         assert_eq!(s.frames(), 2);
         assert_eq!(s.cap_sum_ms, 30);
         assert_eq!(s.cap_max_ms, 20);
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn note_frame_允许_send_为_none() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, None, 20);
+        s.note_frame(&FrameTiming::produced(10, 5, None), 20);
         assert_eq!(s.send_sum_ms, 0);
         assert_eq!(s.send_max_ms, 0);
         assert_eq!(s.frames(), 1);
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn report_未到间隔返回_none() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, None, 20);
+        s.note_frame(&FrameTiming::produced(10, 5, None), 20);
         // 刚建实例，距上次汇报不足 5s
         assert!(s.report(ReportExtra::default()).is_none());
     }
@@ -83,8 +83,8 @@ mod tests {
     fn report_到间隔输出含关键字段() {
         let mut s = FrameStats::new();
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
-        s.note_frame(30, 10, Some(2), 50);
-        s.note_frame(50, 20, Some(4), 90);
+        s.note_frame(&FrameTiming::produced(30, 10, Some(2)), 50);
+        s.note_frame(&FrameTiming::produced(50, 20, Some(4)), 90);
         let extra = ReportExtra {
             profile: "ultra".into(),
             interval_ms: 80,
@@ -92,6 +92,7 @@ mod tests {
             pipeline: "H264-GPU".into(),
             active_quality: String::new(),
             pick: None,
+            ..Default::default()
         };
         let line = s.report(extra).expect("应输出汇总");
         assert!(line.contains("[RC-PERF]"), "缺少前缀: {line}");
@@ -107,7 +108,7 @@ mod tests {
     fn report_后峰值清零但总量保留() {
         let mut s = FrameStats::new();
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
-        s.note_frame(100, 50, None, 200);
+        s.note_frame(&FrameTiming::produced(100, 50, None), 200);
         let _ = s.report(ReportExtra::default());
         // 峰值是「区间峰值」，汇报后清零
         assert_eq!(s.cap_max_ms, 0);
@@ -125,8 +126,8 @@ mod tests {
     #[test]
     fn summary_报告全量且含计数器() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, Some(1), 20);
-        s.note_frame(30, 15, Some(3), 60);
+        s.note_frame(&FrameTiming::produced(10, 5, Some(1)), 20);
+        s.note_frame(&FrameTiming::produced(30, 15, Some(3)), 60);
         s.note_dropped();
         let line = s.summary(ReportExtra::default()).expect("有帧就该出收尾行");
         assert!(line.contains("本场收尾"), "{line}");
@@ -152,7 +153,7 @@ mod tests {
     #[test]
     fn 汇总行不含粘连的分隔符() {
         let mut s = FrameStats::new();
-        s.note_frame(30, 10, Some(2), 50);
+        s.note_frame(&FrameTiming::produced(30, 10, Some(2)), 50);
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
         let periodic = s.report(ReportExtra::default()).expect("应输出");
         let final_ = s.summary(ReportExtra::default()).expect("应输出");
@@ -174,7 +175,7 @@ mod tests {
     #[test]
     fn summary_短会话帧率不爆表() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, None, 20);
+        s.note_frame(&FrameTiming::produced(10, 5, None), 20);
         let line = s.summary(ReportExtra::default()).expect("应输出");
         // 刚建实例 → 时长约 0s → 均帧率必须是占位符而不是天文数字
         assert!(line.contains("均 --"), "短会话应印占位符：{line}");
@@ -183,7 +184,7 @@ mod tests {
     #[test]
     fn summary_不清零区间峰值() {
         let mut s = FrameStats::new();
-        s.note_frame(10, 5, None, 20);
+        s.note_frame(&FrameTiming::produced(10, 5, None), 20);
         let _ = s.summary(ReportExtra::default());
         // 与 report 不同：summary 是终态读取，不许改动任何统计
         assert_eq!(s.cap_max_ms, 10);
@@ -253,11 +254,11 @@ mod tests {
     fn report_第二次只统计新增帧() {
         let mut s = FrameStats::new();
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
-        s.note_frame(10, 10, None, 10);
+        s.note_frame(&FrameTiming::produced(10, 10, None), 10);
         let first = s.report(ReportExtra::default()).unwrap();
         assert!(first.contains("本区间 0.1fps") || first.contains("本区间"), "{first}");
         // 再补一帧并把报告时刻拨回去
-        s.note_frame(10, 10, None, 10);
+        s.note_frame(&FrameTiming::produced(10, 10, None), 10);
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(5));
         let second = s.report(ReportExtra::default()).unwrap();
         // 累计帧数应是 2，而不是重新计数
@@ -279,13 +280,13 @@ mod tests {
         bump(&counters::JPEG_FALLBACK);
         bump(&counters::JPEG_FALLBACK);
         bump(&counters::CAPTURE_FAIL);
-        s.note_frame(10, 10, None, 10);
+        s.note_frame(&FrameTiming::produced(10, 10, None), 10);
         let line = s.report(ReportExtra::default()).expect("应输出汇总");
         assert!(line.contains("兜底 +2（本场 2）"), "区间增量与本场累计都要可见: {line}");
         assert!(line.contains("抓屏失败 +1（本场 1）"), "{line}");
         // 第二个区间没有新兜底 → 整段消失（正常会话的行宽不该被诊断撑大）。
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(5));
-        s.note_frame(10, 10, None, 10);
+        s.note_frame(&FrameTiming::produced(10, 10, None), 10);
         let second = s.report(ReportExtra::default()).expect("应输出汇总");
         assert!(!second.contains("兜底"), "无新增兜底时不该再附这一段: {second}");
         counters::JPEG_FALLBACK.fetch_sub(2, std::sync::atomic::Ordering::Relaxed);
@@ -304,7 +305,7 @@ mod tests {
         // 基线之后本会话才兜的这一次，才是「本场 1」。
         bump(&counters::JPEG_FALLBACK);
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
-        s.note_frame(10, 10, None, 10);
+        s.note_frame(&FrameTiming::produced(10, 10, None), 10);
         let line = s.report(ReportExtra::default()).expect("应输出汇总");
         assert!(
             line.contains("兜底 +1（本场 1）"),
@@ -350,6 +351,9 @@ mod tests {
     fn counters_snapshot_含全部字段() {
         let s = counters::snapshot();
         assert!(s.contains("熔断"));
+        // 甲-3（2026-10-12）：「换软编」与「熔断」是阶梯上的两档，混成一个词就
+        // 在现场看不出降级走到哪；新增计数必须进 5s 汇总（不是只在收尾露一次）。
+        assert!(s.contains("软编换档"));
         assert!(s.contains("流变化"));
         assert!(s.contains("JPEG兜底"));
         assert!(s.contains("抓屏失败"));
@@ -385,6 +389,94 @@ mod tests {
         // pace=1 时不显示倍数
         assert!(!s.contains("pace"));
     }
+
+    // ===== 甲（2026-10-11）：生产者的墙钟要归因得出来 =====
+    //
+    // 病灶：静止画面的会话里，空转圈一笔不记、`report()` 的闸门只认产出帧
+    // ⇒ 日志整场安静，「每圈 30ms 花在等桌面更新」看不见；而 `cap_ms` 又把
+    // `AcquireNextFrame` 的等待与 staging 读回揉成一个数，「顶档只有 19–21fps」
+    // 到底是节拍还是抓屏，两条修法指不出该动哪一条（task #23）。
+
+    #[test]
+    fn 空转圈计入汇总_且不污染分段均值() {
+        let mut s = FrameStats::new();
+        s.note_frame(&FrameTiming::produced(40, 10, Some(2)), 60);
+        // 静止画面：连 4 圈空转，每圈 30ms（全花在 `AcquireNextFrame` 的等待上）
+        for _ in 0..4 {
+            s.note_idle(30);
+        }
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
+        let line = s.report(ReportExtra::default()).expect("有产出帧就要出汇总");
+        assert!(line.contains("空转 4 圈"), "空转圈必须可见: {line}");
+        assert!(line.contains("单圈均值 30 峰值 30 ms"), "空转的单圈墙钟: {line}");
+        // 🔴 关键：空转**不进**分段均值。5 圈里只 1 圈真出帧，cap 均值一旦把它
+        // 算进去就变成 40/5=8，「慢在编码」的信号被静默抹平。
+        assert!(line.contains("cap 40"), "分段均值只算产出帧: {line}");
+        assert!(line.contains("enc 10"), "{line}");
+        // 没量到等待的会话（JPEG / Mac）不许冒出拆分那一段。
+        // ⚠️ 判据不能写成「整行不许出现『抓屏』」：兜底那一段是「抓屏失败 +N」，
+        // 它读的是**进程级**计数器，并行用例一 bump 就会混进本行（同文件
+        // `兜底计数_只在有新增时附段` 正是那么写的）。「帧样本」只属于拆分段。
+        assert!(!line.contains("帧样本"), "不该有等屏/读回拆分: {line}");
+    }
+
+    #[test]
+    fn 只有空转的会话也必须出声() {
+        // 甲-①的验收标准：画不动的整场会话在日志里**不是**空白。
+        let mut s = FrameStats::new();
+        s.note_idle(31);
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
+        let line = s.report(ReportExtra::default()).expect("零产出帧也要出汇总");
+        assert!(line.contains("帧 0"), "{line}");
+        assert!(line.contains("空转 1 圈"), "{line}");
+        let done = s.summary(ReportExtra::default()).expect("收尾行同样不许沉默");
+        assert!(done.contains("空转 1 圈 均值 31"), "{done}");
+        // 反例：一场真的什么都没跑（连圈都没走）才该沉默。
+        assert!(FrameStats::new().report(ReportExtra::default()).is_none());
+        assert!(FrameStats::new().summary(ReportExtra::default()).is_none());
+    }
+
+    #[test]
+    fn 等屏与读回按同一样本集拆分() {
+        let mut s = FrameStats::new();
+        s.note_frame(&FrameTiming::produced(40, 10, None).with_wait(30), 55);
+        s.note_frame(&FrameTiming::produced(20, 10, None).with_wait(10), 35);
+        // 这一帧没有等待段（JPEG 兜底）：它的 cap 不许摊进均值，否则
+        // 「等屏 13 读回 …」这种数谁也不知道是按几帧算的。
+        s.note_frame(&FrameTiming::produced(100, 5, None), 110);
+        s.last_report = Some(Instant::now() - std::time::Duration::from_secs(10));
+        let line = s.report(ReportExtra::default()).expect("应输出汇总");
+        // 等屏 = (30+10)/2 = 20；读回 = ((40+20)-(30+10))/2 = 10
+        assert!(line.contains("抓屏 2 帧样本"), "样本数要写出来: {line}");
+        assert!(line.contains("等屏 20 读回 10"), "{line}");
+        assert!(line.contains("等屏峰值 30"), "{line}");
+    }
+
+    #[test]
+    fn with_wait_不许报出超过_cap_的等待() {
+        // 上游真有一天把跨 grab 的时长传进来时，宁可偏小也不印一个自相矛盾的数
+        //（读回 = cap - 等待 会变成负数，然后被 saturating_sub 藏起来）。
+        let t = FrameTiming::produced(12, 5, None).with_wait(999);
+        assert_eq!(t.wait_ms, Some(12));
+        // 没链这一步的路径保持 None = 「没量过」，不是「量到 0」。
+        assert_eq!(FrameTiming::produced(12, 5, None).wait_ms, None);
+    }
+
+    #[test]
+    fn 汇总行报出链路与闭环帧率上限() {
+        let e = ReportExtra {
+            path: "内网直连".into(),
+            fps_cap: 60,
+            ..Default::default()
+        };
+        let s = e.render();
+        assert!(s.contains("链路 内网直连"), "{s}");
+        assert!(s.contains("闭环帧率上限 60"), "{s}");
+        // 没量到（0）与没路径（空串）都不该冒出这一截
+        let empty = ReportExtra::default().render();
+        assert!(!empty.contains("链路"), "{empty}");
+        assert!(!empty.contains("闭环帧率上限"), "{empty}");
+    }
 }
 
 #[cfg(test)]
@@ -399,7 +491,7 @@ mod probe_output_preview {
         let mut s = FrameStats::new();
         // 模拟 12 帧 1080p 硬编：抓 38ms / 编 10ms / 发 2ms
         for i in 0..12u64 {
-            s.note_frame(35 + i % 5, 9 + i % 3, Some(1 + i % 2), 52 + i % 7);
+            s.note_frame(&FrameTiming::produced(35 + i % 5, 9 + i % 3, Some(1 + i % 2)), 52 + i % 7);
         }
         s.note_dropped();
         s.last_report = Some(Instant::now() - std::time::Duration::from_secs(6));
@@ -410,10 +502,38 @@ mod probe_output_preview {
             pipeline: "H264".into(),
             active_quality: "sharp".into(),
             pick: None,
+            ..Default::default()
         };
         println!("\n───────── 周期性汇总行 ─────────");
         println!("{}", s.report(extra.clone()).expect("应输出"));
+
+        // 甲（2026-10-11）新增的三段：静止会话的空转、抓屏的等屏/读回拆分、
+        // 链路 + 闭环帧率上限。这三段是**拼接上去**的，最容易出的错是标点/单位
+        // 撞车或整段挤歪，只有看真东西才发现——断言只保证关键字在。
+        let mut s2 = FrameStats::new();
+        for i in 0..8u64 {
+            s2.note_frame(
+                &FrameTiming::produced(30, 9 + i % 3, Some(1 + i % 2)).with_wait(28),
+                44,
+            );
+        }
+        for i in 0..30u64 {
+            s2.note_idle(16 + i % 15);
+        }
+        s2.last_report = Some(Instant::now() - std::time::Duration::from_secs(6));
+        let extra2 = ReportExtra {
+            profile: "auto".into(),
+            interval_ms: 16,
+            pace_scale: 1,
+            pipeline: "H264".into(),
+            path: "内网直连".into(),
+            fps_cap: 60,
+            ..Default::default()
+        };
+        println!("\n───────── 静止会话（甲：空转 + 等屏/读回 + 链路） ─────────");
+        println!("{}", s2.report(extra2.clone()).expect("应输出"));
         println!("\n───────── 会话收尾行 ─────────");
+        println!("{}", s2.summary(extra2).expect("应输出"));
         println!("{}", s.summary(extra).expect("应输出"));
         println!("\n───────── 编码器选型行 ─────────");
         println!(

@@ -211,6 +211,9 @@ impl RcService {
             // 丙-③：画面暂停位也随会话收口作废（暂停不是跨会话的隐私意愿，与
             // `audio_local_mute` 相反）；发起端那份「对方已暂停」同理不能留着。
             self.video_pause_reset();
+            // 丙（2026-10-12，Issue #19）：发起端存的「对方编码档位」同理作废——
+            // 留着它，下一场连上另一台机器时会先挂一条上一场的降级说明。
+            self.video_pipe_reset();
             crate::rc::local_input::stop_watching();
             // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
             // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉

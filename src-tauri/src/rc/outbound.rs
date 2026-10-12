@@ -50,6 +50,10 @@ pub(super) struct OutboundVideo {
     /// 被控端码率缩放抖动会反复重开编码器（~1s/次），帧率被钉死。
     rtt_ema_ms: i64,
     rtt_hint_tier: u8,
+    /// 起播宽限（2026-10-11）：头 `RTT_WARM_SAMPLES` 拍 pong 的最小值与计数，
+    /// 用来建 EMA 初值而不是拿首样当起点（口径与理由见 `stream_cfg::next_rtt_ema`）。
+    rtt_warm_min_ms: i64,
+    rtt_warm_samples: u32,
     /// NetHint 节拍（2026-09-28）：档位变化立刻发；无变化也每 5 个 pong（≈5s）
     /// 发一次，把帧龄排队压力 / FEC 帧粒度丢包反馈捎回去。
     pongs_since_hint: u32,
@@ -94,6 +98,8 @@ impl OutboundVideo {
             canvas_h: 0,
             rtt_ema_ms: -1,
             rtt_hint_tier: 0,
+            rtt_warm_min_ms: -1,
+            rtt_warm_samples: 0,
             pongs_since_hint: 0,
             peer_end_reason: None,
             reasm: std::sync::Arc::new(std::sync::Mutex::new(
@@ -487,11 +493,24 @@ impl OutboundVideo {
                                 // 25%↔40%↔60% 抖动 → 每次过迟滞都全链重开编码器
                                 // （~1s/次），帧率被钉死在个位数。EMA α=1/8（约 8 个
                                 // 样本收敛，1s 一拍 ≈ 8s 窗口）。
-                                self.rtt_ema_ms = if self.rtt_ema_ms < 0 {
-                                    rtt
-                                } else {
-                                    (self.rtt_ema_ms * 7 + rtt) / 8
-                                };
+                                let (ema, warm_min, warm_seen) = super::stream_cfg::next_rtt_ema(
+                                    self.rtt_ema_ms,
+                                    self.rtt_warm_min_ms,
+                                    self.rtt_warm_samples,
+                                    rtt,
+                                );
+                                // 起播宽限收闸的那一拍留一行：这一场「头 4 秒码率为什么不缩」
+                                // 只能从 EMA 建立的初值反推，否则又得靠猜。
+                                if self.rtt_ema_ms < 0 && ema >= 0 {
+                                    log::info!(
+                                        "[RC] RTT EMA 建立 {}ms（起播宽限 {} 拍取最小值）",
+                                        ema,
+                                        super::stream_cfg::RTT_WARM_SAMPLES
+                                    );
+                                }
+                                self.rtt_ema_ms = ema;
+                                self.rtt_warm_min_ms = warm_min;
+                                self.rtt_warm_samples = warm_seen;
                                 let (tier, changed) =
                                     super::stream_cfg::rtt_hint_tier(self.rtt_hint_tier, self.rtt_ema_ms);
                                 // 2026-09-28：NetHint 节拍从「只在档位变化」扩成
@@ -574,6 +593,14 @@ impl OutboundVideo {
                             // 措辞不许越界成「连接断了/对方离线」——会话、键鼠、剪贴板都还通。
                             let on = v.get("on").and_then(|x| x.as_bool()).unwrap_or(false);
                             self.svc.set_peer_video_paused(on);
+                        }
+                        Some("vpipe") => {
+                            // 丙（2026-10-12，Issue #19）：对方报来的**编码管线档位**。
+                            // 缺字段 = 空串 ⇒ 前端读成「没收到」，不摆降级断言
+                            // （不许在这里给 `c` 兜一个默认档位，那是编造对端事实）。
+                            let code = v.get("c").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            let label = v.get("p").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                            self.svc.set_peer_video_pipe(&code, &label);
                         }
                         Some("caps") => {
                             // P1：被控端画面能力（fps120 可用性 + 刷新率），UI 诚实出档

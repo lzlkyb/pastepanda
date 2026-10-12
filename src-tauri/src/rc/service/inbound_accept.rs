@@ -77,6 +77,9 @@ impl RcService {
         // 丙-③：画面暂停同样从「正常推流」起步——上一场按的暂停不能漏进这一场，
         // 否则新对端一连进来就看见一张冻住的旧画面，还以为是链路坏了。
         self.video_pause_begin();
+        // 丙（2026-10-12）：对端档位同理——上一场那台机器的「已熔断」不能挂到
+        // 这一场新对端身上（它此刻可能跑得好好的）。
+        self.video_pipe_begin();
         crate::rc::local_input::start_watching();
         Ok(s)
     }

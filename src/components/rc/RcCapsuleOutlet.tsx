@@ -22,6 +22,7 @@ import { runProgress } from "@/lib/rcFile";
 import { rcOutletHead } from "@/lib/rcOutlet";
 import { rcHostHoldOutletOf } from "@/lib/rcInputGate";
 import { rcPeerPausedOutletOf } from "@/lib/rcVideoPause";
+import { rcPeerPipeOutletOf } from "@/lib/rcVideoPipe";
 import type { RcPeerInputState } from "@/lib/api/rc";
 import styles from "./RemoteComputer.module.css";
 
@@ -38,12 +39,15 @@ export function RcCapsuleOutlet({
   peer,
   peerInput,
   peerVideoPaused,
+  peerVideoPipe,
 }: {
   peer: string;
   /** 乙-③：对端报来的主机输入权状态（发起端侧的常驻行）。 */
   peerInput?: RcPeerInputState | null;
   /** 丙-③：对端暂停了向本机推送画面（常驻行的另一条落点——胶囊收起时它还在）。 */
   peerVideoPaused?: boolean;
+  /** 丙（Issue #19）：对端报来的编码管线档位（`""` / 未知 = 旧对端没发，什么都不摆）。 */
+  peerVideoPipe?: string;
 }) {
   const entries = useRcOutletStore((s) => s.entries);
   const dismiss = useRcOutletStore((s) => s.dismiss);
@@ -83,11 +87,18 @@ export function RcCapsuleOutlet({
     // 而「对方现在看不到我」正是离开座位前最需要确认的一条。
     const paused = rcPeerPausedOutletOf(peerVideoPaused);
     if (paused) out.push({ id: -4, kind: "info", label: paused.label, detail: paused.detail });
+    // 丙（Issue #19，2026-10-12）：对方编码档位是他机器上的事实，同样现算（负 id = ✕
+    // 关不掉一条还在成立的状态，由对端下一次变档或会话收口清）。挂这条的理由和
+    // 症状「连上就糊」同源：原因只写在被控端日志时，发起端每一句解释都是猜。
+    const pipe = rcPeerPipeOutletOf(peerVideoPipe);
+    if (pipe) {
+      out.push({ id: -5, kind: pipe.tone === "bad" ? "bad" : "info", label: pipe.label, detail: pipe.detail });
+    }
     if (peerInput?.err) {
       out.push({ id: -3, kind: "bad", label: "锁定未生效", detail: peerInput.err });
     }
     return out;
-  }, [peer, peerInput, peerVideoPaused]);
+  }, [peer, peerInput, peerVideoPaused, peerVideoPipe]);
 
   const list = [...stateEntries, ...(runEntry ? [runEntry] : []), ...entries];
   const { head, rest } = rcOutletHead(list);

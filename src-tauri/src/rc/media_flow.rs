@@ -94,6 +94,51 @@ pub(super) fn transport_clear(rtt_ms: i64, loss_pm: i64) -> bool {
     rtt_ms > 0 && rtt_ms < BACKLOG_DOWN_MS && loss_pm == 0
 }
 
+/// 控制器看的路径档位（`transport_clear` 的同伴：都是「一条判据只写一遍」）。
+///
+/// 为什么不是 `relay: bool`：内网直连与公网直连在**预算证据**上不是同一档——
+/// 局域网的 `kbps` 常年被生产者墙钟（cap+enc）压在半数以下，那既不是线路窄也不是
+/// 对端慢，用它当「能不能上 60fps」的证据会把档位永久钉死（见 `fps_limit`）。
+///
+/// `None`（没有活动会话）按中继处理，与旧的 `!matches!(path_kind_str(), "lan"|"direct")`
+/// 逐值等价；`lan` 只在 `PathKind::Lan` 为真。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct PathInfo {
+    pub relay: bool,
+    pub lan: bool,
+}
+
+impl PathInfo {
+    pub(super) fn from_kind(kind: crate::sync::path_kind::PathKind) -> Self {
+        use crate::sync::path_kind::PathKind as K;
+        Self {
+            relay: !matches!(kind, K::Lan | K::Direct),
+            lan: matches!(kind, K::Lan),
+        }
+    }
+
+    /// 甲-④（2026-10-11）：给 `[RC-PERF]` 汇总行用人话报这一档。
+    /// `None`（没有活动会话）在生产路径上与中继同判，标签就说「中继」——
+    /// 推流循环只在有会话时跑，这里不假装知道得比判据更多。
+    pub(super) fn label(&self) -> &'static str {
+        if self.lan {
+            "内网直连"
+        } else if self.relay {
+            "中继"
+        } else {
+            "公网直连"
+        }
+    }
+}
+
+/// 旧口径的 `relay: bool` 调用点（含单测）不改写也能编译：`lan` 恒 false ⇒ 行为与
+/// 改造前逐值相同。新增调用点请传 [`PathInfo`]（路径判定只有一处，规则 11.1）。
+impl From<bool> for PathInfo {
+    fn from(relay: bool) -> Self {
+        Self { relay, lan: false }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MediaFeedback {
     pub received_at_ms: i64,
@@ -137,6 +182,11 @@ pub(super) struct Flow {
     /// 这是 P0 拆掉阻塞闸之后才拿得到的证据：旧实现生产者直接卡在闸上，控制器分不清
     /// 「线路窄」和「我们自己没送」，实测把 400kbps 地板当成线路能力钉死。
     pub demand_limited: bool,
+    /// 最近一拍 `feedback` 的拥塞判定结果（`loss_pressure || deep || rising`）。
+    /// 存下来只为一件事：内网直连的 fps 档不能拿**码率**当升档证据（30fps 的生产者
+    /// 墙钟永远挣不出 9Mbps 的数，见 `fps_limit`），只能拿「线路真的在排队」当降级理由。
+    /// 每份反馈覆盖一次，换路清零。
+    pub congested: bool,
     /// 对端上报的「采集→到达」超额（ms）。只作旁证打印，**不参与定罪**：它含发送端
     /// 采集+编码与接收端回调前排队，快路径上会虚高到 240..620ms（见 `feedback`）。
     pub peer_queue_ms: i64,
@@ -180,7 +230,7 @@ pub(super) struct Flow {
 impl Default for Flow {
     fn default() -> Self {
         Self { kbps: 2_000, delivered_kbps: 0, capacity_kbps: 0, queue_ms: 0, backlog_ms: 0,
-            app_limited: false, demand_limited: false, peer_queue_ms: 0, tx_work_ms: 0,
+            app_limited: false, demand_limited: false, congested: false, peer_queue_ms: 0, tx_work_ms: 0,
             pending: VecDeque::new(),
             pending_bytes: 0, next_ms: 0, ack_at_ms: 0, presented_at_ms: 0, last_adjust_ms: 0,
             prev_backlog_ms: None, plateau: None, drops_in_window: 0, probe_floor: 0,
@@ -206,6 +256,7 @@ impl Flow {
             // 换路后探测与丢帧证据一起作废：旧路径上「被预算挡下」说明不了新路径的容量。
             self.drops_in_window = 0;
             self.demand_limited = false;
+            self.congested = false;
             self.probe_at_ms = None;
             self.probe_floor = 0;
             // 换路是一次重新测量，不是同一根管道的续集：升档计时也从零开始。
@@ -356,6 +407,9 @@ impl Flow {
         };
         let deep = self.deep_streak >= DEEP_STREAK_TICKS;
         let congested = loss_pressure || deep || rising;
+        // 每拍都存，**不能**放在 1s 调整闸门之后：fps 档读的是「这一拍线路干不干净」，
+        // 而闸门只限制预算动多少，不限制证据是否存在。
+        self.congested = congested;
         // 🔴 P0 换回来的证据：本窗生产者有没有「想发而被预算挡下」的帧（`note_drop`）。
         // 旧实现把采集圈整个阻塞在准入闸上，控制器只看得到「交付变慢」，分不清是线路窄
         // 还是我们自己没送——那条自锁链的起点就在这里。
@@ -562,15 +616,28 @@ impl Flow {
         self.fps_up_since = None;
     }
 
-    pub fn fps_limit(&mut self, relay: bool, now: u64) -> u32 {
+    /// LAN 的高帧率豁免：**只在没有拥塞证据时**成立。
+    ///
+    /// 为什么码率证据在内网不可信：`kbps` 会被 1.25×已证明交付 钳住，而交付量 =
+    /// 帧数 × 每帧字节；30fps 档的生产者墙钟（实测 cap+enc 40..60ms）永远挣不出
+    /// 9Mbps 的数 ⇒ 这道门把 LAN 钉死在 30fps，是拿结果当证据的自锁。
+    /// 为什么不能无条件豁免：同网段的 Wi-Fi 一样会真排队，积压逐拍上涨时 60fps
+    /// 只会把「糊」换成「卡」。所以理由换成拥塞证据本身（`Flow::congested`）。
+    fn lan_holds_high_fps(&self, path: PathInfo) -> bool {
+        path.lan && !self.congested
+    }
+
+    pub fn fps_limit(&mut self, path: impl Into<PathInfo>, now: u64) -> u32 {
+        let path = path.into();
+        let hold_60 = self.lan_holds_high_fps(path);
         // 阈值带滞回，避免容量探测在边界反复改变 fps、触发编码器重开。
         let (next, up) = match self.fps {
-            60 if relay || self.kbps < 7_000 => (30, false),
+            60 if (path.relay || self.kbps < 7_000) && !hold_60 => (30, false),
             30 if self.kbps < 2_500 => (15, false),
             15 if self.kbps < 1_000 => (10, false),
             10 if self.kbps >= 1_400 => (15, true),
             15 if self.kbps >= 3_500 => (30, true),
-            30 if !relay && self.kbps >= 9_000 => (60, true),
+            30 if hold_60 || (!path.relay && self.kbps >= 9_000) => (60, true),
             fps => (fps, false),
         };
         if next != self.fps {
