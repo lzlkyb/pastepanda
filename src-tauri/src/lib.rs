@@ -1265,7 +1265,9 @@ pub fn run() {
             clothesline::clothesline_state,
             #[cfg(desktop)]
             clothesline::clothesline_ready,
+            #[cfg(desktop)]
             clothesline::clothesline_report_error,
+            #[cfg(desktop)]
             clothesline::clothesline_retry,
             #[cfg(desktop)]
             clothesline::clothesline_regions,
@@ -1281,6 +1283,7 @@ pub fn run() {
             clothesline::clothesline_take,
             #[cfg(desktop)]
             clothesline::clothesline_show_pin,
+            #[cfg(desktop)]
             clothesline::clothesline_start_drag,
             #[cfg(desktop)]
             clothesline::clothesline_close_pin,

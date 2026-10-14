@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 const source = (file: string) => readFileSync(new URL("../../src-tauri/src/" + file, import.meta.url), "utf8");
 describe("晾衣绳原生接收协议", () => {
+  it("所有晾衣绳IPC注册都必须限制桌面平台，不能引用移动端未编译的模块", () => {
+    const lib = source('lib.rs');
+    const registry = lib.slice(lib.indexOf('commands::open_pinned_image,'),lib.indexOf('commands::close_pinned_image,'));
+    const registrations = [...registry.matchAll(/(?:#\[cfg\(desktop\)\]\s*)?clothesline::clothesline_\w+,/g)].map(match => match[0]);
+    expect(registrations.length).toBeGreaterThan(0);
+    expect(registrations.filter(entry => !entry.startsWith('#[cfg(desktop)]'))).toEqual([]);
+  });
   it("松手桌面判定明确忽略自家绳层，OLE无目标时必须核对实际底层窗口", () => {
     const native = source('pinned_transfer.rs');
     expect(native).toContain('scan.ignored_window == Some(hwnd.0 as isize)');
