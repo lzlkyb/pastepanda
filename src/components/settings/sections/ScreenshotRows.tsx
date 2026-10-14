@@ -4,6 +4,7 @@ import { ToggleRow, SettingTile } from "../ToggleRow";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
+import {ClotheslineRows} from "./ClotheslineRows";
 
 interface ScreenshotRowsProps {
   config: AppConfig;
@@ -18,6 +19,7 @@ interface ScreenshotRowsProps {
 export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRowsProps) {
   return (
     <>
+      <ClotheslineRows config={config} updateAndSave={updateAndSave}/>
       <ToggleRow icon="🪟" hue="capture" label="自动框选当前窗口"
         desc="按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选"
         value={config.auto_frame_window}

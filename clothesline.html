@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>截图晾衣绳</title>
+<link rel="stylesheet" href="/src/styles/globals.css">
+<link rel="stylesheet" href="/src/styles/theme.css">
+<link rel="stylesheet" href="/src/clothesline/clothesline.css">
+</head>
+<body>
+<div id="viewport" class="stageViewport"><div id="stageWrap"><div id="stage" class="stage">
+  <div id="ropeLayer" class="ropeLayer">
+    <svg id="ropeSvg" class="ropeSvg" aria-hidden="true"><path id="ropeShadow" class="ropeShadow"></path><path id="ropePath"></path></svg>
+    <button id="anchorLeft" class="anchor" aria-label="拖动左端点，方向键微调" title="拖动左端点 · 方向键微调"><span></span></button>
+    <button id="anchorRight" class="anchor" aria-label="拖动右端点，方向键微调" title="拖动右端点 · 方向键微调"><span></span></button>
+    <button id="moveRope" class="moveGrip" aria-label="拖动整根绳子，方向键微调" title="拖动整根绳子 · 方向键微调"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 3h1m4 0h1M5 8h1m4 0h1M5 13h1m4 0h1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>移动整绳</button>
+    <div id="slotMarker" class="slotMarker" hidden><span>挂在这里</span></div><div id="hangs"></div>
+    <div id="emptyRope" class="emptyRope"><strong>绳子空了</strong><span>下一张图片会自动挂上来</span></div>
+  </div>
+  <nav id="ropeToolbar" class="ropeToolbar" aria-label="晾衣绳操作">
+    <button id="gather">收当前绳上 · 转贴图</button><span id="batchProgress" role="status" hidden></span><button id="stopBatch" hidden>停止剩余</button><button id="clear">大风吹走</button>
+    <button id="managePins">贴图管理</button>
+    <label><input id="locked" type="checkbox">锁定位置</label><button id="restoreAnchors">恢复默认</button>
+    <span id="countValue"></span>
+  </nav>
+  <div id="pins"></div><div id="dragHint" class="dragHint" hidden></div>
+  <section id="loupe" class="loupe" aria-label="图片预览" hidden><div id="loupeImage"></div><p id="loupeCaption"></p>
+    <p id="previewLoad" role="status" hidden></p><div class="loupeActions"><button id="fitImage">适应</button><button id="actualImage">100%</button><button id="pinPreview" class="primary">取下为贴图</button><button id="closePreview">关闭预览 · Esc</button></div>
+  </section>
+  <div id="undoBar" class="undoBar" role="status" hidden><span id="undoText"></span><button id="undo">撤销</button><span id="undoTime"></span></div>
+  <div id="toast" class="toast" role="status" hidden></div><div id="takeProgress" class="takeProgress" role="status" hidden><span>正在准备取下 · 可拉回绳子取消</span><button id="cancelTake">取消取下 · Esc</button></div><div id="fxLayer" aria-hidden="true"></div>
+  <div id="queue" class="queue" aria-label="排队照片"></div>
+  <div hidden aria-hidden="true">
+    <input id="enabled" type="checkbox" checked><input id="wind" type="checkbox" checked>
+    <span id="stageStatus"></span><span id="windStatus"></span><span id="sagValue"></span><span id="motionValue"></span><span id="anchorValue"></span>
+  </div>
+</div></div></div>
+<script type="module" src="/src/clothesline-main.ts"></script>
+</body></html>

@@ -1,0 +1,37 @@
+import type { Anchors, Geometry, Point } from "./physics.mjs";
+export function installGestures(options: {
+  stage: HTMLElement;
+  hangs: HTMLElement;
+  left: HTMLElement;
+  right: HTMLElement;
+  mover: HTMLElement;
+  marker: HTMLElement;
+  hint: HTMLElement;
+  getState: () => {
+    locked: boolean;
+    clearingIds: Set<string>;
+    pendingHangs: Set<string>;
+    taking?: Set<string>;
+    undoing?: boolean;
+    nativeReceiving?: boolean;
+    clearing?: boolean;
+    pins: { item: { id: string }; pending?: boolean; pendingBack?: boolean }[];
+    anchors: Anchors;
+    custom?: boolean;
+    width: number;
+    height: number;
+  };
+  getGeometry: () => Geometry;
+  getCurve: () => number[];
+  onAnchors: (value: Anchors) => void;
+  onAnchorCommit: (value: Anchors, custom?: boolean) => void;
+  onDetach: (id: string, el: HTMLElement, dragged: boolean, continuous?: boolean, handoff?: { cancel: () => void; release: () => { held: boolean; cancelled: boolean; point: Point } }) => unknown;
+  onTransferEnd?: (cancelled: boolean, id: string) => void;
+  onError?: (error: unknown) => void;
+  onReorder: (id: string, slot: number) => unknown;
+  onPreview: (id: string) => unknown;
+  onInteraction: (active: boolean) => void;
+  onFinish: () => void;
+  onGeometryCancel: (value: Anchors) => void;
+  onSlotPreview: (id: string | null, slot: number | null) => (Point & {width?: number; height?: number}) | null | undefined;
+}): { cancelDrag: () => void; isDragging: () => boolean; draggedId: () => string | null };

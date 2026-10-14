@@ -1,0 +1,10 @@
+.loupe {max-height:calc(100vh - 32px);display:flex;flex-direction:column;gap:8px;box-sizing:border-box}
+.loupe[hidden] {display:none}
+#loupeImage {min-height:0;overflow:auto;flex:1}
+#loupeImage .photo {height:min(320px,calc(100vh - 150px))}
+#loupeCaption {margin:0}
+.loupeActions {flex-wrap:wrap;gap:8px;flex-shrink:0}
+#loupeImage.actual .photo {width:max-content;height:auto}
+#loupeImage.actual img {width:600px;height:3200px;max-width:none}
+#batchProgress {color:var(--text-primary)}
+.testInfo {max-width:580px;line-height:1.7}

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PastePanda · 晾衣绳 A 方案 · 载重、弹性与风动</title>
+  <link rel="stylesheet" href="../src/styles/globals.css">
+  <link rel="stylesheet" href="../src/styles/theme.css">
+  <link rel="stylesheet" href="../src/styles/screenshot.css">
+  <link rel="stylesheet" href="../src/styles/buttons.css">
+  <link rel="stylesheet" href="../src/components/PinnedPanel.module.css">
+  <link rel="stylesheet" href="./clothesline-a-2026-10-12/preview.css">
+</head>
+<body>
+<main class="review">
+  <header class="reviewHead">
+    <div><h1>截图晾衣绳</h1><p>挂上有重量，取下有回弹。A 方案 · 2026-10-12</p></div>
+    <a href="./截图晾衣绳-悬链线相框-开关与通用捕获-1比1-设计稿-2026-10-11.html">对照原稿 ↗</a>
+  </header>
+  <p class="scope">交互设计预览：演示绳层与桌面贴图，不调用真实截图、剪贴板或原生窗口。沿用原稿相框、夹子与现有主题；你也可以载入本地图片检查效果。</p>
+  <section class="controls" aria-label="演示控制">
+    <div class="controlRow">
+      <button id="addShot" class="primary">挂一张截图</button>
+      <label class="fileButton">载入本地图片<input id="files" type="file" accept="image/*" multiple></label>
+      <button id="gather">收衣 · 全部转贴图</button>
+      <button id="clear">清空绳子 · 大风吹走</button>
+      <button id="breeze">吹一阵轻风</button>
+    </div>
+    <div class="controlRow secondary">
+      <label><input id="enabled" type="checkbox" checked> 晾衣绳开启</label>
+      <label><input id="wind" type="checkbox" checked> 偶发微风</label>
+      <label><input id="reduce" type="checkbox"> 演示减少动态效果</label>
+      <label><input id="failPin" type="checkbox"> 下一张贴图模拟失败</label>
+      <label>屏宽 <select id="width"><option>1366</option><option selected>1440</option><option>1920</option><option>2560</option></select></label>
+      <label>主题 <select id="theme"><option value="midnight">午夜</option><option value="ocean">海洋</option><option value="forest">森林</option><option value="blossom">花瓣</option><option value="dawn">晨光</option><option value="ocean-dark">深海</option></select></label>
+      <button id="scale" aria-pressed="false">100% 查看</button>
+      <button id="reset">重置演示</button>
+    </div>
+  </section>
+  <div class="stageViewport" id="viewport">
+    <div id="stageWrap"><div id="stage" class="stage">
+      <div class="desk">
+        <div class="deskWindow"><div class="deskBar"><span></span><span></span><span></span> product-brief.md</div>
+          <article><p class="documentLabel">项目讨论</p><h2>Q4 定价讨论</h2><p>把三个档位的价格再核一遍，特别是年付折后价，法务说要在合同里写明含税。</p><div class="documentRule"></div><h3>待确认</h3><p>年付方案与退款说明<br>报价展示与用户反馈<br>本周的版本验收</p></article>
+        </div>
+      </div>
+      <div class="islandGhost">岛 · 顶右保留 208 × 32</div>
+      <div id="ropeLayer" class="ropeLayer">
+        <svg id="ropeSvg" class="ropeSvg" aria-hidden="true"><path id="ropePath"></path></svg>
+        <span class="anchor anchorL"></span><span class="anchor anchorR"></span>
+        <div id="hangs"></div>
+        <div id="emptyRope" class="emptyRope"><strong>绳子空了</strong><span>下一张截图会自动挂上来</span><button id="emptyAdd">挂一张试试</button></div>
+      </div>
+      <div id="pins"></div>
+      <div id="dragHint" class="dragHint" hidden>松手 · 转为桌面贴图</div>
+      <aside class="panel pinPanel" id="pp" aria-label="贴图管理演示">
+        <div class="head"><span class="title">贴图管理</span><span class="count" id="pinCount">0 张</span></div>
+        <div class="list" id="pinList"><p class="empty">收衣后生成的桌面贴图会列在这里</p></div>
+        <div class="foot">关闭贴图保留历史；挂回时移除桌面贴图</div>
+      </aside>
+      <section id="loupe" class="loupe" aria-label="图片预览" hidden>
+        <div id="loupeImage"></div><p id="loupeCaption"></p>
+        <div class="loupeActions"><button id="pinPreview" class="primary">取下为贴图</button><button id="closePreview">关闭预览 · Esc</button></div>
+      </section>
+      <div id="undoBar" class="undoBar" role="status" hidden><span id="undoText"></span><button id="undo">撤销</button><span id="undoTime"></span></div>
+      <div id="toast" class="toast" role="status" hidden></div>
+      <div id="fxLayer" aria-hidden="true"></div>
+      <div class="stageFoot"><span id="stageStatus">5 张照片在绳上</span><span id="windStatus">微风待命</span></div>
+    </div></div>
+  </div>
+  <p class="gestureHelp">单击查看 · 拖离绳带后松手转贴图 · 绳内拖动松手归位 · Esc 取消拖动或关闭预览。鼠标靠近和键盘聚焦时，风动暂停。</p>
+  <div class="readouts" aria-label="受力读数"><span>平衡下垂 <b id="sagValue">—</b></span><span>绳上 / 排队 <b id="countValue">—</b></span><span>运动调度 <b id="motionValue">—</b></span></div>
+  <section class="decisions">
+    <h2>这一版的动作含义</h2>
+    <table><thead><tr><th>操作</th><th>你会看到</th><th>数据与恢复</th></tr></thead><tbody>
+      <tr><td>挂上照片</td><td>夹点拉低，整绳回弹，照片轻摆后落稳</td><td>统一定参弹簧；端点固定；更多照片下垂更深</td></tr>
+      <tr><td>偶发微风</td><td>绳和照片短暂轻动，不持续摇摆</td><td>20–45 秒随机间隔；互动、隐藏、空绳和减少动态时停止</td></tr>
+      <tr><td>收衣</td><td>照片离开绳子，在桌面排开成为贴图</td><td>贴图创建成功才移除；此稿演示创建，不调用原生命令</td></tr>
+      <tr><td>清空绳子</td><td>大风错峰吹走照片，空绳卸重回弹</td><td>历史保留；8 秒撤销；后来新增的照片不受影响</td></tr>
+    </tbody></table>
+    <p>屏幕预览保留原稿 240 × 180 图片上限、96px 最低缩略宽度、顶右灵动岛避让。超过可展示数量时保留最新照片，旧照片排队；点击下方排队条可直接转贴图。载入的图片仅留在本页内存。</p>
+    <p>待产品落地验证：透明窗口命中区域、多屏 DPI、截图前隐藏、原生贴图失败回滚与真实 CPU/内存。此稿没有“零合成层”或性能已达标声明。</p>
+  </section>
+  <div id="queue" class="queue" aria-label="排队照片"></div>
+</main>
+<script type="module" src="./clothesline-a-2026-10-12/preview.mjs"></script>
+</body>
+</html>

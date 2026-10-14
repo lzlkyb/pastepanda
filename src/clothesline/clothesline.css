@@ -1,0 +1,502 @@
+/* 实体相框使用固定纸色，操作与反馈随应用主题。 */
+:root {
+  --paper: #fdfdfb;
+  --paper-ink: #171717;
+  --metal: #cfd6de;
+  --metal-dark: #7f8b98;
+  --rope: #e4e8f0;
+  --desktop: #10233c;
+  --desk-ink: #1f2937;
+  --sample-accent: #315f89;
+  --sample-soft: #e7eef5;
+  --action-bg: color-mix(in srgb, var(--accent-solid) 65%, var(--paper-ink));
+  --action-hover: color-mix(in srgb, var(--accent-solid) 60%, var(--paper-ink));
+}
+html,
+body {
+  overflow: auto;
+  min-height: 100%;
+  background: var(--app-bg);
+}
+body {
+  user-select: text;
+}
+button,
+select,
+.fileButton {
+  font: inherit;
+  min-height: 32px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px 12px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+button:hover,
+.fileButton:hover {
+  background: var(--hover);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:focus-visible,
+select:focus-visible,
+.fileButton:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.primary {
+  background: var(--action-bg);
+  color: var(--paper);
+  border-color: transparent;
+}
+.primary:hover {
+  background: var(--action-hover);
+  color: var(--paper);
+}
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+.stageViewport {
+  width: 100%;
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--desktop);
+}
+#stageWrap {
+  position: relative;
+  margin: auto;
+}
+.stage {
+  position: relative;
+  width: var(--sw);
+  height: 760px;
+  transform: scale(var(--zoom));
+  transform-origin: top left;
+  overflow: hidden;
+  user-select: none;
+}
+.ropeLayer {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 760px;
+  z-index: 30;
+  pointer-events: none;
+}
+.ropeSvg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  position: absolute;
+  pointer-events: none;
+}
+.ropeSvg path {
+  fill: none;
+  stroke: var(--rope);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.anchor {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+}
+.anchor span {
+  width: 12px;
+  height: 18px;
+  border: 2px solid var(--metal);
+  border-radius: 4px;
+  background: var(--metal-dark);
+  box-shadow: var(--shadow-sm);
+}
+.anchor:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.anchor:disabled,
+.moveGrip:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.moveGrip {
+  position: absolute;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--metal-dark);
+  background: var(--desktop);
+  color: var(--rope);
+  font-size: 11px;
+  z-index: 40;
+}
+.moveGrip:hover {
+  background: var(--sample-accent);
+}
+.anchor.dragging,
+.moveGrip.dragging {
+  cursor: grabbing;
+}
+.slotMarker {
+  position: absolute;
+  width: 100px;
+  height: 70px;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--paper);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 46;
+}
+.slotMarker span {
+  background: var(--desktop);
+  padding: 4px;
+  border-radius: 4px;
+}
+.unclipped .clip {
+  opacity: 0;
+}
+.hang {
+  position: absolute;
+  transform: translateX(-50%) rotate(var(--angle, 0deg));
+  transform-origin: 50% 0;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+.hang.dragging {
+  cursor: grabbing;
+  z-index: 45;
+}
+.frame {
+  margin-top: 5px;
+  padding: 8px 8px 20px;
+  border: 1px solid var(--metal);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--paper-ink);
+  box-shadow: var(--shadow-md);
+  position: relative;
+}
+.hang:hover .frame,
+.hang:focus-visible .frame {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.clip {
+  position: absolute;
+  width: 22px;
+  height: 10px;
+  left: 50%;
+  top: -5px;
+  z-index: 3;
+  background: linear-gradient(var(--metal), var(--metal-dark), var(--metal));
+  border-radius: 4px;
+  transform: translateX(-50%) rotate(var(--tilt, 0deg));
+}
+.clip::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 4px;
+  height: 2px;
+  background: var(--metal-dark);
+}
+.photo {
+  width: var(--iw);
+  height: var(--ih);
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--sample-soft);
+}
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.caption {
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  right: 8px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.takeOne {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 4;
+  min-height: 24px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--paper-ink);
+}
+.takeOne:hover {
+  background: var(--sample-soft);
+}
+.emptyRope {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  position: absolute;
+  top: 128px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--rope);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.pinGhost {
+  position: absolute;
+  border: 1px solid var(--metal);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--paper-ink);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  z-index: 20;
+  cursor: grab;
+  touch-action: none;
+}
+.pinGhost .photo {
+  width: 100%;
+  height: 100%;
+}
+.loupe {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 560px;
+  background: var(--paper);
+  color: var(--paper-ink);
+  padding: 12px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  z-index: 60;
+}
+#loupeImage .photo {
+  width: 100%;
+  height: 320px;
+}
+#loupeCaption {
+  margin: 12px 0;
+  font-size: 13px;
+}
+.loupeActions {
+  display: flex;
+  gap: 12px;
+}
+.dragHint {
+  position: absolute;
+  top: 310px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--paper);
+  background: var(--action-bg);
+  border-radius: 8px;
+  padding: 8px 16px;
+  z-index: 55;
+  pointer-events: none;
+}
+.undoBar {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 8px;
+  z-index: 70;
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+}
+.toast {
+  position: absolute;
+  bottom: 104px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 520px;
+  padding: 12px 16px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border-radius: 8px;
+  z-index: 80;
+  box-shadow: var(--shadow-md);
+}
+#fxLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+#fxLayer .hang,
+#fxLayer button {
+  pointer-events: none;
+}
+.effectCopy {
+  pointer-events: none !important;
+}
+.effectCopy .frame {
+  box-sizing: border-box;
+}
+.effectCopy .photo {
+  width: 100%;
+  height: 100%;
+}
+.queue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+[hidden] {
+  display: none !important;
+}
+
+/* 桌面透明窗口：只把照片、手柄和操作反馈交给原生命中区域，空白保持穿透。 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.stageViewport {
+  height: 100vh;
+  border-radius: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.stage {
+  height: 100vh;
+  overflow: hidden;
+}
+.ropeLayer {
+  height: 100vh;
+}
+.ropeSvg .ropeShadow {
+  stroke: var(--paper-ink);
+  stroke-width: 4;
+  opacity: 0.65;
+}
+.ropeToolbar {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  max-width: calc(100vw - 32px);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+}
+#clear {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.ropeToolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.ropeToolbar button {
+  min-height: 32px;
+  white-space: nowrap;
+}
+.moveGrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.photoRetry {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 8px;
+  background: var(--sample-soft);
+  color: var(--paper-ink);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.queue {
+  position: absolute;
+  max-width: min(600px, 90vw);
+  max-height: 128px;
+  overflow: auto;
+  z-index: 40;
+  margin: 0;
+  background: var(--card-bg);
+  border-radius: 8px;
+}
+.queue:empty {
+  display: none;
+}
+.queue button {
+  font-size: 12px;
+}
+.loupe {
+  width: min(560px, 90vw);
+  max-height: calc(100vh - 32px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.loupe[hidden] { display: none; }
+#loupeImage { min-height: 0; overflow: auto; flex: 1; }
+#loupeImage .photo { height: min(320px, max(24px, calc(100vh - 180px))); }
+#loupeImage.previewActual .photo { width: var(--original-width); height: var(--original-height); }
+#loupeCaption { margin: 0; overflow-wrap: anywhere; max-height: 3em; overflow: auto; flex-shrink: 0; }
+.loupeActions { flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+#previewLoad { margin: 0; font-size: 12px; max-height: 3em; overflow: auto; flex-shrink: 0; }
+.queuePages { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; }
+.takeProgress { position: absolute; bottom: 144px; left: 50%; transform: translateX(-50%); z-index: 80; max-width: 90vw; padding: 8px; border-radius: 8px; background: var(--card-bg); color: var(--text-primary); box-shadow: var(--shadow-md); font-size: 12px; }
+.loupe .photo img {
+  object-fit: contain;
+}
+.toast {
+  bottom: 96px;
+  max-width: min(520px, 90vw);
+}
+.undoBar {
+  bottom: 48px;
+  max-width: 90vw;
+  flex-wrap: wrap;
+  white-space: normal;
+}
