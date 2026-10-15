@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PastePanda 短视频 · 演示输入框</title>
+<style>
+@font-face{font-family:Panda;src:local('Microsoft YaHei')}
+*{box-sizing:border-box}body{margin:0;padding:40px;background:#f4f8fc;color:#25354a;font:16px Panda,sans-serif}
+main{max-width:520px;margin:auto;background:white;padding:32px;border:1px solid #dce5ed;border-radius:18px}
+h1{font-size:22px;margin:0 0 8px}p{font-size:13px;color:#607286;margin:0 0 28px}label{display:block;font-size:15px;margin:20px 0 8px}
+textarea,input{display:block;width:100%;padding:14px;border:1px solid #bccddc;border-radius:8px;color:#23384d;background:#fbfdff;font:17px Panda;line-height:1.7}
+textarea{height:118px;resize:none}input:focus,textarea:focus{outline:2px solid #0284c7;outline-offset:2px}
+button{margin:24px 0 0;padding:10px 18px;border:0;background:#e7f1fa;border-radius:8px;color:#286283;font:14px Panda}
+#material{line-height:1.9;padding:22px;background:#edf6fc;border-radius:10px;font-size:22px}
+small{display:block;margin-top:24px;font-size:12px;color:#6b7d90}
+</style>
+<main><h1 id="title">演示输入框</h1><p>以下均为短视频测试材料</p><section id="surface"></section><small>公开演示数据 · 不涉及真实联系人或私人记录</small></main>
+<script>
+const params=new URLSearchParams(location.search);const scene=params.get('scene')||'history';
+const titles={history:'找回复制的会议地址',reply:'回复输入框',ocr:'图片里的文字',queue:'演示信息表单',diff:'两份会议通知',todo:'临时想到的一件事'};
+document.querySelector('#title').textContent=titles[scene]||titles.history;
+const controls={
+ history:'<label for="text">会议地址</label><textarea id="text" placeholder="粘贴会议地址"></textarea>',
+ reply:'<label for="text">回复内容</label><textarea id="text" placeholder="填写回复"></textarea>',
+ ocr:'<div id="material">会议时间：下午三点<br>会议地点：演示会议室</div><label for="text">取字后的内容</label><textarea id="text" placeholder="粘贴识别文字"></textarea>',
+ queue:'<label for="name">姓名</label><input id="name"><label for="department">部门</label><input id="department"><label for="remark">备注</label><input id="remark">',
+ diff:'<div id="material">原通知：截止日期 10 月 13 日<br>新通知：截止日期 10 月 15 日</div>',
+ todo:'<div id="material">等会儿整理会议资料</div>'
+};document.querySelector('#surface').innerHTML=controls[scene]||controls.history;
+</script></html>

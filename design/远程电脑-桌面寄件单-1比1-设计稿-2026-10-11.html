@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda · 远程电脑 · 桌面寄件单（单条直寄 + 收端 3s 自落栈）1:1 实景稿 · 2026-10-11</title>
+
+<!-- 这五张表是**产品真用的样式表**，不是抄写件：globals/theme/screenshot 与 src/screenshot-main.tsx
+     导入顺序一致；RemoteComputer.module.css 是收端包裹卡外壳（fileAskCard 一族）与 capOutlet 的来源；
+     CardList.module.css 是历史卡片入口（cardInlineActions/cardInlineBtn）的来源。
+     所以本页量出来的每一个像素都是落地后会出现的值。
+     🔴 新层（.parcelNeutral/.parcelFill/.toastMock/.act-row.off/.sel/.ph-* 以及收端包裹卡本身）
+     是本稿新增，源码里现在不存在；包裹卡的**行内结构全部复用真类名**，外壳只做令牌级换色。 -->
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/screenshot.css" />
+<link rel="stylesheet" href="../src/components/rc/RemoteComputer.module.css" />
+<link rel="stylesheet" href="../src/components/CardList.module.css" />
+
+<style>
+/* 🔴 反接 globals.css 的 body{overflow:hidden;user-select:none}（globals.css:28-30）。
+   产品在单屏窗口里这样是对的，但它会把这份滚动文档钉死且**不报错**，顺带让文字选不中。
+   这一条是量具判据（页首自检里读 computed overflow）。 */
+html, body { overflow: auto; }
+body { user-select: text; }
+
+.doc { max-width: 1380px; margin: 0 auto; padding: 22px 26px 90px; color: var(--text-primary); font-size: 13px; line-height: 1.7; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 14px; margin: 30px 0 8px; color: var(--accent); border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+p.lead { color: var(--text-muted); margin: 0 0 14px; font-size: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+th, td { border: 1px solid var(--border-color); padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: var(--input-bg); font-weight: 600; white-space: nowrap; }
+td.n { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+.bad { color: var(--danger); font-weight: 700; }
+.ok { color: var(--success); font-weight: 700; }
+.warn { color: #f0a93b; font-weight: 700; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: var(--input-bg); padding: 1px 4px; border-radius: 4px; }
+#probe { position: sticky; top: 0; z-index: 200; background: var(--card-bg); border-bottom: 2px solid var(--border-color);
+  padding: 7px 14px; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; line-height: 1.6; }
+#probe.bad { background: color-mix(in srgb, var(--danger) 18%, var(--card-bg)); }
+
+/* ── 舞台：左发起端 / 右收端，两块定宽屏 ── */
+.stageRow { display: flex; gap: 18px; flex-wrap: wrap; padding: 8px 0 4px; }
+.scr { position: relative; width: 648px; height: 500px; flex: none; overflow: hidden; border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.5), 0 0 0 1px rgba(148,168,255,.22); }
+.desk { position: absolute; inset: 0; overflow: hidden;
+  background: linear-gradient(120deg, #1d3a5f 0%, #2b5c86 38%, #10233c 39%, #0b1526 100%); }
+.scrTag { position: absolute; left: 10px; top: 8px; z-index: 30; font-size: 10.5px; color: #cfe3ff;
+  background: rgba(8 12 22 / .55); padding: 3px 9px; border-radius: 999px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 0 12px; font-size: 11.5px; }
+.toolbar .segBtns button { border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+  font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+.toolbar .segBtns button.on { background: var(--accent-solid); color: #fff; border-color: var(--accent-solid); }
+.toolbar label { color: var(--text-muted); }
+
+/* ── 历史卡片入口 mock（行内按钮区，真类名） ── */
+#cardHost { position: absolute; left: 16px; top: 42px; width: 372px; }
+
+/* ── 发起端寄件单：全部真类名，只加 .off/.sel/.ph-* 三个新状态（本稿新增，见页尾标注） ── */
+#shipPanel { position: absolute; left: 406px; top: 58px; }
+.act-row.off { opacity: .45; cursor: not-allowed; }
+.act-row.off:hover { background: transparent; }
+.act-row.sel { background: color-mix(in srgb, var(--accent-solid) 16%, transparent); }
+.act-row.sel .ic { outline: 1.5px solid var(--accent-solid); }
+#shipPanel.ph-warn .act-head .dot { background: #f0a93b; }
+#shipPanel.ph-bad .act-head .dot { background: var(--danger); }
+#shipPanel.ph-ok .act-head .dot { background: var(--success); }
+.newMark { outline: 1.5px dashed var(--preview-pin); outline-offset: 1px; }
+.newTag { font-size: 9.5px; color: var(--preview-pin); border: 1px dashed var(--preview-pin);
+  border-radius: 4px; padding: 0 3px; margin-left: 4px; }
+
+/* ── 收端：包裹卡落点（右下角）＋ 中性外壳（本稿新增，色全走令牌） ── */
+#parcelHost { position: absolute; right: 14px; bottom: 14px; width: 300px; z-index: 20; }
+.parcelNeutral { background: var(--float-card-bg, var(--card-bg)) !important;
+  border-color: var(--float-card-border, var(--border-color)) !important;
+  box-shadow: var(--float-card-shadow); }
+.parcelFill { height: 3px; border-radius: 2px; background: var(--accent-solid);
+  width: calc(var(--fill, 1) * 100%); align-self: stretch; }
+.parcelDot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-solid); flex: none; }
+.parcelDrop { position: absolute; right: 14px; bottom: 14px; width: 300px; z-index: 20; }
+#toastA { position: absolute; right: 14px; bottom: 14px; width: 300px; z-index: 40; }
+.toastMock { font-size: 11px; line-height: 1.55; padding: 8px 10px; border-radius: 10px;
+  background: var(--float-card-bg, var(--card-bg)); border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--float-card-border, var(--border-color)));
+  color: var(--text-primary); box-shadow: var(--float-card-shadow); }
+.toastMock.demo { opacity: .55; }
+.toastMock b { color: var(--danger); font-weight: 600; }
+
+/* ── §1d 已挂载对照（styleHealth 的常驻真规则命中点） ── */
+.samples { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; padding: 6px 0 2px; }
+.sampleBox { width: 320px; flex: none; }
+.sampleCap { font-size: 10.5px; color: var(--text-muted); margin: 0 0 6px; }
+</style>
+</head>
+<body>
+
+<div id="probe">量具自检：计算中…</div>
+
+<div class="doc">
+<h1>远程电脑 · 桌面寄件单（单条直寄，收端 3s 自落栈）</h1>
+<p class="lead">
+已拍板方案：把<b>一条</b>剪贴板历史/截图寄给已配对的另一台电脑（单条粒度，不做多选打包）。发起端弹一张「寄件单」；
+收端右下角浮出包裹卡，<b>3 秒倒计时后自动入栈</b>（期间可点开预览或直接丢弃），不要求签收。
+本页<b>可点可验可重放</b>：切设备（四种 presence）、切内容（长文本/超 48KB/图片）、注入三种结局，
+点「寄出」走完整反馈序列；「复位」按钮会把舞台恢复到初始 DOM（自检条末尾给一致性判定）。
+所有像素、行数、耗时都由脚本现测，不是手抄。
+</p>
+
+<h2>§0 复用清单（每一行都有源码出处，本页不新造机制）</h2>
+<table>
+<thead><tr><th>能力</th><th>现有实现（出处）</th><th>本稿怎么用</th></tr></thead>
+<tbody>
+<tr><td>跨端文本通道</td><td><code>InputEvent::ClipboardPush</code>(<code>src-tauri/src/rc/input.rs:58</code>)；发起命令 <code>rc_push_clipboard</code>(<code>src-tauri/src/commands/rc.rs:1717</code>，前端封装 <code>src/lib/api/rcCommands.ts:368</code>)；本地闸门 <code>push_clipboard</code>(<code>src-tauri/src/rc/service/frames_clip.rs:183</code>)</td><td>寄件单的「寄出」就是这条命令。<b>不新建发送通道</b>。文本帧 ≤48KB（<code>CLIPBOARD_MAX_JSON_BYTES=48*1024</code>，<code>src-tauri/src/rc/service/mod.rs:38</code>，量纲=编码后 JSON 字节，两端同源 <code>clip_payload_ok</code> :46）</td></tr>
+<tr><td>「进栈」这条路径</td><td>被控端接收 <code>inbound.rs:372</code> → <code>set_clipboard_text_async</code>(<code>input.rs:933</code>) → 既有剪贴板监听自动采集并入栈、广播 <code>clipboard-changed</code>(<code>src-tauri/src/clipboard_monitor.rs:1579/1628/1747</code>)</td><td><b>现成的，寄件单不许重造。</b>收端包裹卡只是「写入前 3 秒的预告层」：到点由既有链入栈；卡片上「已入栈」字样落地时必须由 <code>clipboard-changed</code> 事件驱动，<b>不是定时器假装</b>（本页演示用本地模拟，落地接线见 §7）</td></tr>
+<tr><td>失败回帧链</td><td>被控端三种失败都回 <code>clip_push_err</code>(<code>inbound.rs:370/387/406</code>) → 发起端 <code>outbound.rs:612-618</code> → <code>notify.rs:246 set_clip_push_err</code> → <code>lib.rs:938-939</code> emit <code>rc-clip-push-error</code> → 前端 <code>listen</code>(<code>src/hooks/useRcSessionNotices.ts:114-131</code>，toast 前缀「推送剪贴板失败：」)</td><td>寄件单失败态直接吃这条链的 <code>msg</code>，并把它<b>同时</b>画进面板的 <code>.act-sens</code> 行（规则 15.1：按钮和它的反馈同一可见性域）</td></tr>
+<tr><td>图片通道</td><td><code>rc_file_send</code>(<code>src/lib/api/rcFile.ts:86</code> → <code>src-tauri/src/commands/rc_file.rs:22</code>)；收端确认条 <code>src/components/rc/RcFileAsk.tsx</code>（60s 内回应、超时视为拒绝）；<code>auto_accept</code> 免确认直落 <code>rc_file_default_dir</code>（<code>rcTypes.ts:305-312</code>：与 <code>trusted</code> 是两件独立的事）</td><td>内容=图片时寄件单明说「这条走文件通道，对方看到的是既有确认条」，<b>不给图片造 3s 包裹卡</b>（两套反馈语言的统一问题放 §6 待拍）</td></tr>
+<tr><td>设备与 presence</td><td><code>RcTargetDevice</code>(<code>src/lib/api/rcTypes.ts:282-327</code>)：node_id/name/note/display_name/conn_state、<code>presence: live|recent|seen|never</code>(:273/:291)、<code>last_path: lan|direct|relay</code>(:293-296，空串=没连过，不渲染不猜)、os/tags/remark；本机 <code>RcIdentity</code>(:335-340)。档位尾句 <code>presenceHint</code>(<code>src/lib/rcDevice.ts:91-103</code>)；「上次走中继」合成段口径 <code>lastSeenHint</code>(<code>rcDevice.ts:105-124</code>)</td><td>收件设备四行 = 四种 presence 各一例；never 行置灰并把 <code>presenceHint(never)</code> 原句挂在 sub 上作原因</td></tr>
+<tr><td>链路标注</td><td><code>pathKindLabel</code>(<code>src/lib/rcSessionStats.ts:171-176</code>：lan→局域网直连 / direct→公网直连 / relay→绕中继，<b>空串=未知不显示不猜</b>)；解释句 <code>pathKindHint</code>(:178-187，relay→「中继转发，延迟高于直连属正常」)；会话实测路径 <code>RcStatus.path_kind</code>(<code>rcTypes.ts:121-126</code>)</td><td>设备行尾「· 上次走中继」与寄出后面板里的延迟告知都复用这两函数，不另写措辞</td></tr>
+<tr><td>倒计时口径</td><td><code>src/lib/rcWaitStage.ts:40-70</code>（配套 <code>rcWaitStage.test.ts</code>）：纯函数、判据只有「阶段 + 已等多久」，按阈值(20s/30s，:19-20)切文案与 hint；文件确认条的每秒一跳 <code>useTick</code>(<code>RcFileAsk.tsx:156-164</code>)</td><td>包裹卡 3s 倒计时<b>不是新造动画</b>：同 rcWaitStage 的「时间戳差 + 阈值切阶段」纯函数口径（0–1s / 1–2.5s / 2.5–3s 三段，见 §1 状态表），填充条=剩余/总长的线性水位，替代呼吸环/进度圈（呼吸环已被用户明确否掉）</td></tr>
+<tr><td>发起端面板外壳</td><td><code>.act-panel</code> 宽 224px、圆角 12、<code>.act-head</code> 带 7px <code>.dot</code>、<code>.act-row</code> padding 8px 12px、<code>.ic</code> 26×26 r7 底 <code>--input-bg</code>、图标 lucide <code>size={15}</code> 默认 strokeWidth 2（<code>src/styles/screenshot.css:613-692</code>，组件 <code>src/components/screenshot/ResultActions.tsx:137-140</code>）</td><td>寄件单整帧复用，每档信息行直接吃 <code>.act-row/.ic/.tx/.lbl/.sub/.k</code>；拒绝/失败告知吃现成的 <code>.act-sens</code>(:676-681，danger 令牌底)；主行动行吃 <code>.act-row.insert</code>(:682-685，accent 描边)</td></tr>
+<tr><td>收端卡片行内入口</td><td><code>.cardInlineActions/.cardInlineBtn</code>(<code>src/components/CardList.module.css:562-609</code>，按钮 28×28 r8，hover 经 <code>.cardInlineVisible</code> 显现)；卡片子行徽标顺序见 <code>src/components/Card.tsx:419-425</code>；卡片高 <code>var(--card-height,72px)</code>(<code>CardList.module.css:455</code> 附近 .card)</td><td><b>本稿新增入口①</b>：内联按钮区加一颗 <code>package</code>「寄到…」（现有 <code>Card.tsx</code>/<code>ContextMenu.tsx</code> 里<b>没有任何 rc 发送项</b>，已 grep 证实）</td></tr>
+<tr><td>收端视觉基线</td><td>RC 组件样式统一在 <code>RemoteComputer.module.css</code>：确认条壳 <code>.fileAskCard/.fileAskHead/.fileAskTitle/.fileAskKind/.fileAskLead/.ibFacts/.fileAskActions/.fileAskCd(.Late)/.fileAskNote</code>(:3052-3160)、常驻横幅壳 <code>.ctrlBanner</code>(:867-895)、会话出口一行 <code>.capOutlet*</code>(:1621-1679)、色点 <code>.dotDanger</code>(:2326)；被控端胶囊 <code>RcControlBanner.tsx</code>/<code>RcCapsuleView.tsx</code>，浮现/收编 <code>useRcCapsuleReveal.ts:42,376</code>（F10）</td><td><b>本稿新增入口②</b>：收端包裹卡 = <code>.fileAskCard</code> 的行内结构原样 + 外壳换 <code>--float-card-*</code> 令牌中性色（确认条的 danger 壳语义是「写盘请求=需要警觉」，寄件=已配对可信到达，不该借警觉色，理由见 §5）</td></tr>
+</tbody>
+</table>
+<p class="lead"><b>诚实结论：通道、入栈、失败回帧、48KB 闸门、文件通道、设备模型全是现成的，本稿真正新增的只有两处</b>——① 历史卡片上的「寄到…」入口，② 收端那张 3s 自落栈的包裹卡。另有<b>一条必须补的契约</b>：成功回执（见 §2 最后一行与 §7），现状是「只有失败会回帧，成功无声」。</p>
+
+<h2>§1 舞台（可交互）</h2>
+<div class="toolbar">
+  <span>内容
+  <span class="segBtns" id="segC">
+    <button data-c="text" class="on">长文本 1.2KB</button>
+    <button data-c="big">超 48KB（61.7KB）</button>
+    <button data-c="img">图片 240KB</button>
+  </span></span>
+  <span>故障注入（文本通道）
+  <span class="segBtns" id="segX">
+    <button data-x="ok" class="on">正常入栈</button>
+    <button data-x="viewonly">对方是只看会话</button>
+    <button data-x="write">对方写入失败</button>
+  </span></span>
+  <span class="segBtns"><button id="resetBtn">复位（状态归零 + DOM 一致性自检）</button></span>
+</div>
+
+<div class="stageRow">
+  <!-- 左屏：发起端（我这台） -->
+  <div class="scr" id="stageA"><div class="desk"></div>
+    <span class="scrTag">发起端 · 本机（PastePanda 历史）</span>
+    <div id="cardHost"></div>
+    <div class="act-panel" id="shipPanel"></div>
+    <div id="toastA"></div>
+  </div>
+  <!-- 右屏：收端（对方那台） -->
+  <div class="scr" id="stageB"><div class="desk"></div>
+    <span class="scrTag">收端 · 对方电脑（被控会话在线）</span>
+    <div id="parcelHost"></div>
+  </div>
+</div>
+
+<h3 style="font-size:12px;margin:14px 0 6px;color:var(--accent)">1b 寄件单状态序列（点「寄出」逐拍演示，每拍都有读得见的措辞）</h3>
+<table>
+<thead><tr><th>拍</th><th>面板状态行（.act-row 的 lbl / sub）</th><th>判定依据（真实来源）</th><th>收端发生什么</th></tr></thead>
+<tbody>
+<tr><td>寄出中</td><td>「寄出中…」/「本地命令在跑（rc_push_clipboard）」</td><td>前端 await 未回（<code>rcCommands.ts:368</code>）</td><td>—</td></tr>
+<tr><td>已寄出</td><td>「已寄出」/「帧已进入会话通道——⚠️ 不代表对方写入成功」</td><td>命令 Ok 返回（<code>frames_clip.rs:183</code> 本地闸门+<code>send_input</code> 成功）</td><td>文本：约 0.5s 后包裹卡浮现、开始 3s；图片：出现既有<b>文件确认条</b>（非包裹卡）</td></tr>
+<tr><td>对方已收到并入栈</td><td>「对方已收到并入栈」/「依赖本稿新增回执 clip_push_ok」</td><td>🔴 <b>现状拿不到</b>——成功不回帧（inbound.rs:372 分支写成功后直接 return），本演示用收端落栈动作模拟，页内已标「模拟」</td><td>3s 到点：既有链写入剪贴板 → monitor 入栈 → <code>clipboard-changed</code></td></tr>
+<tr><td>寄出失败</td><td>状态行转 danger + 面板 <code>.act-sens</code> 行 + toast 各显示一次同一句话</td><td><code>rc-clip-push-error</code>（<code>useRcSessionNotices.ts:114-131</code>）</td><td>什么都没发生（帧被拒/失败，未写入）——这正是「已寄出≠已收到」的现场</td></tr>
+<tr><td>本地拒绝（超 48KB）</td><td>「本地拦下：内容超限」+ <code>.act-sens</code> 原句「剪贴板过大（约 61 KB，上限约 48 KB），请改用文件或其他方式传输」</td><td><code>frames_clip.rs:190-196</code> 出站前闸门，<b>零网络请求</b></td><td>永远不会有包裹卡</td></tr>
+</tbody>
+</table>
+
+<h3 style="font-size:12px;margin:14px 0 6px;color:var(--accent)">1c 收端包裹卡状态（3s，期间单击即采纳/单击丢弃）</h3>
+<table>
+<thead><tr><th>态</th><th>进入条件</th><th>措辞（水位条同步）</th><th>成本</th></tr></thead>
+<tbody>
+<tr><td>倒计时</td><td>收到本稿新增事件（落地：inbound 带 parcel 标记的 ClipboardPush → emit <code>rc-parcel-arrived</code>）</td><td>rcWaitStage 同款阈值切段：剩余 3.0–2.0s「接收内容…」 / 2.0–0.5s「内容已备好，即将入栈」 / &lt;0.5s「正在写入剪贴板历史…」+ 最后 1s 起 <code>.fileAskCdLate</code> 变 danger 色</td><td>1 个 100ms interval（≤30 跳自动停）+ 1 个 500ms 采样表 interval，卡片收起即清零</td></tr>
+<tr><td>预览（冻结）</td><td>单击「预览」</td><td>倒计时冻结在当下剩余值，展开内容摘要 + 「立即入栈」/「继续」</td><td>停表；无额外渲染</td></tr>
+<tr><td>丢弃</td><td>单击「丢弃」</td><td>一行态「已丢弃（未写剪贴板、未入历史）」1.5s 后消失</td><td>落地=回 <code>clip_push_deny</code> 让被控端不执行 <code>set_clipboard_text_async</code>（§7）</td></tr>
+<tr><td>已入栈</td><td>3s 到点且既有链成功</td><td>一行态「已入栈 · 剪贴板历史新增 1 条」＋「打开历史」（承 §17 一步到位）</td><td>0（终态，复位前常驻——规则 15.1：结果常驻可见）</td></tr>
+</tbody>
+</table>
+
+<h3 style="font-size:12px;margin:14px 0 6px;color:var(--accent)">1d 已挂载对照样张（真类名常驻，styleHealth 的真规则命中点）</h3>
+<div class="samples" id="samples">
+  <div class="sampleBox">
+    <p class="sampleCap">样张①：既有文件确认条（danger 壳，<code>.fileAskCard</code> 一族原样，出处 <code>RcFileAsk.tsx:202-296</code>）——对照用，寄件<b>文本</b>不用这壳。</p>
+    <div id="sAsk"></div>
+  </div>
+  <div class="sampleBox">
+    <p class="sampleCap">样张②：超 48KB 本地拒绝的 <code>.act-sens</code> 措辞（<code>frames_clip.rs:192</code> 原句）——§3 用它数行数。</p>
+    <div class="act-panel" style="position:static;width:224px" id="sSens"></div>
+  </div>
+  <div class="sampleBox">
+    <p class="sampleCap">样张③：收端包裹卡（本稿新增，中性壳 = 样张① 的行内结构 + <code>--float-card-*</code> 令牌；此帧冻结在剩余 2.1s）。§3 用它量卡宽。</p>
+    <div id="sParcel"></div>
+  </div>
+</div>
+
+<h2>§2 口径对照表——「已寄出 / 对方已收到 / 对方已入栈」三个词钉死（本稿最重要的一张表）</h2>
+<table>
+<thead><tr><th>词</th><th>确切含义</th><th>判定依据（哪个回帧/事件）</th><th>失败时的文案（原句，出处）</th><th>显示位置</th></tr></thead>
+<tbody>
+<tr><td><b>已寄出</b></td><td>发起端本地闸门放行、帧已进会话发送通道。<b>仅此而已。</b></td><td><code>rc_push_clipboard</code> 的 Ok 返回（<code>commands/rc.rs:1717</code> → <code>frames_clip.rs:183-198</code>）</td><td>闸门本地拒：「剪贴板过大（约 61 KB，上限约 48 KB），请改用文件或其他方式传输」(<code>frames_clip.rs:192</code>)；无会话时命令直接 Err（现状措辞由 <code>send_input</code> 抛串）</td><td>寄件单状态行 lbl（琥珀 dot）——sub 必须带那句 ⚠️ 警示，不许裸报成功</td></tr>
+<tr><td><b>对方已收到</b></td><td>被控端三道闸全过：会话是 InboundActive 且非只看（<code>inbound.rs:366/373-378</code>）→ 尺寸二道闸（:380-397）→ 写剪贴板成功（:403-406）。</td><td>现状只能<b>反推</b>：没收到 <code>clip_push_err</code> 回执（<code>outbound.rs:612-618</code> → <code>lib.rs:938</code> → <code>useRcSessionNotices.ts:114</code>）；⚠️ 「无回帧」≠「已收到」——会话快照缺失/非被控激活态时是<b>静默 return 不回帧</b>（<code>inbound.rs:363-368</code>），这条漏网必须在落地时补堵（§7）</td><td>「当前是只看会话，不能写入对方剪贴板」(<code>inbound.rs:374</code>)；「剪贴板内容约 {N} KB，超过 48 KB 上限，未写入对方剪贴板」(<code>inbound.rs:391-395</code>，对旧客户端/改包的二道闸)；「写入对方剪贴板失败：{e}」(<code>inbound.rs:406</code>)</td><td>寄件单 <code>.act-sens</code> 行 + 全局 toast（前缀「推送剪贴板失败：」）双显，同一句话</td></tr>
+<tr><td><b>对方已入栈</b></td><td>写入的文本被<b>对方自己的</b>剪贴板监听采集成历史条目（既有链，零新增：<code>input.rs:933</code> → monitor → <code>clipboard_monitor.rs:1628</code> emit <code>clipboard-changed</code>）。</td><td>🔴 现状发起端<b>拿不到</b>——成功不回帧。本稿新增契约：被控端在入栈确认（或至少写成功）后回 <code>clip_push_ok</code>，发起端 listen <code>rc-clip-push-ok</code>。演示页用收端落栈模拟该帧并全程标「模拟」。</td><td>没有「收到但未入栈」的回执前，此态不许显示；写成功但监听丢采样的中间态在 §6#4 列账</td><td>寄件单状态行终态（绿 dot + check）；同时收端包裹卡翻「已入栈」一行态</td></tr>
+</tbody>
+</table>
+<p class="lead">🔴 顺带的<b>存量纠偏</b>（本页实测源码所得，推翻「现有推送反馈已经算完整」的预期）：会话内推送条 <code>RcClipboardBar.tsx:50-66</code> 在命令 Ok 后立刻显示「已推送 · N 字符 / 已把本机剪贴板推到对方」并把 <code>onStatus(…, "success")</code> 打到全局——这正是 §2 第一行警告的「已寄出≠已收到」混用；失败靠另一条 toast 异步补（同一内容会被去重 <code>:118</code>）。寄件单面板<b>不沿用</b>这句措辞，也建议在后续 PR 里把那颗按钮的文案一并收口到同一口径。</p>
+
+<h2>§3 度量实测表（脚本现测，凡是「现状是 X」都要有读数；没测到就显示「未挂载/跑一遍」）</h2>
+<table><thead><tr><th>#</th><th>测什么</th><th>读数</th><th>判据</th></tr></thead><tbody id="linesT"></tbody></table>
+<p class="lead">折行数用 <code>Range.getClientRects()</code> 按 top 去重（探针与 <code>design/设置-行末控件全页审计-2026-10-02.html:528-534</code> 同款）。
+「撑爆」的判据：面板是 <code>overflow:hidden</code>(<code>screenshot.css:623</code>)，<b>不出现滚动条</b>，文字被裁时表现为 <code>scrollWidth&gt;clientWidth</code>——所以这里的读数直接是裁切检测，不是滚动检测。</p>
+<table><thead><tr><th>run</th><th>t（ms 自到卡）</th><th>剩余(ms)</th><th>水位 (--fill)</th><th>阶段文案</th><th>卡宽×高(px)</th></tr></thead><tbody id="sampleT"></tbody></table>
+<p class="lead">上表每 500ms 采一行、每次「寄出」记 run 号；跑满 3s 自动停。当前读数来源：<span id="sampleSrc">—</span>。</p>
+
+<h2>§4 边界与告知</h2>
+<table>
+<thead><tr><th>边界</th><th>本稿表现</th><th>依据/口径出处</th></tr></thead>
+<tbody>
+<tr><td>对方离线（presence seen）</td><td>仍可选，sub 原句「仍可经中继尝试」；寄出后面板挂一行「大概率走中继——中继转发，延迟高于直连属正常」</td><td><code>presenceHint</code>(<code>rcDevice.ts:97</code>)、<code>pathKindHint("relay")</code>(<code>rcSessionStats.ts:182-187</code>)</td></tr>
+<tr><td>对方失联（presence never）</td><td>行<b>置灰不可选</b>，原因直贴 <code>presenceHint(never)</code> 原句，不另编</td><td><code>rcDevice.ts:99-101</code>：「核对指纹后再试，或检查对方远程通道」</td></tr>
+<tr><td>上次走中继（last_path=relay）</td><td>设备行尾合成「· 上次走中继」；last_path 为空<b>整段不渲染</b></td><td><code>lastSeenHint</code> 合成规则(<code>rcDevice.ts:105-124</code>)、<code>pathKindLabel</code> 空串不猜(<code>rcSessionStats.ts:169-175</code>)</td></tr>
+<tr><td>内容超 48KB</td><td>本地拒：零网络、零包裹卡，<code>.act-sens</code> 原句 + 状态行「本地拦下：内容超限」</td><td><code>frames_clip.rs:190-196</code>；行数读数见 §3#6</td></tr>
+<tr><td>对方锁屏收不到</td><td>⚠️ <b>本期不含</b>。「对方在锁屏，寄件可能延迟入栈」这句告知需要 S1（WTS 会话监听）先接线：<code>src-tauri/src/rc/wts_watch.rs</code> 有 <code>WtsWatch::spawn</code>(:189) 与 <code>wts_frame</code>(:229)，但<b>全库零调用点</b>（仅 <code>rc/mod.rs:65</code> 声明模块），且 <code>protocol.rs:215-235</code> 的 JSON 控制帧 tag 守卫清单里没有 <code>wts</code>。本页不假装已有。</td><td>本页实测 grep 所得（行号均为改前真实行号）</td></tr>
+<tr><td>会话不在（ClipboardPush 只在被控激活会话里走得通）</td><td>寄件单只在「对方在线且被控会话可建/已建」时出现入口。是否自动拨号、还是改走 sync 数据路径，见 §6#5——现状 <code>inbound.rs:363-368</code> 对非激活会话是<b>静默丢帧不回执</b>。</td><td>本页实测源码所得</td></tr>
+</tbody>
+</table>
+
+<h2>§5 性能与红线（规则 8 / 15.1 / 15.3 / 16）</h2>
+<table>
+<thead><tr><th>条目</th><th>口径</th></tr></thead>
+<tbody>
+<tr><td>规则 8（性能，不空口宣称）</td><td>包裹卡只在<b>可见期间</b>持 1 个 100ms interval（≤30 跳）+ 本页演示专用的 500ms 采样表 interval（落地不存在）；到点/丢弃/预览冻结即停表——<b>无常驻 rAF、无循环动画</b>。水位条是一次性 CSS 变量写宽（<code>width:calc(var(--fill)*100%)</code>），每跳只改一个变量，不重排文字。隐藏窗口里无包裹卡时 0 定时器。本页 <code>render()</code> 实测耗时印在自检条上（<span data-r="rt">–</span>ms 档），拖动/切换中不跑扫描循环。<b>节流实测（本页，后台标签页）</b>：100ms 的 tick 被浏览器压成约 1s 一跳，于是「3.0s 后」在读到 1.5s 真时之后才出现、到点动作（入栈）也跟着<b>晚一拍</b>——因为剩余量是 <code>Date.now()-t0</code> 的<b>时间戳差</b>而不是跳数累计，读数不会说谎、只会迟到，不会提前入栈。落地同理：<b>到点判定必须继续走时间戳差</b>，收端窗口隐藏时宁可晚 0.9s 写入，也不许按 tick 计数把 3s 累计成 30 跳（那才是真的会漂）。未实测落地版帧率前，<b>不写「开销极小」</b>。</td></tr>
+<tr><td>规则 15.1（触发与反馈同域）</td><td>「寄出」按钮、状态行、<code>.act-sens</code> 失败行同在一张寄件单面板（同一可见性域），成功终态「对方已收到并入栈」也画在同一行。收端包裹卡到点后翻成常驻的「已入栈」一行，<b>不自动收起</b>——结果和触发活得一样久。</td></tr>
+<tr><td>规则 15.3（静默失败禁止）</td><td>失败路径有两条腿：面板 <code>.act-sens</code>（承载元素是常驻面板，任何折叠状态都在）＋ 既有全局 toast（<code>useRcSessionNotices.ts:114</code>，去重 <code>last===msg</code> 沿用）。预览态是条件渲染子树，冻结信息放在不会被卸载的父层变量里（15.2 的缓存纪律），重开预览不丢剩余秒数。</td></tr>
+<tr><td>收端为什么不用现成的 danger 壳</td><td><code>.fileAskCard</code> 的 12%/7% danger 底是为「把盘交出去」的写盘请求设计的（<code>RemoteComputer.module.css:3050-3060</code> 注释原话：确认条用 danger=需要警觉）。文本寄件最终只进<b>可撤销</b>的剪贴板历史（删除即可），3s 自动落栈的语义是「告知」不是「警报」——所以外壳换 <code>--float-card-bg/-border/-shadow</code> 令牌（<code>theme.css:262-264</code>），强调点用 <code>--accent-solid</code>(:362)，终态绿 <code>--success</code>(:446)。零新色值。</td></tr>
+<tr><td>规则 16</td><td>本稿不触碰 AI 开关；图片 OCR/摘要等 AI 增值都不在本期。</td></tr>
+</tbody>
+</table>
+
+<h2>§6 待拍板 / 已知风险</h2>
+<table>
+<thead><tr><th>#</th><th>问题</th><th>我的默认</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>3s 够不够？对照两个既有锚点：文件确认条给 60s（等真人决策），rcWaitStage 给 20–30s（等对方点允许）。包裹卡是「不要求签收」的告知窗，性质不同。</td><td>默认 3s，设置域 0–10s（0=直接入栈，退回今天的无感行为）。本页舞台即 3s，可反复重放体感。</td></tr>
+<tr><td>2</td><td>同一条寄多台：已拍板<b>单条粒度</b>，但「选完设备后顺手再勾一台」的诉求几乎一定会来。</td><td>本期不做多选。后续做时=同一通道循环 N 次寄出，收端同时最多叠 3 张卡、第 4 张起合并成「还有 N 件已入栈」一行（防贴脸堆卡）。</td></tr>
+<tr><td>3</td><td><b>两套反馈语言</b>：图片走文件通道时收端弹的是 60s 确认条（danger 壳、要真人点），文本走 3s 自落栈（中性壳、不签收）——同一次「寄东西」在收端长出两张脸（本页 §1/§1d 同屏可对照）。</td><td>本期保持两套（文件落盘确实需要真人警觉）；后续若统一，方向是给图片也套包裹卡外壳、确认逻辑仍走既有 <code>rc_file</code> 请求-响应（含 auto_accept 免确认，<code>rcTypes.ts:307-312</code>），<b>不新造第三条通道</b>。</td></tr>
+<tr><td>4</td><td>「写成功但没入栈」中间态：对端剪贴板被占（monitor 采集竞态/抑制窗 <code>clipboard_monitor.rs:1130-1136</code> 一族）时，clip 写入了而历史里没有——回执时机选「写成功即回」还是「入栈确认再回」？</td><td>建议回执等 <code>clipboard-changed</code> 投影（发起端措辞「对方已收到并入栈」才名副其实）；代价是回执慢 ~百 ms，需在落地时实测采集延迟后定。</td></tr>
+<tr><td>5</td><td>「离线也能寄」做不到今天：ClipboardPush 语义上要求被控激活会话（<code>inbound.rs:363-368</code>，且非激活时静默丢帧）。发起前自动拨号会撞上「等对方点允许」的 20–30s 等待链（<code>rcWaitStage.ts:45-51</code>），与「轻寄件」心智冲突。</td><td>本期入口只在<b>已配对且可达/在会话</b>的设备上出现，离线=置灰+原因（§4）。自动拨号与否单独拍板，不在本稿夹带。</td></tr>
+<tr><td>6</td><td>旧版对端兼容：若在 <code>ClipboardPush</code> 上加可选字段（parcel 标记），旧被控 serde 会忽略未知字段照常直写（<b>已实测源码：本仓 rc 协议无 <code>deny_unknown_fields</code></b>）——降级行为=回到今天「无包裹卡直接入栈」，可接受；但回执对旧端永远缺席。</td><td>寄件单对旧端显示「对方版本过旧：只能确认已寄出」，不误报失败也不假报入栈（承 §2「不显示不猜」纪律）。</td></tr>
+</tbody>
+</table>
+
+<h2>§7 落地拆件（对应规则 7 的 300 行上限；新增 InputEvent 变体要改的六处一条不缺）</h2>
+<table>
+<thead><tr><th>层</th><th>文件</th><th>内容 / 行数预算</th></tr></thead>
+<tbody>
+<tr><td>发起端 UI</td><td><code>src/components/rc/RcShipPanel.tsx</code>（新）</td><td>寄件单：act-panel 外壳 + 设备行列表 + 状态机投影；目标 ≤250 行。设备行的 sub 合成串只调 <code>rcDevice.ts</code>/<code>rcSessionStats.ts</code> 现成函数，不重写措辞（规则 11.1 收口）。</td></tr>
+<tr><td>序列状态机</td><td><code>src/hooks/useRcShipFlow.ts</code>（新）</td><td>寄出中→已寄出→（回执）入栈/失败；listen <code>rc-clip-push-error</code>/<code>rc-clip-push-ok</code>，与全局 toast 同源不同显（15.1）。</td></tr>
+<tr><td>纯函数</td><td><code>src/lib/rcShip.ts</code>（新）</td><td><code>contentGate(bytes)</code>（48KB 预拒，量纲=JSON 字节，与 <code>clip_payload_ok</code> 同源）、<code>shipWord(phase)</code>（§2 三词唯一实现处）、<code>parcelStage(remainMs)</code>（§1c 三段阈值，与 <code>rcWaitStage.ts:40</code> 同构；配套 <code>rcShip.test.ts</code> 钉文案）。</td></tr>
+<tr><td>收端 UI</td><td><code>src/components/rc/RcParcelCard.tsx</code>（新）</td><td>fileAsk 一族行内结构 + <code>.parcelNeutral</code> 令牌壳 + 水位条；≤200 行。挂载层放被控端常驻域（对照 <code>RcFileAskLine</code> 挂 App 层的做法，<code>RcFileAsk.tsx:306-346</code>），浮现避让沿用 <code>useRcCapsuleReveal.ts:42/376</code> 的胶囊收编逻辑，不新造定位体系。</td></tr>
+<tr><td>卡片入口</td><td><code>Card.tsx</code> 内联按钮区(:757 一族)+1 颗 package；<code>ContextMenu.tsx</code> 加「寄到…」子菜单</td><td>子菜单拆 <code>components/rc/ShipDeviceMenu.tsx</code>，别把设备列表塞进 Card.tsx（它已过千行，只许接线不许堆肉）。</td></tr>
+<tr><td>Rust 链（新增 InputEvent 变体的六处）</td><td>① <code>rc/input.rs:58</code> 同族 <code>ClipboardPush { text, parcel: Option&lt;bool&gt; }</code>（可选字段保旧端兼容，§6#6）→ ② <code>rc/inbound.rs:372</code> 分支：parcel=Some(true) → 不直写，emit <code>rc-parcel-arrived</code>，到点/「立即入栈」再走既有 <code>set_clipboard_text_async</code>；「丢弃」=不执行 → ③ <code>rc/outbound.rs:612</code> 同族加 <code>clip_push_ok</code> 回帧分派 → ④ <code>rc/notify.rs:246</code> 同族投影 <code>set_clip_push_ok</code>（并堵 <code>:363-368</code> 的静默丢帧：无会话快照也回 <code>clip_push_err</code>）→ ⑤ <code>lib.rs:938</code> 同族 emit <code>rc-clip-push-ok</code> → ⑥ <code>protocol.rs:215-235</code> tag 守卫清单补 <code>"clip_ok"/"parcel"</code> 用例（防被 <code>RcFrame::decode</code> 认领后 <code>Ok(_)=&gt;{}</code> 静默吞掉——该测试注释里写着的 v7.2.5 前科）。</td><td>—</td></tr>
+<tr><td>不做的事</td><td colspan="2">不动 <code>RcClipboardBar</code> 会话内推送的现行为（另开 PR 收口 §2 存量纠偏）；不给图片造第二条通道；不在本期接 WTS 锁屏监听（§4#5）。</td></tr>
+</tbody>
+</table>
+</div>
+
+<script>
+/* 图标：路径逐条取自 node_modules/lucide-react 本地副本（__iconNode），size=15 / strokeWidth=2 / viewBox 0 0 24 24，
+   与 ResultActions.tsx 的 <Icon size={15}/> 同档。不手画、不凭记忆。 */
+const ICONS = {
+  package: [['path',{d:'M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z'}],['path',{d:'M12 22V12'}],['polyline',{points:'3.29 7 12 12 20.71 7'}],['path',{d:'m7.5 4.27 9 5.15'}]],
+  send: [['path',{d:'M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z'}],['path',{d:'m21.854 2.147-10.94 10.939'}]],
+  copy: [['rect',{width:14,height:14,x:8,y:8,rx:2,ry:2}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  'circle-alert': [['circle',{cx:12,cy:12,r:10}],['line',{x1:12,x2:12,y1:8,y2:12}],['line',{x1:12,x2:12.01,y1:16,y2:16}]],
+  bell: [['path',{d:'M10.268 21a2 2 0 0 0 3.464 0'}],['path',{d:'M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326'}]],
+  timer: [['line',{x1:10,x2:14,y1:2,y2:2}],['line',{x1:12,x2:15,y1:14,y2:11}],['circle',{cx:12,cy:14,r:8}]],
+  'chevron-down': [['path',{d:'m6 9 6 6 6-6'}]],
+  x: [['path',{d:'M18 6 6 18'}],['path',{d:'m6 6 12 12'}]],
+  inbox: [['polyline',{points:'22 12 16 12 14 15 10 15 8 12 2 12'}],['path',{d:'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'}]],
+  check: [['path',{d:'M20 6 9 17l-5-5'}]],
+  monitor: [['rect',{width:20,height:14,x:2,y:3,rx:2}],['line',{x1:8,x2:16,y1:21,y2:21}],['line',{x1:12,x2:12,y1:17,y2:21}]],
+  smartphone: [['rect',{width:14,height:20,x:5,y:2,rx:2,ry:2}],['path',{d:'M12 18h.01'}]],
+  'wifi-off': [['path',{d:'M12 20h.01'}],['path',{d:'M8.5 16.429a5 5 0 0 1 7 0'}],['path',{d:'M5 12.859a10 10 0 0 1 5.17-2.69'}],['path',{d:'M19 12.859a10 10 0 0 0-2.007-1.523'}],['path',{d:'M2 8.82a15 15 0 0 1 4.177-2.643'}],['path',{d:'M22 8.82a15 15 0 0 0-11.288-3.764'}],['path',{d:'m2 2 20 20'}]],
+  history: [['path',{d:'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'}],['path',{d:'M3 3v5h5'}],['path',{d:'M12 7v5l4 2'}]],
+};
+function mountIcons(root) {
+  for (const el of root.querySelectorAll('[data-i]')) {
+    const nodes = ICONS[el.dataset.i] || [];
+    el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`
+      + nodes.map(([t, a]) => `<${t} ${Object.entries(a).map(([k, v]) => `${k}="${v}"`).join(' ')}></${t}>`).join('') + `</svg>`;
+  }
+}
+</script>
+
+<script>
+/* ══ 量具第一条：确认样式表真的命中。同一份 *.module.css 有两种打开方式：
+   file:// ⇒ 类名原样字面量；经 Vite dev server ⇒ 作用域化成 ._name_hash_line，
+   HTML 写 class="fileAskCard" 一条都不匹配，而 <link> 依然 200、不报错。
+   做法：从 CSSOM 抓作用域名建反查表，再把 DOM 类名换过去。不抄任何数值。 ══ */
+const scopeMap = (() => {
+  const map = {};
+  for (const ss of document.styleSheets) {
+    if (!ss.href || !ss.href.includes('.module.css')) continue;
+    let rules; try { rules = ss.cssRules; } catch { continue; }
+    for (const r of rules) {
+      if (!r.selectorText) continue;
+      for (const m of r.selectorText.matchAll(/\.(_([A-Za-z][\w]*?)_([0-9a-f]{2,})_(\d+))(?![\w-])/g)) {
+        if (!(m[2] in map)) map[m[2]] = m[1];
+      }
+    }
+  }
+  return map;
+})();
+const C = (n) => '.' + (scopeMap[n] || n);
+function applyScope(root) {
+  for (const el of root.querySelectorAll('*')) {
+    const cl = el.getAttribute('class');
+    if (!cl) continue;
+    el.setAttribute('class', cl.split(/\s+/).map((t) => scopeMap[t] || t).join(' '));
+  }
+}
+
+/* ── 领域数据（字段口径 = rcTypes.ts:282-327；文案函数 = rcDevice.ts / rcSessionStats.ts 原函数复刻） ── */
+const presenceHint = (p) => ({ live: '局域网可达', recent: '仍可尝试', seen: '仍可经中继尝试', never: '核对指纹后再试，或检查对方远程通道' }[p] || '');
+const pathKindLabel = (k) => (k === 'lan' ? '局域网直连' : k === 'direct' ? '公网直连' : k === 'relay' ? '绕中继' : '');
+const pathKindHint = (k) => (k === 'relay' ? '中继转发，延迟高于直连属正常' : k === 'direct' ? '已打洞成功，不经中继' : k === 'lan' ? '同一局域网，延迟最低' : '');
+const lastSeenJoin = (d) => { const m = { lan: '局域网', direct: '公网直连', relay: '中继' }; return m[d.last_path] ? ` · 上次走${m[d.last_path]}` : ''; }; // 措辞=rcDevice.ts:124-127 `上次走${pathLabel}`（只有路径档）
+
+const DEVS = [
+  { id: 'office', display: '工作室 ThinkPad', name: 'DESKTOP-A7X2', os: 'Windows 11', presence: 'live', last_path: '', fp: '2c9f…a41b', icon: 'monitor', auto_accept: false },
+  { id: 'living', display: '客厅 miniPC（中继那台）', name: 'MINI-42', os: 'Windows 11', presence: 'recent', last_path: 'relay', fp: '8b1e…77d0', icon: 'monitor', auto_accept: false },
+  { id: 'phone', display: '随身手机', name: 'PIXAL-9', os: '', presence: 'seen', last_path: 'direct', fp: 'f04c…11d9', icon: 'smartphone', auto_accept: true },
+  { id: 'old', display: '旧笔记本', name: 'OLD-LAP', os: '', presence: 'never', last_path: '', fp: '55aa…90fe', icon: 'wifi-off', auto_accept: false },
+];
+const CLIP_MAX_KB = 48; // service/mod.rs:38（48*1024，编码后 JSON 字节）
+const CONTENT = {
+  text: { icon: 'copy', lbl: '长文本 · 3,412 字符', sub: '「把三个档位的价格再核一遍，特别是年付折后价，法务说要在合同里写明…」', k: '1.2 KB', bytes: 1258 },
+  big:  { icon: 'circle-alert', lbl: '超宽文本 · 61.7 KB', sub: '整份 PDF 文字提取（编码后 JSON 63,192 字节）', k: '61.7 KB', bytes: 63192 },
+  img:  { icon: 'inbox', lbl: '截图 · 1920×1080', sub: '图片不能走剪贴板帧，走文件通道 rc_file_send', k: '240 KB', bytes: 245760 },
+};
+const INJECT_MSG = {
+  viewonly: '当前是只看会话，不能写入对方剪贴板',
+  write: '写入对方剪贴板失败：剪贴板格式被占用 (0x800401D0)',
+};
+
+/* ── rcWaitStage 同构的纯函数：判据只有「剩余时间」，无 DOM 无动画 ══ */
+function parcelStage(remainMs) {
+  if (remainMs > 2000) return '接收内容…';
+  if (remainMs > 500) return '内容已备好，即将入栈';
+  return '正在写入剪贴板历史…';
+}
+const PARCEL_MS = 3000;
+
+/* ── 页面状态（唯一可变源；render 是它的纯投影，复位=归零+重投影，DOM 一致性可判） ── */
+const initial = () => ({
+  content: 'text', inject: 'ok', dev: 'office',
+  phase: 'idle',            // idle|sending|sent|landed|failed|blocked|awaitFile|deniedPeer
+  err: '', parcel: null,    // parcel:{t0, remain, frozen, mode:'parcel'|'file'|'dropped'|'landed', preview}
+  toast: { text: '推送剪贴板失败：当前是只看会话，不能写入对方剪贴板', demo: true },
+  run: 0,
+});
+let S = initial();
+const T = {}; // 定时器登记表，render/复位前全停
+function stopAll() { for (const k of Object.keys(T)) { clearInterval(T[k]); clearTimeout(T[k]); delete T[k]; } }
+let sampleRun = 0;
+
+/* ── 历史卡片入口 mock（真类名；package 那颗是本稿新增①） ── */
+function buildCard() {
+  const c = CONTENT[S.content];
+  return `<div class="cardWrap" style="width:372px"><div class="card">
+    <div class="cardContent"><p class="cardTitle">${c.lbl.replace(' · ', '（寄件内容） · ')}</p>
+      <div class="cardSub"><span>来自 Chrome</span><span>3,412 字</span></div></div>
+    <div class="cardInlineActions cardInlineVisible">
+      <button type="button" class="cardInlineBtn" title="复制" data-i="copy"></button>
+      <button type="button" class="cardInlineBtn" id="openShip" title="寄到…（本稿新增入口）" data-i="package" style="color:var(--preview-pin)"></button>
+    </div>
+  </div></div>`;
+}
+
+/* ── 发起端寄件单（全真类名 + 本稿新增状态类 .off/.sel/.ph-*） ── */
+function shipStatus() {
+  const dev = DEVS.find((d) => d.id === S.dev);
+  switch (S.phase) {
+    case 'idle': return ['send', `寄给「${dev.display}」`, '文本走剪贴板帧（≤48KB）· 入栈由既有链承担', 'Enter'];
+    case 'sending': return ['send', '寄出中…', '本地命令在跑（rc_push_clipboard，commands/rc.rs:1717）', ''];
+    case 'sent': return ['timer', '已寄出', '帧已进入会话通道——⚠️ 不代表对方写入成功（§2 第一行）', ''];
+    case 'landed': return ['check', '对方已收到并入栈', '落地=新增回执 clip_push_ok（本页用收端落栈模拟，§7）', ''];
+    case 'failed': return ['circle-alert', '寄出失败', '回执 clip_push_err → rc-clip-push-error（useRcSessionNotices.ts:114）', ''];
+    case 'blocked': return ['circle-alert', '本地拦下：内容超限', '出站闸门 frames_clip.rs:190，零网络请求', ''];
+    case 'awaitFile': return ['inbox', '已寄出，待对方接受', '文件通道走 rc-file-state 进度事件，不走包裹卡', ''];
+    default: return ['send', '—', '', ''];
+  }
+}
+function buildPanel() {
+  const c = CONTENT[S.content];
+  const ph = S.phase === 'failed' || S.phase === 'blocked' ? 'ph-bad'
+    : (S.phase === 'sending' || S.phase === 'sent' || S.phase === 'awaitFile') ? 'ph-warn'
+    : S.phase === 'landed' ? 'ph-ok' : '';
+  document.getElementById('shipPanel').className = 'act-panel ' + ph;
+  const devRows = DEVS.map((d) => {
+    const off = d.presence === 'never';
+    const sel = d.id === S.dev;
+    return `<button type="button" class="act-row devRow${off ? ' off' : ''}${sel ? ' sel' : ''}" data-dev="${d.id}"${off ? ' disabled' : ''}>
+      <span class="ic" data-i="${d.icon}"></span>
+      <span class="tx"><span class="lbl">${d.display}</span><span class="sub">${presenceHint(d.presence)}${lastSeenJoin(d)}</span></span>
+      <span class="k">${d.os || ''}</span></button>`;
+  }).join('');
+  const [stIcon, stLbl, stSub, stK] = shipStatus();
+  const sens = S.phase === 'blocked'
+    ? `<div class="act-sens" id="sensLine">剪贴板过大（约 ${Math.floor(CONTENT.big.bytes / 1024)} KB，上限约 ${CLIP_MAX_KB} KB），请改用文件或其他方式传输</div>`
+    : S.phase === 'failed'
+    ? `<div class="act-sens" id="sensLine">推送剪贴板失败：${S.err}</div>` : '';
+  const relayNote = (S.phase === 'sent' || S.phase === 'sending') && (() => {
+    const d = DEVS.find((x) => x.id === S.dev);
+    return d.presence === 'seen' || d.last_path === 'relay';
+  })() ? `<div class="act-group">链路</div><div style="padding:4px 12px 8px;font-size:10.5px;color:var(--text-muted)">${S.dev === 'phone' ? '大概率走中继——' : ''}${pathKindHint('relay') || '若实际走中继：中继转发，延迟高于直连属正常'}</div>` : '';
+  const fileNote = S.content === 'img'
+    ? `<div class="act-group">注意</div><div style="padding:4px 12px 8px;font-size:10.5px;color:var(--text-muted)">图片走 rc_file_send：对方看到的是既有<b>文件确认条</b>（60s 内回应；该设备 auto_accept 时免确认直落接收目录）——与文本的 3s 包裹卡是两套反馈语言（§6#3）</div>` : '';
+  const [st2lbl] = [''];
+  return `<div class="act-head"><span class="dot"></span> 寄件单 · 单条直寄</div>
+    <div class="act-group">内容（本条）</div>
+    <button type="button" class="act-row"><span class="ic" data-i="${c.icon}"></span><span class="tx"><span class="lbl">${c.lbl}</span><span class="sub">${c.sub}</span></span><span class="k">${c.k}</span></button>
+    <div class="act-group">收件设备（已配对）</div>${devRows}
+    <div class="act-group">投递</div>
+    <div class="act-row" id="statusRow" role="status"><span class="ic" data-i="${stIcon}"></span><span class="tx"><span class="lbl">${stLbl}</span><span class="sub">${stSub}</span></span><span class="k">${stK}</span></div>
+    ${sens}${relayNote}${fileNote}
+    <button type="button" class="act-row insert" id="sendBtn" ${S.phase === 'sending' ? 'disabled' : ''}><span class="ic" data-i="send"></span><span class="tx"><span class="lbl">寄出这一条</span><span class="sub">单条粒度 · 不打包 · 不要求签收</span></span><span class="k">↵</span></button>`;
+}
+function buildToast() {
+  const t = document.getElementById('toastA');
+  t.innerHTML = `<div class="toastMock${S.toast.demo ? ' demo' : ''}" id="toastNode">${S.toast.demo ? '<b>失败 toast 示例</b>（真实运行时同一句话挂在这里 3s；措辞=useRcSessionNotices.ts:120 前缀 + 回执原句）<br>' : '<b>toast</b> '}${S.toast.text}</div>`;
+}
+
+/* ── 收端包裹卡（本稿新增②；行内结构=fileAskCard 一族） ── */
+function parcelBodyHtml(p, sample) {
+  const dev = DEVS.find((d) => d.id === S.dev);
+  const remain = p.frozen ? p.remain : Math.max(0, PARCEL_MS - (Date.now() - p.t0));
+  const cdTxt = `${(remain / 1000).toFixed(1)}s 后自动入栈`;
+  const stageTxt = parcelStage(remain);
+  const late = remain <= 1000;
+  const c = CONTENT[S.content];
+  return `<div class="fileAskCard parcelNeutral${sample ? '' : ' parcelLive'}" role="status" style="--fill:${(remain / PARCEL_MS).toFixed(3)}">
+    <div class="fileAskHead"><span class="parcelDot"></span><span class="fileAskTitle">来自「${dev.display}」的包裹</span><span class="fileAskKind" style="background:color-mix(in srgb, var(--accent-solid) 14%, transparent);color:var(--accent-solid)">寄件单</span></div>
+    <div class="fileAskLead">${stageTxt}</div>
+    <div class="parcelFill"></div>
+    <dl class="ibFacts">
+      <div class="ibFact"><dt>来源指纹</dt><dd class="fileAskMono">${dev.fp}</dd></div>
+      <div class="ibFact"><dt>内容</dt><dd>${c.lbl}</dd></div>
+      <div class="ibFact"><dt>落点</dt><dd>剪贴板历史（既有入栈链）</dd></div>
+    </dl>
+    ${p.preview ? `<div class="fileAskLead" style="border-top:1px dashed var(--border-color);padding-top:6px">${c.sub}<br><span style="color:var(--text-muted)">…（展开摘要，倒计时冻结在 ${(remain / 1000).toFixed(1)}s）</span></div>` : ''}
+    <div class="fileAskActions">
+      <span class="${late ? 'fileAskCdLate' : 'fileAskCd'}" id="cdNode">${cdTxt}</span><span class="sp" style="flex:1"></span>
+      <button type="button" class="miniBtn" data-act="drop">丢弃</button>
+      ${p.preview
+        ? `<button type="button" class="miniBtn" data-act="resume">继续</button><button type="button" class="miniBtnPri" data-act="land">立即入栈</button>`
+        : `<button type="button" class="miniBtnPri" data-act="preview">预览</button>`}
+    </div>
+    <div class="fileAskNote">3 秒到点自动写入剪贴板历史（不签收、不置顶）；随时可在历史里删除。落地时「已入栈」字样由 clipboard-changed 驱动。</div>
+  </div>`;
+}
+function buildParcel() {
+  const host = document.getElementById('parcelHost');
+  const p = S.parcel;
+  if (!p) { host.innerHTML = ''; return; }
+  if (p.mode === 'file') {
+    const dev = DEVS.find((d) => d.id === S.dev);
+    host.innerHTML = `<div class="fileAskCard"><div class="fileAskHead"><span class="dotDanger"></span><span class="fileAskTitle">${dev.display} 发来 1 个文件</span><span class="fileAskKind">对方发文件</span></div>
+      <div class="fileAskLead">对方同意接管前，文件会先落进接收目录——这是<b>既有确认条</b>，不是 3s 包裹卡（§6#3）。</div>
+      <dl class="ibFacts"><div class="ibFact"><dt>来源指纹</dt><dd class="fileAskMono">${dev.fp}</dd></div>
+      <div class="ibFact"><dt>文件名</dt><dd class="fileAskMono">shot-2026-10-11-1432.png</dd></div>
+      <div class="ibFact"><dt>大小</dt><dd>240 KB</dd></div></dl>
+      <div class="fileAskActions"><span class="fileAskCd">需在 60s 内回应</span><span style="flex:1"></span><button type="button" class="miniBtn">拒绝</button><button type="button" class="miniBtnPri">接受</button></div>
+      <div class="fileAskNote">超时（60s 内不回应）会自动拒绝，不会静默接收。（RcFileAsk.tsx:292-294 原样）</div></div>`;
+  } else if (p.mode === 'landed') {
+    host.innerHTML = `<div class="fileAskCard parcelNeutral"><div class="fileAskHead"><span class="ic" data-i="bell" style="background:transparent;width:auto;height:auto;color:var(--success)"></span><span class="fileAskTitle">已入栈 · 剪贴板历史新增 1 条</span></div>
+      <div class="fileAskActions"><span class="fileAskLead" style="flex:1">写入由既有链完成（inbound→monitor→clipboard-changed）</span><span style="flex:1"></span><button type="button" class="miniBtn"><span data-i="history"></span> 打开历史</button></div></div>`;
+  } else if (p.mode === 'dropped') {
+    host.innerHTML = `<div class="fileAskCard parcelNeutral"><div class="fileAskHead"><span class="fileAskTitle">已丢弃（未写剪贴板、未入历史）</span></div></div>`;
+  } else {
+    host.innerHTML = parcelBodyHtml(p, false);
+  }
+  applyScope(host);
+  mountIcons(host);
+}
+
+/* ── 1d 常驻样张 ── */
+function buildSamples() {
+  document.getElementById('sAsk').innerHTML =
+    `<div class="fileAskCard"><div class="fileAskHead"><span class="dotDanger"></span><span class="fileAskTitle">客厅 miniPC 发来 1 个文件</span><span class="fileAskKind">对方发文件</span></div>
+     <div class="fileAskLead">接受后写入本机磁盘。</div>
+     <div class="fileAskActions"><span class="fileAskCd">需在 60s 内回应</span><span style="flex:1"></span><button type="button" class="miniBtn">拒绝</button><button type="button" class="miniBtnPri">接受</button></div>
+     <div class="fileAskNote">超时会自动拒绝，不会静默接收。</div></div>`;
+  document.getElementById('sSens').innerHTML =
+    `<div class="act-head"><span class="dot"></span> 寄件单 · 越限示例</div>
+     <div class="act-sens" id="sensSample">剪贴板过大（约 ${Math.floor(CONTENT.big.bytes / 1024)} KB，上限约 ${CLIP_MAX_KB} KB），请改用文件或其他方式传输</div>`;
+  document.getElementById('sParcel').innerHTML = parcelBodyHtml({ t0: Date.now() - 900, remain: 2100, frozen: true, mode: 'parcel', preview: false }, true);
+  applyScope(document.getElementById('samples'));
+  mountIcons(document.getElementById('samples'));
+}
+
+/* ── 倒计时 / 采样（只在卡片活着时跑；到点即停——规则 8） ── */
+function startParcelLoop() {
+  const p = S.parcel;
+  if (!p || p.mode !== 'parcel') return;
+  if (T.smp == null) {
+    T.smp = setInterval(() => {
+      const q = S.parcel;
+      if (!q || q.mode !== 'parcel') return;
+      const card = document.querySelector('#parcelHost .parcelLive');
+      const r = card ? card.getBoundingClientRect() : null;
+      addSampleRow((q.frozen ? q.remain : Math.max(0, PARCEL_MS - (Date.now() - q.t0))), r, Date.now() - q.t0);
+    }, 500);
+  }
+  if (T.cd != null) return;
+  T.cd = setInterval(() => {
+    const q = S.parcel;
+    if (!q || q.mode !== 'parcel') { clearInterval(T.cd); delete T.cd; return; }
+    if (!q.frozen) q.remain = Math.max(0, PARCEL_MS - (Date.now() - q.t0));
+    const remain = q.remain;
+    const card = document.querySelector('#parcelHost .parcelLive');
+    if (card) {
+      card.style.setProperty('--fill', (remain / PARCEL_MS).toFixed(3));
+      const cd = card.querySelector('#cdNode');
+      if (cd) { cd.textContent = `${(remain / 1000).toFixed(1)}s 后自动入栈`; cd.className = remain <= 1000 ? 'fileAskCdLate' : 'fileAskCd'; }
+      const lead = card.querySelector('.fileAskLead');
+      if (lead && !q.preview) lead.textContent = parcelStage(remain);
+    }
+    if (remain <= 0) { clearInterval(T.cd); delete T.cd; land(); }
+  }, 100);
+}
+function addSampleRow(remain, r, t) {
+  const tb = document.getElementById('sampleT');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td class="n">${sampleRun}</td><td class="n">${(t).toFixed(0)}</td><td class="n">${remain.toFixed(0)}</td>`
+    + `<td class="n">${(remain / PARCEL_MS).toFixed(2)}</td><td>${parcelStage(remain)}</td>`
+    + `<td class="n">${r ? Math.round(r.width) + '×' + Math.round(r.height) : '—'}</td>`;
+  tb.prepend(tr);
+  while (tb.children.length > 12) tb.lastChild.remove();
+  document.getElementById('sampleSrc').textContent = `run ${sampleRun}（每 500ms 实测一行，t=自寄出点击）`;
+}
+function land() {
+  stopAll();
+  S.parcel = { ...S.parcel, mode: 'landed' };
+  S.phase = 'landed';
+  render();
+}
+
+/* ── 寄出序列（本地闸门 → 已寄出 → 回执拍） ── */
+function send() {
+  if (S.phase === 'sending') return;
+  const dev = DEVS.find((d) => d.id === S.dev);
+  if (dev.presence === 'never') return;
+  stopAll();
+  const c = CONTENT[S.content];
+  if (c.bytes > CLIP_MAX_KB * 1024 && S.content === 'big') {
+    S.phase = 'blocked'; render(); return;   // 本地闸门：零网络
+  }
+  S.phase = 'sending'; S.err = ''; S.parcel = null;
+  S.toast = { text: '（本次运行尚未失败）', demo: false };
+  render();
+  T.t1 = setTimeout(() => {
+    S.phase = S.content === 'img' ? 'awaitFile' : 'sent';
+    if (S.content === 'img') { S.parcel = { mode: 'file' }; }
+    render();
+    if (S.content === 'text') {
+      T.t2 = setTimeout(() => {
+        if (S.inject === 'ok') {
+          S.parcel = { t0: Date.now(), remain: PARCEL_MS, frozen: false, mode: 'parcel', preview: false };
+          sampleRun += 1; S.run = sampleRun;
+          render(); startParcelLoop();
+        } else {
+          S.phase = 'failed';
+          S.err = INJECT_MSG[S.inject];
+          S.toast = { text: `推送剪贴板失败：${S.err}`, demo: false };
+          render();
+        }
+      }, 450);
+    }
+  }, 400);
+}
+
+/* ── 折行探针（Range 矩形按 top 去重；同款见 design/设置-行末控件全页审计-2026-10-02.html:528-534） ── */
+function linesOf(el) {
+  if (!el || !el.getClientRects().length) return null;
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  const rects = [...r.getClientRects()].filter((x) => x.height > 1);
+  const tops = [...new Set(rects.map((x) => Math.round(x.top)))];
+  return tops.length;
+}
+
+/* ── 自检：模块样式没命中时所有读数都是假的，先亮红再谈其它数字 ── */
+let LAST_RESET = null, INIT_HTML = null;
+function styleHealth(t0) {
+  const row = document.querySelector('.act-row');
+  const panel = document.querySelector('#shipPanel');
+  const askCard = document.querySelector(C('fileAskCard'));
+  const btn = document.querySelector(C('cardInlineBtn'));
+  const sheets = [];
+  for (const ss of document.styleSheets) {
+    if (!ss.href) continue;
+    let n = -1, err = '';
+    try { n = ss.cssRules.length; } catch (e) { err = '读不到(' + e.name + ')'; }
+    sheets.push({ name: ss.href.split('/').pop().split('?')[0], n, err });
+  }
+  const wanted = ['act-panel','act-head','act-row','act-group','act-sens','ic','tx','lbl','sub','k','insert','expand','pin',
+    'fileAskCard','fileAskHead','fileAskTitle','fileAskKind','fileAskLead','fileAskActions','fileAskCd','fileAskCdLate','fileAskNote','fileAskMono','dotDanger','ibFacts','ibFact','miniBtn','miniBtnPri',
+    'cardWrap','cardContent','cardTitle','cardSub','cardInlineActions','cardInlineBtn','cardInlineVisible'];
+  const inCss = new Set();
+  for (const ss of document.styleSheets) {
+    let rules; try { rules = ss.cssRules; } catch { continue; }
+    for (const r of rules) if (r.selectorText) for (const m of r.selectorText.matchAll(/\.([\w][\w-]*)/g)) inCss.add(m[1]);
+  }
+  const miss = wanted.filter((t) => !inCss.has(t) && !inCss.has(scopeMap[t] || ''));
+  const bodyOv = getComputedStyle(document.body).overflowY;
+  const htmlOv = getComputedStyle(document.documentElement).overflowY;
+  return {
+    ok: !!row && getComputedStyle(row).display === 'flex'
+      && !!panel && Math.round(panel.getBoundingClientRect().width) === 224
+      && !!askCard && getComputedStyle(askCard).display === 'flex'
+      && !!btn && Math.round(btn.getBoundingClientRect().width) === 28
+      && sheets.length >= 5 && sheets.every((s) => s.n > 0) && miss.length === 0
+      && bodyOv !== 'hidden' && htmlOv !== 'hidden',
+    rowDisplay: row ? getComputedStyle(row).display : 'n/a',
+    panelW: panel ? Math.round(panel.getBoundingClientRect().width) : 0,
+    askDisplay: askCard ? getComputedStyle(askCard).display : 'n/a',
+    btnW: btn ? Math.round(btn.getBoundingClientRect().width) : 0,
+    mapSize: Object.keys(scopeMap).length, sheets, miss, bodyOv, htmlOv, t0,
+  };
+}
+
+/* ── §3 度量表（现测；无读数的格子宁可写「未挂载」） ── */
+function measure(t0) {
+  const tb = document.getElementById('linesT');
+  const rows = [];
+  const push = (n, what, val, verdict) => rows.push(`<tr><td class="n">${n}</td><td>${what}</td><td class="n">${val}</td><td>${verdict}</td></tr>`);
+  const panel = document.getElementById('shipPanel');
+  push(1, '寄件单面板实宽（screenshot.css:619 声明 224px）', Math.round(panel.getBoundingClientRect().width) + 'px',
+    Math.round(panel.getBoundingClientRect().width) === 224 ? '<span class="ok">=224 命中</span>' : '<span class="bad">≠224（样式表失配）</span>');
+  const srow = document.getElementById('statusRow');
+  push(2, '状态行 lbl 折行数（当前 phase=' + S.phase + '）', (srow && linesOf(srow.querySelector('.lbl'))) ?? '未挂载', '设备显示名进 lbl：长别名会折行，落地措辞需在 rcDisplayName 后留 ellipsis');
+  const devSel = document.querySelector('.devRow.sel .sub');
+  const dl = devSel ? linesOf(devSel) : null;
+  const clip = devSel ? devSel.scrollWidth > devSel.clientWidth + 1 : null;
+  push(3, '选中设备行 sub（presenceHint＋「上次走中继」同现）折行数', dl ?? '未挂载', dl == null ? '—' : (dl <= 2 ? '<span class="ok">' + dl + ' 行（.tx 可缩 min-width:0，screenshot.css:660）</span>' : '<span class="warn">' + dl + ' 行</span>') + (clip ? ' <span class="bad">被裁切</span>' : ' 无裁切'));
+  push(4, '面板横向溢出（overflow:hidden 下测 scrollWidth）', panel.scrollWidth + '/' + panel.clientWidth, panel.scrollWidth <= panel.clientWidth ? '<span class="ok">不撑爆</span>' : '<span class="bad">被裁</span>');
+  const csub = document.querySelector('#shipPanel .act-group + .act-row .sub');
+  push(5, '内容行 sub 折行数', csub ? linesOf(csub) : '未挂载', '面板无 max-height：折行表现为变高，不表现为裁切');
+  const sens = document.getElementById('sensSample');
+  push(6, '超 48KB 本地拒绝文案行数（1.2 倍窗口宽 224px 样张②）', sens ? linesOf(sens) : '未挂载', '与运行态 #sensLine 同模板');
+  const live = document.querySelector('#parcelHost .parcelLive') || document.querySelector('#sParcel ' + C('fileAskCard'));
+  const lr = live ? live.getBoundingClientRect() : null;
+  push(7, '包裹卡实宽×高（运行卡=宿主 300px 定宽；无运行卡时读样张③）', lr ? Math.round(lr.width) + '×' + Math.round(lr.height) : '未挂载', lr ? '宽度=宿主 300，高度随预览展开变化' : '寄一次文本可测活卡');
+  const btn = document.querySelector(C('cardInlineBtn'));
+  const br = btn ? btn.getBoundingClientRect() : null;
+  push(8, '卡片入口按钮实测（CardList.module.css:593 声明 28×28）', br ? Math.round(br.width) + '×' + Math.round(br.height) : '未命中', br && Math.round(br.width) === 28 ? '<span class="ok">28×28 命中</span>' : '<span class="bad">作用域失配</span>');
+  const toast = document.getElementById('toastNode');
+  push(9, '失败 toast 文案行数（toast 宽 300px）', toast ? linesOf(toast) : '未挂载', '承载元素常驻发起端屏');
+  tb.innerHTML = rows.join('');
+
+  const set = (k, v) => document.querySelectorAll(`[data-r="${k}"]`).forEach((e) => (e.textContent = v));
+  set('rt', t0.toFixed(1));
+  const hb = styleHealth(t0);
+  const probe = document.getElementById('probe');
+  probe.className = hb.ok ? '' : 'bad';
+  probe.innerHTML = `量具自检：样式命中=${hb.ok ? '<span class="ok">是</span>' : '<span class="bad">否（所有读数作废）</span>'}`
+    + `（.act-row display=${hb.rowDisplay}，.act-panel 宽=${hb.panelW}（真值 224），.fileAskCard display=${hb.askDisplay}（真值 flex），.cardInlineBtn 宽=${hb.btnW}（真值 28），`
+    + `module 类名映射 ${hb.mapSize} 条，body/html overflow=${hb.bodyOv}/${hb.htmlOv}，`
+    + `各表规则数 ${hb.sheets.map((s) => s.name + '=' + (s.err || s.n)).join(' · ')}，`
+    + `未命中类名 ${hb.miss.length ? '<span class="bad">' + hb.miss.join(',') + '</span>' : '无'}，`
+    + `render 耗时 ${hb.t0.toFixed(1)}ms，复位后 DOM 一致=${LAST_RESET === null ? '未验' : LAST_RESET ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>'}）`
+    + `<br>本页是<b>待拍板稿</b>：.parcelNeutral/.parcelFill/.toastMock/.act-row.off/.sel/.ph-* <b>源码里不存在</b>（预期如此，不是失配），落地时新建；「对方已收到并入栈」态依赖 §7 新增回执，页内已标模拟。`;
+}
+
+/* ── 总投影：S → DOM（render 是纯投影，复位=归零重投影，DOM 一致性可判；定时器由事件处治） ── */
+function render() {
+  const t = performance.now();
+  document.getElementById('cardHost').innerHTML = buildCard();
+  applyScope(document.getElementById('cardHost'));
+  document.getElementById('shipPanel').className = 'act-panel';
+  document.getElementById('shipPanel').innerHTML = buildPanel(); // buildPanel 内部会重设 .ph-* 状态类
+  buildToast();
+  buildParcel();
+  mountIcons(document.getElementById('shipPanel'));
+  mountIcons(document.getElementById('cardHost'));
+  if (S.parcel && S.parcel.mode === 'parcel' && document.querySelector('#parcelHost .parcelLive')) startParcelLoop();
+  const t0 = performance.now() - t;
+  measure(t0);
+}
+
+/* ── 交互接线（toolbar 常驻一次；舞台内按钮每次 render 后用容器代理重挂） ── */
+for (const b of document.querySelectorAll('#segC button')) b.onclick = () => {
+  document.querySelectorAll('#segC button').forEach((x) => x.classList.remove('on'));
+  b.classList.add('on'); S.content = b.dataset.c; S.phase = 'idle'; S.parcel = null; S.err = ''; stopAll(); render();
+};
+for (const b of document.querySelectorAll('#segX button')) b.onclick = () => {
+  document.querySelectorAll('#segX button').forEach((x) => x.classList.remove('on'));
+  b.classList.add('on'); S.inject = b.dataset.x; S.phase = 'idle'; S.parcel = null; S.err = ''; stopAll(); render();
+};
+document.getElementById('resetBtn').onclick = () => {
+  stopAll(); S = initial(); render(); // render 尾部自带 measure（真计时）
+  const snap = document.getElementById('stageA').innerHTML + '|' + document.getElementById('stageB').innerHTML;
+  LAST_RESET = INIT_HTML != null ? snap === INIT_HTML : false;
+  render(); // 再投影一次，让自检条把「复位后 DOM 一致」的判定画进探针（幂等投影，不改状态）
+};
+document.getElementById('stageA').addEventListener('click', (e) => {
+  const dev = e.target.closest('[data-dev]');
+  if (dev && !dev.classList.contains('off')) { S.dev = dev.dataset.dev; if (S.phase !== 'idle') { S.phase = 'idle'; S.parcel = null; stopAll(); } render(); return; }
+  if (e.target.closest('#openShip')) { render(); document.getElementById('statusRow').scrollIntoView({ block: 'nearest' }); return; }
+  if (e.target.closest('#sendBtn')) { send(); return; }
+});
+document.getElementById('stageB').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  if (!act || !S.parcel || S.parcel.mode !== 'parcel') return;
+  const a = act.dataset.act, p = S.parcel;
+  if (a === 'drop') {
+    stopAll(); S.parcel = { mode: 'dropped' }; S.phase = 'idle';
+    render(); T.td = setTimeout(() => { S.parcel = null; render(); }, 1500);
+    return;
+  }
+  if (a === 'preview') {
+    p.preview = true; p.frozen = true; p.remain = Math.max(0, PARCEL_MS - (Date.now() - p.t0));
+    render(); return;
+  }
+  if (a === 'resume') {
+    p.frozen = false; p.preview = false; p.t0 = Date.now() - (PARCEL_MS - p.remain);
+    render(); startParcelLoop(); return;
+  }
+  if (a === 'land') { land(); return; }
+});
+document.getElementById('samples').addEventListener('click', (e) => {
+  const p = e.target.closest('[data-act="preview"]');
+  if (p && document.getElementById('sParcel')) {
+    const card = document.querySelector('#sParcel .parcelLive');
+    if (card) { const on = card.dataset.pv === '1'; card.dataset.pv = on ? '0' : '1'; p.textContent = on ? '预览' : '展开摘要'; const lead = card.querySelectorAll('.fileAskLead'); if (lead[1]) lead[1].remove(); if (!on) { const div = document.createElement('div'); div.className = 'fileAskLead'; div.style.cssText = 'border-top:1px dashed var(--border-color);padding-top:6px'; div.textContent = CONTENT.text.sub; card.querySelector('.parcelFill').after(div); } }
+  }
+});
+
+/* ── 启动：常驻样张 → 首投影 → rAF×2 重量（首屏同步读数不可信）。
+   自动化/后台标签页里 rAF 会被节流不执行，所以另加一条 200ms 定时兜底来抓取
+   初始 DOM 快照（render 是幂等投影，两路抓到的串一致；这是量具自留地，不是产品行为）── */
+function captureInit() { if (S.phase !== 'idle' || S.parcel) return; INIT_HTML = document.getElementById('stageA').innerHTML + '|' + document.getElementById('stageB').innerHTML; }
+buildSamples();
+render();
+requestAnimationFrame(() => requestAnimationFrame(() => { render(); captureInit(); }));
+setTimeout(() => { render(); captureInit(); }, 260);
+</script>
+</body>
+</html>

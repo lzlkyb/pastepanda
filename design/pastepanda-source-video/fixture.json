@@ -1,0 +1,57 @@
+[
+  {
+    "id": "source-demo-0",
+    "text": "📋 剪贴板历史：自动记录文本、图片、文件，400ms 轮询 + MD5 去重",
+    "time": "2026-10-11T15:07:14",
+    "type": "text",
+    "content": "",
+    "pinned": false,
+    "source": "README.md",
+    "workspace": "默认",
+    "tags": []
+  },
+  {
+    "id": "source-demo-1",
+    "text": "🏷️ 工作区管理：多工作区隔离历史记录，按场景切换",
+    "time": "2026-10-11T15:06:14",
+    "type": "text",
+    "content": "",
+    "pinned": false,
+    "source": "README.md",
+    "workspace": "默认",
+    "tags": []
+  },
+  {
+    "id": "source-demo-2",
+    "text": "🔒 敏感内容防护：密钥/凭证模式自动识别，不记录敏感剪贴板",
+    "time": "2026-10-11T15:05:14",
+    "type": "text",
+    "content": "",
+    "pinned": false,
+    "source": "README.md",
+    "workspace": "默认",
+    "tags": []
+  },
+  {
+    "id": "source-demo-3",
+    "text": "🔍 本机全文检索：一次搜索同时命中剪贴板与笔记；长笔记按节（section）定位，直接跳到命中位置",
+    "time": "2026-10-11T15:04:14",
+    "type": "text",
+    "content": "",
+    "pinned": false,
+    "source": "README.md",
+    "workspace": "默认",
+    "tags": []
+  },
+  {
+    "id": "source-demo-4",
+    "text": "🔌 接给外部 AI：通过 MCP 暴露 18 个工具，一键接入 Claude Code / WorkBuddy，让 AI 检索、引用、写入你的笔记。服务只绑 `127.0.0.1`",
+    "time": "2026-10-11T15:03:14",
+    "type": "text",
+    "content": "",
+    "pinned": false,
+    "source": "README.md",
+    "workspace": "默认",
+    "tags": []
+  }
+]

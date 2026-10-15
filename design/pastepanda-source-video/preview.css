@@ -1,0 +1,37 @@
+:root {
+  --film-canvas: var(--app-bg);
+  --film-border: var(--border-color);
+}
+body { overflow: auto; user-select: text; }
+.reviewHeader { max-width: 1280px; margin: 24px auto 16px; display: flex; justify-content: space-between; align-items: center; padding: 0 24px; }
+.reviewHeader strong { font-size: 20px; }
+.reviewHeader p, .reviewFooter { color: var(--text-secondary); }
+.reviewHeader p { margin-top: 4px; }
+.proofLabel { border: 1px solid var(--film-border); padding: 8px 12px; border-radius: 8px; color: var(--text-secondary); }
+.storyStage { width: 1280px; height: 720px; margin: 0 auto; position: relative; background: var(--film-canvas); border: 1px solid var(--film-border); overflow: hidden; }
+.storyCopy { position: absolute; left: 76px; top: 70px; width: 490px; }
+.brandLine { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
+.brandLine img { width: 26px; height: 26px; }
+.sceneNumber { margin-top: 104px; color: var(--accent-strong); font-size: 13px; letter-spacing: 1px; }
+/* ui-rule-ok: 52px is the approved film title at a 1280px canvas, outside the product interface. */
+.storyCopy h1 { margin-top: 24px; font-size: 52px; line-height: 1.22; letter-spacing: -2px; text-wrap: balance; max-width: 420px; }
+.sceneBody { max-width: 360px; margin-top: 24px; font-size: 15px; line-height: 1.8; color: var(--text-secondary); }
+.storyFoot { margin-top: 104px; font-size: 15px; color: var(--text-secondary); }
+.productWindow { width: 550px; height: 700px; position: absolute; right: 52px; top: 10px; overflow: hidden; border-radius: 12px; box-shadow: var(--glass-card-shadow); border: 1px solid var(--border-color); }
+.sourceFrame { width: 100%; height: 100%; border: 0; display: block; }
+.windowDimensions { position: absolute; bottom: 15px; left: 76px; color: var(--text-muted); font-size: 11px; }
+.shotNavigation { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; max-width: 1280px; padding: 0 24px; margin: 24px auto; }
+.shotNavigation button { padding: 12px 24px; border: 1px solid var(--border-color); background: var(--section-bg); color: var(--text-secondary); border-radius: 8px; font: inherit; cursor: pointer; }
+.shotNavigation button span { display: block; font-size: 11px; margin-bottom: 4px; }
+.shotNavigation button[aria-pressed="true"] { border-color: var(--accent-strong); color: var(--accent-strong); background: var(--accent-light); }
+.reviewFooter { max-width: 1280px; padding: 0 24px; margin: 16px auto 24px; line-height: 1.8; font-size: 12px; }
+.chapterDetail { max-width: 1280px; padding: 24px 24px 0; margin: 0 auto; line-height: 1.8; }
+.chapterDetail strong { font-size: 20px; }
+.chapterDetail p { margin-top: 8px; }
+.chapterDetail ul { display: grid; grid-template-columns: repeat(2, 1fr); padding: 16px 0 16px 24px; gap: 4px 24px; }
+.referenceNote, .chapterDetail details { color: var(--text-secondary); font-size: 12px; }
+.chapterDetail code { display: block; margin-top: 4px; }
+.chapterDetail summary { cursor: pointer; }
+.chapterDetail > details { margin-top: 8px; }
+.catalogueEntries { font-size: 13px; line-height: 2; color: var(--text-primary); padding: 8px 0; }
+@media (max-width: 1320px) { .storyStage { margin-left: 24px; } }

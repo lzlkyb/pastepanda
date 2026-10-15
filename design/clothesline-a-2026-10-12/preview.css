@@ -1,0 +1,92 @@
+/* 后载于真实主题/截图样式：截图窗的透明 body 不适用于滚动审稿页。 */
+:root { --paper: #fdfdfb; --paper-ink: #171717; --metal: #cfd6de; --metal-dark: #7f8b98; --rope: #e4e8f0; --desktop: #10233c; --desk-ink: #1f2937; --sample-accent: #315f89; --sample-soft: #e7eef5; --action-bg: color-mix(in srgb, var(--accent-solid) 65%, var(--paper-ink)); --action-hover: color-mix(in srgb, var(--accent-solid) 60%, var(--paper-ink)); }
+html, body { overflow: auto; min-height: 100%; background: var(--app-bg); }
+body { user-select: text; }
+.review { width: min(1280px, 100%); margin: auto; padding: 28px 32px 64px; }
+.reviewHead { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+h1 { font-size: 24px; line-height: 1.3; }
+.reviewHead p { color: var(--text-secondary); margin-top: 8px; }
+a { color: var(--accent-strong); text-underline-offset: 4px; }
+.scope { color: var(--text-secondary); margin: 20px 0; max-width: 90ch; }
+button, select, .fileButton { font: inherit; min-height: 32px; border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; background: var(--card-bg); color: var(--text-primary); cursor: pointer; }
+button:hover, .fileButton:hover { background: var(--hover); }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, select:focus-visible, .fileButton:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+.primary { background: var(--action-bg); color: var(--paper); border-color: transparent; }
+.primary:hover { background: var(--action-hover); color: var(--paper); }
+.controls { padding: 16px 0 20px; }
+.controlRow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.controlRow + .controlRow { margin-top: 16px; }
+.secondary { color: var(--text-secondary); font-size: 12px; }
+.secondary label { display: inline-flex; align-items: center; gap: 8px; }
+input[type="checkbox"] { accent-color: var(--accent); }
+.fileButton { position: relative; overflow: hidden; }
+.fileButton input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.stageViewport { width: 100%; overflow: auto; border-radius: 12px; background: var(--desktop); }
+#stageWrap { position: relative; margin: auto; }
+.stage { position: relative; width: var(--sw); height: 760px; transform: scale(var(--zoom)); transform-origin: top left; overflow: hidden; user-select: none; }
+.desk { position: absolute; inset: 0; background: linear-gradient(120deg, var(--sample-accent), var(--desktop) 65%); }
+.deskWindow { position: absolute; top: 290px; left: 7%; width: 62%; height: 400px; background: var(--paper); color: var(--desk-ink); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-md); }
+.deskBar { display: flex; gap: 8px; align-items: center; padding: 10px 16px; background: var(--sample-soft); color: var(--sample-accent); font-size: 12px; }
+.deskBar span { width: 9px; height: 9px; background: var(--metal); border-radius: 50%; }
+.deskWindow article { padding: 28px 36px; }
+.deskWindow h2 { font-size: 24px; margin: 8px 0 16px; }
+.deskWindow h3 { margin: 16px 0 8px; font-size: 15px; }
+.documentLabel { color: var(--sample-accent); font-size: 12px; }
+.documentRule { height: 1px; background: var(--metal); margin-top: 24px; }
+.islandGhost { position: absolute; right: 16px; top: 16px; width: 208px; height: 32px; border: 1px dashed var(--metal); border-radius: 16px; text-align: center; line-height: 30px; color: var(--rope); font-size: 12px; }
+.ropeLayer { position: absolute; inset: 0 0 auto; height: 300px; z-index: 5; pointer-events: none; }
+.ropeSvg { width: 100%; height: 100%; overflow: visible; position: absolute; pointer-events: none; }
+.ropeSvg path { fill: none; stroke: var(--rope); stroke-width: 2; stroke-linecap: round; }
+.anchor { position: absolute; top: 10px; width: 12px; height: 18px; border-radius: 4px; background: var(--metal-dark); }
+.anchorL { left: 10px; }
+.hang { position: absolute; transform: translateX(-50%) rotate(var(--angle, 0deg)); transform-origin: 50% 0; pointer-events: auto; cursor: grab; touch-action: none; }
+.hang.dragging { cursor: grabbing; z-index: 45; }
+.frame { margin-top: 5px; padding: 8px 8px 20px; border: 1px solid var(--metal); border-radius: 12px; background: var(--paper); color: var(--paper-ink); box-shadow: var(--shadow-md); position: relative; }
+.hang:hover .frame, .hang:focus-visible .frame { outline: 2px solid var(--accent); outline-offset: 2px; }
+.clip { position: absolute; width: 22px; height: 10px; left: 50%; top: -5px; z-index: 3; background: linear-gradient(var(--metal), var(--metal-dark), var(--metal)); border-radius: 3px; transform: translateX(-50%) rotate(var(--tilt, 0deg)); }
+.clip::after { content: ''; position: absolute; left: 3px; right: 3px; top: 4px; height: 2px; background: var(--metal-dark); }
+.photo { width: var(--iw); height: var(--ih); overflow: hidden; border-radius: 4px; background: var(--sample-soft); }
+.photo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.sample { width: 100%; height: 100%; background: var(--paper); color: var(--desk-ink); padding: 12px; font-size: 11px; line-height: 1.6; overflow: hidden; }
+.sample strong { display: block; font-size: 15px; margin: 8px 0; }
+.sampleBar { background: var(--sample-soft); color: var(--sample-accent); padding: 4px 8px; margin: -12px -12px 8px; }
+.sampleLines { display: flex; align-items: end; gap: 8px; height: 48px; margin-top: 8px; }
+.sampleLines i { display: block; width: 18%; background: var(--sample-accent); height: var(--bar); }
+.caption { position: absolute; bottom: 4px; left: 8px; right: 8px; font-size: 11px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.takeOne { position: absolute; right: 0; top: 0; z-index: 4; min-height: 24px; font-size: 11px; padding: 3px 6px; border-radius: 4px; background: var(--paper); color: var(--paper-ink); }
+.takeOne:hover { background: var(--sample-soft); }
+.emptyRope { pointer-events: auto; display: flex; gap: 12px; align-items: center; position: absolute; top: 60px; left: 50%; transform: translateX(-50%); color: var(--rope); font-size: 13px; white-space: nowrap; }
+.pinGhost { position: absolute; border: 1px solid var(--metal); border-radius: 4px; background: var(--paper); color: var(--paper-ink); overflow: hidden; box-shadow: var(--shadow-md); z-index: 20; }
+.pinGhost .photo { width: 100%; height: 100%; }
+.pinClose { position: absolute; top: 7px; right: 7px; min-height: 24px; padding: 0 6px; border-radius: 4px; background: var(--paper); color: var(--paper-ink); z-index: 2; }
+.pinPanel { position: absolute; right: 16px; bottom: 56px; width: 280px; max-height: 340px; z-index: 25; }
+.pinPanel .name { font-size: 12px; }
+.pinPanel .foot { font-size: 11px; }
+.pinPanel .row button { min-height: 24px; font-size: 11px; padding: 3px 6px; }
+.pinPanel .thumb { overflow: hidden; }
+.pinPanel .thumb img { width: 100%; height: 100%; object-fit: contain; }
+.loupe { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 560px; background: var(--paper); color: var(--paper-ink); padding: 12px; border-radius: 12px; box-shadow: var(--shadow-md); z-index: 60; }
+#loupeImage .photo { width: 100%; height: 320px; }
+#loupeImage .sample { font-size: 20px; padding: 28px; }
+#loupeImage .sample strong { font-size: 28px; }
+#loupeCaption { margin: 12px 0; font-size: 13px; }
+.loupeActions { display: flex; gap: 12px; }
+.dragHint { position: absolute; top: 310px; left: 50%; transform: translateX(-50%); color: var(--paper); background: var(--action-bg); border-radius: 8px; padding: 8px 16px; z-index: 55; pointer-events: none; }
+.undoBar { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; background: var(--card-bg); color: var(--text-primary); padding: 12px 16px; border-radius: 8px; z-index: 70; box-shadow: var(--shadow-md); white-space: nowrap; }
+.toast { position: absolute; bottom: 104px; left: 50%; transform: translateX(-50%); max-width: 520px; padding: 12px 16px; background: var(--card-bg); color: var(--text-primary); border-radius: 8px; z-index: 80; box-shadow: var(--shadow-md); }
+#fxLayer { position: absolute; inset: 0; pointer-events: none; z-index: 50; }
+#fxLayer .hang, #fxLayer button { pointer-events: none; }
+.stageFoot { position: absolute; bottom: 16px; left: 24px; right: 24px; display: flex; justify-content: space-between; color: var(--rope); font-size: 12px; }
+.gestureHelp { color: var(--text-secondary); margin: 16px 0; }
+.readouts { display: flex; flex-wrap: wrap; gap: 24px; font-size: 13px; color: var(--text-secondary); }
+.readouts b { color: var(--text-primary); margin-left: 8px; font-variant-numeric: tabular-nums; }
+.decisions { margin-top: 40px; }
+.decisions h2 { font-size: 20px; margin-bottom: 16px; }
+.decisions p { margin-top: 16px; color: var(--text-secondary); max-width: 90ch; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 12px 16px; vertical-align: top; border-bottom: 1px solid var(--border-color); }
+th { background: var(--card-bg); }
+.queue { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+[hidden] { display: none !important; }
+@media (max-width: 700px) { .review { padding: 20px 16px 40px; } .reviewHead { align-items: start; } .reviewHead a { white-space: nowrap; font-size: 12px; } th, td { padding: 8px; } .stageViewport { border-radius: 8px; } }
