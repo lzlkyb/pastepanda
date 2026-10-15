@@ -1203,6 +1203,7 @@ pub fn run() {
             commands::toggle_kb_sync,
             // 远程电脑（R0 门禁 + R1 壳）
             commands::rc_status,
+            commands::rc_net_diag,
             commands::rc_identity,
             commands::rc_targets,
             commands::rc_probe_targets,

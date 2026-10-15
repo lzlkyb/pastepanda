@@ -2185,3 +2185,93 @@
   gap: 8px;
   margin-top: 8px;
 }
+
+/* ---- R0 网络诊断折叠段（RcNetDiagCard，selfCard 内）---- */
+.netDiag {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.netDiagToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 0 6px;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.netDiagToggle:hover { color: var(--text-primary); }
+
+.netDiagBadge {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.netDiagBadge[data-tone="ok"] {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.netDiagBadge[data-tone="warn"] {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.netDiagBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 8px;
+}
+
+.netDiagRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.netDiagRow span { color: var(--text-muted); }
+.netDiagRow strong { font-weight: 600; color: var(--text-primary); }
+
+.netDiagNote {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.netDiagRefresh {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.netDiagRefresh:hover:not(:disabled) { color: var(--text-primary); }
+.netDiagRefresh:disabled { opacity: 0.6; cursor: default; }
+
+.netDiagSpin { animation: netDiagSpin 400ms linear infinite; }
+@keyframes netDiagSpin { to { transform: rotate(360deg); } }

@@ -1,0 +1,17 @@
+[package]
+name = "netdiag-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# 与主工程同版本同 features（Cargo.toml:71），共享 cargo 缓存；判据见 README。
+[dependencies]
+iroh = { version = "1.1", default-features = false, features = [
+    "tls-ring",
+    "portmapper",
+    "unstable-net-report",
+] }
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+opt-level = 2
