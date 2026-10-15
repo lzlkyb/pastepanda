@@ -166,11 +166,10 @@ describe("出示态遮罩（设计稿 §3，与桌面同一套规则）", () => 
   it("出示后常驻亮码：不自动收起、有效期内不换码", async () => {
     vi.useFakeTimers();
     renderCard();
-    fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
-    // 取码的返回落在真实宏任务里：逐格让出事件循环（推进 0 毫秒不消耗虚拟时间）直到码值真的亮出
-    for (let i = 0; i < 20 && !shownDigits(); i++) {
-      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    }
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
     expect(shownDigits()).toBe("4182 0620");
 
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });

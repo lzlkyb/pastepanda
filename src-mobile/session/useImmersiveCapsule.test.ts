@@ -38,3 +38,29 @@ it("键盘或面板展开强制可见，切回竖屏结束引导", () => {
   act(() => { layout.landscape = false; h.rerender({ open: false }); });
   expect(h.result.current.phase).toBe("done"); expect(h.result.current.capsuleVisible).toBe(false);
 });
+
+it("沉浸由用户主动开启，面板临时恢复工具，边缘入口展开，竖屏退出沉浸", () => {
+  layout.landscape = true; localStorage.setItem(CAPSULE_TEACH_STORAGE_KEY, "1");
+  const h = renderHook(({ open }) => useImmersiveCapsule({ keyboardOpen: open }), { initialProps: { open: false } });
+  expect(h.result.current.immersive).toBe(false);
+  act(() => h.result.current.enterImmersive());
+  expect(h.result.current.immersive).toBe(true);
+  act(() => h.rerender({ open: true })); expect(h.result.current.immersive).toBe(false);
+  act(() => h.rerender({ open: false })); expect(h.result.current.immersive).toBe(true);
+  act(() => h.result.current.reveal()); expect(h.result.current.immersive).toBe(false);
+  expect(h.result.current.capsuleVisible).toBe(true);
+  act(() => h.result.current.enterImmersive());
+  act(() => { layout.landscape = false; h.rerender({ open: false }); });
+  expect(h.result.current.immersive).toBe(false);
+  act(() => { layout.landscape = true; h.rerender({ open: false }); });
+  expect(h.result.current.immersive).toBe(false);
+});
+
+it("文件异常临时退出沉浸，紧凑工具不被强制展开", () => {
+  layout.landscape = true; localStorage.setItem(CAPSULE_TEACH_STORAGE_KEY, "1");
+  const h = renderHook(({ attention }) => useImmersiveCapsule({ keyboardOpen: false, attention }), { initialProps: { attention: false } });
+  act(() => h.result.current.enterImmersive());
+  act(() => h.rerender({ attention: true }));
+  expect(h.result.current.immersive).toBe(false); expect(h.result.current.capsuleVisible).toBe(false);
+  act(() => h.rerender({ attention: false })); expect(h.result.current.immersive).toBe(true);
+});

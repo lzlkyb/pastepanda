@@ -17,6 +17,7 @@ export function useTouchGestures({
   callbacks,
   onCancel,
   tapMaxMs,
+  longPress = true,
 }: {
   /** 手势附着面：未 transform 的容器（画布在其内部被 PinchViewport 缩放）。 */
   surfaceRef: React.RefObject<HTMLElement | null>;
@@ -26,6 +27,7 @@ export function useTouchGestures({
   callbacks: TouchCallbacks;
   onCancel?: () => void;
   tapMaxMs?: number;
+  longPress?: boolean;
 }) {
   // 回调用 ref 承接：判定期内恒取最新，避免每次渲染重绑监听器
   const cbRef = useRef(callbacks);
@@ -53,8 +55,9 @@ export function useTouchGestures({
         },
         realClock,
         tapMaxMs,
+        longPress,
       ),
-    [tapMaxMs],
+    [tapMaxMs, longPress],
   );
 
   const cancelAll = useCallback(() => classifier.cancelAll(), [classifier]);
@@ -65,6 +68,7 @@ export function useTouchGestures({
     const active = new Set<number>();
 
     const onDown = (e: PointerEvent) => {
+      if (document.body.dataset.mobileBack) return;
       if (e.pointerType === "mouse" && e.button !== 0) return;
       active.add(e.pointerId);
       try {
@@ -89,18 +93,21 @@ export function useTouchGestures({
       classifier.cancelAll();
       cancelRef.current?.();
     };
+    const systemCancel = () => { active.clear(); classifier.cancelAll(); };
 
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onUp);
     el.addEventListener("pointercancel", onCancel);
     el.addEventListener("lostpointercapture", onCancel);
+    window.addEventListener("mobile-interaction-cancel", systemCancel);
     return () => {
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("pointercancel", onCancel);
       el.removeEventListener("lostpointercapture", onCancel);
+      window.removeEventListener("mobile-interaction-cancel", systemCancel);
       active.clear();
       classifier.cancelAll();
     };

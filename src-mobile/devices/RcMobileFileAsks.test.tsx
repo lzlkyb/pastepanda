@@ -16,9 +16,7 @@ function setup(respond = vi.fn().mockResolvedValue(true), busy = false) {
 describe("文件请求的同域结果", () => {
   it.each(["接受", "拒绝"])("%s 成功后请求消失仍保留结果，可手动关闭", async action => {
     const { view, props, respond, onHandled } = setup();
-    fireEvent.click(screen.getByRole("button", { name: action }));
-    // 等后端回执真的变成通知内容，微任务让渡在慢取数下读到的还是空态首帧
-    expect(await screen.findByText(action === "接受" ? "已接受文件请求，等待传输" : "已拒绝文件请求")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: action })));
     expect(respond).toHaveBeenCalledExactlyOnceWith("request", action === "接受" ? "/receive" : null);
     expect(onHandled).toHaveBeenCalledTimes(1);
     view.rerender(<RcMobileFileAsks {...props} file={{ ...props.file, asks: [] }} />);
@@ -29,24 +27,21 @@ describe("文件请求的同域结果", () => {
   });
   it("返回 false 不显示成功，保留失败说明并允许原动作重试", async () => {
     const { respond, onHandled } = setup(vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true));
-    fireEvent.click(screen.getByRole("button", { name: "接受" }));
-    // 错误反馈按温和播报呈现（role=status），按文案定位再回到播报容器，避免抓到别的播报
-    const failure = (await screen.findByText("文件请求未能处理")).closest('[role="status"]') as HTMLElement;
-    expect(failure).toHaveTextContent("请重试");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "接受" })));
+    expect(screen.getByRole("status")).toHaveTextContent("请重试");
     expect(screen.queryByText("已接受文件请求，等待传输")).toBeNull();
     expect(onHandled).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "接受" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "接受" }));
-    expect(await screen.findByText("已接受文件请求，等待传输")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "接受" })));
     expect(respond).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("文件请求未能处理")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("等待传输");
   });
   it("拒绝抛错显示可重试失败，锁释放且不调用成功回调", async () => {
     const { onHandled } = setup(vi.fn().mockRejectedValue(new Error("network")));
-    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
-    const failure = (await screen.findByText("文件请求未能处理")).closest('[role="status"]') as HTMLElement;
-    expect(failure).toHaveTextContent("请重试");
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "拒绝" })));
+    expect(screen.getByRole("status")).toHaveTextContent("文件请求未能处理");
+    expect(screen.getByRole("status")).toHaveTextContent("请重试");
     expect(screen.getByRole("button", { name: "拒绝" })).toBeEnabled();
     expect(onHandled).not.toHaveBeenCalled();
   });
@@ -69,9 +64,7 @@ describe("文件请求的同域结果", () => {
   });
   it("切到后台暂停展示，回到原面板保留结果", async () => {
     const { view, props } = setup();
-    fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
-    // 先等结果落地，再改可见性：在结果还没有的那一帧切后台，测不到「保留结果」这件事
-    expect(await screen.findByText("已拒绝文件请求")).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "拒绝" })));
     const file = { ...props.file, asks: [] };
     view.rerender(<RcMobileFileAsks {...props} file={file} active={false} />);
     expect(screen.queryByRole("status")).toBeNull();

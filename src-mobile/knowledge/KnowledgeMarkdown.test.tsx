@@ -8,6 +8,17 @@ vi.mock("@/lib/api/mobileKnowledge", () => ({ mobileKnowledgeImage: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("手机阅读安全与原位反馈", () => {
+  it("文章缺图只补齐已登记的图片，失败可原位重试，不自动打开外部网页", async () => {
+    const onLink=vi.fn(), recover=vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const src="https://example.test/article.png";
+    const {container}=render(<KnowledgeMarkdown content={`![文章配图](${src})`} onLink={onLink} articleImages={[src]} onArticleImage={recover} />);
+    expect(container.querySelector("img")).toBeNull(); expect(recover).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button",{name:"补齐这张图片"}));
+    await screen.findByText("未能补齐，可以重试。正文仍保留。");
+    fireEvent.click(screen.getByRole("button",{name:"补齐这张图片"}));
+    await screen.findByText("图片已保存到原笔记");
+    expect(recover).toHaveBeenCalledWith(src); expect(onLink).not.toHaveBeenCalled();
+  });
   it("HTML和危险链接不能发请求、创建按钮或执行脚本", () => {
     const onLink = vi.fn();
     const { container } = render(<KnowledgeMarkdown content={'<img src="https://tracking.test/a" onerror="alert(1)">\n<script>alert(1)</script>\n\n[x](javascript:alert%281%29)\n\n[file](file:///private/data)'} onLink={onLink} />);
@@ -75,11 +86,9 @@ describe("手机阅读安全与原位反馈", () => {
     expect(mobileKnowledgeImage).toHaveBeenCalledTimes(4);
     for (let group = 0; group < 3; group++) {
       await act(async () => { pending.splice(0, 4).forEach(resolve => resolve("data:image/png;base64,aA==")); });
-      // 注入档里数据经宏任务落地，等这批 4 个 img 元素真被创建出来再派发 load。
-      await waitFor(() => expect(created).toHaveLength(4));
       await act(async () => created.splice(0, 4).forEach(image => image.dispatchEvent(new Event("load"))));
     }
-    await waitFor(() => expect(view.container.querySelectorAll("img").length).toBe(8));
+    expect(view.container.querySelectorAll("img").length).toBe(8);
     expect(mobileKnowledgeImage).toHaveBeenCalledTimes(16);
     view.rerender(<KnowledgeMarkdown content={content} active={false} onLink={vi.fn()} />);
     expect(disconnect).toHaveBeenCalled();
@@ -118,14 +127,8 @@ describe("手机阅读安全与原位反馈", () => {
     const content = Array.from({ length: 6 }, (_, index) => `![图${index}](images/${index}.png)`).join("\n\n");
     const view = render(<KnowledgeMarkdown content={content} onLink={vi.fn()} />);
     await act(async () => screen.getAllByRole("button", { name: "加载本机图片" }).forEach(button => fireEvent.click(button)));
-    // 并发上限 4：第 5、6 张要等前几张 load 结算后才发请求，逐批派发直到 6 张全部结算。
-    let settled = 0;
-    while (settled < 6) {
-      await waitFor(() => expect(created.length).toBeGreaterThan(0));
-      const batch = created.splice(0);
-      settled += batch.length;
-      await act(async () => batch.forEach(image => image.dispatchEvent(new Event("load"))));
-    }
-    await waitFor(() => expect(view.container.querySelectorAll("img")).toHaveLength(4));
+    await act(async () => created.splice(0).forEach(image => image.dispatchEvent(new Event("load"))));
+    await act(async () => created.splice(0).forEach(image => image.dispatchEvent(new Event("load"))));
+    expect(view.container.querySelectorAll("img")).toHaveLength(4);
   });
 });

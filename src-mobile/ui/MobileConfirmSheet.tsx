@@ -15,7 +15,7 @@ export function MobileConfirmSheet({ open, title, description, onCancel, onConfi
   const close = () => { if (!busy) onCancel(); };
   const Icon = danger ? Trash2 : TriangleAlert;
   return <MobileSheet open={open} title={title} description={description} onClose={close} initialFocusRef={cancel} backPriority={20}
-    footer={<MobileFeedbackSlot>{error ? <MobileNotice error title="操作尚未完成" detail={error} /> : null}</MobileFeedbackSlot>}
+    footer={<MobileFeedbackSlot>{error ? <MobileNotice error urgency="assertive" title="操作尚未完成" detail={error} /> : null}</MobileFeedbackSlot>}
     actions={<div className={`${ui.stack} ${styles.actions}`}>
       <button ref={cancel} type="button" className={ui.secondary} disabled={busy} onClick={close}>{cancelLabel}</button>
       <button type="button" className={danger ? ui.danger : ui.primary} disabled={busy} onClick={() => { if (!busy) onConfirm(); }}>{busy ? "正在处理…" : confirmLabel}</button>

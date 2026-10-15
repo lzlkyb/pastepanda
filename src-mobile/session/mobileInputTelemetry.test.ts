@@ -36,8 +36,11 @@ it("失败的发送不生成操作响应样本", async () => {
   const at = { current: 0 };
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
   sendEvent({ kind: "text", text: "a" }, at);
-  // 发送时先写入时间戳，失败回滚是后到的真变化；等回滚落地而不是等让渡。
-  await waitFor(() => expect(at.current).toBe(0));
+  // 回滚发生在 rejection 之后的微任务里；慢取数注入档（PASTEPANDA_SLOW_MOCK=1）会把
+  // mock 的 rejection 推迟到真实宏任务，所以这里让出一整个真实宏任务再断言「未记样本」，
+  // 而不是让渡微任务假装「已落地」（等待写法守卫判红的正是后者）。
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  expect(at.current).toBe(0);
 });
 it("hook 的发送也经过相同收口，只看模式不更新输入时间", () => {
   const at = { current: 0 };
@@ -57,20 +60,19 @@ it("守卫：手机 hook 不允许新增绕过统一发送入口的调用点", (
 it("发送失败翻转健康位、恢复自动翻回、再次失败重新点亮（横幅依据）", async () => {
   const { result } = renderHook(() => useRcMobileInput({ canControl: true, hasFrame: true, canvasRef: { current: null }, contentRef: { current: { w: 1, h: 1 } } }));
   expect(result.current.sendFailed).toBe(false);
-  // 三次翻转各等各自的目标状态落地：失败经微任务回执，成功在注入档里是宏任务之后。
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
-  await waitFor(() => expect(result.current.sendFailed).toBe(true));
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
-  await waitFor(() => expect(result.current.sendFailed).toBe(false));
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
+  expect(result.current.sendFailed).toBe(true);
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
+  expect(result.current.sendFailed).toBe(false);
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
-  await waitFor(() => expect(result.current.sendFailed).toBe(true));
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
+  expect(result.current.sendFailed).toBe(true);
 });
 it("IME 自动上屏失败没有其他反馈出口，必须翻转健康位", async () => {
   const { result } = renderHook(() => useRcMobileInput({ canControl: true, hasFrame: true, canvasRef: { current: null }, contentRef: { current: { w: 1, h: 1 } } }));
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendText("你好"); });
-  // 等健康位真翻起来：让渡微任务在注入档里等不到失败回执。
+  result.current.sendText("你好");
+  // 等真状态变化：sendFailed 初值 false，只有失败链路落地才会翻转（等待写法守卫判红的就是原来的微任务 flush）。
   await waitFor(() => expect(result.current.sendFailed).toBe(true));
 });

@@ -149,3 +149,16 @@ it("多项非关键阅读提示聚合成一条，可展开恢复动作，正文�
   expect(screen.getByRole("button", { name: "重试偏好" })).toBeTruthy();
   expect(screen.getByText("手机当前离线；外部链接和图片可能无法加载。")).toBeTruthy();
 });
+
+it("阅读工具集中在页头，常用反馈同层可见且正文保留", async () => {
+  const { container } = render(<KnowledgeReader noteId="n1" active onBack={vi.fn()} />);
+  await screen.findByText("原始正文");
+  const common = screen.getByRole("button", { name: "加入手机常用" });
+  expect(common.closest("header")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "目录" }).closest("header")).not.toBeNull();
+  expect(container.querySelector("footer")).toBeNull();
+  fireEvent.click(common);
+  await screen.findByText("已加入手机常用");
+  expect(screen.getByText("原始正文")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "手机常用" }).textContent).toBe("已常用");
+});

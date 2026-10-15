@@ -72,8 +72,7 @@ describe("接收落点与取回", () => {
     expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("正在发出取回请求…")).toBeTruthy();
     await act(async () => finish());
-    // 成功回执是异步落地的通知，等它出现再读按钮状态
-    expect(await screen.findByText("已请求 台式机 选择文件，请在电脑上确认。")).toBeTruthy();
+    expect(screen.getByText("已请求 台式机 选择文件，请在电脑上确认。")).toBeTruthy();
     expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(false);
   });
   it("取回目录被拒后可重置；只有重置成功才清错，下一次请求使用新目录", async () => {
@@ -121,10 +120,10 @@ describe("接收落点与取回", () => {
   it("点取回 → rcFilePull(设备, 落点)", async () => {
     api.pull.mockResolvedValue(true);
     renderView([TARGET]);
-    // 按钮解禁说明后端给的落点已经落地，这时点下去才会真的带上目录参数
-    const pull = screen.getByRole("button", { name: /从电脑取文件/ }) as HTMLButtonElement;
-    await waitFor(() => expect(pull.disabled).toBe(false));
-    fireEvent.click(pull);
+    await waitFor(() => expect(screen.getByRole("button", { name: /从电脑取文件/ })).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /从电脑取文件/ }));
+    });
     expect(api.pull).toHaveBeenCalledWith("pc-1", "/storage/emulated/0/Android/data/app/files/PastePanda 接收");
   });
 
@@ -166,15 +165,15 @@ describe("对方推来的 ask 卡", () => {
     snapshotFor({ asks: [ASK], tasks: [] });
     renderView([TARGET]);
     expect(await screen.findByText(/台式机 想给你发送文件/)).toBeTruthy();
-    // 落点取回成功才会解禁「接受」；没解禁就点等于什么都没发生
-    const accept = screen.getByRole("button", { name: "接受" }) as HTMLButtonElement;
-    await waitFor(() => expect(accept.disabled).toBe(false));
-    fireEvent.click(accept);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "接受" }));
+    });
     expect(api.respond).toHaveBeenCalledWith("ask-1", "/storage/emulated/0/Android/data/app/files/PastePanda 接收");
-    // 等这次回应真的结束（按钮不再锁着），再点拒绝：锁还没释放时第二次点击会被当成重复提交吃掉
-    const deny = screen.getByRole("button", { name: "拒绝" }) as HTMLButtonElement;
-    await waitFor(() => expect(deny.disabled).toBe(false));
-    fireEvent.click(deny);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
+    });
     expect(api.respond).toHaveBeenCalledWith("ask-1", null);
   });
 
@@ -240,4 +239,23 @@ it("通道关闭时先恢复，不打开文件选择器或发请求", async () =
   fireEvent.click(screen.getByRole("button", { name: "开启远程通道" }));
   await waitFor(() => expect(enable).toHaveBeenCalledWith(true));
   expect(api.pull).not.toHaveBeenCalled();
+});
+
+it("在途和失败任务优先且可见，成功和取消记录折叠但不改写状态", async () => {
+  const base = { peer: "pc-1", peer_name: "电脑", dir: "recv", size: 1000, offset: 0, done: 400, started_ms: 0, updated_ms: 0 };
+  snapshotFor({ asks: [], tasks: [
+    { ...base, id: "done", name: "成功.pdf", state: "done" },
+    { ...base, id: "cancel", name: "取消.pdf", state: "canceled" },
+    { ...base, id: "failed", name: "失败.pdf", state: "failed", error: "连接中断" },
+    { ...base, id: "run", name: "传输.pdf", state: "transferring" },
+  ] });
+  renderView([TARGET]);
+  const failed = await screen.findByText("失败.pdf");
+  expect(failed.closest("details")).toBeNull();
+  expect(screen.getByText("传输.pdf").closest("details")).toBeNull();
+  const ended = screen.getByText("成功.pdf").closest("details")!;
+  expect(ended.open).toBe(false);
+  expect(screen.getByText("取消.pdf").closest("details")).toBe(ended);
+  expect(ended.textContent).toContain("已取消");
+  expect(screen.getByText("正在传输 · 1")).toBeTruthy();
 });

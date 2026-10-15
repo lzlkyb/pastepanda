@@ -19,7 +19,7 @@ it("弹层退出后才导航；收起期间的新选择替代旧目标", async (
   document.body.dataset.mobileSheets = "1";
   act(() => { h.result.current.selectTab("files"); h.result.current.selectTab("settings"); });
   expect(h.result.current.tab).toBe("devices");
-  // waitguard:allow: 等的是 MutationObserver 回调（规范规定它排到微任务队列末尾），不是取数落地；本用例没有任何 mock 的 promise 参与
+  // waitguard:allow: 零取数，flush 只让 dataset 删除后的 effect 跑完
   await act(async () => { delete document.body.dataset.mobileSheets; await Promise.resolve(); });
   expect(h.result.current.tab).toBe("settings");
 });
@@ -29,7 +29,7 @@ it("进入远控后丢弃排队导航，弹层迟到清理不能改变返回页�
   document.body.dataset.mobileSheets = "1";
   act(() => h.result.current.selectTab("files"));
   h.rerender({ active: false });
-  // waitguard:allow: 等的是 MutationObserver 回调（规范规定它排到微任务队列末尾），不是取数落地；本用例没有任何 mock 的 promise 参与
+  // waitguard:allow: 零取数，flush 只让 dataset 删除后的 effect 跑完
   await act(async () => { delete document.body.dataset.mobileSheets; await Promise.resolve(); });
   h.rerender({ active: true });
   expect(h.result.current.tab).toBe("devices");
@@ -40,7 +40,7 @@ it("弹层在后台完成退出后，回到前台继续已选择的导航", asyn
   document.body.dataset.mobileSheets = "1";
   act(() => h.result.current.selectTab("files"));
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
-  // waitguard:allow: 等的是 MutationObserver 回调（规范规定它排到微任务队列末尾），不是取数落地；本用例没有任何 mock 的 promise 参与
+  // waitguard:allow: 零取数，flush 只让 dataset 删除后的 effect 跑完
   await act(async () => { delete document.body.dataset.mobileSheets; await Promise.resolve(); });
   expect(h.result.current.tab).toBe("devices");
   hidden.mockReturnValue(false);

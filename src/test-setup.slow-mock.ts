@@ -56,14 +56,16 @@ function deferImplementation(impl: unknown): unknown {
   return wrapped;
 }
 
-export function decorateMock<M extends Record<string, unknown>>(mock: M): M {
+// M 放宽到 object：调用方传的是 vitest 的 Mock（函数对象），约束成 Record 会让
+// Mock<Procedure> 不可赋（TS2345）；属性读写全部走下方可写视图，不改运行时行为。
+export function decorateMock<M extends object>(mock: M): M {
   if (decoratedMocks.has(mock)) return mock;
   decoratedMocks.add(mock);
   // 泛型 M 在 TS 眼里只可索引读取（TS2862），这里要的是「换掉方法」，所以走一个明确的
   // 可写视图；写回的还是同一个对象，运行时没有差别。
-  const methods = mock as Record<string, unknown>;
+  const methods = mock as unknown as Record<string, unknown>;
   for (const key of ["mockImplementation", "mockImplementationOnce"] as const) {
-    const original = mock[key];
+    const original = methods[key];
     if (typeof original !== "function") continue;
     methods[key] = function (this: M, impl: unknown) {
       return original.call(this, deferImplementation(impl));
@@ -74,7 +76,7 @@ export function decorateMock<M extends Record<string, unknown>>(mock: M): M {
   // 只推迟**一层**：vitest 内部 `() => Promise.resolve(value)` 的返回值已由 deferResult
   // 里的 alreadyDeferred 认出，不会再叠第二次（延迟档必须是常数）。
   for (const key of ["mockResolvedValue", "mockResolvedValueOnce"] as const) {
-    const original = mock[key];
+    const original = methods[key];
     if (typeof original !== "function") continue;
     methods[key] = function (this: M, value: unknown) {
       return original.call(this, deferToMacrotask(value));
@@ -86,9 +88,11 @@ export function decorateMock<M extends Record<string, unknown>>(mock: M): M {
 // vi.fn(impl) 把实现存进构造路径、不经过 mockImplementation ⇒ 光装饰方法拦不到它。
 // 用同一个实现经装饰后的 mockImplementation 重设一次，测试里最常见的
 // `vi.fn(async () => data)` 才会真的被推迟。
-export function decorateCreatedMock<M extends Record<string, unknown>>(mock: M, impl?: unknown): M {
+export function decorateCreatedMock<M extends object>(mock: M, impl?: unknown): M {
   decorateMock(mock);
-  if (typeof impl === "function") mock.mockImplementation(impl);
+  if (typeof impl === "function") {
+    (mock as unknown as { mockImplementation: (i: unknown) => unknown }).mockImplementation(impl);
+  }
   return mock;
 }
 

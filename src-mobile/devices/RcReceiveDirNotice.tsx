@@ -1,4 +1,5 @@
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileToast } from "../ui/MobileToast";
 import type { useMobileReceiveDir } from "./useMobileReceiveDir";
 import ui from "../ui/MobileUi.module.css";
 
@@ -14,7 +15,7 @@ export function RcReceiveDirNotice({ directory }: { directory: ReturnType<typeof
           {directory.busy ? "正在准备接收位置…" : directory.canReset ? "重置接收位置" : "重试"}
         </button>} />
     );
-  if (directory.note) return <MobileNotice>{directory.note}</MobileNotice>;
+  if (directory.note) return <MobileToast tone="success" title={directory.note} onDismiss={directory.clearNote} />;
   if (!directory.dir) return <MobileNotice tone="pending">正在获取文件接收位置…</MobileNotice>;
   return null;
 }
