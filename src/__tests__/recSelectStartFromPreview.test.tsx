@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
+import { waitUntilRenderedContent } from "@/test-helpers/waitUntil";
 
 const api = vi.hoisted(() => ({
   recGetScreen: vi.fn(),
@@ -53,6 +54,14 @@ const WIN = { x: 300, y: 100, w: 400, h: 300 };
  */
 const WIN_BG = { x: 0, y: 0, w: 1280, h: 720 };
 
+/**
+ * 模块装载时（`vi.useFakeTimers()` 之前）抓住真实 setTimeout：慢取数注入把 mock 的
+ * resolve 推迟到真实宏任务，假计时器永远不推进它，RTL waitFor 在假计时器下也 poll 不动
+ * ——就绪只能按「内容变真」逐拍等真实宏任务。等数据用 @/test-helpers/waitUntil，
+ * 下面 hoverUntil 之所以自己写循环，是因为它每拍要重发 mouseMove（判据不纯，helper 不适用）。
+ */
+const realSetTimeout = globalThis.setTimeout;
+
 async function mount(windows: { x: number; y: number; w: number; h: number }[] = [WIN]) {
   api.recGetScreen.mockResolvedValue(SCREEN);
   api.recStart.mockResolvedValue(undefined);
@@ -63,7 +72,9 @@ async function mount(windows: { x: number; y: number; w: number; h: number }[] =
     Promise.resolve(cmd === "enum_window_rects" ? windows : undefined),
   );
   const utils = render(<RecSelectOverlay config={null} />);
-  await act(async () => {}); // 冲刷 recGetScreen / enum_window_rects 的 .then
+  // 🔴 就绪信号必须是「真数据进了 DOM」：组件在 screen 未就位前整体 return null
+  // （RecSelectOverlay 唯一渲染闸），所以等预览条读数出现，而不是空转一轮计时器。
+  await waitUntilRenderedContent(() => !!utils.queryByText(/将录制/), "预览条读数（屏参已落地）");
   return utils;
 }
 
@@ -88,6 +99,22 @@ async function runCountdown() {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
+  }
+}
+
+/**
+ * 悬停是幂等的：逐拍重发同一个 mouseMove，直到读数写明目标窗为止——
+ * 「读数出现」才证明 enum_window_rects 已落地（窗口清单比屏参晚一拍取），
+ * 未落地帧上的读数只会是空壳整屏。
+ */
+async function hoverUntil(q: ReturnType<typeof render>, matcher: RegExp, x = 350, y = 150) {
+  for (let tick = 0; ; tick++) {
+    await act(async () => {
+      fireEvent.mouseMove(root(q), { clientX: x, clientY: y });
+      await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+    });
+    if (q.queryByText(matcher)) return;
+    if (tick >= 199) throw new Error(`悬停读数未在 200 拍真实宏任务内变成 ${matcher}（窗口清单未落地）`);
   }
 }
 
@@ -131,9 +158,7 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
   it("悬停窗口 → 鼠标移进玻璃条点「开始录制」→ 录的是那扇窗，不是整屏", async () => {
     const q = await mount();
     // 悬停窗口（目标成立，蓝框亮）
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     // 为了点按钮把鼠标移到「开始录制」上：它在 .rec-glass 里。
     // 🔴 这条**不带**坐标 ⇒ 走的是「条下恰好是窗外」的分支，只钉住规则的一半；
     //    另一半（条下压着另一扇窗）由下一条带坐标的那条钉。两条缺一，规则就不成立。
@@ -151,9 +176,7 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
 
   it("🔴 玻璃条压在另一扇窗上时也不许换目标（真实桌面：屏底那条多半压着最大化窗）", async () => {
     const q = await mount([WIN, WIN_BG]);
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
     // 带坐标的这次派发才是常态：(700,660) 在 WIN 外、在背景大窗内 ⇒ 命中判定给的是 WIN_BG。
     // 改前的 `hit === null && closest(".rec-glass")` 只挡 null 分支，这里目标会当场变成整屏。
@@ -173,18 +196,14 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
   it("预览条读数实时写明「将录制」谁", async () => {
     const q = await mount();
     expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
   });
 
   // ===== 审查 P1：读数在「确认 / 倒计时」两态不许消失（承诺成立的两态信息量最低）=====
   it("确认条也写着「将录制」（改前红：ConfirmBar 里没有这条读数）", async () => {
     const q = await mount();
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });
@@ -206,9 +225,7 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
 describe("甲案 审查 P1：整屏必须有鼠标路径（§17 鼠标全流程可达）", () => {
   it("悬停出窗口 → 读数变成按钮「… 改录整屏」，点它 = 放弃窗口，再按开始录制录整屏", async () => {
     const q = await mount([WIN, WIN_BG]);
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     await act(async () => {
       fireEvent.click(q.getByRole("button", { name: /改录整屏/ }));
     });
@@ -225,6 +242,8 @@ describe("甲案 审查 P1：整屏必须有鼠标路径（§17 鼠标全流程�
 
   it("没悬停任何窗口时不给死控件（读数不是按钮）", async () => {
     const q = await mount();
+    // 先钉「预览条真的画出来了」：否则「按钮不存在」的负断言在空壳首帧上恒真
+    expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
     expect(q.queryByRole("button", { name: /改录整屏/ })).toBeNull();
   });
 });
@@ -290,9 +309,7 @@ describe("甲案② 画质/音源收进 ⋯，结果留在条上（规则 15.1�
 describe("现网既有行为不得回归", () => {
   it("Esc 两级取消照旧（预览退出 / 确认回预览）", async () => {
     const q = await mount();
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });
@@ -314,9 +331,7 @@ describe("现网既有行为不得回归", () => {
 
   it("单击采纳窗口后进确认态，确认条的「开始录制」仍录那扇窗", async () => {
     const q = await mount();
-    await act(async () => {
-      fireEvent.mouseMove(root(q), { clientX: 350, clientY: 150 });
-    });
+    await hoverUntil(q, /将录制：窗口 400×300/);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });

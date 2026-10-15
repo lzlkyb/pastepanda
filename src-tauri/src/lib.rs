@@ -1339,6 +1339,8 @@ pub fn run() {
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_start,
             #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_prewarm,
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_stop,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_pause,

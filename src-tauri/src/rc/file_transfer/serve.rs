@@ -227,9 +227,10 @@ impl RcService {
         self.emit_file_state();
         let (outcome, got) = recv_bytes(self, &mut recv, &plan, size, &task_id).await;
         let (state, err) = outcome.finish(got, size);
-        // 🔴 2026-09-27：同 transfer.rs——收尾报错拼上连接关闭理由（noq 的
-        // ConnectionLost Display 不带内层原因，见 service::explain 注释）。
-        let err = err.map(|e| crate::rc::service::explain(conn, e));
+        // 🔴 2026-09-27：noq 的 ConnectionLost Display 不带内层原因（见
+        // service::explain 注释），收尾报错要把连接关闭理由拼进去；2026-10-11
+        // 起再分一档：旧版对端「发完即关」造成的截断报人话，不说成网络故障。
+        let err = err.map(|e| explain_recv_err(conn, e));
         if state == TaskState::Done {
             log::info!("[RC] {short} 已接收 {}（{} 字节）", plan.final_name, size);
         } else {
@@ -238,6 +239,9 @@ impl RcService {
         self.finish_file(&task_id, state, err, size);
         // P1-3：**不在这里关连接**——多文件批次里后面还有文件要接，
         // 连接由发送端收尾（run_send_batch 传完 close → 本侧 accept_bi 报错退出）。
+        // 🔴 这个 finish 是发送端唯一的「本机已落盘」凭据：run_send_batch 会等它
+        // 才敢 close(0,"done")（见 wait_peer_stream_end）。删掉 = 让每次推送的
+        // 最后一个文件都可能被自己的收尾关闭截断。
         let _ = send.finish();
     }
 
@@ -347,9 +351,16 @@ impl RcService {
             log::warn!("[RC] {short} 发送 {name} 未完成：{state:?} {err:?}");
         }
         self.finish_file(&task_id, state, err, size);
-        let _ = recv.stop(0u32.into());
-        // P1-3：连接由对端（run_pull）收尾，这里不关——本侧 handle_file_conn
-        // 的流循环在 serve_pull 返回后统一 return。
+        // 🔴 等发起端回「我读完了」再返回——调用方（handle_file_conn）紧接着就
+        // `conn.close(0, "done")`，不等就是把还没送达的尾巴一起作废。
+        // 旧版发起端不会 finish：它一 close 连接，这里立刻拿到错误并返回 false，
+        // 所以不会多等一个超时（也不会像原先那样反过来把对方正在收尾的半流 reset 掉）。
+        if !wait_peer_stream_end(&mut recv).await {
+            log::warn!("[RC] {short} 发送 {name}：没等到对方的收尾确认（对方可能仍在读流，或是不发该信号的旧版）");
+        }
+        // P1-3：这里不关连接——关它的是 `handle_file_conn` 的 PullReq 分支（本函数
+        // 返回后一句 close(0,"done")）。上面那个等待就是为了让那次 close 落在
+        // 「对方确实读完了」之后；发起端的 run_pull 也正是在等这次 close 才收尾。
     }
 
     /// 魔数 + 头帧（帧格式与 `rc/1` 的 write_frame 同款：大端长度前缀）。

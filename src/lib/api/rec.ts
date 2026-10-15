@@ -77,9 +77,12 @@ export function recGetScreen(): Promise<RecScreenInfo> {
 /**
  * Tauri 命令按**形参名**包裹：`rec_start(req: RecStartReq)` 必须传 `{ req: {...} }`，
  * `rename_all = "camelCase"` 只作用于结构体内部字段（sysAudio/micAudio），不改变包裹层。
+ *
+ * 🔴 包裹层与字段清单只此一份（`startArgs`）：`rec_prewarm` 与 `rec_start` 送的是同一次
+ * 开录的参数，后端拿两份不一致的参数会算出不同的编码器键，预热直接白做（规则 11.1）。
  */
-export function recStart(req: RecStartReq): Promise<void> {
-  return invokeVoid("rec_start", {
+function startArgs(req: RecStartReq) {
+  return {
     req: {
       x: req.x,
       y: req.y,
@@ -89,7 +92,19 @@ export function recStart(req: RecStartReq): Promise<void> {
       sysAudio: req.sysAudio,
       micAudio: req.micAudio,
     },
-  });
+  };
+}
+
+export function recStart(req: RecStartReq): Promise<void> {
+  return invokeVoid("rec_start", startArgs(req));
+}
+
+/**
+ * 倒计时期间预热硬件编码器（乙案，2026-10-11）。参数与随后那次 `recStart` 一字不差。
+ * 失败不阻断开录——正式路径会自行打开编码器，只是慢一次；调用方 `catch` 掉即可。
+ */
+export function recPrewarm(req: RecStartReq): Promise<void> {
+  return invokeVoid("rec_prewarm", startArgs(req));
 }
 
 export function recStop(discard = false): Promise<void> {

@@ -143,7 +143,16 @@ impl RcService {
                 log::warn!("[RC] 发送 {name} 未完成：{state:?} {err:?}");
             }
             self.finish_file(&task_id, state, err, size);
+            // 🔴 等对方把这一条收完再动下一条 / 关连接。不等的话，批次末尾那句
+            // `conn.close(0, "done")` 把还没送达的尾巴一起作废（详见
+            // `wait_peer_stream_end` 的注释与本仓 2026-10-11 的真机日志）。
+            if !wait_peer_stream_end(&mut recv).await {
+                log::warn!(
+                    "[RC] {name}：没等到对方的收尾确认（对方可能仍在读流，或是不发该信号的旧版）"
+                );
+            }
         }
+        // 每条流的「对方已收完」确认都在循环里等过了，这里关连接不再截断任何尾巴。
         conn.close(0u32.into(), b"done");
         Ok(())
     }
@@ -238,12 +247,24 @@ impl RcService {
         let (outcome, got) = recv_bytes(&self, &mut recv, &plan, size, &task_id).await;
         let (state, err) = outcome.finish(got, size);
         // 🔴 2026-09-27：noq 的 ReadError::ConnectionLost Display 写死成
-        // 「connection lost」，不带对端关闭理由（service::explain 的注释）——
-        // 会话侧早就拼了，文件传输这条路径漏着，用户只能看到笼统的
-        // 「读流出错：connection lost」。收尾时把连接关闭理由拼进去。
-        let err = err.map(|e| crate::rc::service::explain(&conn, e));
+        // 「connection lost」，不带对端关闭理由（service::explain 的注释）。
+        // 2026-10-11 起走 explain_recv_err：除拼理由外，旧版对端「发完即关」
+        // 造成的截断报人话，不说成网络故障。
+        let err = err.map(|e| explain_recv_err(&conn, e));
         self.finish_file(&task_id, state, err, size);
-        conn.close(0u32.into(), b"done");
+        // 🔴 收尾两步，顺序不能反：**先**回一句「我读完了」，**再**等对方关连接。
+        // 取回方向是对方在写、我方在读，只有我方知道有没有读全；而连接由对方
+        // 关闭（`serve_pull` 等到这个 FIN 后返回，`handle_file_conn` 收尾 close）。
+        // 若这里抢先 close，那个 FIN 连同对方还没发完的尾巴一起作废——正是本次
+        // 要修的截断。对端是旧版时它发完就关，`closed()` 立刻返回，不多等。
+        let _ = send.finish();
+        if tokio::time::timeout(Duration::from_secs(RECEIPT_WAIT_SECS), conn.closed())
+            .await
+            .is_err()
+        {
+            log::warn!("[RC] 取回收尾：没等到对方关闭连接（对端可能是旧版），本机直接收尾");
+            conn.close(0u32.into(), b"done");
+        }
         Ok(())
     }
 

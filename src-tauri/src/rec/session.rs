@@ -393,12 +393,27 @@ fn run_record(
     // ── 3. 编码器（内部含 BGRA→NV12；HEVC 打不开自动回落 H.264）──
     // 质量导向码控（三期 1.3）：录制写本地文件，PeakConstrainedVBR——静态桌面
     // 码率自然下沉、突发画面不糊；rc 推流的 CBR+低延迟口径不适用这里。
-    let enc = H264SessionEncoder::try_open_for_file(
-        opts.quality.codec(),
-        sp.width,
-        sp.height,
-        sp.fps,
-        sp.bitrate,
+    // 乙案（2026-10-11）：前端进倒计时就请求了预热（`rec_prewarm`）。命中即免去
+    // 「MF 选型 + 开 nvenc」那 ≈2.8s（本机实测，正是它让倒计时卡在 1 并被录进
+    // 成品开头）；仍在途最多等 4 秒；不命中照旧自行打开——慢一次，不是错一次。
+    let key = super::prewarm::enc_key(
+        opts.quality,
+        opts.x,
+        opts.y,
+        opts.w,
+        opts.h,
+        (sx, sy, vw, vh),
+    );
+    let open_t = Instant::now();
+    let prewarmed = super::prewarm::take(key, Duration::from_secs(4));
+    let from_prewarm = prewarmed.is_some();
+    let enc = prewarmed.unwrap_or_else(|| {
+        H264SessionEncoder::try_open_for_file(key.codec, key.width, key.height, key.fps, key.bitrate)
+    });
+    log::info!(
+        "[Rec] 编码器就位 {}ms（{}）",
+        open_t.elapsed().as_millis(),
+        if from_prewarm { "复用预热" } else { "自行打开" }
     );
     if !enc.available() {
         clear_active();

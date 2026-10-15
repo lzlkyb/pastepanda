@@ -63,11 +63,7 @@ pub async fn rec_start(
         return Err("已有录制在进行".into());
     }
     // 画质档：非法值宁可报错也不默默换档（用户自选画质是硬需求）
-    let quality =
-        RecQuality::of_str(&req.quality).ok_or_else(|| format!("未知画质档：{}", req.quality))?;
-    if req.w < 16 || req.h < 16 {
-        return Err("选区太小（至少 16×16）".into());
-    }
+    let quality = check_start_req(&req)?;
     // 事件轨开关（四期 1.3）：开始录制那一刻定死，录制中改设置不影响本场
     let cfg = store.get_config().unwrap_or_default();
     let opts = RecOpts {
@@ -88,6 +84,9 @@ pub async fn rec_start(
             .unwrap_or(true),
     };
     let path = decide_output_path(&app, &store)?;
+    // 归零到「控制条出现」的这段就是用户眼里的「卡一下」：预热命中后应当是几十毫秒级，
+    // 打点是为了让「还差多少」有数字，不是靠猜（规则 8）。
+    let opened_at = std::time::Instant::now();
     session::start(app.clone(), opts, path.clone())?;
     if let Err(error) = open_control_window(&app, (req.x, req.y, req.w, req.h)) {
         // 控制条是停止入口；创建失败不能留下无出口的后台采集。保留已有内容。
@@ -95,6 +94,51 @@ pub async fn rec_start(
         session::stop(false)?;
         return Err(error);
     }
+    log::info!("[Rec] rec_start 返回用时 {}ms", opened_at.elapsed().as_millis());
+    Ok(())
+}
+
+/// 开录入参的公共校验（`rec_start` 与 `rec_prewarm` 同一套；规则 11.1：两处各写
+/// 一遍，预热就会带着「start 会拒绝的参数」去开一个编码器）。
+/// 画质与尺寸两处都必须同源——它们进的就是编码器键。
+fn check_start_req(req: &RecStartReq) -> Result<RecQuality, String> {
+    let quality =
+        RecQuality::of_str(&req.quality).ok_or_else(|| format!("未知画质档：{}", req.quality))?;
+    if req.w < 16 || req.h < 16 {
+        return Err("选区太小（至少 16×16）".into());
+    }
+    Ok(quality)
+}
+
+/// 倒计时期间预热编码器（乙案，2026-10-11）：把「开硬件编码器」那 ≈2.8s 从
+/// `rec_start` 挪进倒计时的 3 秒空档，归零时 `rec_start` 才能秒回。
+/// 命令本身即刻返回——预热在工作线程上跑，前端不等它。
+/// 预热失败/超时不影响正确性：正式路径照旧自行打开（见 `rec::prewarm`）。
+#[tauri::command]
+pub fn rec_prewarm(app: AppHandle, req: RecStartReq) -> Result<(), String> {
+    let quality = check_start_req(&req)?;
+    prewarm_encoder(&app, quality, &req)
+}
+
+#[cfg(windows)]
+fn prewarm_encoder(app: &AppHandle, quality: RecQuality, req: &RecStartReq) -> Result<(), String> {
+    // 画布尺寸这里只能取 GetSystemMetrics（DXGI 复制画布要等会话首帧）；
+    // 两者不一致时键不命中，正式路径自行打开——是慢一次，不是错一次。
+    let (ox, oy, cw, ch) = super::selector_screen_metrics(app)?;
+    super::prewarm::request(super::prewarm::enc_key(
+        quality,
+        req.x,
+        req.y,
+        req.w,
+        req.h,
+        (ox, oy, cw.max(0) as u32, ch.max(0) as u32),
+    ));
+    Ok(())
+}
+
+/// Mac 无这一段开销（AVAssetWriter 不需要 MF 选型），预热留空操作让前端只有一条调用路径。
+#[cfg(not(windows))]
+fn prewarm_encoder(_app: &AppHandle, _quality: RecQuality, _req: &RecStartReq) -> Result<(), String> {
     Ok(())
 }
 

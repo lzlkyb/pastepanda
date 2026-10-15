@@ -5,7 +5,8 @@ import { capturePixelRatio } from "@/lib/utils";
  * 状态机（§18 轻预览优先，两级取消）：
  *   preview（悬停高亮窗口；**条上就有「开始录制」/Enter = 录当前目标**）
  *   → 拖拽自定义 / 单击采纳 → confirm（确认条可改档位与音源；Esc 回预览）
- *   → countdown（3s，Esc 回确认条）→ recording（整窗鼠标穿透；出口只有停止条）
+ *   → countdown（3s，进档即并行预热编码器；Esc 回确认条）
+ *   → recording（归零先隐身再开录，整窗鼠标穿透；出口只有停止条）
  *   → 完成/失败事件 → 后端关窗。
  *
  * 五期甲案（2026-10-10）：零基础用户从热键到成片只需「按 Enter / 点开始录制」一步
@@ -30,19 +31,18 @@ import {
   recCloseWindows,
   recGetScreen,
   recReady,
-  recStart,
-  recStop,
   recTakeRerecord,
   type RecQualityKey,
   type RecScreenInfo,
+  type RecStartReq,
 } from "@/lib/api/rec";
-import { startRecordingWithWatchdog } from "@/lib/recStartGuard";
 import { recQualityOf, type RecQualityItem } from "@/lib/recQuality";
 import { normalizeEven, type Rect } from "./snap";
 import { ConfirmBar, CountdownOverlay, PreviewBar, recTargetReadout, TargetFrames } from "./RecOverlayParts";
 import { SizeHintBar, StartErrBar } from "./RecSourceHints";
 import { useRecOverlayKeys } from "@/hooks/useRecOverlayKeys";
 import { useRecSelectMouse, type Phase } from "@/hooks/useRecSelectMouse";
+import { useRecStart } from "@/hooks/useRecStart";
 
 export function RecSelectOverlay({ config }: { config: Record<string, unknown> | null }) {
   const [phase, setPhase] = useState<Phase>("preview");
@@ -130,47 +130,25 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     onStart: startFromCurrent,
   });
 
-  // 倒计时归零 → 真正开录
-  useEffect(() => {
-    if (phase !== "countdown") return;
-    if (countdown <= 0) {
-      void beginRecording();
-      return;
-    }
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, countdown]);
-
-  const beginRecording = async () => {
-    if (!screen || !activeRect) return;
-    try {
-      // CSS → 物理：后端吃虚拟屏物理像素（宽高对齐偶数，编码器 4:2:0 要求）。
-      // 超时的 invoke 仍会运行；先请求停止保存，避免留下后台录制。
-      await startRecordingWithWatchdog(
-        () => recStart({
-          x: screen.originX + Math.round(activeRect.x * dpr),
-          y: screen.originY + Math.round(activeRect.y * dpr),
-          w: Math.max(16, Math.round(activeRect.w * dpr) & ~1),
-          h: Math.max(16, Math.round(activeRect.h * dpr) & ~1),
-          quality: quality.key as RecQualityKey,
-          sysAudio,
-          micAudio,
-        }),
-        () => recStop(false),
-      );
-      // 整窗鼠标穿透：录制中画面零遮挡，出口只剩控制条（独立窗）。
-      // 🔴 此后本窗的一切收尾归后端（session::start 的权威收尾）——
-      // 这里不再有 failed 态，异步失败连着本窗销毁一起发生。
-      await getCurrentWindow().setIgnoreCursorEvents(true);
-      setPhase("recording");
-    } catch (err) {
-      // rec_start 同步失败：会话没起来、交互从未被穿透剥夺——留在确认态，
-      // 玻璃条提示（规则 15.3 不静默），重试 / 重画 / Esc 都是活路
-      setStartErr(err instanceof Error ? err.message : String(err));
-      setPhase("confirm");
-    }
+  /**
+   * 开录参数（CSS → 物理）：后端吃虚拟屏物理像素，宽高对齐偶数（编码器 4:2:0 要求）。
+   * 🔴 预热与正式开录共用这一个出口（useRecStart），两处各写一遍就会算出两个键。
+   */
+  const buildReq = (): RecStartReq | null => {
+    if (!screen || !activeRect) return null;
+    return {
+      x: screen.originX + Math.round(activeRect.x * dpr),
+      y: screen.originY + Math.round(activeRect.y * dpr),
+      w: Math.max(16, Math.round(activeRect.w * dpr) & ~1),
+      h: Math.max(16, Math.round(activeRect.h * dpr) & ~1),
+      quality: quality.key as RecQualityKey,
+      sysAudio,
+      micAudio,
+    };
   };
+
+  // 倒计时归零 → 预热已就位 → 隐身 → 开录（时序纪律与理由见 hooks/useRecStart）
+  useRecStart({ phase, setPhase, countdown, setCountdown, buildReq, setStartErr });
 
   // 会话收尾事件 → 关窗。后端已是收尾主体（清槽 + destroy），这里纯冗余保险；
   // rec-failed 不再进本窗展示（错误走主窗 toast / HUD，规则 15.1 可见性域）。

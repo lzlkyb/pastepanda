@@ -31,6 +31,8 @@ mod mac_keys;
 #[cfg(windows)]
 pub mod pointer;
 pub mod quality;
+#[cfg(windows)]
+pub mod prewarm;
 mod control_layout;
 pub mod scan;
 #[cfg(windows)]
