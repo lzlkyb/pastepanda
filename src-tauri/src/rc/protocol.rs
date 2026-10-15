@@ -120,6 +120,13 @@ pub enum RcFrame {
         /// 完整接收及实际上屏反馈；缺省为旧客户端，不等待它不存在的 ACK。
         #[serde(default, skip_serializing_if = "Option::is_none")]
         media_feedback: Option<bool>,
+        /// 🔴 P3（2026-10-15）：本端能解的**最大视频数据报片宽**（字节，
+        /// `vid_dgram::FRAG_BIG`=1400）。None/缺省 = 旧版发起端——被控端恒按
+        /// 1000B 分片（`vid_dgram::FRAG`），行为与今天一致。这是**接收端
+        /// 解码能力**的声明；链路 MTU 由被控端 pmtud 探测单独确认
+        /// （`pmtud.rs`），两个门都要过才升大分片。
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        vd_frag: Option<u16>,
     },
     /// 被控端同意。
     Accept {
@@ -267,6 +274,7 @@ mod tests {
             video_plane: Some(true),
             media_plane: Some(true),
             media_feedback: Some(true),
+            vd_frag: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -281,6 +289,7 @@ mod tests {
             video_plane: None,
             media_plane: None,
             media_feedback: None,
+            vd_frag: None,
         };
         let s = String::from_utf8(minimal.encode().unwrap()).unwrap();
         assert!(!s.contains("uno_code"));
@@ -302,6 +311,7 @@ mod tests {
             video_plane: None,
             media_plane: None,
             media_feedback: None,
+            vd_frag: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
@@ -318,6 +328,7 @@ mod tests {
             video_plane: None,
             media_plane: None,
             media_feedback: None,
+            vd_frag: None,
         };
         let s2 = String::from_utf8(f2.encode().unwrap()).unwrap();
         assert!(!s2.contains("uno_pass"));
@@ -355,13 +366,14 @@ mod tests {
             video_plane: None,
             media_plane: None,
             media_feedback: None,
+            vd_frag: None,
         };
         let b = f.encode().unwrap();
         assert_eq!(RcFrame::decode(&b).unwrap(), f);
         // 旧版对端发来的 Request 没有 uno_code/uno_pass 字段，也要能解（default 补 None）
         let old = r#"{"t":"request","capability":"control"}"#.as_bytes();
         match RcFrame::decode(old).unwrap() {
-            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, fec_rs, audio, video_plane, media_plane, media_feedback } => {
+            RcFrame::Request { capability, uno_code, uno_pass, vid_dgram, fec_rs, audio, video_plane, media_plane, media_feedback, vd_frag } => {
                 assert_eq!(capability, Capability::Control);
                 assert_eq!(uno_code, None, "旧对端没有这个字段，反序列化补 None");
                 assert_eq!(uno_pass, None, "固定密码位同理（方案 C）");

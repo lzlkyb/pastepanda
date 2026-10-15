@@ -288,6 +288,7 @@ export function RcSessionView({
             scope={prefs.scopePick}
             linkState={link.state}
             pathKind={rc.status?.path_kind ?? ""}
+            linkSched={rc.status?.link_sched ?? ""}
             pointerLocked={input.pointerLocked}
             frameSize={frames.size}
           />

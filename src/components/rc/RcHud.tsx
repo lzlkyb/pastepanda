@@ -65,6 +65,7 @@ export function RcHud({
   scope,
   linkState,
   pathKind,
+  linkSched,
   pointerLocked,
   frameSize,
 }: {
@@ -93,6 +94,12 @@ export function RcHud({
   linkState: RcLinkState;
   /** `lan` / `direct` / `relay`；空串 = 未测到，不显示这一行。 */
   pathKind: string;
+  /**
+   * 链路调度相位（P1）：`stable` / `degraded` / `recovering` / 空串。
+   * stable 与空串都不出行（stable 是常态，出行就是噪音）——只报异常相位：
+   * degraded = 心跳证据断供，recovering = 恢复观察窗内。
+   */
+  linkSched?: string;
   pointerLocked?: boolean;
   /** 画面原始像素尺寸（useRcFrames 的 size）；宽高任一为 0 = 无样本不显示。 */
   frameSize?: { w: number; h: number };
@@ -186,6 +193,19 @@ export function RcHud({
   );
   if (path) {
     rows.push({ label: "路径", value: path, hint: pathKindHint(pathKind) });
+  }
+  // P1 链路调度相位：只报异常（degraded / recovering），stable 不出行。
+  // 与「链路」行是两个维度：链路行答「活没活」，这里答「调度器怎么看它」。
+  if (linkSched === "degraded" || linkSched === "recovering") {
+    rows.push({
+      label: "调度",
+      value: linkSched === "degraded" ? "链路降级" : "链路恢复中",
+      cls: styles.hudWarn,
+      hint:
+        linkSched === "degraded"
+          ? "心跳/入站证据断供——若持续会自动收口，恢复即消失"
+          : "重新见到对端证据，观察期内确认稳定后解除",
+    });
   }
   if (rttMs > 0) {
     rows.push({

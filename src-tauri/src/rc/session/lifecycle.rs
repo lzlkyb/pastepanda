@@ -328,13 +328,18 @@ impl RcService {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
             Some(s) if s.phase == SessionPhase::InboundActive => {
-                crate::rc::link::peer_bg_watchdog(
+                let reason = crate::rc::link::peer_bg_watchdog(
                     s.bg_since_mono,
                     s.started_mono,
                     evidence,
                     crate::rc::mono::mono_ms(),
                     timeout,
-                )
+                );
+                // 🔴 P1：被控端同样喂调度状态机（两端各自的 LinkState 各自维护相位）。
+                if reason.is_some() {
+                    self.link.note_evidence_lost();
+                }
+                reason
             }
             _ => None,
         }
@@ -399,12 +404,21 @@ impl RcService {
         let timeout = self.heartbeat_timeout_ms();
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
-            Some(s) if s.phase == SessionPhase::OutboundActive => crate::rc::link::link_stale_kick(
-                s.started_mono,
-                evidence,
-                crate::rc::mono::mono_ms(),
-                timeout,
-            ),
+            Some(s) if s.phase == SessionPhase::OutboundActive => {
+                let stale = crate::rc::link::link_stale_kick(
+                    s.started_mono,
+                    evidence,
+                    crate::rc::mono::mono_ms(),
+                    timeout,
+                );
+                // 🔴 P1（2026-10-15）：真判了断供才喂调度状态机（幂等，同拍
+                // 重复喂是 Duplicate）。事件喂入是 link 内部自己的锁，
+                // 此处不持 inner——锁序不变。
+                if stale {
+                    self.link.note_evidence_lost();
+                }
+                stale
+            }
             _ => false,
         }
     }

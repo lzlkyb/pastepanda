@@ -316,6 +316,16 @@ impl OutboundVideo {
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
                 };
+                // 🔴 P3（2026-10-15）：pmtud 探针（0xD2）——原样回发。
+                // 回显到达被控端 = 本端**真的收到**了那个尺寸的数据报
+                // （收不到就不可能回），被控端据此才敢升 1400B 大分片。
+                // 回发失败（本地塞不下等）就吞掉：被控端探测超时自动保持
+                // 1000B，零风险。旧被控端发的探针不存在——此分支只对
+                // 新版对端生效，旧版互操作路径完全不进这段。
+                if dg.first() == Some(&super::pmtud::PROBE_TAG) {
+                    let _ = conn.send_datagram(dg.clone().into());
+                    continue;
+                }
                 let (frames, damaged) = {
                     let mut g = reasm.lock().unwrap_or_else(|p| p.into_inner());
                     let frames = g.feed(&dg);

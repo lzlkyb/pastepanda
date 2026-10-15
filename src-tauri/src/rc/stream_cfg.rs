@@ -8,7 +8,7 @@
 //! **时间不进这个模块**：`touch_activity` / `should_pause` 的「现在」由调用方传入，
 //! 暂停判定因此可以用假时钟精确断言，不必 sleep 或依赖机器负载。
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use super::service::{CFG_CAPTURE_SCOPE, CFG_CODEC, CFG_QUALITY};
@@ -140,6 +140,34 @@ pub fn bitrate_scale_for_rtt(rtt_ms: i64) -> u32 {
         200..=399 => 40,
         _ => 25,
     }
+}
+
+// 🔴 P3（2026-10-15，对标 p2wlan DPLPMTUD）：视频数据报**片宽**。
+// 1000 = 默认安全档；1400 = pmtud 探测确认对端收得下的大分片档
+// （`vid_dgram::FRAG_BIG`）。发送端每帧现读（`vid_dgram::send_frame`），
+// 探测任务改写、无需重启推流。
+//
+// 为什么是模块级 static 而不是 `StreamCfg` 实例字段：RcService 是全局单例
+// （`global()`），两者等价；而探针任务（`pmtud::run`）只拿到 conn，
+// 不持有 service 引用——从实例字段走要为这个一行读写多穿两层锁/克隆，
+// 不值。会话建立时由 `spawn_inbound_video` 复位 1000（防上一场残留：
+// 对端能力与路径 MTU 都是**逐会话**属性）。
+static VD_FRAG: AtomicUsize = AtomicUsize::new(super::vid_dgram::FRAG);
+
+/// 当前视频数据报片宽（字节）。发送端每帧调用。
+pub fn vd_frag() -> usize {
+    VD_FRAG.load(Ordering::Relaxed)
+}
+
+/// 探测任务写入口。夹在 [FRAG, FRAG_BIG]——中间值没有 flags 位编码
+/// （见 `vid_dgram::frag_flag_of`），夹到最近合法档，防御上游算错。
+pub fn set_vd_frag(v: usize) {
+    let v = if v >= super::vid_dgram::FRAG_BIG {
+        super::vid_dgram::FRAG_BIG
+    } else {
+        super::vid_dgram::FRAG
+    };
+    VD_FRAG.store(v, Ordering::Relaxed);
 }
 
 /// 会话 RTT 下限的**纯更新函数**（守卫单测直喂样本）。安静样本判据：

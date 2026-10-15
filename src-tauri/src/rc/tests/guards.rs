@@ -1611,3 +1611,62 @@ fn guard_encode_degradation_ladder_has_one_owner() {
     let perf = strip(include_str!("../perf.rs"));
     assert!(perf.contains("软编换档"), "5s 汇总不带换引擎计数 ⇒ 中途看不见（丙）");
 }
+
+/// 守卫：pmtud 大分片链路**六处接线成对**（P3，2026-10-15）。
+///
+/// 这条链的失败方式全是静默的：Request 位漏发 = 永远 1000B（无告警、
+/// 只是白丢 30% 包效率）；探针回显钩子被删 = 探测永远超时（同上）；
+/// 被控端确认钩子被删 = 同上；复位被删 = 上一场的 1400 灌给旧对端
+/// （静默全丢，画面雪崩）。逐处 include_str! 钉住，删任何一环这条就红。
+#[test]
+fn 守卫_pmtud大分片链路接线成对() {
+    // ① 协议位存在（serde default 兼容三件套的门）
+    let protocol = include_str!("../protocol.rs");
+    assert!(
+        protocol.contains("vd_frag: Option<u16>"),
+        "Request 帧没有 vd_frag 能力位 —— 大分片无从协商"
+    );
+    // ② 发起端如实声明（只在 vid_dgram 能力内置位）
+    let service_outbound = include_str!("../service/outbound.rs");
+    assert!(
+        service_outbound.contains("vd_frag: vid_dgram_capability()"),
+        "发起端 Request 没上报 vd_frag —— 被控端永远不会探测大分片"
+    );
+    // ③ 被控端解析并透传
+    let service_inbound = include_str!("../service/inbound.rs");
+    assert!(
+        service_inbound.contains("peer_vd_frag"),
+        "被控端没有解析 vd_frag 位"
+    );
+    // ④ 会话入口复位 + 探测任务 spawn（复位与探测必须同在：只 spawn 不复位
+    //    会把上一场的档位灌进这一场；只复位不 spawn 则永远 1000B）
+    let inbound_accept = include_str!("../service/inbound_accept.rs");
+    assert!(
+        inbound_accept.contains("set_vd_frag(") && inbound_accept.contains("pmtud::run"),
+        "被控端会话入口缺片宽复位或探测任务 spawn —— 残留档位会灌给旧对端"
+    );
+    // ⑤ 发起端探针回显钩子（0xD2 原样回发）——删了它探测永远超时
+    let outbound = include_str!("../outbound.rs");
+    assert!(
+        outbound.contains("PROBE_TAG") && outbound.contains("send_datagram(dg.clone()"),
+        "发起端数据报读取循环缺探针回显 —— 探测永远超时、永远 1000B"
+    );
+    // ⑥ 被控端确认钩子（parse → note_ack）
+    let inbound_tasks = include_str!("../inbound_tasks.rs");
+    assert!(
+        inbound_tasks.contains("parse_probe") && inbound_tasks.contains("note_ack"),
+        "被控端数据报读取循环缺探针确认处理 —— 探测永远超时、永远 1000B"
+    );
+    // ⑦ 片宽的写入口与读出口同源（stream_cfg 单点收口，不许旁路写）
+    let pmtud = include_str!("../pmtud.rs");
+    let vid_dgram = include_str!("../vid_dgram.rs");
+    assert!(
+        pmtud.contains("stream_cfg::set_vd_frag") && vid_dgram.contains("stream_cfg::vd_frag()"),
+        "片宽读写未走 stream_cfg 单点收口"
+    );
+    // ⑧ 格式位随帧自描述（FLAG_FRAG_BIG 必须真实存在并被两侧消费）
+    assert!(
+        vid_dgram.contains("FLAG_FRAG_BIG") && vid_dgram.contains("FRAG_BIG"),
+        "大分片格式位缺失 —— 接收端无从自描述片宽"
+    );
+}

@@ -204,10 +204,24 @@ pub(in crate::rc) async fn spawn_inbound_video(
     peer_video_plane: bool,
     peer_media_plane: bool,
     peer_media_feedback: bool,
+    peer_vd_frag: usize,
 ) {
     let Some(svc) = global() else {
         return;
     };
+    // 🔴 P3（2026-10-15，对标 p2wlan DPLPMTUD）：片宽探测。
+    // ① 先无条件复位 1000——上一场的升档是**那一场**的对端能力+路径 MTU，
+    //   不能继承（旧对端/换路径下 1400B 帧就是静默全丢）；
+    // ② 对端声明能解大分片（Request.vd_frag）且走数据报（peer_dgram）才探。
+    // 探测任务自持 conn 克隆，与推流互不干扰；回显处理挂在本端数据报
+    // 读取循环（`inbound_tasks::spawn_datagram_reader`，认 0xD2）。
+    crate::rc::stream_cfg::set_vd_frag(crate::rc::vid_dgram::FRAG);
+    if peer_dgram && peer_vd_frag > crate::rc::vid_dgram::FRAG {
+        let probe_conn = conn.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::rc::pmtud::run(probe_conn, peer_vd_frag).await;
+        });
+    }
     // G3：对端申请了系统声音 → 音频 worker 由 InboundVideo::run 启动
     // （音频状态是 Windows 宿主专属字段，mobile 无可置/可清，跳过）
     #[cfg(any(target_os="windows",target_os="macos"))]

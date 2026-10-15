@@ -125,6 +125,13 @@ export interface RcStatus {
    */
   path_kind?: string;
   /**
+   * 链路调度相位（P1，2026-10-15）：`stable` / `degraded` / `recovering`；
+   * 空串 = 无会话（不显示）。degraded = 心跳/入站证据断供（看门狗口径），
+   * recovering = 断供后重新见到证据、恢复观察窗内。与 path_kind 是两个
+   * 独立维度：relay 上也可以 stable，直连上也可以 degraded。
+   */
+  link_sched?: string;
+  /**
    * 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。「画面延迟」= 本地时刻 −
    * (帧采集时刻 − 偏差)。0 = 尚未校准（显示的延迟带两机时钟差）。
    */

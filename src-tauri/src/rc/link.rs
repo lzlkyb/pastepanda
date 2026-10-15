@@ -27,7 +27,7 @@
 
 use crate::sync::path_kind::{self, PathKind};
 use iroh::endpoint::Connection;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// 🔴 P1-5（2026-09-23 审计）：半开链路看门狗的踢人阈值（毫秒）。
@@ -226,6 +226,15 @@ pub struct LinkState {
     reported: Mutex<PathKind>,
     /// 本会话的 RTT 采样累积（`detach` 时交出，`attach` 时清零）。
     rtt: Mutex<RttAcc>,
+    /// 🔴 P1（2026-10-15，对标 p2wlan）：链路调度状态机（Stable/Degraded/Recovering）。
+    /// 观测点喂事件（attach/detach/pong/换路/看门狗断供），status 投影消费相位。
+    /// 低频（每秒一次量级），独立 Mutex 与其它字段互不嵌套。
+    sched: Mutex<super::link_sched::LinkSched>,
+    /// 网络世代（三代 fencing 的外部位）：调用方感知到网络环境变化时 bump
+    /// （[`Self::bump_network_generation`]）。当前无网卡监听器，预留 0；
+    /// 状态机的 fencing 已覆盖 session/path 两代，network 位补上后
+    /// 「换网后旧会话迟到观测」同样被拒——机制就绪，接网卡监听即生效。
+    network_gen: AtomicU64,
 }
 
 impl Default for LinkState {
@@ -248,7 +257,24 @@ impl LinkState {
                 sum: 0,
                 count: 0,
             }),
+            sched: Mutex::new(super::link_sched::LinkSched::new()),
+            network_gen: AtomicU64::new(0),
         }
+    }
+
+    /// 事件喂入用的当前 epoch 快照（session/path 位由状态机内部维护，
+    /// 调用方只提供 network 世代）。私有：喂点全在本模块内。
+    fn sched_epoch(&self) -> super::link_sched::SchedEpoch {
+        super::link_sched::SchedEpoch {
+            network: self.network_gen.load(Ordering::Relaxed),
+            session: 0,
+            path: 0,
+        }
+    }
+
+    /// 网络环境变更（换网卡/换网段）时 bump。机制见 `network_gen` 字段注释。
+    pub fn bump_network_generation(&self) {
+        self.network_gen.fetch_add(1, Ordering::Relaxed);
     }
 
     /// 会话建立时登记连接句柄（clone，不是拿走所有权）。
@@ -263,6 +289,13 @@ impl LinkState {
         self.attached_ms.store(super::mono::mono_ms(), Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
         *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
+        // 🔴 P1：调度状态机进新会话世代（旧会话的迟到事件从此被 fence）。
+        // 单独取锁、不与上面任何一个锁嵌套——锁序纪律与 `sched_state_str` 同。
+        let epoch = self.sched_epoch();
+        self.sched
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .reduce(super::link_sched::SchedEvent::Attached { epoch }, super::mono::mono_ms());
     }
 
     /// 会话收尾：交回本次走的路与网速摘要（落库/历史用）并清空。
@@ -279,6 +312,12 @@ impl LinkState {
         self.last_inbound_ms.store(0, Ordering::Relaxed);
         *self.reported.lock().unwrap_or_else(|p| p.into_inner()) = PathKind::None;
         *self.rtt.lock().unwrap_or_else(|p| p.into_inner()) = RttAcc::default();
+        // 🔴 P1：调度相位回 Unbound（epoch 不匹配的迟到 detach 会被状态机拒）。
+        let epoch = self.sched_epoch();
+        self.sched
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .reduce(super::link_sched::SchedEvent::Detached { epoch }, super::mono::mono_ms());
         LinkEnd {
             path,
             rtt_min,
@@ -295,6 +334,15 @@ impl LinkState {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .push(rtt_ms);
+        // 🔴 P1：pong 是恢复证据——Degraded 中的一条 pong 把相位推进 Recovering。
+        let epoch = self.sched_epoch();
+        self.sched
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .reduce(
+                super::link_sched::SchedEvent::PongObserved { epoch, rtt_ms },
+                super::mono::mono_ms(),
+            );
     }
 
     /// 最后一次 pong 的时刻（单调 ms，见字段注释）；0 = 本会话还没收到过。
@@ -360,15 +408,62 @@ impl LinkState {
     ///   报「已切换到局域网直连」会把用户吓一跳。
     pub fn take_path_change(&self) -> Option<(PathKind, PathKind)> {
         let now = self.path_kind()?;
-        let mut reported = self.reported.lock().unwrap_or_else(|p| p.into_inner());
-        if now == *reported {
-            return None;
+        let change = {
+            let mut reported = self.reported.lock().unwrap_or_else(|p| p.into_inner());
+            if now == *reported {
+                return None;
+            }
+            let from = std::mem::replace(&mut *reported, now);
+            if from == PathKind::None {
+                return None;
+            }
+            Some((from, now))
+        };
+        // 🔴 P1：换路事件喂调度状态机（已放掉 reported 锁——锁不嵌套）。
+        // 换路本身算新证据：Degraded 中观测到换路 → Recovering（path 世代 +1）。
+        if let Some((from, to)) = change {
+            let epoch = self.sched_epoch();
+            self.sched
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .reduce(
+                    super::link_sched::SchedEvent::PathChanged { epoch, from, to },
+                    super::mono::mono_ms(),
+                );
         }
-        let from = std::mem::replace(&mut *reported, now);
-        if from == PathKind::None {
-            return None;
+        change
+    }
+
+    /// 🔴 P1：看门狗判定「证据断供」后喂入（查询方法的副作用点——
+    /// 判定处就是观测处，事件幂等，同拍重复喂是 Duplicate 不改状态）。
+    /// 只在**真判了失联**时喂：`None`/`false` 不产生任何事件。
+    pub fn note_evidence_lost(&self) {
+        let epoch = self.sched_epoch();
+        self.sched
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .reduce(
+                super::link_sched::SchedEvent::EvidenceLost { epoch },
+                super::mono::mono_ms(),
+            );
+    }
+
+    /// 调度相位快照（status 投影用）。**查询带一步 `poll`**：Recovering
+    /// 的观察窗没有独立事件源，由这条每秒一次的轮询消费（见
+    /// `link_sched::poll` 的设计说明）。
+    pub fn sched_snapshot(&self) -> super::link_sched::SchedSnapshot {
+        let now = super::mono::mono_ms();
+        {
+            let mut sched = self.sched.lock().unwrap_or_else(|p| p.into_inner());
+            sched.poll(now);
         }
-        Some((from, now))
+        self.sched.lock().unwrap_or_else(|p| p.into_inner()).snapshot()
+    }
+
+    /// 调度相位的稳定字符串（`stable` / `degraded` / `recovering` / 空串）。
+    /// 空串 = 无会话，前端不显示这一格——与 `path_kind_str` 同口径。
+    pub fn sched_state_str(&self) -> String {
+        self.sched_snapshot().phase.as_str().to_string()
     }
 }
 

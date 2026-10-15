@@ -105,3 +105,30 @@ describe("RcHud 连接详情入口", () => {
     expect(panel(container)!.textContent).toContain("2560×1440");
   });
 });
+
+describe("RcHud 链路调度相位（P1 link_sched）", () => {
+  it("degraded / recovering 出「调度」行，stable 与空串不出行", () => {
+    // degraded：出行且文案可读
+    const { container: c1 } = renderHud({ linkSched: "degraded" });
+    fireEvent.click(trigger(c1)!);
+    const t1 = panel(c1)!.textContent ?? "";
+    expect(t1).toContain("调度");
+    expect(t1).toContain("链路降级");
+
+    // recovering：出行且文案可读
+    const { container: c2 } = renderHud({ linkSched: "recovering" });
+    fireEvent.click(trigger(c2)!);
+    const t2 = panel(c2)!.textContent ?? "";
+    expect(t2).toContain("链路恢复中");
+
+    // stable：常态不出行（出行就是噪音）
+    const { container: c3 } = renderHud({ linkSched: "stable" });
+    fireEvent.click(trigger(c3)!);
+    expect((panel(c3)!.textContent ?? "")).not.toContain("调度");
+
+    // 空串（后端旧版本/无会话）：不出行
+    const { container: c4 } = renderHud({ linkSched: "" });
+    fireEvent.click(trigger(c4)!);
+    expect((panel(c4)!.textContent ?? "")).not.toContain("调度");
+  });
+});

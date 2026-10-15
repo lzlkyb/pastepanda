@@ -154,6 +154,9 @@ pub struct RcStatus {
     pub loss_permille: u32,
     /// 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（前端不显示这格）。
     pub path_kind: String,
+    /// 链路调度相位（P1，2026-10-15）：`stable` / `degraded` / `recovering`；
+    /// 空串 = 无会话（前端不显示）。degraded = 证据断供，recovering = 恢复观察窗内。
+    pub link_sched: String,
     /// 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。发起端算「画面延迟」用：
     /// 帧龄 = 本地时刻 − (帧采集时刻 − 偏差)。0 = 尚未校准（两机时钟差未知）。
     pub clock_skew_ms: i64,

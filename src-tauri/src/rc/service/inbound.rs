@@ -53,7 +53,7 @@ impl RcService {
         }
         // 对端把 Request 送到了 = 它在线。刷 last_seen，跨网时设备列表才亮得起来。
         let _ = self.store.rc_device_touch(&peer, true);
-        let (requested, uno_code, uno_pass, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback) =
+        let (requested, uno_code, uno_pass, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback, peer_vd_frag) =
             match RcFrame::decode(&bytes) {
                 Ok(RcFrame::Request {
                     capability,
@@ -65,6 +65,7 @@ impl RcService {
                     video_plane,
                     media_plane,
                     media_feedback,
+                    vd_frag,
                 }) => (
                     capability,
                     uno_code,
@@ -75,6 +76,8 @@ impl RcService {
                     video_plane == Some(true) || media_plane == Some(true),
                     media_plane == Some(true),
                     media_feedback == Some(true),
+                    // 🔴 P3：对端声明的最大片宽（0 = 旧版对端，恒 1000B 分片）。
+                    vd_frag.map(|v| v as usize).unwrap_or(0),
                 ),
             Ok(_) => {
                 deny_and_close(&link_conn, &mut send, "期望 Request 帧", "not_request").await;
@@ -311,7 +314,7 @@ impl RcService {
                     }
                     // R1：推 JPEG 画面直到会话结束（conn 一并交给推流任务：
                     // 鼠标数据报读取 + stats 采样都挂在它身上）
-                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback).await;
+                    super::inbound_accept::spawn_inbound_video(&peer, send, recv, link_conn, peer_dgram, peer_fec_rs, peer_audio, peer_video_plane, peer_media_plane, peer_media_feedback, peer_vd_frag).await;
                     return;
                 }
                 Some(Err("already_streaming")) => {
