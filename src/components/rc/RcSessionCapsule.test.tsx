@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { waitUntilContent } from "@/test-helpers/waitUntil";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RcSession } from "@/lib/api/rc";
@@ -1138,11 +1139,11 @@ describe("RcCapsuleHandle（乙档常驻把手）", () => {
     await act(async () => {
       fireEvent.click(getByRole("button", { name: /顶缘悬停唤出/ }));
     });
-    // 回滚 + toast 都在 .catch 里，链条要多冲一轮才落到最终态
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(useAppStore.getState().config.rc_hover_reveal).toBe(true);
+    // 回滚 + toast 都在 save_config 的 .catch 里。🔴 等的是「回滚后的最终值」这条内容判据，
+    // 不是「我多冲了一轮微任务」——取数一旦不在微任务落地（慢取数注入就是这个形状），
+    // 一轮 flush 之后读到的仍是刚写下去的 false，这条用例就变成了撞运气。
+    // 本 describe 挂着假计时器，waitFor 在这种组合下 poll 不动，故走真实宏任务逐拍复查。
+    await waitUntilContent(() => useAppStore.getState().config.rc_hover_reveal === true, "save 失败后回滚 rc_hover_reveal");
   });
 });
 

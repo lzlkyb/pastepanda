@@ -11,6 +11,7 @@
  * Tauri API 整模块 mock（先例：RcWindowControls.test.tsx）。
  */
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { waitUntilRenderedContent } from "@/test-helpers/waitUntil";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IslandState } from "@/lib/todo/types";
 
@@ -51,20 +52,25 @@ function remainInLabel(container: HTMLElement) {
   return (rootEl(container).getAttribute("aria-label") ?? "").match(/还剩 (\d+) 项/)?.[1];
 }
 
+/** 默认真数据判据：剩余数只有快照真落地才写「3」（useIslandState 的空态首帧是 0）。 */
+function expectSnapshotLoaded(container: HTMLElement) {
+  expect(remainInLabel(container)).toBe("3");
+}
+
 /**
  * 渲染并等「快照真的落地」。
  *
  * 🔴 不能用 `waitFor(data-st === "pill")` 当就绪信号：stage 初值**就是** pill，
  * 而 `useIslandState` 首帧返回空态（total 0 / hint 空），取数 promise 要下一个
- * 微任务才 setState。等 pill 等于没等——快机器碰巧能过，CI 慢机器上断言读到
- * 空态首帧（实测判成「0今天没有待办」）。`loaded` 传只有真数据才成立的断言。
+ * 宏任务才 setState。等 pill 等于没等——快机器碰巧能过，CI 慢机器上断言读到
+ * 空态首帧（实测判成「0今天没有待办」）。就绪判据必须只有真数据才成立：
+ * 默认钉「还剩 3 项」，`assertReady` 可换成更窄的真数据断言，不可放宽回舞台态。
  */
-async function renderIslandLoaded(assertReady?: (container: HTMLElement) => void) {
+async function renderIslandLoaded(
+  assertReady: (container: HTMLElement) => void = expectSnapshotLoaded,
+) {
   const { container } = render(<TodoIsland />);
-  await act(async () => {
-    await Promise.resolve();
-  });
-  if (assertReady) await waitFor(() => assertReady(container));
+  await waitFor(() => assertReady(container));
   return container;
 }
 
@@ -105,16 +111,22 @@ describe("TodoIsland 舞台机", () => {
   });
 
   it("🔴 守卫：快照晚于首帧落地时，pill 就绪信号必须算「还没好」", async () => {
-    // 反例注入：取数 20ms 后才回（CI 慢机器的形状）。首帧 stage 已经是 pill，
-    // 把 data-st==="pill" 当就绪信号就会读到 useIslandState 的空态首帧。
+    // 反例形态：取数由测试手动放行——常规与注入模式下都确定性地「晚于首帧」
+    //（旧写法靠真实 20ms 超时，快机器上 waitFor 首拍就可能追平数据，红不红看运气）。
+    let release!: (state: IslandState) => void;
     h.invoke.mockImplementation((cmd: string) =>
       cmd === "todo_island_tasks"
-        ? new Promise((resolve) => setTimeout(() => resolve(STATE), 20))
+        ? new Promise<IslandState>((resolve) => {
+            release = resolve;
+          })
         : Promise.resolve(null),
     );
     const { container } = render(<TodoIsland />);
     await waitFor(() => expect(rootEl(container).getAttribute("data-st")).toBe("pill"));
+    // pill 已经「就绪」而数据还没回：只等 pill 的信号在这一刻读到的是空态首帧——
+    // 这正是它必须算「还没好」的原因（真判据见 renderIslandLoaded 的剩余数）。
     expect(remainInLabel(container)).toBe("0");
+    release(STATE);
     await waitFor(() => expect(remainInLabel(container)).toBe("3"));
     expect(container.textContent).toContain("交材料");
   });
@@ -130,9 +142,8 @@ describe("TodoIsland 舞台机", () => {
 
   it("Esc 两级取消：输入态先回列表，再 Esc 才回胶囊（规则 17.6）", async () => {
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    // 就绪判据 = 真快照落地（微任务排空不算：注入档里取数在宏任务才回）
+    await waitFor(() => expectSnapshotLoaded(container));
     // pill → list
     fireEvent.click(rootEl(container));
     // list → compose（点底栏「记一条」）
@@ -200,9 +211,7 @@ describe("TodoIsland 舞台机", () => {
   it("🔴 展开态点外闲置 6s 自动收起（岛窗外点击穿透，没有点外收起就只能手动关）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container)); // → list
     expect(rootEl(container).getAttribute("data-st")).toBe("list");
     // hover=false（鼠标在别处）挂 6s 计时器；鼠标回来会清理（不在此测）
@@ -216,9 +225,7 @@ describe("TodoIsland 舞台机", () => {
   it("🔴 compose 有未提交草稿时不自动收起（不能把打了一半的话收没了）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container)); // → list
     fireEvent.click(screen.getByText("记一条")); // → compose
     fireEvent.change(screen.getByLabelText("记一条待办"), { target: { value: "写一半的事" } });
@@ -410,9 +417,7 @@ describe("TodoIsland 舞台机", () => {
   it("勾选进入 6s 完成态驻留：行留原位 + 撤销 chip，到点才退场（另一条不动）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container)); // → list
     // 等列表显形（折叠层此刻才卸载， global getByText 才不会撞车）
     await act(async () => {
@@ -429,9 +434,8 @@ describe("TodoIsland 舞台机", () => {
     expect(screen.getByText("交材料")).toBeTruthy();
     // 行尾出现「撤销」chip；写回在点击瞬间已发出（驻留只是视觉窗口）
     expect(screen.getByText("撤销")).toBeTruthy();
-    await act(async () => {
-      await Promise.resolve();
-    });
+    // 不插「等一轮」：toggle 的 invoke 是点击 handler 里同步发出的，上面那行 chip 断言
+    // 已经是「handler 跑完了」的证据；再 await 一拍只是把微任务当就绪信号（Issue #3 拦的写法）。
     expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
       noteId: "n1",
       line: 3,
@@ -464,9 +468,7 @@ describe("TodoIsland 舞台机", () => {
   it("驻留中点「撤销」：再发一次 toggle 回未完成，倒计时作废（6s 后行还在）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container));
     await act(async () => {
       vi.advanceTimersByTime(120);
@@ -476,14 +478,10 @@ describe("TodoIsland 舞台机", () => {
       h.handlers.get("todo-island-hover")?.({ payload: true });
     });
     fireEvent.click(screen.getAllByTitle("完成")[0]);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    // toggle 的 invoke 在点击 handler 里同步发出 ⇒ 这里不需要「冲一拍微任务」再 clear
+    //（那种写法把微任务让渡当就绪信号，慢取数下会清掉还没发出去的、或漏清后来的）。
     h.invoke.mockClear();
     fireEvent.click(screen.getByText("撤销"));
-    await act(async () => {
-      await Promise.resolve();
-    });
     expect(h.invoke).toHaveBeenCalledWith("todo_island_toggle_task", {
       noteId: "n1",
       line: 3,
@@ -503,9 +501,7 @@ describe("TodoIsland 舞台机", () => {
   it("悬停驻留行暂停倒计时，移开恢复（设计稿 S2）", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container));
     await act(async () => {
       vi.advanceTimersByTime(120);
@@ -554,9 +550,7 @@ describe("TodoIsland 舞台机", () => {
       return Promise.resolve(null);
     });
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container));
     await act(async () => {
       vi.advanceTimersByTime(120);
@@ -577,9 +571,7 @@ describe("TodoIsland 舞台机", () => {
   it("勾选后服务器确认：行仍驻留原位（不因推送跳没），6s 后才进「已完成」", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container)); // → list
     await act(async () => {
       vi.advanceTimersByTime(120);
@@ -667,7 +659,8 @@ describe("TodoIslandList 写回", () => {
       return Promise.resolve(null);
     });
     const { container } = render(<TodoIsland />);
-    await act(async () => { await Promise.resolve(); });
+    // 勾选行为要等真快照：列表行只在数据落地后才存在（微任务排空不算）
+    await waitFor(() => expectSnapshotLoaded(container));
     fireEvent.click(rootEl(container));
     fireEvent.click(screen.getAllByTitle("完成")[0]);
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
@@ -678,9 +671,7 @@ describe("TodoIslandList 写回", () => {
   it("勾选后服务器确认（收起重开路径）：驻留结束才进「已完成」，不被旧标记吞掉", async () => {
     vi.useFakeTimers();
     const { container } = render(<TodoIsland />);
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container)); // → list
     await act(async () => {
       vi.advanceTimersByTime(120);
@@ -725,7 +716,7 @@ describe("TodoIslandList 写回", () => {
       return Promise.resolve(null);
     });
     const { container } = render(<TodoIsland />);
-    await act(async () => { await Promise.resolve(); });
+    await waitUntilRenderedContent(() => remainInLabel(container) === "3", "快照落地（aria-label 报「还剩 3 项」）");
     fireEvent.click(rootEl(container));
     fireEvent.click(screen.getByText("记一条"));
     const input = screen.getByLabelText("记一条待办") as HTMLInputElement;
@@ -790,7 +781,9 @@ describe("TodoIslandList 写回", () => {
       cmd === "todo_island_tasks" ? Promise.resolve(ST) : Promise.resolve(null),
     );
     const { container } = render(<TodoIsland />);
-    fireEvent.click(await waitFor(() => rootEl(container))); // → list
+    // 🔴 `waitFor(() => rootEl(container))` 是永真等待（首帧就有 root）：等的是真快照
+    await waitFor(() => expect(remainInLabel(container)).toBe("3"));
+    fireEvent.click(rootEl(container)); // → list
     const over = screen.getByText("已过期 · 昨天 16:00");
     expect(over.className).toContain("Over");
     const today = screen.getByText("今天 16:00");

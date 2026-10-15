@@ -127,7 +127,11 @@ describe("remote audio errors", () => {
     vi.stubGlobal("EncodedAudioChunk", class {});
     const add = vi.spyOn(window, "addEventListener"), remove = vi.spyOn(window, "removeEventListener");
     const player = new RcAudioPlayer(); const batch = build([{ type: 0, json: cfgJson() }, { type: 1, ptsMs: 0, data: [1] }]);
-    for (let i = 0; i < 25; i++) player.consume(batch); await Promise.resolve();
+    // 手势监听挂在 `ctx.resume().catch(...)` 之后：registration 是异步链的落点，
+    // `await Promise.resolve()` 只排一格微任务，链上多一跳就永远慢半拍（快机器碰巧过）。
+    // 改为逐拍等内容信号：pointerdown 监听真的注册上了再继续，超时即报错。
+    for (let i = 0; i < 25; i++) player.consume(batch);
+    await vi.waitFor(() => expect(add.mock.calls.some(([type]) => type === "pointerdown")).toBe(true));
     expect(decode).not.toHaveBeenCalled(); const gesture = add.mock.calls.find(([type]) => type === "pointerdown")!;
     ctx.state = "running"; player.consume(batch); expect(decode).toHaveBeenCalledOnce();
     player.close(); expect(remove).toHaveBeenCalledWith("pointerdown", gesture[1]); expect(ctx.close).toHaveBeenCalledOnce();

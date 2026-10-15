@@ -36,6 +36,32 @@ vi.mock("@/hooks/useWindowVisible", () => ({ useWindowVisible: () => true }));
 /** 未来 3 分钟过期（对齐设计稿 §0：会合码 3 分钟）。 */
 const EXPIRES_AT = Date.now() + 3 * 60 * 1000;
 
+/**
+ * 模块顶层（各用例 `vi.useFakeTimers()` 之前）抓真实 setTimeout：
+ * 慢取数注入把 `rcShortPairCode` 的返回值推迟**一个真实宏任务**落地，
+ * 假计时器永远不推进它，RTL waitFor 在假计时器下也 poll 不动——
+ * 就绪只能按「码真的亮了」逐拍等真实宏任务（同 recSelectStartFromPreview 的模式）。
+ */
+const realSetTimeout = globalThis.setTimeout;
+
+/** 逐拍（真实宏任务）等内容判据成立；200 拍不成立即抛，绝不静默放行空壳帧。 */
+async function untilContent(label: string, pred: () => boolean) {
+  for (let tick = 0; ; tick++) {
+    await act(async () => {
+      // 组件的「延后一帧再挂监听」挂在**假** setTimeout(0) 上：每一拍既要让出
+      // 真实宏任务（等注入推迟的取数落地），也要把假计时器里到期的一格踩下去。
+      await vi.advanceTimersByTimeAsync(0);
+      await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+    });
+    if (pred()) return;
+    if (tick >= 199) throw new Error(`${label}：200 拍真实宏任务内未落地（取码结果没进 DOM）`);
+  }
+}
+
+/** 等「亮码」真的把码值渲染进码条（内容判据，不是「mock 被调过」）。 */
+const waitDigits = (digits: string) =>
+  untilContent(`配对码 ${digits} 亮出`, () => shownDigits() === digits);
+
 function renderPane() {
   const api = {
     identity: { node_id: "local", device_name: "本机", fingerprint: "3F9A·21C0" },
@@ -75,7 +101,7 @@ describe("配对码遮罩（设计稿 §1）", () => {
     renderPane();
     // 不点任何按钮：挂载即取码亮出
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(shownDigits()).toBe("4182 0620");
+    await waitDigits("4182 0620");
     expect(rc.shortPairCode).toHaveBeenCalledTimes(1);
     // 二维码默认不在 DOM（jsdom 画不了 canvas，只钉「入口在、弹框开关走」）
     expect(document.querySelector("canvas[aria-label='配对码二维码']")).toBeNull();
@@ -105,7 +131,7 @@ describe("配对码遮罩（设计稿 §1）", () => {
     vi.useFakeTimers();
     renderPane();
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(shownDigits()).toBe("4182 0620");
+    await waitDigits("4182 0620");
 
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(shownDigits()).toBe("4182 0620");
@@ -117,7 +143,7 @@ describe("配对码遮罩（设计稿 §1）", () => {
     vi.useFakeTimers();
     renderPane();
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(shownDigits()).toBe("4182 0620");
+    await waitDigits("4182 0620");
 
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
@@ -136,11 +162,12 @@ describe("配对码遮罩（设计稿 §1）", () => {
     vi.useFakeTimers();
     renderPane();
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(shownDigits()).toBe("4182 0620");
+    await waitDigits("4182 0620");
     // 过去：扫码后还得再点「我出示这枚码」才开始监听，扫码方永远干等。
     // 现在：码一亮就自动挂上监听，按钮已删除。
-    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    expect(rc.pinPairBegin).toHaveBeenCalledWith("41820620", true);
+    await untilContent("亮码后自动挂上监听", () =>
+      rc.pinPairBegin.mock.calls.some(([code, listen]) => code === "41820620" && listen === true),
+    );
     expect(screen.queryByRole("button", { name: "我出示这枚码" })).toBeNull();
     vi.useRealTimers();
   });

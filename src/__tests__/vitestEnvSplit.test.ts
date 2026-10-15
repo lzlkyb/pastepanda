@@ -69,9 +69,11 @@ describe("vitest 环境拆档守卫", () => {
   it("setupFiles 只挂在两个 project 上，顶层一份都不留", () => {
     // extends:true 走 mergeConfig，数组是**拼接**：顶层再留一份，jsdom 侧的共享 setup
     // 就会跑两遍；只查文本形态，运行时是否真装上了由 asyncUtilTimeout.test.tsx 实测。
+    // ...SETUP_SLOW 是 Issue #3 的慢取数注入档（默认空数组，PASTEPANDA_SLOW_MOCK=1 才挂上），
+    // 它必须留在 project 上而不是顶层，否则本条的「拼接跑两遍」结论不成立。
     expect(CONFIG.match(/setupFiles:/g)?.length, "setupFiles 出现次数变了（应为两个 project 各一处）").toBe(2);
-    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED]");
-    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED, SETUP_DOM]");
+    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED, ...SETUP_SLOW]");
+    expect(CONFIG).toContain("setupFiles: [SETUP_SHARED, ...SETUP_SLOW, SETUP_DOM]");
     const beforeProjects = CONFIG.slice(0, CONFIG.indexOf("projects: ["));
     expect(beforeProjects, "顶层 test 块里又出现了 setupFiles，jsdom 侧会重复执行").not.toContain("setupFiles:");
     expect(fs.existsSync(path.join(ROOT, "src/test-setup.dom.ts")), "jsdom 专属 setup 文件不在了").toBe(true);

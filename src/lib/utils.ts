@@ -7,6 +7,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Only text outcomes can be merged; rich messages keep their own source identity. */
+export function mobileFeedbackIdentity(tone: string, title: unknown, detail: unknown): string | null {
+  const text = (value: unknown) => value == null || typeof value === "string" || typeof value === "number";
+  return text(title) && text(detail) ? JSON.stringify([tone, title ?? "", detail ?? ""]) : null;
+}
+
+/** Recovery actions also remain on their task; the toast is never their only entry. */
+export function mobileFeedbackReadingTime(hasAction: boolean, hasDetail: boolean): number {
+  return hasAction || hasDetail ? 6000 : 4000;
+}
+
 /** Local knowledge failures must not expose note contents or private filesystem paths. */
 export function knowledgeErrorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error ?? "");

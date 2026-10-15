@@ -21,7 +21,7 @@
  * 所以改用上面那种不依赖 React 内部行为的写法。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 
 const h = vi.hoisted(() => {
   /** 当前存活（已注册且未退订）的 close-requested 监听器 */
@@ -100,11 +100,11 @@ describe("useRcWorkbenchClose", () => {
 
     // 迟到的 unlisten 到达：必须当场退订，否则它会一直活着，
     // 在用户下一次点 X 时抢先用「已有待决请求 → false」把窗口关掉。
-    await act(async () => {
-      h.gates.forEach((g) => g());
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(h.listeners).toHaveLength(0);
+    // 只放一拍 `setTimeout(0)` 量的是「我猜注入的宏任务排在谁的后面」：闸门 resolve
+    // 之后注入还要再挂一层真实宏任务才把 unlisten 交回 hook，满载时这一拍先跑完，
+    // 断言就在交付之前（全树注入档实测判红）。等的是内容——unlisten 已交付并退订。
+    h.gates.forEach((g) => g());
+    await waitFor(() => expect(h.listeners).toHaveLength(0));
   });
 
   it("没有会话：放行（不拦），交给框架自己 destroy", async () => {

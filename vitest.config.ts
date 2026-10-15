@@ -87,6 +87,11 @@ const alias = {
 const SETUP_SHARED = path.resolve(__dirname, "./src/test-setup.ts");
 const SETUP_DOM = path.resolve(__dirname, "./src/test-setup.dom.ts");
 
+// 全树扫描「等永真条件」的等待写法用的「慢取数」注入（Issue #3），判据见
+// src/test-setup.slow-mock.ts。默认不装载：常规跑与 CI 的行为、耗时都不变。
+// 用法：PASTEPANDA_SLOW_MOCK=1 npx vitest run
+const SETUP_SLOW = process.env.PASTEPANDA_SLOW_MOCK === "1" ? [path.resolve(__dirname, "./src/test-setup.slow-mock.ts")] : [];
+
 export default defineConfig({
   plugins: [react()],
   resolve: { alias },
@@ -122,7 +127,7 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
-          setupFiles: [SETUP_SHARED],
+          setupFiles: [SETUP_SHARED, ...SETUP_SLOW],
           // include 故意写全仓通配（不是按目录列举）：收窄成 src/** 之类的话，
           // 落在别处的新 .test.ts 会两个 project 都不匹配，静默不跑。
           include: ["**/*.test.ts", "**/*.spec.ts"],
@@ -134,7 +139,7 @@ export default defineConfig({
         test: {
           name: "jsdom",
           environment: "jsdom",
-          setupFiles: [SETUP_SHARED, SETUP_DOM],
+          setupFiles: [SETUP_SHARED, ...SETUP_SLOW, SETUP_DOM],
           include: ["**/*.test.tsx", "**/*.spec.tsx", ...DOM_NEEDED_TS],
           exclude: GENERIC_EXCLUDE,
         },

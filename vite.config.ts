@@ -80,6 +80,12 @@ export default defineConfig(async () => ({
       "@codemirror/state",
       "@codemirror/theme-one-dark",
       "@codemirror/view",
+      // 只被懒加载模块（远控会话里的 RcDropdown / HelpTooltip）引用的包：不在启动时就
+      // 预构建，dev 中途首次点到下拉会触发第二轮 optimize，磁盘 chunk 被就地覆盖而浏览器
+      // 仍按 `?v=<旧 hash>` 用 immutable 缓存拿旧 react chunk ⇒ 同页两份 React 图，
+      // 实测炸在 `@floating-ui/react` 读 React internals：
+      // `TypeError: Cannot read properties of null (reading 'useId')`。
+      "@floating-ui/react",
     ],
   },
 }));
