@@ -15,5 +15,8 @@ export function debugBundlePath(targetDir, defaultName, args, readConfig) {
   }
   if (typeof name !== "string" || !name || /[\/\\\x00]/.test(name)) throw new Error("Invalid bundle product name");
   if (target && !/^[a-z0-9_-]+$/.test(target)) throw new Error("Invalid target triple");
-  return path.join(targetDir, ...(target ? [target] : []), "debug/bundle/macos", `${name}.app`);
+  // posix 而不是 path.join：这条路径是 macOS bundle 里的位置，与跑这段脚本的宿主无关。
+  // 用 path.join 时 Windows 上得到 `\cache\x86_64-apple-darwin\debug\...`（第二段还被当成
+  // 退格符吃掉），三条用例在 Windows 恒红，而 macos-dev 只在 macOS 跑，那里两者等价。
+  return path.posix.join(targetDir, ...(target ? [target] : []), "debug/bundle/macos", `${name}.app`);
 }
