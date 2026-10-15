@@ -25,6 +25,8 @@ pub mod autostart;
 #[cfg(test)]
 mod bench;
 mod clipboard_monitor;
+#[cfg(desktop)]
+mod clothesline;
 mod commands;
 pub mod user_paths;
 // DPAPI 加解密的公共收口（AI 密钥与 MCP 令牌共用同一份 unsafe FFI）
@@ -53,6 +55,12 @@ mod paste_target;
 // 手机 RC 客户端无贴图概念——模块级门控，不为它逐点写 32 个空壳。
 #[cfg(all(desktop, not(target_os = "macos")))]
 mod pinned_window;
+#[cfg(windows)]
+mod pinned_transfer;
+#[cfg(windows)]
+mod pin_drag_policy;
+#[cfg(windows)]
+mod pinned_transfer_ui;
 #[cfg(target_os = "macos")]
 #[path = "macos/pinned.rs"]
 mod pinned_window;
@@ -677,6 +685,8 @@ pub fn run() {
             }
 
             app.manage(store);
+            #[cfg(desktop)]
+            clothesline::init(&handle,&saved_config);
 
             // 一次性补填迁移：后台为旧数据（content_type 为 NULL）运行统一分类器回填，
             // 使前端可以完全依赖持久化的 content_type，不再需要本地检测回退
@@ -1251,6 +1261,38 @@ pub fn run() {
             commands::ocr_image_cached,
             commands::detect_barcodes_cached,
             commands::open_pinned_image,
+            #[cfg(desktop)]
+            clothesline::clothesline_state,
+            #[cfg(desktop)]
+            clothesline::clothesline_ready,
+            #[cfg(desktop)]
+            clothesline::clothesline_report_error,
+            #[cfg(desktop)]
+            clothesline::clothesline_retry,
+            #[cfg(desktop)]
+            clothesline::clothesline_regions,
+            #[cfg(desktop)]
+            clothesline::clothesline_remove,
+            #[cfg(desktop)]
+            clothesline::clothesline_restore,
+            #[cfg(desktop)]
+            clothesline::clothesline_order,
+            #[cfg(desktop)]
+            clothesline::clothesline_idle,
+            #[cfg(desktop)]
+            clothesline::clothesline_take,
+            #[cfg(desktop)]
+            clothesline::clothesline_show_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_start_drag,
+            #[cfg(desktop)]
+            clothesline::clothesline_close_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_return_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_hang_path,
+            #[cfg(desktop)]
+            clothesline::clothesline_config,
             commands::close_pinned_image,
             screenshot::capture_screen,
             screenshot::capture_region,

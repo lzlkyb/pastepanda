@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use image::GenericImageView;
+use tauri::Manager;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -33,12 +34,18 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowLongPtrW, ShowWindow, TranslateMessage, CS_DBLCLKS, CS_DROPSHADOW, CS_HREDRAW,
     CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, MSG, SW_SHOW, WM_CLOSE, WM_CREATE,
     WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_CANCELMODE, WM_CAPTURECHANGED,
     WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_RBUTTONUP, WM_SIZE, WM_TIMER, WNDCLASSW,
     WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 
 /// 窗口运行时状态
 struct WindowState {
+    app: tauri::AppHandle,
+    path: String,
+    move_origin: Option<(i32,i32)>,
+    clothesline_pin: bool,
+    awaiting_hang: bool,
     pixels: Vec<u8>,
     img_width: u32,
     img_height: u32,
@@ -46,12 +53,18 @@ struct WindowState {
     offset_x: f32,
     offset_y: f32,
     dragging: bool,
+    transfer_armed: bool,
+    transfer_active: bool,
+    transfer_hot: bool,
+    transfer_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    prepared_transfer: Option<Result<crate::pinned_transfer::Drag, String>>,
     drag_start_x: i32,
     drag_start_y: i32,
     drag_start_off_x: f32,
     drag_start_off_y: f32,
     hbitmap: Option<HBITMAP>,
     dib_bits: Option<*mut u8>,
+    pixel_key: Option<PixelKey>,
     last_width: i32,
     last_height: i32,
     /// 窗口透明度（255 = 不透明，T 键循环切换），SetLayeredWindowAttributes 生效
@@ -84,6 +97,38 @@ struct WindowState {
     /// （而且关不掉、浅色图上还看不见）是干扰。只在刚改过缩放/角度/透明度
     /// 后短暂显示，到时由 HUD_TIMER_ID 定时器触发一次重绘自行消失。
     hud_until: Option<std::time::Instant>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PixelKey {
+    width: i32, height: i32, dpi: u32,
+    scale: u32, offset_x: u32, offset_y: u32,
+    rotation: u16, flip_h: bool, flip_v: bool,
+    active: bool, close_visible: bool, close_hot: bool,
+}
+fn pixel_refresh_needed(previous: Option<PixelKey>, next: PixelKey) -> bool { previous != Some(next) }
+
+#[cfg(test)]
+mod pixel_cache_tests {
+    use super::*;
+    #[test]
+    fn unchanged_drag_repaints_reuse_pixels_and_transforms_invalidate() {
+        let key = PixelKey {width:3840,height:2160,dpi:96,scale:1f32.to_bits(),offset_x:0,offset_y:0,
+            rotation:0,flip_h:false,flip_v:false,active:true,close_visible:false,close_hot:false};
+        let mut previous = None;
+        let mut fills = 0;
+        for _ in 0..1000 {
+            if pixel_refresh_needed(previous, key) { fills += 1; previous = Some(key); }
+        }
+        assert_eq!(fills, 1);
+        for changed in [PixelKey {rotation:90,..key},PixelKey {scale:2f32.to_bits(),..key},
+            PixelKey {offset_x:10f32.to_bits(),..key},PixelKey {offset_y:10f32.to_bits(),..key},
+            PixelKey {flip_h:true,..key},PixelKey {flip_v:true,..key},PixelKey {dpi:144,..key},
+            PixelKey {active:false,..key},PixelKey {close_visible:true,..key},PixelKey {close_hot:true,..key},
+            PixelKey {width:1920,..key},PixelKey {height:1080,..key}] {
+            assert!(pixel_refresh_needed(Some(key), changed));
+        }
+    }
 }
 
 /// HUD 自动隐藏的定时器 id（仅本窗口内唯一即可）
@@ -190,6 +235,145 @@ const CLASS_NAME: &str = "PinnedImageWindow";
 const WM_TRANSFORM_PINNED: u32 = 0x0400 + 100;
 /// 后台线程 → 窗口线程：显示一段 HUD 文字（lparam 是 Box<String> 的裸指针）
 const WM_PINNED_TOAST: u32 = 0x0400 + 101;
+const WM_CLOTHESLINE_SHOW:u32=0x0400+102;
+const WM_CLOTHESLINE_CLOSE:u32=0x0400+103;
+const WM_PIN_TRANSFER: u32 = 0x0400 + 104;
+
+pub fn clothesline_start_transfer(hwnd: isize, generation: u64) -> Result<(), String> {
+    clothesline_pin_info(hwnd, generation)?;
+    unsafe { PostMessageW(HWND(hwnd as *mut _), WM_PIN_TRANSFER, WPARAM(generation as usize), LPARAM(1)).map_err(|e| e.to_string()) }
+}
+pub fn clothesline_land_transfer(app: &tauri::AppHandle, hwnd: isize, generation: u64, rect: crate::clothesline::model::Rect, held: bool, point: Option<[f64; 2]>) -> Result<(), String> {
+    clothesline_pin_info(hwnd, generation)?;
+    if !rect.valid() { return Err("贴图目标坐标无效".into()); }
+    // 桌面松手以鼠标为原图中心；应用拒收则恢复绳上，不能在应用上展开大图。
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER};
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+        let [x, y] = point.unwrap_or([rect.x, rect.y]);
+        if !x.is_finite() || !y.is_finite() { return Err("贴图松手坐标无效".into()); }
+        let rope_window = app.get_webview_window("clothesline").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+        if !held && !crate::pinned_transfer::desktop_at(POINT { x: x as i32, y: y as i32 }, rope_window) {
+            let pin = clothesline_pin_info(hwnd, generation)?;
+            crate::clothesline::restore_drag_pin(app, pin);
+            return Ok(());
+        }
+        let mut monitor = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(MonitorFromPoint(POINT { x: x as i32, y: y as i32 }, MONITOR_DEFAULTTONEAREST), &mut monitor).as_bool() {
+            return Err("找不到贴图目标显示器".into());
+        }
+        let work = crate::clothesline::model::Rect { x: monitor.rcWork.left as f64, y: monitor.rcWork.top as f64, width: (monitor.rcWork.right - monitor.rcWork.left) as f64, height: (monitor.rcWork.bottom - monitor.rcWork.top) as f64 };
+        let origin = if held { [rect.x, rect.y] } else { crate::pin_drag_policy::centered_origin([x, y], [rect.width, rect.height]) };
+        let actual = crate::clothesline::model::Rect { x: origin[0], y: origin[1], ..rect };
+        let _ = work; // Monitor validation remains necessary; centering must not silently clamp the requested drop.
+        SetWindowPos(HWND(hwnd as *mut _), None, actual.x as i32, actual.y as i32, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER).map_err(|e| e.to_string())?;
+    }
+    if held { clothesline_start_transfer(hwnd, generation) }
+    else { clothesline_pin_message(hwnd, generation, false, false) }
+}
+
+unsafe fn prepare_transfer(state: &mut WindowState) -> Result<crate::pinned_transfer::Drag, String> {
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    state.transfer_cancel = Some(cancel.clone());
+    let root = state.app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    let preview = if state.clothesline_pin && crate::clothesline::model().snapshot.enabled {
+        let app = state.app.clone();
+        let address = { let windows = CURRENT_WINDOW.lock().unwrap_or_else(|p| p.into_inner());
+            windows.iter().find(|w| w.generation == state.generation).ok_or("贴图窗口已关闭")?.hwnd };
+        let pin = clothesline_pin_info(address, state.generation)?;
+        Some(std::sync::Arc::new(move || { crate::clothesline::pin_drag(&app, pin.clone(), false); }) as std::sync::Arc<dyn Fn() + Send + Sync>)
+    } else { None };
+    let rope_window = state.app.get_webview_window("clothesline").and_then(|w| w.hwnd().ok()).map(|h| h.0 as isize);
+    crate::pinned_transfer::Drag::prepare_with_preview(&state.path, &state.pixels, state.img_width, state.img_height, &root.join("pin-transfer"), cancel, preview, rope_window)
+}
+
+unsafe fn run_transfer(hwnd: HWND, generation: u64, from_rope: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SW_HIDE, SW_SHOWNOACTIVATE};
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if ptr == 0 { return; }
+    let mut original = RECT::default();
+    let _ = windows::Win32::UI::WindowsAndMessaging::GetWindowRect(hwnd, &mut original);
+    let (prepared, app) = {
+        let state = &mut *(ptr as *mut WindowState);
+        if state.generation != generation || state.transfer_active { return; }
+        state.transfer_active = true;
+        state.dragging = false;
+        state.transfer_armed = false;
+        let prepared = state.prepared_transfer.take().unwrap_or_else(|| prepare_transfer(state));
+        (prepared, state.app.clone())
+    };
+    let _ = ReleaseCapture();
+    let _ = ShowWindow(hwnd, SW_HIDE);
+    let _rope_visibility = crate::clothesline::DragGuard::new(&app);
+    // DoDragDrop 会重入窗口消息：这里不能跨模态循环持有 WindowState 引用。
+    let result = prepared.and_then(|drag| drag.perform());
+    let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if ptr == 0 { return; }
+    let state = &mut *(ptr as *mut WindowState);
+    if state.generation != generation { return; }
+    state.transfer_active = false;
+    state.transfer_cancel = None;
+    if matches!(result, Ok(crate::pinned_transfer::Outcome::Received)) && state.clothesline_pin {
+        // The receiver owns an independent full-resolution snapshot. Do not expand a desktop pin over the app.
+        crate::clothesline::pin_drag_cancel(&app);
+        let _ = DestroyWindow(hwnd);
+        return;
+    }
+    if matches!(result, Ok(crate::pinned_transfer::Outcome::Desktop)) && state.clothesline_pin {
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER};
+        let mut point = windows::Win32::Foundation::POINT::default();
+        if GetCursorPos(&mut point).is_ok() {
+            let origin = crate::pin_drag_policy::centered_origin([point.x as f64, point.y as f64], [(original.right - original.left) as f64, (original.bottom - original.top) as f64]);
+            let _ = SetWindowPos(hwnd, None, origin[0] as i32, origin[1] as i32, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+        }
+    }
+    let receiving = if let Ok(pin) = clothesline_pin_info(hwnd.0 as isize, generation) {
+        if from_rope && matches!(result, Ok(crate::pinned_transfer::Outcome::Cancelled | crate::pinned_transfer::Outcome::Rejected)) {
+            crate::clothesline::restore_drag_pin(&app, pin)
+        } else if matches!(result, Ok(crate::pinned_transfer::Outcome::Desktop)) && state.clothesline_pin {
+            crate::clothesline::pin_drag(&app, pin, true)
+        } else { crate::clothesline::pin_drag_cancel(&app); false }
+    } else { false };
+    if receiving {
+        // Remain a hidden source until the frontend accepts or rejects hanging.
+        state.awaiting_hang = true;
+        let window_address = hwnd.0 as isize;
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+            unsafe { let _ = PostMessageW(HWND(window_address as *mut _), WM_CLOTHESLINE_SHOW, WPARAM(generation as usize), LPARAM(2)); }
+        });
+        return;
+    }
+    let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    let text = match result {
+        Ok(crate::pinned_transfer::Outcome::Received) => "图片已交给应用处理 · 原贴图保留",
+        Ok(crate::pinned_transfer::Outcome::Cancelled) => "未交付图片 · 贴图已保留，可重新拖入",
+        Ok(crate::pinned_transfer::Outcome::Rejected) => "此处未接收图片 · 可右键复制后粘贴",
+        Ok(crate::pinned_transfer::Outcome::Desktop) => "已在松手位置放下原图 · 拖近绳子可挂回",
+        Err(ref error) => { log::warn!("图片拖放未完成: {error}"); "拖入未完成 · 贴图已保留，可右键复制" }
+    };
+    flash_hud(hwnd, text);
+    let _ = UpdateWindow(hwnd);
+}
+
+pub fn clothesline_pin_info(hwnd:isize,generation:u64)->Result<crate::clothesline::model::Pin,String>{
+    let guard=CURRENT_WINDOW.lock().unwrap_or_else(|p|p.into_inner());
+    let current=guard.iter().find(|w|w.hwnd==hwnd&&w.generation==generation).ok_or("贴图已关闭或已被替换")?;
+    let mut r=RECT::default();
+    unsafe{windows::Win32::UI::WindowsAndMessaging::GetWindowRect(HWND(hwnd as *mut _),&mut r).map_err(|e|e.to_string())?;}
+    Ok(crate::clothesline::model::Pin{point:None,hwnd,generation,path:current.path.clone(),rect:crate::clothesline::model::Rect{x:r.left as f64,y:r.top as f64,width:(r.right-r.left) as f64,height:(r.bottom-r.top) as f64}})
+}
+pub fn clothesline_pin_message(hwnd:isize,generation:u64,close:bool,preserve_prepared:bool)->Result<(),String>{
+    clothesline_pin_info(hwnd,generation)?;
+    unsafe{PostMessageW(HWND(hwnd as *mut _),if close{WM_CLOTHESLINE_CLOSE}else{WM_CLOTHESLINE_SHOW},WPARAM(generation as usize),LPARAM(preserve_prepared as isize)).map_err(|e|e.to_string())}
+}
+pub fn clothesline_pin_for_path(path:&str)->Result<crate::clothesline::model::Pin,String>{
+    let key={let guard=CURRENT_WINDOW.lock().unwrap_or_else(|p|p.into_inner());
+        guard.iter().find(|w|w.path==path).map(|w|(w.hwnd,w.generation)).ok_or("贴图已关闭")?
+    };
+    clothesline_pin_info(key.0,key.1)
+}
 
 fn to_wide(s: &str) -> Vec<u16> {
     OsStr::new(s)
@@ -251,9 +435,16 @@ const BORDER_ALPHA_IDLE: f32 = 0.35;
 /// 「尺寸未变」那一支（只调 fill_buffer）—— 于是描边在第一次重绘后就被擦掉、
 /// 关闭按钮**永远不出现**（用户反馈的「X 没有显示出来」正是这个）。
 /// 收口成一个函数之后，两支各调一次，不可能再漏。
-unsafe fn paint_frame(hwnd: HWND, buf: &mut [u8], w: i32, h: i32, state: &WindowState) {
+unsafe fn paint_frame(hwnd: HWND, buf: &mut [u8], w: i32, h: i32, state: &mut WindowState) {
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
-    let scale = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
+    let dpi = GetDpiForWindow(hwnd).max(96);
+    let key = PixelKey { width:w,height:h,dpi,scale:state.scale.to_bits(),
+        offset_x:state.offset_x.to_bits(),offset_y:state.offset_y.to_bits(),rotation:state.rotation,
+        flip_h:state.flip_h,flip_v:state.flip_v,active:state.hover || state.dragging,
+        close_visible:state.close_visible,close_hot:state.close_hot };
+    // Window movement and HUD redraws reuse the existing DIB, without another full-image pixel transform.
+    if !pixel_refresh_needed(state.pixel_key, key) { return; }
+    let scale = dpi as f32 / 96.0;
     fill_buffer(buf, w, h, state);
     draw_border(
         buf,
@@ -265,6 +456,7 @@ unsafe fn paint_frame(hwnd: HWND, buf: &mut [u8], w: i32, h: i32, state: &Window
     if state.close_visible {
         draw_close_button(buf, w, h, scale, state.close_hot);
     }
+    state.pixel_key = Some(key);
 }
 
 /// 按 CORNER_RADIUS_DIP 把窗口裁成小圆角矩形。
@@ -600,7 +792,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     if let Some(old_bmp) = state.hbitmap {
                         let _ = DeleteObject(old_bmp);
                     }
+                    state.hbitmap = None;
                     state.dib_bits = None;
+                    state.pixel_key = None;
 
                     let bmi = make_bitmap_info(win_w, win_h);
                     let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
@@ -642,6 +836,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     }
                 }
             }
+
+            crate::pinned_transfer_ui::draw(hdc, win_w, win_h,
+                windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd), state.transfer_hot);
 
             // 底部 HUD：回显 缩放% · 旋转° · 透明度（解决“缩了多少看不见”）。
             // 只在刚改过参数后的 HUD_SHOW_MS 内显示（见 hud_until 的注释）。
@@ -709,6 +906,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             let state = &mut *(ptr as *mut WindowState);
+            if state.transfer_active { return LRESULT(0); }
             let delta = ((wparam.0 >> 16) as i16) as f32 / 120.0;
             let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
             state.scale = (state.scale + delta * (if ctrl { 0.05 } else { 0.15 })).clamp(0.1, 10.0);
@@ -746,6 +944,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 return DefWindowProcW(hwnd, msg, wparam, lparam);
             }
             let state = &mut *(ptr as *mut WindowState);
+            if state.transfer_active { return LRESULT(0); }
             // ❗ 关闭按钮的判定必须在起手拖动**之前**：否则按在 X 上会先 SetCapture 进拖动，
             // 轻微抖动就把窗口拖走了，X 反而点不到。
             if state.close_hot {
@@ -757,10 +956,31 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             state.pan_mode = GetKeyState(VK_CONTROL.0 as i32) < 0;
             state.drag_start_x = (lparam.0 & 0xFFFF) as i16 as i32;
             state.drag_start_y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            let mut rect = RECT::default();
+            let _ = GetClientRect(hwnd, &mut rect);
+            state.transfer_armed = crate::pinned_transfer_ui::hit(rect.right, rect.bottom,
+                windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd), state.drag_start_x, state.drag_start_y);
+            if state.transfer_armed { state.pan_mode = false; }
             state.drag_start_off_x = state.offset_x;
             state.drag_start_off_y = state.offset_y;
             let _ = SetCapture(hwnd);
             LRESULT(0)
+        }
+
+        WM_CANCELMODE | WM_CAPTURECHANGED => {
+            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+            if ptr != 0 {
+                let state = &mut *(ptr as *mut WindowState);
+                if state.dragging || state.transfer_armed {
+                    // A new capture owner must not leave this pin following hover movement.
+                    state.dragging = false;
+                    state.transfer_armed = false;
+                    crate::clothesline::pin_drag_cancel(&state.app);
+                    let _ = InvalidateRect(hwnd, None, false);
+                }
+            }
+            // Preserve cancellation of native menus and capture on WM_CANCELMODE.
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
 
         WM_MOUSEMOVE => {
@@ -794,6 +1014,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 if GetClientRect(hwnd, &mut cr).is_ok() {
                     let sc = GetDpiForWindow(hwnd).max(96) as f32 / 96.0;
                     let (cw, ch) = (cr.right - cr.left, cr.bottom - cr.top);
+                    let transfer_hot = crate::pinned_transfer_ui::hit(cw, ch, GetDpiForWindow(hwnd), mx, my);
+                    if transfer_hot != state.transfer_hot {
+                        state.transfer_hot = transfer_hot;
+                        let _ = InvalidateRect(hwnd, None, false);
+                    }
                     let show = !state.dragging && in_top_band(my, ch, sc);
                     let hot = show
                         && close_button(cw, ch, sc).is_some_and(|(cx, cy, r)| {
@@ -817,13 +1042,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                     state.offset_y = state.drag_start_off_y + (my - state.drag_start_y) as f32;
                     let _ = InvalidateRect(hwnd, None, false);
                 } else if (mx - state.drag_start_x).abs() + (my - state.drag_start_y).abs() > 4 {
+                    if state.transfer_armed || (state.clothesline_pin && crate::clothesline::model().snapshot.enabled) {
+                        state.dragging = false;
+                        state.transfer_armed = false;
+                        let _ = ReleaseCapture();
+                        let _ = PostMessageW(hwnd, WM_PIN_TRANSFER, WPARAM(state.generation as usize), LPARAM(0));
+                        return LRESULT(0);
+                    }
                     // 裸拖 = 移动窗口。去掉标题栏之后必须自己接这件事，
                     // 否则贴图就彻底动不了了（原来只能靠标题栏拖）。
                     //
                     // ❌ 关键：要等移动**超过阈值**才交给系统，不能在 WM_LBUTTONDOWN 里直接交。
                     // WM_NCLBUTTONDOWN 会进入系统的模态拖动循环，纯击（没移动）也被它吃掉，
-                    // 第二次点击就不会变成 WM_LBUTTONDBLCLK ——「双击贴图重新编辑」会失效。
-                    // 加了阈值之后，纯击根本不进拖动循环，双击与右键菜单都保持原样。
+                    // 加了阈值之后，连续点击不会误进入拖动循环，右键菜单仍可直接使用。
                     //
                     // 交给系统还白拿了贴边吸附、跨屏 DPI 处理这些行为。
                     use windows::Win32::UI::WindowsAndMessaging::{
@@ -850,7 +1081,63 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 state.hover = false;
                 state.close_visible = false;
                 state.close_hot = false;
+                state.transfer_hot = false;
                 let _ = InvalidateRect(hwnd, None, false);
+            }
+            LRESULT(0)
+        }
+
+        windows::Win32::UI::WindowsAndMessaging::WM_ENTERSIZEMOVE => {
+            let ptr=GetWindowLongPtrW(hwnd,GWLP_USERDATA);
+            if ptr!=0{
+                let state=&mut *(ptr as *mut WindowState);
+                if let Ok(pin)=clothesline_pin_info(hwnd.0 as isize,state.generation){state.move_origin=Some((pin.rect.x as i32,pin.rect.y as i32));}
+            }
+            LRESULT(0)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_MOVING => {
+            let ptr=GetWindowLongPtrW(hwnd,GWLP_USERDATA);
+            if ptr!=0{
+                let state=&mut *(ptr as *mut WindowState);
+                if let Ok(mut pin)=clothesline_pin_info(hwnd.0 as isize,state.generation){
+                    if lparam.0!=0{let r=&*(lparam.0 as *const RECT);pin.rect.x=r.left as f64;pin.rect.y=r.top as f64;}
+                    crate::clothesline::pin_drag(&state.app,pin,false);
+                }
+            }
+            LRESULT(1)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_EXITSIZEMOVE => {
+            let ptr=GetWindowLongPtrW(hwnd,GWLP_USERDATA);
+            if ptr!=0{
+                let state=&mut *(ptr as *mut WindowState);
+                if let Ok(pin)=clothesline_pin_info(hwnd.0 as isize,state.generation){
+                    // Esc 会把窗口放回原位；这种退出不能当作挂回确认。
+                    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+                    let held = GetAsyncKeyState(VK_LBUTTON.0 as i32) < 0;
+                    let changed=crate::clothesline::model::should_commit_pin_move(state.move_origin.take(), (pin.rect.x as i32,pin.rect.y as i32), held);
+                    if changed{crate::clothesline::pin_drag(&state.app,pin,true);}
+                    else{crate::clothesline::pin_drag_cancel(&state.app);}
+                }
+            }
+            LRESULT(0)
+        }
+        WM_CLOTHESLINE_SHOW | WM_CLOTHESLINE_CLOSE => {
+            let ptr=GetWindowLongPtrW(hwnd,GWLP_USERDATA);
+            if ptr!=0{
+                let state=&mut *(ptr as *mut WindowState);
+                if state.generation == wparam.0 as u64 {
+                    if msg==WM_CLOTHESLINE_CLOSE{let _=DestroyWindow(hwnd);}
+                    else if !state.transfer_active && (lparam.0 != 1 || !state.awaiting_hang) && (lparam.0 != 2 || state.awaiting_hang) {
+                        // A watchdog display can precede the delayed frontend handoff.
+                        // Only an explicit landing acknowledgement releases the prepared data.
+                        if lparam.0 == 0 {
+                            state.prepared_transfer = None;
+                            state.transfer_cancel = None;
+                        }
+                        state.awaiting_hang = false;
+                        let _=ShowWindow(hwnd,windows::Win32::UI::WindowsAndMessaging::SW_SHOWNOACTIVATE);let _=UpdateWindow(hwnd);
+                    }
+                }
             }
             LRESULT(0)
         }
@@ -860,6 +1147,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if ptr != 0 {
                 let state = &mut *(ptr as *mut WindowState);
                 state.dragging = false;
+                if state.transfer_armed {
+                    state.transfer_armed = false;
+                    flash_hud(hwnd, "按住「拖入应用」手柄，拖到输入区后松开");
+                }
             }
             let _ = ReleaseCapture();
             LRESULT(0)
@@ -867,6 +1158,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
         WM_KEYDOWN => {
             if wparam.0 == VK_ESCAPE.0 as usize {
+                let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+                if ptr != 0 {
+                    let state = &mut *(ptr as *mut WindowState);
+                    if state.transfer_active {
+                        if let Some(cancel) = &state.transfer_cancel { cancel.store(true, Ordering::Release); }
+                        return LRESULT(0);
+                    }
+                }
                 let _ = DestroyWindow(hwnd);
             } else if wparam.0 == VK_T.0 as usize {
                 // T：循环切换透明度 255 → 180 → 110 → 60 → 255（贴图叠在工作区上时看底）
@@ -932,19 +1231,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
 
         WM_LBUTTONDBLCLK => {
-            // 双击贴图 → 回到截图标注窗口重新编辑（按 hwnd 区分，多贴图各编辑各的）
-            let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-            if ptr != 0 {
-                if let Some((app, path)) =
-                    crate::screenshot::peek_pinned_edit_by_hwnd(hwnd.0 as isize)
-                {
-                    // 用 peek 不用 take：take 会把绑定从 map 里移除，双击一次之后
-                    // 再双击、以及右键菜单的「复制图片/重新编辑」就全失效了。
-                    // 清理改由 WM_DESTROY 里的 unbind_pinned_edit 负责。
-                    log::info!("[pinned-window] 双击贴图，进入重新编辑: {}", path);
-                    crate::screenshot::open_editor_window(&app, path);
-                }
-            }
+            // 贴图用于跨应用参考，连续点击不能突然进入截图；编辑保留在右键明确入口。
             LRESULT(0)
         }
 
@@ -1145,8 +1432,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
             let mut destroyed_generation = None;
             if ptr != 0 {
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 let state = Box::from_raw(ptr as *mut WindowState);
+                if let Some(cancel) = &state.transfer_cancel { cancel.store(true, Ordering::Release); }
                 destroyed_generation = Some(state.generation);
+                let _=tauri::Emitter::emit_to(&state.app,"clothesline","clothesline-pin-closed",serde_json::json!({"hwnd":hwnd.0 as isize,"generation":state.generation,"path":state.path}));
                 if let Some(hbmp) = state.hbitmap {
                     let _ = DeleteObject(hbmp);
                 }
@@ -1171,6 +1461,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             LRESULT(0)
         }
 
+        WM_PIN_TRANSFER => { run_transfer(hwnd, wparam.0 as u64, lparam.0 != 0); LRESULT(0) }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -1181,8 +1472,7 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
         unsafe { LoadCursorW(None, IDC_ARROW) }.map_err(|e| format!("LoadCursor 失败: {:?}", e))?;
 
     let wc = WNDCLASSW {
-        // CS_DBLCLKS 必须声明：窗口类没有它，系统就永远不发 WM_LBUTTONDBLCLK，
-        // 双击只会变成两次 WM_LBUTTONDOWN——下面那个「双击贴图重新编辑」分支会是死代码。
+        // 单独处理快速连点，避免第二次按下被当作拖动开始。
         // CS_DROPSHADOW：给无边框弹出式窗口一条系统投影。贴图去掉标题栏之后，
         // 「这块内容浮在桌面上」的存在感主要靠阴影，而不是靠描边。
         style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS | CS_DROPSHADOW,
@@ -1198,12 +1488,32 @@ fn register_class(instance: HINSTANCE) -> Result<(), String> {
 }
 
 pub fn create_native_window(app: tauri::AppHandle, image_path: &str) -> Result<(), String> {
+    create_window_inner(app,image_path,None)
+}
+
+struct PinStartup {
+    rect:crate::clothesline::model::Rect,
+    sender:std::sync::mpsc::Sender<Result<crate::clothesline::model::Pin,String>>,
+    transfer: bool,
+}
+pub fn create_clothesline_pin(app:tauri::AppHandle,path:&str,rect:crate::clothesline::model::Rect, transfer:bool)->Result<crate::clothesline::model::Pin,String>{
+    if !rect.valid(){return Err("贴图目标坐标无效".into());}
+    let (sender,receiver)=std::sync::mpsc::channel();
+    create_window_inner(app,path,Some(PinStartup{rect,sender,transfer}))?;
+    receiver.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_|"贴图窗口创建超时，照片仍在绳上".to_string())?
+}
+fn create_window_inner(app: tauri::AppHandle, image_path: &str,startup:Option<PinStartup>) -> Result<(), String> {
     // 多贴图并存（V5）：不再"关旧开新"——多次贴图各自创建独立置顶窗口。
     // 关闭由 close_current_window（关全部）或各窗口自身的 Esc/右键完成。
     // 修复 C18：先仅读头部校验尺寸上限，防解压炸弹
     crate::commands::check_image_decode_limits(std::path::Path::new(image_path))?;
     let img = image::open(image_path).map_err(|e| format!("无法加载图片: {}", e))?;
     let (img_width, img_height) = img.dimensions();
+    let startup = startup.map(|mut s| {
+        s.rect = crate::clothesline::model::actual_pin_rect(s.rect, img_width, img_height,
+            crate::clothesline::model().snapshot.work_area);
+        s
+    });
     let rgba = img.to_rgba8();
     let pixels: Vec<u8> = rgba.into_raw();
 
@@ -1220,6 +1530,7 @@ pub fn create_native_window(app: tauri::AppHandle, image_path: &str) -> Result<(
     // app 随窗口线程带下去，供 run_window_loop 内部绑定 (hwnd → path) 使用，
     // 不再依赖全局 slot（连续双击 A/B 时 slot 会被覆盖，导致 A 的窗口绑定到 B 的路径）。
     std::thread::spawn(move || {
+        let failed=startup.as_ref().map(|s|s.sender.clone());
         if let Err(e) = run_window_loop(
             pixels,
             img_width,
@@ -1227,7 +1538,9 @@ pub fn create_native_window(app: tauri::AppHandle, image_path: &str) -> Result<(
             generation,
             image_path_owned,
             app,
+            startup,
         ) {
+            if let Some(sender)=failed{let _=sender.send(Err(e.clone()));}
             log::error!("[pinned-window] 窗口消息循环错误: {}", e);
         }
     });
@@ -1309,6 +1622,7 @@ fn run_window_loop(
     generation: u64,
     image_path: String,
     app: tauri::AppHandle,
+    startup:Option<PinStartup>,
 ) -> Result<(), String> {
     // GetModuleHandleW 返回 HMODULE，可转为 HINSTANCE
     let module = unsafe { windows::Win32::System::LibraryLoader::GetModuleHandleW(None) }
@@ -1343,10 +1657,11 @@ fn run_window_loop(
     let fit = (fs_w as f32 * 0.9 / img_width.max(1) as f32)
         .min(fs_h as f32 * 0.9 / img_height.max(1) as f32)
         .min(1.0);
-    let initial_scale = fit;
+    // 晾衣绳只提供落点，不能把缩略图比例带进桌面贴图；原图每像素对应一个物理像素。
+    let initial_scale = startup.as_ref().map(|_| 1.0).unwrap_or(fit);
     // 这两个是期望的**客户区**尺寸；CreateWindowExW 要的是外框，建完再修正。
-    let client_w = (img_width as f32 * fit).round().max(1.0) as i32;
-    let client_h = (img_height as f32 * fit).round().max(1.0) as i32;
+    let client_w = (img_width as f32 * initial_scale).round().max(1.0) as i32;
+    let client_h = (img_height as f32 * initial_scale).round().max(1.0) as i32;
 
     let hwnd = unsafe {
         CreateWindowExW(
@@ -1360,9 +1675,9 @@ fn run_window_loop(
             //
             // 代价：没有拖边缩放了（THICKFRAME 提供的）。缩放统一走滚轮——
             // 滚轮改的是图的缩放比，比拖边框改窗口尺寸语义更对，两者本来也容易打架。
-            WS_POPUP | WS_VISIBLE,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
+            if startup.is_some(){WS_POPUP}else{WS_POPUP | WS_VISIBLE},
+            startup.as_ref().map(|s|s.rect.x.round() as i32).unwrap_or(CW_USEDEFAULT),
+            startup.as_ref().map(|s|s.rect.y.round() as i32).unwrap_or(CW_USEDEFAULT),
             client_w,
             client_h,
             None,
@@ -1392,7 +1707,7 @@ fn run_window_loop(
     // 此时改尺寸用户看不到闪动。
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetWindowRect, SetWindowPos, SWP_NOMOVE, SWP_NOZORDER,
+            GetWindowRect, SetWindowPos, SWP_NOMOVE, SWP_NOZORDER, SWP_NOACTIVATE,
         };
         let mut cr = RECT::default();
         let mut wr = RECT::default();
@@ -1406,7 +1721,8 @@ fn run_window_loop(
                 0,
                 client_w + chrome_w,
                 client_h + chrome_h,
-                SWP_NOMOVE | SWP_NOZORDER,
+                // Startup pins remain hidden while the browser still owns the held-pointer gesture.
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
             ) {
                 // 不能静默：失败的后果是贴图比截图小一圈，而那正是这次要修的 bug
                 log::warn!("[pinned-window] 修正客户区尺寸失败（贴图不会是 1:1）: {e:?}");
@@ -1480,11 +1796,16 @@ fn run_window_loop(
     // 换成具名 guard 后就丢掉了这个隐式释放点。
     drop(guard);
 
-    // 多贴图重编辑：把本窗口的 (app, image_path) 绑定到 hwnd（双击哪张就编辑哪张）。
+    // 右键重新编辑与复制：按 hwnd 绑定各自的原图，不能串到其它贴图。
     // 路径直接来自窗口创建线程，不再经全局 slot —— 杜绝"双击A开B"（B 覆盖 A 的槽）。
     crate::screenshot::bind_pinned_edit(hwnd.0 as isize, generation, &app, &image_path);
 
     let state = Box::new(WindowState {
+        app:app.clone(),
+        path:image_path.clone(),
+        move_origin:None,
+        clothesline_pin: startup.is_some(),
+        awaiting_hang: false,
         pixels,
         img_width,
         img_height,
@@ -1492,12 +1813,18 @@ fn run_window_loop(
         offset_x: 0.0,
         offset_y: 0.0,
         dragging: false,
+        transfer_armed: false,
+        transfer_active: false,
+        transfer_hot: false,
+        transfer_cancel: None,
+        prepared_transfer: None,
         drag_start_x: 0,
         drag_start_y: 0,
         drag_start_off_x: 0.0,
         drag_start_off_y: 0.0,
         hbitmap: None,
         dib_bits: None,
+        pixel_key: None,
         last_width: 0,
         last_height: 0,
         alpha: 255,
@@ -1515,8 +1842,19 @@ fn run_window_loop(
 
     unsafe {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(state) as isize);
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        let _ = UpdateWindow(hwnd);
+        if startup.is_none(){let _ = ShowWindow(hwnd, SW_SHOW);let _ = UpdateWindow(hwnd);}
+    }
+    if let Some(startup)=startup {
+        if startup.transfer {
+            // 文件、全尺寸位图与 COM 在本贴图 STA 完成；此前浏览器仍保留捕获并持续跟手。
+            unsafe {
+                let state = &mut *(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut WindowState);
+                state.prepared_transfer = Some(prepare_transfer(state));
+            }
+        }
+        // 真正建成窗口后才确认接收；超时后接收端已销毁，晚到窗口立即清理。
+        let pin=clothesline_pin_info(hwnd.0 as isize,generation);
+        if startup.sender.send(pin).is_err(){unsafe{let _=DestroyWindow(hwnd);}return Ok(());}
     }
 
     let mut msg = MSG::default();

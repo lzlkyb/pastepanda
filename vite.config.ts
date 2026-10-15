@@ -54,6 +54,7 @@ export default defineConfig(async () => ({
         editor: resolve(projectRoot, "editor.html"),
         quickpaste: resolve(projectRoot, "quickpaste.html"),
         screenshot: resolve(projectRoot, "screenshot.html"),
+        clothesline: resolve(projectRoot, "clothesline.html"),
         longshot: resolve(projectRoot, "longshot.html"),
         stackhud: resolve(projectRoot, "stackhud.html"),
         rc: resolve(projectRoot, "rc.html"),

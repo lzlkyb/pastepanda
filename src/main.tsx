@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider } from "./components/Toast";
 import { logger } from "./lib/logger";
 import { permissionErrorInfo } from "./lib/utils";
+import {startClotheslineConfigSync} from "./lib/clotheslineConfig";
 import "./styles/globals.css";
 import "./styles/theme.css";
 // 两个模式共用的表面动画。必须在全局层（CSS Modules 会把 keyframes 名字哈希掉）
@@ -35,6 +36,7 @@ function emitToast(message: string, type: string) {
     pendingToasts.push(detail);
   }
 }
+void startClotheslineConfigSync(message=>emitToast(message,"error"));
 
 // 全局未捕获异常处理 — 避免白屏，给用户明确提示
 window.addEventListener("error", (event) => {

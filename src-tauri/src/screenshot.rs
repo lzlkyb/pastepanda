@@ -45,7 +45,9 @@ pub struct ScreenCapture {
 /// 捕获整个虚拟屏幕（所有显示器拼接）为 PNG data URL（物理像素）。
 /// async + spawn_blocking：GDI 截屏 + 4K PNG 编码是重活，放主线程会卡 UI（长截图每帧都调）。
 #[tauri::command]
-pub async fn capture_screen() -> Result<ScreenCapture, String> {
+pub async fn capture_screen(app:AppHandle) -> Result<ScreenCapture, String> {
+    #[cfg(desktop)]
+    let _clothesline_capture=crate::clothesline::CaptureGuard::new(&app);
     #[cfg(target_os = "windows")]
     {
         tokio::task::spawn_blocking(capture_virtual_screen)
@@ -74,6 +76,8 @@ pub async fn capture_region(
     w: i32,
     h: i32,
 ) -> Result<ScreenCapture, String> {
+    #[cfg(desktop)]
+    let _clothesline_capture=crate::clothesline::CaptureGuard::new(&app);
     #[cfg(target_os = "windows")]
     {
         // 长截图期间临时隐藏状态窗，避免它被拼进长图（截图窗自身已 hide，
@@ -567,6 +571,8 @@ pub fn open_screenshot_window(app: &AppHandle) {
     //    （实施方案 §5 接线 #8）。用隐私门控而非一次性 hide：截屏期间若有笔记写入，
     //    岛会在 show() 门内被拦住，不会中途弹回画面里。
     crate::todo_island::set_privacy_gate(app, true);
+    #[cfg(desktop)]
+    crate::clothesline::set_suspended(app,true);
     // 先保存当前前台窗口句柄：截图完成后"复制图片"要粘贴/回填到原目标
     if let Some(engine) = app.try_state::<crate::paste_engine::PasteEngine>() {
         engine.save_foreground_hwnd();
@@ -1074,6 +1080,8 @@ pub fn close_screenshot_window(app: tauri::AppHandle) {
     // 截图会话结束 → 先解除隐私门控再 refresh（refresh 里 show 门内才放行），
     // 岛回归（有待办就回来；没有则此处 hide 是空操作）
     crate::todo_island::set_privacy_gate(&app, false);
+    #[cfg(desktop)]
+    crate::clothesline::set_suspended(&app,false);
     crate::todo_tasks::refresh_island(&app);
     if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         // 截图窗口常驻开关（screenshot_window_persist，默认关）：
@@ -1198,6 +1206,8 @@ pub async fn open_longshot_status(
     // 长截图期间实时抓屏，岛若在捕获区域顶边就会入镜——先藏，结束在 close_longshot_status 恢复。
     // 用隐私门控而非一次性 hide：长截图中笔记写入不会把岛中途拉回画面。
     crate::todo_island::set_privacy_gate(&app, true);
+    #[cfg(desktop)]
+    crate::clothesline::set_suspended(&app,true);
     // 已存在就先关（上一轮异常退出残留）
     if let Some(win) = app.get_webview_window(LONGSHOT_LABEL) {
         let _ = win.close();
@@ -1352,6 +1362,8 @@ pub fn close_longshot_status(app: tauri::AppHandle) {
         .unwrap_or(false);
     if !shot_open {
         crate::todo_island::set_privacy_gate(&app, false);
+    #[cfg(desktop)]
+    crate::clothesline::set_suspended(&app,false);
     }
 }
 
@@ -1607,6 +1619,17 @@ fn insert_screenshot_with_rgba(
         if let Some(t) = ocr_text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
             let _ = store.history_summary_ensure(&existing.id, t);
         }
+        // 重复采集仍是一次新截图；公共监听器需要收到事件，OCR 补字则沿用原采集时间。
+        let _ = app.emit(
+            "clipboard-changed",
+            crate::clipboard_monitor::ClipboardChanged {
+                item: crate::data_store::HistoryItem {
+                    time: now_str,
+                    ocr_text: ocr_text.or(existing.ocr_text.clone()),
+                    ..existing
+                },
+            },
+        );
         return Ok(());
     }
 

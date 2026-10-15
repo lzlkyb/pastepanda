@@ -7,6 +7,17 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    // 晾衣绳在浏览器中运行的原生 ES 模块，不能按 Node 环境判定 DOM API。
+    files: ["src/clothesline/*.mjs"],
+    languageOptions: {
+      globals: Object.fromEntries([
+        "document", "window", "getComputedStyle", "Image", "CustomEvent",
+        "AbortController", "performance", "requestAnimationFrame", "cancelAnimationFrame",
+        "setTimeout", "clearTimeout", "structuredClone", "crypto", "matchMedia",
+      ].map((name) => [name, "readonly"])),
+    },
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
     plugins: {
       react: reactPlugin,

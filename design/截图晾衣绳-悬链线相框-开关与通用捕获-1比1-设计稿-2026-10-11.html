@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="midnight">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PastePanda · 截图晾衣绳（悬链线 + 拍立得相框 + 开关与通用捕获）1:1 实景稿 · 2026-10-11</title>
+
+<!-- 这五张表是**产品真用的样式表**（不是抄写件）：globals/theme/screenshot 与 src/screenshot-main.tsx
+     的导入顺序一致；buttons.css 供设置页开关行；PinnedPanel.module.css 是「收衣」落点面板的样式来源。
+     🔴 必须经静态服务器打开（http://localhost:8899/design/…）才能量到真数：经 Vite(1420) 打开时
+     *.module.css 的类名会被作用域化成 ._panel_hash，本稿页首自检会亮红并让所有读数作废。 -->
+<link rel="stylesheet" href="../src/styles/globals.css" />
+<link rel="stylesheet" href="../src/styles/theme.css" />
+<link rel="stylesheet" href="../src/styles/screenshot.css" />
+<link rel="stylesheet" href="../src/styles/buttons.css" />
+<link rel="stylesheet" href="../src/components/PinnedPanel.module.css" />
+
+<style>
+/* 🔴 反接 globals.css 的 body{overflow:hidden;user-select:none}（自检里读 computed overflow 做判据）。
+   产品在单屏窗口里那样是对的，但它会把这份三千多 px 的滚动文档钉死且不报错，顺带让文字选不中。 */
+html, body { overflow: auto; }
+body { user-select: text; }
+
+.doc { max-width: 1180px; margin: 0 auto; padding: 22px 26px 90px; color: var(--text-primary); font-size: 13px; line-height: 1.7; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+h2 { font-size: 14px; margin: 30px 0 8px; color: var(--accent); border-bottom: 1px solid var(--border-color); padding-bottom: 5px; }
+p.lead { color: var(--text-muted); margin: 0 0 14px; font-size: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+th, td { border: 1px solid var(--border-color); padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: var(--input-bg); font-weight: 600; white-space: nowrap; }
+td.n { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+.bad { color: var(--danger); font-weight: 700; }
+.ok { color: var(--success); font-weight: 700; }
+.warn { color: var(--warning); font-weight: 700; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: var(--input-bg); padding: 1px 4px; border-radius: 4px; }
+#probe { position: sticky; top: 0; z-index: 300; background: var(--card-bg); border-bottom: 2px solid var(--border-color);
+  padding: 7px 14px; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; line-height: 1.6; }
+#probe.bad { background: color-mix(in srgb, var(--danger) 18%, var(--card-bg)); }
+
+/* ── 舞台 ── */
+#app { display: flex; justify-content: center; padding: 10px 0 4px; }
+#stageWrap { position: relative; }
+#stage { position: relative; flex: none; width: var(--sw, 1440px); height: var(--sh, 900px);
+  transform: scale(var(--k, 0.62)); transform-origin: top left; overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(148,168,255,.22); }
+.desk { position: absolute; inset: 0; overflow: hidden;
+  background: linear-gradient(120deg, #1d3a5f 0%, #2b5c86 38%, #10233c 39%, #0b1526 100%); }
+.desk .win { position: absolute; left: 6%; top: 16%; width: 58%; height: 66%; background: #fff; color: #1f2937;
+  border-radius: 10px; box-shadow: 0 24px 70px rgba(0,0,0,.5); overflow: hidden; font-size: 13px; line-height: 1.75; }
+.desk .win .bar { height: 30px; background: #f1f3f7; border-bottom: 1px solid #e2e6ee; display: flex; align-items: center; gap: 6px; padding: 0 12px; color: #6b7280; font-size: 11px; }
+.desk .win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #d7dce4; display: block; }
+.desk .win .doc2 { padding: 14px 20px; }
+.desk .win h4 { font-size: 15px; margin: 0 0 6px; color: #111827; }
+.scrim { position: absolute; inset: 0; background: rgba(5, 8, 14, .52); }
+.sel { position: absolute; border: 1.5px dashed var(--preview-pin, #ec4899); }
+
+.islandGhost { position: absolute; width: 208px; height: 32px; border-radius: 999px;
+  border: 1.5px dashed var(--island-accent-focus, #38bdf8); display: none; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--island-accent-focus, #38bdf8); z-index: 6; }
+.stage.showIsland .islandGhost { display: flex; }
+
+/* ══════ 绳层（本稿新增；源码里现在不存在，落地时进 clothesline.css + clothesline.html 入口）══════
+   甲案：一个常驻透明 WebviewWindow 自绘「绳 + 相框 + 夹子 + 状态」，卡片**不是**贴图窗。
+   几何常量全部来自源码，见 §1；本页不手抄第二个数，全部由 JS 按同一条公式写进 CSS 变量。 */
+.ropeLayer { position: absolute; left: 0; top: 0; width: var(--S-total, 1440px); height: var(--strip, 260px); z-index: 5; }
+.ropeLayer.off { display: none; }
+.ropeSvg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.ropeSvg path { fill: none; stroke: var(--hang-rope); stroke-width: var(--rope-h, 2px); stroke-linecap: round; }
+.ropeSvg .knot { fill: var(--hang-rope); }
+
+/* 端点吸盘：绳要挂在东西上，这一层是「弧」成立的前提（没有端点就没有下垂） */
+.anchor { position: absolute; top: calc(var(--side, 16px) - 6px); width: 12px; height: 18px; border-radius: 4px 4px 3px 3px;
+  background: var(--hang-clip-dark); box-shadow: 0 2px 6px rgba(0,0,0,.45); }
+
+/* 一件挂物：夹子在绳点上（跟切线倾斜），卡纸受重力**保持竖直** */
+.hang { position: absolute; left: var(--cx, 0px); top: var(--cy, 0px); transform: translateX(-50%);
+  cursor: grab; touch-action: none; }
+.hang.drag { cursor: grabbing; z-index: 40; }
+/* ── 挂上那一刻的动画（U2：只用 150/200/300/400ms；8.1 一次性非循环；8.3/8.4 只 transform+opacity，无 blur/backdrop-filter）──
+   支点钉在绳接触点：.hang 的 top(--cy) 就是绳点，clip 以 top:-clip-h/2 正跨其上 ⇒ transform-origin:50% 0 = 顶点=绳点。
+   整件（夹子+卡纸）像钟摆绕绳点摆：落下来 → 冲过静止位 → 阻尼回摆 → 停。只动「刚挂上」的那一张，不动全绳。 */
+@keyframes hangOn {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-44px) rotate(-11deg); }
+  24%  { opacity: 1; }
+  46%  { transform: translateX(-50%) translateY(0) rotate(7deg); }
+  66%  { transform: translateX(-50%) rotate(-4deg); }
+  83%  { transform: translateX(-50%) rotate(2deg); }
+  100% { opacity: 1; transform: translateX(-50%) rotate(0deg); }
+}
+/* 夹子「咬合」：落定瞬间沿自身竖直方向捏一下（scaleY 收→弹→定），把「被夹住」这件事演出来。
+   必须保留 rotate(var(--tilt)) 否则会抹掉跟切线的倾角。 */
+@keyframes clipPinch {
+  0%   { transform: translateX(-50%) rotate(var(--tilt, 0deg)) scaleY(.35); }
+  42%  { transform: translateX(-50%) rotate(var(--tilt, 0deg)) scaleY(1.14); }
+  100% { transform: translateX(-50%) rotate(var(--tilt, 0deg)) scaleY(1); }
+}
+.hang.entering { transform-origin: 50% 0; animation: hangOn 400ms cubic-bezier(.22, .61, .36, 1) both; }
+.hang.entering .clip { animation: clipPinch 300ms ease-out both; }
+/* 系统「减少动态效果」时全部收敛为瞬时落定（不摆不淡），尊重用户偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .hang.entering, .hang.entering .clip { animation: none; }
+}
+.clip { position: absolute; left: 50%; top: calc(-1 * var(--clip-h, 10px) / 2); width: var(--clip-w, 22px); height: var(--clip-h, 10px);
+  transform: translateX(-50%) rotate(var(--tilt, 0deg)); border-radius: 3px; z-index: 3;
+  background: linear-gradient(180deg, var(--hang-clip) 0%, var(--hang-clip-dark) 58%, var(--hang-clip) 100%);
+  box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+.clip::after { content: ""; position: absolute; left: 3px; right: 3px; top: 45%; height: 2px; background: var(--hang-clip-dark); opacity: .7; border-radius: 1px; }
+.clip.dualL { left: 26%; } .clip.dualR { left: 74%; }
+
+/* 拍立得卡纸：外圆角 12 / 图内圆角 4 ⇒ 同心（V4：内 = 外 − padding = 12 − 8）
+   padding 上/左右 8px、下 20px（caption 区）—— 全部取 U5 间距档 8/12/16 族 */
+.frame { position: relative; margin-top: calc(var(--clip-h, 10px) / 2); padding: var(--pad, 8px) var(--pad, 8px) var(--cap-h, 20px);
+  background: var(--hang-paper); border-radius: 12px; border: 1px solid var(--hang-paper-line);
+  box-shadow: var(--float-card-shadow); transition: box-shadow 150ms ease, transform 150ms ease; }
+.hang:hover .frame { box-shadow: var(--float-card-shadow), 0 0 0 2px var(--hang-focus); transform: translateY(-2px); }
+.shot { display: block; width: var(--iw, 120px); height: var(--ih, 90px); border-radius: 4px; background:
+    repeating-linear-gradient(180deg, rgba(255,255,255,.08) 0 9px, rgba(0,0,0,.05) 9px 18px),
+    linear-gradient(120deg, #2f6ea8, #14273f); }
+.shot.web { background: repeating-linear-gradient(180deg, rgba(255,255,255,.06) 0 12px, rgba(0,0,0,.04) 12px 24px), linear-gradient(45deg, #5b6b7d, #334155); }
+.capTxt { position: absolute; left: var(--pad, 8px); right: var(--pad, 8px); bottom: 4px; font-size: 11px; line-height: 1.2;
+  color: var(--hang-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Consolas, monospace; }
+.badge { position: absolute; left: var(--pad, 8px); top: var(--pad, 8px); display: none; align-items: center; gap: 3px;
+  height: 16px; padding: 0 5px; border-radius: 4px; background: var(--hang-badge-bg); color: var(--hang-badge-ink);
+  font-size: 10px; font-weight: 700; }
+.hang:hover .badge, .hang.st-state .badge { display: flex; }
+
+/* 湿/半干：下缘水痕（3px 渐变，静态位图）+ 悬垂水滴（6×9，静态 SVG 三角弧）；湿的额外下垂 4px */
+.wet .frame { transform: translateY(var(--wet-drop, 4px)); }
+.trace { position: absolute; left: var(--pad, 8px); right: var(--pad, 8px); bottom: var(--cap-h, 20px); height: 3px; border-radius: 0 0 4px 4px;
+  background: linear-gradient(to bottom, rgb(2 132 199 / 0), rgb(2 132 199 / .5)); }
+.drip { position: absolute; left: 50%; bottom: calc(var(--cap-h, 20px) - 8px); width: 6px; height: 9px; margin-left: -3px;
+  background: rgb(56 189 248 / .85); border-radius: 0 50% 50% 50%; rotate: 45deg; }
+/* 沾污：红点 + 常驻文字（U7 不许只靠颜色传达状态 ⇒ caption 前缀必须同时变） */
+.dotty { position: absolute; right: calc(var(--pad, 8px) + 4px); top: calc(var(--pad, 8px) + 4px); width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+/* 收下（不是删除）：命中区 24×24 满足 U7 点击目标下限；静止态就能看出可点（L6） */
+.xbtn2 { position: absolute; right: -8px; top: -8px; width: 24px; height: 24px; border: 0; padding: 0; border-radius: 50%;
+  background: rgba(12, 16, 24, .78); color: #eef3fb; font-size: 12px; line-height: 1; cursor: pointer; z-index: 4; }
+.xbtn2:hover { background: var(--danger); }
+
+/* 取衣落点：脱离绳后变成一个原生贴图窗的样子（数值对齐 pinned_window.rs：圆角 4 / 空闲描边 α0.35 / 关闭键 20dip 边距 7dip） */
+.pinGhost { position: absolute; width: var(--pw, 200px); height: var(--ph, 140px); border-radius: var(--pin-radius, 4px);
+  border: 1px solid rgb(255 255 255 / var(--pin-border-a, .35)); background: #0b1220; overflow: hidden; z-index: 30;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.pinGhost .gbar { position: absolute; right: var(--pin-x-m, 7px); top: var(--pin-x-m, 7px); width: var(--pin-x, 20px); height: var(--pin-x, 20px);
+  border-radius: 50%; background: rgb(8 12 22 / .6); color: #e6edf7; font-size: 11px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.pinGhost .gnote { position: absolute; left: 6px; bottom: 5px; font-size: 10px; color: #cfe1ff; }
+
+/* 放大轻预览（18-P1 预览即默认；不弹模态，点绳外/Esc 即退） */
+.loupe { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%); display: none; z-index: 60;
+  background: var(--hang-paper); border-radius: 12px; padding: 8px 8px 20px; box-shadow: 0 24px 70px rgba(0,0,0,.6); }
+.loupe.on { display: block; }
+.loupe .lshot { width: 460px; height: 300px; border-radius: 4px; background: linear-gradient(120deg, #2f6ea8, #14273f); position: relative; }
+.loupe .lcap { position: absolute; font-size: 11px; color: var(--hang-ink); bottom: 4px; left: 10px; font-family: ui-monospace, Consolas, monospace; }
+.loupe .lrow { display: flex; gap: 6px; margin-top: 6px; }
+.loupe .lbtn { font-size: 11px; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--hang-paper-line); background: #fff; color: #171717; cursor: pointer; }
+
+/* 撤销条（U4：可撤销>弹确认，6 秒，hover 暂停倒计时） */
+.undoBar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: none; align-items: center; gap: 10px;
+  background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px;
+  padding: 7px 10px; font-size: 11.5px; z-index: 70; box-shadow: var(--float-card-shadow); }
+.undoBar.on { display: flex; }
+.undoBar button { font-size: 11px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--accent-border); background: var(--accent-light); color: var(--accent-strong); cursor: pointer; }
+.undoBar .cd { font-family: ui-monospace, Consolas, monospace; color: var(--text-muted); }
+
+.toast { position: absolute; right: 16px; bottom: 16px; max-width: 300px; display: none; z-index: 80;
+  background: var(--card-bg); border: 1px solid var(--border-color); border-left: 3px solid var(--warning);
+  border-radius: 8px; padding: 8px 10px; font-size: 11.5px; color: var(--text-primary); box-shadow: var(--float-card-shadow); }
+.toast.on { display: block; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; padding: 8px 0 12px; font-size: 11.5px; }
+.toolbar .segBtns button { border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-primary);
+  font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+.toolbar .segBtns button.on { background: var(--accent-solid); color: var(--text-on-accent); border-color: var(--accent-solid); }
+.toolbar label { color: var(--text-muted); }
+.toolbar .act { border: 1px solid var(--accent-border); background: var(--accent-light); color: var(--accent-strong);
+  font-size: 11px; padding: 3px 9px; border-radius: 6px; cursor: pointer; }
+
+/* 空绳态（L3：给可执行下一步，不是一句「暂无」） */
+.emptyRope { position: absolute; left: 0; right: 0; top: 16px; height: 64px; display: none; align-items: center; justify-content: center;
+  gap: 8px; font-size: 11.5px; color: var(--text-muted); border-top: 2px solid var(--hang-rope); }
+.ropeLayer.ropeEmpty .emptyRope { display: flex; }
+
+/* ── 本稿新增的材质令牌：物理材质色（卡纸/墨/金属/绳）必须与主题解耦，
+   否则「拍立得」在深色主题会变成黑纸。落地进 theme.css 各主题块，lint 需同行豁免（V3/U6）。 ── */
+:root {
+  --hang-paper: color-mix(in srgb, #fdfdfb 96%, var(--accent-light));
+  --hang-paper-line: rgba(20, 22, 26, .14);
+  --hang-ink: #171717;
+  --hang-clip: #cfd6de;
+  --hang-clip-dark: #7f8b98;
+  --hang-rope: rgba(228, 232, 240, .58);
+  --hang-focus: var(--accent);
+  --hang-badge-bg: rgba(20, 22, 26, .72);
+  --hang-badge-ink: #f3f6fb;
+  --pin-radius: 4px; --pin-border-a: .35; --pin-x: 20px; --pin-x-m: 7px;
+  --side: 16px; --pad: 8px; --cap-h: 20px; --clip-w: 22px; --clip-h: 10px; --rope-h: 2px; --wet-drop: 4px;
+}
+
+/* ══════════════════ 动效系统（全功能） ══════════════════
+   红线自检：U2 时长只取 150/200/300/400ms；8.1 全部一次性（iteration-count 默认 1，无 infinite）；
+   8.3 零 backdrop-filter；8.4 零 blur（只 transform + opacity，可缓存纹理、不每帧重算）；
+   事件驱动（挂/取/收/切/状态变才播），静止态零动画零合成层；末尾 prefers-reduced-motion 统一收敛。
+   ⚠ 退场用 display 的元素（loupe/undo/toast/rope）不能在 display:none 后播动画 ⇒ 退场加 .closing/.leaving
+     播完再摘 .on；JS 侧用 setTimeout(时长) 作隐藏权威（reduced-motion 时时长=0 立即隐藏，不依赖 animationend）。 */
+
+/* 离场动画层：绝对铺满舞台、不吃鼠标、在卡片(5)之上 loupe(60)之下 */
+#fxLayer { position: absolute; inset: 0; pointer-events: none; z-index: 50; }
+#fxLayer .hang { position: absolute; }
+/* 取下（拖出/loupe「取下为贴图」）：解夹后整件被拎起、上抬 + 缩小 + 淡出，支点仍在绳点 */
+@keyframes flyOut {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1) rotate(0deg); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-52px) scale(.86) rotate(-7deg); }
+}
+/* 收进面板（× / 收衣 / 撤销 / 超上限挤出）：朝右下角贴图管理面板「吸」进去 + 缩小 + 淡出 */
+@keyframes suckIn {
+  0%   { opacity: 1; transform: translateX(-50%) translate(0, 0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translate(var(--toX, 120px), var(--toY, 160px)) scale(.3); }
+}
+#fxLayer .fly  { transform-origin: 50% 0; animation: flyOut 300ms cubic-bezier(.4, 0, 1, 1) both; }
+#fxLayer .suck { transform-origin: 50% 0; animation: suckIn 300ms cubic-bezier(.4, 0, .6, 1) both; }
+
+/* 轻预览 loupe：进场 scale+fade，退场反向（transform 保留 translate(-50%,-50%)） */
+@keyframes loupeIn  { from { opacity: 0; transform: translate(-50%, -50%) scale(.9); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes loupeOut { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0; transform: translate(-50%, -50%) scale(.94); } }
+.loupe.on { animation: loupeIn 200ms cubic-bezier(.22, .61, .36, 1) both; }
+.loupe.closing { animation: loupeOut 150ms ease-in both; }
+/* 遮罩 scrim：纯 opacity 淡入淡出 */
+@keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+.scrim.show { animation: fadeIn 200ms ease both; }
+.scrim.closing { animation: fadeOut 150ms ease both; }
+
+/* 撤销条：进场自下方滑入+淡入，退场下滑淡出（保留 translateX(-50%)） */
+@keyframes undoIn  { from { opacity: 0; transform: translateX(-50%) translateY(18px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@keyframes undoOut { from { opacity: 1; transform: translateX(-50%) translateY(0); } to { opacity: 0; transform: translateX(-50%) translateY(12px); } }
+.undoBar.on { animation: undoIn 200ms cubic-bezier(.22, .61, .36, 1) both; }
+.undoBar.closing { animation: undoOut 150ms ease-in both; }
+
+/* toast：自右下角滑入+淡入，退场淡出（无基准 transform） */
+@keyframes toastIn  { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes toastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px); } }
+.toast.on { animation: toastIn 200ms cubic-bezier(.22, .61, .36, 1) both; }
+.toast.closing { animation: toastOut 150ms ease-in both; }
+
+/* 取衣落点贴图窗：pop-in（缩放上冲一点再落定） */
+@keyframes ghostPop { 0% { opacity: 0; transform: scale(.72); } 60% { opacity: 1; transform: scale(1.04); } 100% { transform: scale(1); } }
+.pinGhost { animation: ghostPop 300ms cubic-bezier(.22, .61, .36, 1) both; }
+
+/* 开关：关=绳层上收淡出（.leaving 播完再 display:none），开=绳层下落淡入 */
+@keyframes ropeOut { from { opacity: 1; transform: translateY(0) scaleY(1); } to { opacity: 0; transform: translateY(-16px) scaleY(.5); } }
+@keyframes ropeIn  { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
+.ropeLayer.leaving { transform-origin: top center; animation: ropeOut 200ms ease-in both; }
+.ropeLayer.entering-rope { transform-origin: top center; animation: ropeIn 200ms ease-out both; }
+
+/* 状态推进（湿→半干→干）：整卡轻微闪一下提示「这张变了」，纯 opacity 不引入 blur */
+@keyframes stateFlash { 0% { opacity: .5; } 100% { opacity: 1; } }
+.hang.st-flash .frame { animation: stateFlash 300ms ease-out both; }
+/* 沾污：卡身左右 shake（保留 translateX(-50%)）+ 红点 scale-pop，双通道（动效+文字）不只靠颜色 U7 */
+@keyframes shake {
+  0%, 100% { transform: translateX(-50%); }
+  20% { transform: translateX(-50%) translateX(-5px); }
+  40% { transform: translateX(-50%) translateX(5px); }
+  60% { transform: translateX(-50%) translateX(-3px); }
+  80% { transform: translateX(-50%) translateX(3px); }
+}
+@keyframes dotPop { 0% { transform: scale(0); } 60% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.hang.failing { animation: shake 300ms ease-in-out both; }
+.hang.failing .dotty { animation: dotPop 300ms cubic-bezier(.22, .61, .36, 1) both; }
+
+/* 空绳提示淡入 */
+.ropeLayer.ropeEmpty .emptyRope { animation: fadeIn 300ms ease both; }
+
+/* 系统「减少动态效果」：关掉所有装饰性动画（退场元素的隐藏由 JS setTimeout(0) 兜底，不靠 animationend） */
+@media (prefers-reduced-motion: reduce) {
+  .hang.entering, .hang.entering .clip, #fxLayer .fly, #fxLayer .suck,
+  .loupe.on, .loupe.closing, .scrim.show, .scrim.closing,
+  .undoBar.on, .undoBar.closing, .toast.on, .toast.closing,
+  .pinGhost, .ropeLayer.leaving, .ropeLayer.entering-rope,
+  .hang.st-flash .frame, .hang.failing, .hang.failing .dotty,
+  .ropeLayer.ropeEmpty .emptyRope { animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="probe">量具自检：计算中…</div>
+
+<div class="doc">
+<h1>截图晾衣绳 · 悬链线 + 拍立得相框 + 开关（默认开）+ 通用捕获</h1>
+<p class="lead">
+本版是<b>重做稿</b>，替代 <code>design/截图晾衣绳-湿干状态-1比1-设计稿-2026-10-11.html</code>。
+方案：<b>绳层 = 一个常驻透明 WebviewWindow 单窗全绘</b>（绳弧、夹子、相框、状态、交互都在这一张窗里），
+卡片不再是贴图窗；<b>任何来源</b>的剪贴板图片都自动挂上（自家截图 / 微信截图 / Snipaste / Win+Shift+S / 浏览器 Ctrl+C），
+按来源<b>分级</b>而不拒挂；功能可开关，<b>默认开</b>。
+本页<b>可拖可点可验</b>：卡片能挂、能点放大、能拖出变贴图、能整绳收衣；屏宽/张数/下垂幅度都是滑杆现算，
+绳是<b>真悬链线公式</b>（<code>y = a·(cosh(x/a) − 1)</code>），逐张下垂量与夹子倾角都由脚本现测，不是手抄。
+</p>
+
+<h2>§0 你提的四条，逐条对照（含上一版为什么不行）</h2>
+<table>
+<thead><tr><th>你的要求</th><th>上一版（已废弃）为什么差</th><th>本版怎么做到 · 在哪一节能当场验</th></tr></thead>
+<tbody>
+<tr><td>「晾衣绳肯定是有弧度的」</td><td>上一版把绳做成 <code>display:flex</code> 的<b>直排</b>，绳段是每张卡片自己 <code>::after</code> 画的一小截水平 2px 线——物理上不可能，也没有端点受力</td><td>真悬链线：<code>a</code> 由「跨距 + 下垂」反解（二分 80 次），逐张挂载点 y、切线角都来自同一条公式；绳是一条 SVG path，两端有吸盘。<b>§2 舞台里拖「下垂幅度」滑杆</b>，§3 表① 逐张读数会跟着变</td></tr>
+<tr><td>「图片挂上去肯定要相框之类的效果」</td><td>上一版是「贴图窗本体 + 一枚 18×8 的小灰条当夹子」，没有承载物，看着就是六个小窗排一排</td><td>拍立得卡纸（外圆角 12 / 图内圆角 4 = 同心，V4）+ 金属夹（渐变 + 投影，宽卡双夹）+ 两层投影；夹子跟切线倾、卡纸受重力保持竖直。<b>§2 舞台直接看</b>，§4 逐尺寸申报</td></tr>
+<tr><td>「这个很考虑用户交互」</td><td>上一版只有「点一下」，挂/取/拖/收都没做</td><td>挂（自动 + 手动）／点=轻预览放大／<b>拖出 4px 阈值=取下变贴图窗</b>／hover=浮起+状态徽标／整绳收衣进贴图面板／超上限自动收最旧那张 + toast／<b>「这次别挂」6 秒撤销条（hover 暂停）</b>／两级 Esc。§2 全可点，§5 成表</td></tr>
+<tr><td>「可开启关闭，默认开启；不管用我们的还是系统的其他截图软件都要自动挂上」</td><td>上一版把入口只挂在自家截图出口面板那一行，外部工具截图<b>根本不会上绳</b>，也没写开关</td><td>触发点从「截图出口」换成<b>剪贴板入库单点</b> <code>clipboard-changed</code>（自家截图与外部工具走同一条 emit，见 §6 的三处行号）；开关 <code>clothesline</code> 默认 <code>true</code>，五处落点照 <code>doc_capture</code> 样板（§7）。<b>§2 舞台里点「模拟微信截图 / 模拟复制网图」，图会自己上绳</b></td></tr>
+</tbody>
+</table>
+
+<p class="lead">🔴 <b>两处公开更正（上一版稿子里的技术论断是错的，本版已改）</b></p>
+<table>
+<thead><tr><th>上一版写的</th><th>实情（出处）</th><th>本版结论</th></tr></thead>
+<tbody>
+<tr><td>「绳不是新窗口，绳上卡片就是贴图窗」</td><td><code>pinned_window.rs:1364-1365</code> 用 <code>CW_USEDEFAULT</code> 定位、<code>:1305</code> 每窗独立消息循环，<b>没有排布、没有锚点、没有截图矩形入参</b>；<code>vite.config.ts:51-66</code> 的 14 个入口里也没有 pinned 前端</td><td>「复用贴图窗排成绳」在 Rust 侧不成立。绳层几何必须新写 ⇒ 宿主改为单窗全绘（§1 已拍甲案），贴图窗只在<b>取衣后</b>出现</td></tr>
+<tr><td>「湿 = <code>ocrStatus==="running"</code> 或 AI <code>status==="running"</code> 的投影」</td><td>那两个字段都在<b>截图出口那一帧</b>的组件里（<code>ScreenshotOverlay.tsx:392</code> / <code>AiPopover.tsx:27</code>），绳上的卡片不属于它们；而图片 OCR 走 <code>ocr_image_cached</code>（<code>commands/images.rs:399-414</code>）+ <code>useCardOcr.ts</code> <b>可视才懒触发</b> ⇒ 挂在绳上的图绝大多数时间恒为 idle</td><td>按那个口径，绳<b>几乎永远是干的</b>，上一版的「湿」是装饰。本版改成：湿 = <b>采集链未收口</b>（<code>DEDUP_TTL=1500ms</code> 合并窗内 / <code>process_image</code> 落盘未完）∪ 出口面板那轮 OCR/AI 在跑（§4）</td></tr>
+</tbody>
+</table>
+
+<h2>§1 复用清单（每一行都有源码出处；本页只新造「绳层几何 + 材质令牌」两件事）</h2>
+<table>
+<thead><tr><th>能力</th><th>现有实现（出处）</th><th>本稿怎么用</th></tr></thead>
+<tbody>
+<tr><td>绳窗本体（甲案）</td><td><code>todo_island.rs:617-640</code> / <code>stack_hud.rs:696-736</code>：<code>WebviewUrl::App("xxx.html")</code> + <code>decorations(false).always_on_top(true).skip_taskbar(true).transparent(true).focused(false).resizable(false).visible(false)</code>，独立线程 + <code>CREATING</code> 防重入 + 双重检查，<b>建窗失败静默降级</b>（:732）</td><td>新增入口 <code>clothesline.html</code>（<code>vite.config.ts:51-66</code> 现有 14 条，加第 15 条）。窗体 = 横跨 <code>work_area</code> 顶缘的一条带；<b>建窗失败/开关关闭 ⇒ 只是没绳，截图与剪贴板主流程照走</b>，照抄 stack_hud 的降级姿态</td></tr>
+<tr><td>能点，但不吃掉顶缘</td><td><code>todo_island_hover.rs:55-74</code>：<code>HOVER_IN_PAD=2</code> / <code>HOVER_OUT_PAD=6</code>（滞回，编译期断言钉住）、<code>HOVER_POLL_MS=60</code>、意图 3 拍/展开 4 拍；<code>:44-45</code> 代次作废（<code>POLL_GEN</code>）</td><td>绳窗直接<b>同族复用</b>这套轮询（命中边界贴「可见形状」走，不按矩形外扩）。§8 里这条是主要常驻成本，必须带可见性闸</td></tr>
+<tr><td>挂上就有的图</td><td><code>clipboard_monitor.rs:1642 process_image</code> 落 PNG（<code>:1675-1722</code> 长边缩到 <b>1080</b>）、<code>:1731 find_latest_by_md5</code> 智能合并、<code>:1747/:1782</code> emit</td><td>绳上卡片直接吃这张已落盘的 PNG（零额外 IO）。<b>代价照实说</b>：1080 版放大预览在 4K 屏会糊 ⇒ 放大时按现有预览链路取原图，绳上缩略永远用 1080 版（§4 末行）</td></tr>
+<tr><td>图片能否被前端读到</td><td><code>tauri.conf.json:31-36</code>：<code>assetProtocol.scope = ["$APPDATA/**"]</code>；<code>FileDetailDialog.tsx:77-83</code> 注释点明「scope 外会被拦成 403，而 <code>convertFileSrc</code> 只是字符串拼接、永远『成功』」</td><td><code>process_image</code> 的落盘在 appdata ⇒ 绳上 <code>&lt;img&gt;</code> 走 <code>convertFileSrc(thumbPath)</code> 直接可用；<b>不许</b>把用户原图路径塞进 src（会 403 且静默）</td></tr>
+<tr><td>唯一挂载信号</td><td><code>screenshot.rs:1640-1643</code> 与 <code>clipboard_monitor.rs:1747/1782</code> 都 emit <code>clipboard-changed</code>（payload <code>{item: HistoryItem}</code>）；前端唯一单点 <code>src/lib/api/init.ts:110-160</code></td><td>绳层监听<b>同一个事件</b>，这就是「不挑截图工具」的实现基础（§6）。<code>HistoryItem.source / source_icon / content / md5</code> 提供分级原料（<code>data_store/mod.rs:170-203</code>）</td></tr>
+<tr><td>尺寸上限 / 圆角 / 关闭键口径</td><td><code>src/styles/screenshot.css:1324-1331</code> <code>.pin-float-img{max-width:240px;max-height:180px}</code>；<code>pinned_window.rs:241 CORNER_RADIUS_DIP=4.0</code>、<code>:244 BORDER_ALPHA_IDLE=0.35</code>、<code>:298-299 CLOSE_BTN_DIP=20 / CLOSE_MARGIN_DIP=7</code></td><td>卡纸内图片直接吃 240×180 上限；<b>取衣后</b>的贴图窗仍用原生那套（4px 圆角 / α0.35 描边 / 20dip 关闭键），§2 舞台里拖出去的那张就是这个样子</td></tr>
+<tr><td>留边与抢位</td><td><code>todo_island_anchor.rs:33 EDGE_MARGIN=16.0</code>（16 是岛停靠拍板值）；岛 208×32 顶右占位；<code>tray_manager.rs:217 get_monitor_work_area</code></td><td>绳的左右端点各留 16px，<b>岛显示顶右时右端点让开 208+12</b>（§3 表② 有「与岛」一列，舞台可勾选现场比）</td></tr>
+<tr><td>收衣落点</td><td><code>PinnedPanel.module.css</code> 真类名：<code>.panel .head .title .count .list .row .thumb .thumbPh .name .iconBtn .textBtn .dangerBtn .foot .empty .loadError .retryBtn</code></td><td>超上限/手动收衣的卡片退回贴图管理面板，<b>数据一条不删</b>。§2 舞台右下就是这个面板的真样式；<code>.loadError/.retryBtn</code> 已存在 ⇒ U3.5 的四状态不用新造</td></tr>
+<tr><td>开关样板</td><td>照 <code>doc_capture</code> 的五处：<code>clipboard_monitor.rs:623-628 / 646-652 / 705 / 722 / 760-764</code>；<code>lib.rs:628-636 / 800-808</code>；<code>commands/history.rs:379-393</code>；<code>src/stores/appStore.ts</code>（<code>AppConfig</code> ~158 行 + <code>DEFAULT_CONFIG</code> ~540 行）；<code>CopyPasteSection.tsx:60</code> <code>ToggleRow</code></td><td>新键 <code>clothesline</code>（默认 <code>true</code>）落同样五处。🔴 <code>clipboard_monitor.rs:612-617</code> 的注释是硬约束：局部 <code>save_config</code> 缺键必须走 <code>Option</code> 语义，<b>不许 <code>unwrap_or(false)</code></b>——默认开的键一旦这样写，老用户升级后会「莫名变关」</td></tr>
+<tr><td>出口面板那一行</td><td><code>ResultActions.tsx:154-174</code>（复制图片 / 保存到图库 / <code>cls="pin"</code> 贴图置顶），面板 <code>.act-panel</code> 224px（<code>screenshot.css:613-692</code>）</td><td>开关默认开 ⇒ 「晾上绳子」从<b>动作</b>降级为<b>状态行</b>：「绳上已有 N 张 · 这次别挂」。图标取 lucide <code>Paperclip</code>，走现有 <code>.ic</code> 26×26 槽</td></tr>
+</tbody>
+</table>
+
+<h2>§2 舞台（可交互：挂上 / 点=放大 / 拖出 4px=取下变贴图 / 收衣 / 开关 / 模拟外部工具）</h2>
+<div class="toolbar">
+  <span class="segBtns" id="onSeg">
+    <button data-on="1" class="on">晾衣绳：开（默认）</button>
+    <button data-on="0">关</button>
+  </span>
+  <label>张数 N <input type="range" id="nR" min="1" max="12" value="5" /> <b id="nV">5</b></label>
+  <label>下垂幅度 <input type="range" id="sagR" min="0" max="2" step="1" value="1" /> <b id="sagV">中 2.0%</b></label>
+  <label>绳上限 cap <input type="range" id="capR" min="4" max="12" step="2" value="8" /> <b id="capV">8</b></label>
+  <span class="segBtns" id="wSeg">
+    <button data-w="1366">1366</button><button data-w="1440" class="on">1440</button>
+    <button data-w="1920">1920</button><button data-w="2560">2560</button>
+  </span>
+  <span class="segBtns" id="thSeg">
+    <button data-t="ocean">ocean</button><button data-t="midnight" class="on">midnight</button><button data-t="forest">forest</button>
+    <button data-t="blossom">blossom</button><button data-t="dawn">dawn</button><button data-t="ocean-dark">ocean-dark</button>
+  </span>
+  <label><input type="checkbox" id="islandCk" checked /> 岛停靠顶右（占 208×32）</label>
+  <label><input type="checkbox" id="panelCk" /> 显示截图出口面板帧</label>
+</div>
+<div class="toolbar">
+  <button class="act" id="simShot">模拟微信截图（外部工具 → 自动挂）</button>
+  <button class="act" id="simWeb">模拟浏览器 Ctrl+C 一张网图（非截图来源）</button>
+  <button class="act" id="advance">推进状态（湿→半干→干）</button>
+  <button class="act" id="failOne">让最新一张「沾污」</button>
+  <button class="act" id="gather">收衣（整绳 → 贴图管理面板）</button>
+  <span style="color:var(--text-muted)">提示：卡片可点（放大）、可拖出（变贴图窗）、Esc 两级取消；「张数 N」是几何探针，可超过 cap（用来看「摆不下就排队」），自动挂那条路径仍受 cap 限制</span>
+</div>
+
+<div id="app"><div id="stageWrap"><div id="stage" class="stage showIsland">
+  <div class="desk">
+    <div class="win"><div class="bar"><i></i><i></i><i></i> product-brief.md</div>
+      <div class="doc2"><h4>Q4 定价讨论</h4>把三个档位的价格再核一遍，特别是年付折后价，法务说要在合同里写明含税。</div></div></div>
+  <div class="islandGhost" id="islandGhost">岛 208×32</div>
+
+  <!-- 绳层：一条 SVG path + N 个挂物，全部由 §3 的公式定位 -->
+  <div class="ropeLayer" id="ropeLayer">
+    <svg class="ropeSvg" id="ropeSvg" aria-hidden="true"><path id="ropePath" d=""></path></svg>
+    <div class="anchor" id="anchorL"></div><div class="anchor" id="anchorR"></div>
+    <div id="hangs"></div>
+    <div class="emptyRope">绳子是空的 —— 截一张图（或 Ctrl+C 任意图片）就会自己挂上来。<button class="act" id="simEmpty">试一下：模拟一次截图</button></div>
+  </div>
+
+  <div class="loupe" id="loupe">
+    <div class="lshot"><span style="position:absolute;left:8px;top:8px;font-size:11px;color:#dce9ff">轻预览 · 此刻取原图（绳上缩略只有 1080 长边）</span></div>
+    <div class="lcap" id="loupeCap">—</div>
+    <div class="lrow">
+      <button class="lbtn" data-act="pin">取下为贴图</button>
+      <button class="lbtn" data-act="copy">复制</button>
+      <button class="lbtn" data-act="rc">寄给远程</button>
+      <button class="lbtn" data-act="close">关闭 Esc</button>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim" style="display:none"></div>
+  <div class="sel" id="sel" style="left:330px;top:150px;width:520px;height:330px"></div>
+
+  <div class="act-panel" id="panel" style="position:absolute;left:624px;top:494px;display:none">
+    <div class="act-head"><span class="dot"></span> 截图完成 · 选择出口</div>
+    <div class="act-group">图片</div>
+    <button type="button" class="act-row"><span class="ic" data-i="copy"></span><span class="tx"><span class="lbl">复制图片</span><span class="sub">写入剪贴板历史</span></span><span class="k">C</span></button>
+    <button type="button" class="act-row"><span class="ic" data-i="download"></span><span class="tx"><span class="lbl">保存到图库</span><span class="sub">另存为图片文件</span></span><span class="k">S</span></button>
+    <button type="button" class="act-row pin"><span class="ic" data-i="pin"></span><span class="tx"><span class="lbl">贴图置顶</span><span class="sub">钉在屏幕上</span></span></button>
+    <button type="button" class="act-row hangrow" id="hangStatus"><span class="ic" data-i="paperclip"></span><span class="tx"><span class="lbl">绳上已有 <b id="hangN">5</b> 张 · 点开</span><span class="sub" id="hangSub">已自动挂上（微信/Snipaste 的截图同样会）</span></span><span class="k">G</span></button>
+    <button type="button" class="act-row" id="dontHang"><span class="ic" data-i="x"></span><span class="tx"><span class="lbl">这次别挂</span><span class="sub">6 秒内可撤销，之后照挂</span></span></button>
+    <div class="act-group">文字 · 其它（收起）</div>
+    <button type="button" class="act-row expand"><span class="ic" data-i="chevron-down"></span><span class="tx"><span class="lbl">展开 5 项</span><span class="sub">AI 处理 / 翻译 / 送动作链 / 记住为固定区域 / 重新截图</span></span></button>
+  </div>
+
+  <!-- 收衣落点：PinnedPanel 真类名，未新造结构 -->
+  <div class="panel" id="pp" style="position:absolute;right:16px;bottom:56px;width:236px">
+    <div class="head"><span class="title">贴图管理</span><span class="count" id="ppCount">0</span></div>
+    <div class="list" id="ppList"><div class="empty">绳上收下来的贴图会列在这里（数据不删）</div></div>
+    <div class="foot">命令 <code>list_pinned_images</code> / <code>close_pinned_image_by_path</code></div>
+  </div>
+
+  <div class="undoBar" id="undoBar"><span id="undoTxt">刚把 1 张挂上绳子</span><button id="undoBtn">这次别挂</button><span class="cd" id="undoCd">6.0s</span></div>
+  <div class="toast" id="toast"></div>
+  <!-- 离场动画层：卡片被取下/收进面板时，克隆一份到这里飞出；重建在其下立即发生，互不打架 -->
+  <div id="fxLayer" aria-hidden="true"></div>
+</div></div></div>
+
+<h2>§3 几何实测（悬链线现算，卡片宽由公式现算，不是定值）</h2>
+<p class="lead">
+下垂量 <code>sag = clamp(跨距 × 档系数, 6, 60)</code>（档系数 浅 1.0% / 中 2.0% / 深 3.2%）；
+由 <code>sag = a·(cosh(S/2a) − 1)</code> <b>二分反解</b> <code>a</code>（80 次）；
+<b>屏幕坐标</b>（y 向下为正）里绳的下垂量是 <code>d(x) = sag − a·(cosh((x−mid)/a) − 1)</code>：
+端点处 <code>d = 0</code>（最高、贴留边 16px），中段 <code>d = sag</code>（最低）。
+夹子倾角跟切线走：<code>θ = −atan(sinh((x−mid)/a))</code>（左半段为正/顺时针，右半段为负）；
+<b>卡纸受重力保持竖直（rotate 恒 0），只有夹子跟切线倾</b>——这是挂画的真物理，上一版把整卡歪着排是错的。
+卡片宽 <code>imgW = min(240, floor((可用跨距 − (N−1)×12) / N) − 16)</code>，高 <code>min(180, imgW/宽高比)</code>；
+卡纸外框 = 图 + 左右 8×2 + 上 8 + 下 20（caption 区）；<b>imgW 算出来 &lt; 96 时不缩窄，改让多出来的卡片排队不进绳</b>。
+</p>
+<table><thead><tr><th>#</th><th>挂载 x（公式）</th><th>下垂量 y（公式）</th><th>首夹 θ（公式）</th><th>夹子（数 / 各自倾角）</th><th>卡纸外框</th><th>DOM 实读（判据=offset 整数；rect÷k 带 dpr 量化仅作参考）</th><th>公式↔实读偏差（判据 offset ≤0.5px；入场动画中的卡标「跳过」）</th></tr></thead><tbody id="geoT"></tbody></table>
+<p class="lead">读数由脚本现测（<span id="geoSrc">–</span>）。<b>判据用 <code>offset*</code> 整数口径</b>：<code>offsetWidth/offsetHeight</code> 与公式<b>精确相等（Δ0）</b>；<code>offsetLeft/offsetTop</code> 是整数、而公式 <code>cx / y</code> 可能带 <code>.5</code> ⇒ 位置项有 ≤0.5px 的整数取整地板，这是 offset API 的固有精度、不是几何误差（<code>.hang</code> 带 <code>translateX(-50%)</code>，故「offset 左缘」= <code>offsetLeft − offsetWidth/2</code>）。<b><code>rect ÷ 舞台scale</code> 只印不作判据</b>：<code>getBoundingClientRect</code> 会被吸附到<b>物理像素</b>，本机 <code>dpr=1.25</code> 时 1 物理px=0.8 CSS px，即便把舞台 <code>--k</code> 临时置 1 也仍有 ~0.4px 量化地板（实测 <code>rectW=141.11</code> vs <code>228×0.62=141.36</code>）——所以 0.1px 阈值在缩放上不可达，改判 offset 的 0.5px 整数地板。入场动画进行中的卡，<code>.frame</code> 被 keyframe 位移，量它必然假红 ⇒ 整行标「动画中·跳过」，落定后 <code>done()</code> 自动补一次重量。</p>
+
+<h3 style="font-size:12.5px;margin:16px 0 6px">表② 屏宽 × 张数（越绳、「摆不下」排队、条带高）</h3>
+<table><thead><tr><th>屏宽</th><th>N</th><th>可用跨距 S</th><th>imgW</th><th>卡纸总宽</th><th>是否越绳右端</th><th>条带高</th><th>sag</th><th>绳上摆 / 排队</th><th>与岛占位</th><th>读数</th></tr></thead><tbody id="wideT"></tbody></table>
+<p class="lead">
+🔴 <b>更正上一版的一句结论</b>：旧稿说「绳上一排完整截图在 1080p 笔记本屏上看不清」。本版实测后要说得更准 ——
+真正吃掉宽度的不是弧（弧只吃<b>竖向</b>），而是「两端各留 16px + 让开岛 208+12px」把可用跨距从屏宽 1440 砍到 <span data-r="sNow">–</span>px；
+而卡片是<b>水平顺序</b>排列、各自带独立 y，所以 <b>相邻卡片并不会互相压住</b>（实测重叠 <span data-r="overlapNow">–</span>，判据见 §5 末段），
+上一版我担心的「被压住那张点不到」<b>不成立</b>。真代价是两条：
+① 1440 屏让开岛后 imgW = 5 张 <span data-r="w5">–</span>px / 6 张 <span data-r="w6">–</span>px / 8 张 <span data-r="w8">–</span>px，张数越多越窄；
+② 条带高被下垂撑到 <span data-r="stripNow">–</span>px，会盖住桌面顶缘那一条（岛 32px 之外还要再吃一截）。
+⇒ 所以「imgW &lt; <b>96</b>px 时不再缩窄，而是让多出来的卡片<b>排队不进绳</b>」（表② 最后两列），把「看不清」换成「摆不下」，并 toast 说明（15.3 不许静默）。
+至于 96px 以下截图内文字到底还能不能读，我<b>不下结论</b>——这属于真机点验项。
+</p>
+
+<h2>§4 相框、状态与外观申报（每个数都写在这页，落地不另定一套）</h2>
+<table>
+<thead><tr><th>元素</th><th>尺寸/口径</th><th>为什么是这个数（出处）</th></tr></thead>
+<tbody>
+<tr><td>绳</td><td>2px 圆头，色 <code>--hang-rope</code>（与主题解耦的中性材质色）</td><td>本稿新增令牌，见下方令牌行</td></tr>
+<tr><td>端点吸盘</td><td>12×18，左右各贴在端点 x，顶边 <code>16 − 6</code></td><td>留边 16 = <code>todo_island_anchor.rs:33 EDGE_MARGIN</code>；没有端点就没有「挂在什么上面」，弧才成立</td></tr>
+<tr><td>金属夹</td><td>22×10 r3，<code>rotate(θ)</code> 跟切线；imgW ≥ 150 时改<b>双夹</b>（左 26% / 右 74%，两夹 θ 不同）</td><td>U5 尺寸档；双夹是宽卡的实物做法，也顺手把「卡片会不会转」这个视觉问题压住</td></tr>
+<tr><td>拍立得卡纸</td><td>外圆角 12、padding 上/左右 8、下 20（caption 区）、1px 描边、<code>--float-card-shadow</code></td><td><b>V4 同心圆角</b>：内 = 外 − padding = 12 − 8 = 4 ⇒ 图内圆角取 4，正好也等于 <code>CORNER_RADIUS_DIP=4.0</code>；阴影走 <code>theme.css:635</code> 的两层叠加（V2）</td></tr>
+<tr><td>图片</td><td>上限 240×180，实际宽由 §3 公式</td><td><code>screenshot.css:1324-1331 .pin-float-img</code>，不另定一档</td></tr>
+<tr><td>caption 行</td><td>11px 等宽，恒久显示：<code>状态词 · 来源 · 时间</code>，例 <code>湿·处理中 · 微信截图 · 14:02</code></td><td>U7「不能只靠颜色传达状态」+ L2「常驻图标必须带常驻文字标签」⇒ 湿/干有文字，非截图来源也有文字（不只把夹子变灰）。11px 在 U5 字号档内</td></tr>
+<tr><td>hover</td><td>卡纸 <code>translateY(-2px)</code> + 2px 焦点描边 + 左上角徽标（16px 高）；过渡 150ms（U2 四档之一）</td><td>只用一次 CSS 过渡，<b>无 infinite 动画、无 backdrop-filter、无 filter:blur</b>（性能准则 8.1/8.3/8.4）</td></tr>
+<tr><td>湿</td><td>额外下垂 <code>--wet-drop=4px</code> + 下缘 3px 水痕 + 一枚 6×9 水滴（静态位图）</td><td>状态源见 §0 的更正值：采集链未收口（<code>DEDUP_TTL=1500ms</code>）∪ 出口那轮 OCR/AI 在跑</td></tr>
+<tr><td>半干</td><td>水滴收，水痕留；一次性 20s 定时器转干</td><td>每张一个 one-shot timer，<b>不是循环</b>；绳空时全部 clear（8.1「不可见时会停吗」）</td></tr>
+<tr><td>干</td><td>无附加层</td><td>0 成本；挂上时若无采集任务在跑就直接是干</td></tr>
+<tr><td>沾污（失败）</td><td>右上 8px 红点 + <b>caption 前缀改「沾污·读取失败」</b> + 同时发 toast</td><td>15.3 硬要求（红点会被别的窗口盖住）；U3.5 失败态要能重试 ⇒ 点徽标即重跑采集，不落到空绳</td></tr>
+<tr><td>非截图来源（分级）</td><td>夹子与卡纸描边降饱和、caption 前缀写来源（「浏览器 Ctrl+C」等），<b>仍然挂同一根绳</b></td><td>你拍的「全挂 + 来源分级」；分级原料只有 <code>source</code> 前台窗口标题/exe（<code>clipboard_monitor.rs:1376-1397</code>）⇒ 只能分级，不能可靠拒挂</td></tr>
+<tr><td>新增材质令牌</td><td><code>--hang-paper / --hang-paper-line / --hang-ink / --hang-clip / --hang-clip-dark / --hang-rope / --hang-focus</code> 7 个</td><td>物理材质色必须与主题解耦（否则深色主题得到黑纸卡）。<b>V3/U6 要 lint 同行豁免</b> <code>/* ui-rule-ok: 材质恒定色，非主题色 */</code>；墨/纸对比在 6 主题下现测，见下表</td></tr>
+</tbody>
+</table>
+<h3 style="font-size:12.5px;margin:16px 0 6px">表③ 六主题下的实测对比度（U7：正文/徽标文字 ≥4.5:1，绳这类图形 ≥3:1）</h3>
+<table><thead><tr><th>主题</th><th>卡纸 RGB（实读）</th><th>墨 / 纸</th><th>徽标墨 / 底</th><th>绳 / 桌面（按最暗与最亮两档色标合成，取最差）</th><th>判据</th></tr></thead><tbody id="contrastT"></tbody></table>
+<p class="lead">读法说明：桌面是渐变，没有单一底色 ⇒ 脚本从 computed <code>background-image</code> 抠出<b>真实色标</b>，把绳的半透明色按 α 合成到最暗/最亮两档上再比，取最差值；<b>不许拿透明色直接算对比度</b>（那是假的）。徽标底色同理合成到卡纸上。这一版就是因为第一版把 <code>color(srgb 0.98 …)</code> 当 255 制读、又硬写了一个桌面 hex，整列 1.16:1 全是假数——已修。</p>
+
+<h2>§5 交互（鼠标全流程可达 17.1，键盘只是加速器；两级取消 17.6）</h2>
+<table>
+<thead><tr><th>动作</th><th>鼠标</th><th>键盘（加速器，非必需路径）</th><th>结果 / 反馈</th><th>成本</th></tr></thead>
+<tbody>
+<tr><td>挂上</td><td>无需操作（剪贴板有图即自动挂）；或出口面板「绳上已有 N 张 · 点开」</td><td>截图完成 <code>G</code> 聚焦绳</td><td>新卡片从绳上方落到挂载点，绕<b>绳接触点</b>（<code>transform-origin:50% 0</code>）做<b>阻尼钟摆</b>（−11°→7°→−4°→2°→0，一次性 400ms 非循环），同时夹子沿自身竖直「咬合」一下（scaleY .35→1.14→1，300ms）；caption 显示来源。<b>只动刚挂上那一张</b>，不动全绳；只 transform+opacity、无 blur（性能 8.3/8.4）；<code>prefers-reduced-motion</code> 时收敛为瞬时落定</td><td>1 次 DOM 插入 + 1 次整绳重排（同屏 N≤cap）</td></tr>
+<tr><td>看清楚</td><td>单击卡片</td><td><code>Enter</code></td><td>轻预览浮层（预览即默认 18-P1），此刻按需取原图；缩略只有 1080 长边。<b>动效</b>：浮层 <code>loupeIn</code>（scale .9→1 + 淡入 200ms 一次性）、背后遮罩 <code>fadeIn</code>（纯 opacity 200ms）；关闭走 <code>.closing</code> 反向 150ms 后再 <code>display:none</code>（退场用 display 的元素不能在 none 后播动画）</td><td>1 次图片解码，复用 <code>useImagePreview.ts</code></td></tr>
+<tr><td>取下为贴图</td><td><b>按住拖出绳，位移 &gt;4px</b> 后松手 ⇒ 在落点变成原生贴图窗</td><td>轻预览里「取下为贴图」按钮 / <code>P</code></td><td>绳上移除 + 其余重排；落点即用户松手处（移动即预览 17.4）。<b>动效</b>：被取下的卡克隆进 <code>#fxLayer</code> 播 <code>flyOut</code>（上抬 52px + 缩 .86 + 转 −7° + 淡出，300ms 一次性），落点弹 <code>pinGhost</code>（<code>ghostPop</code> scale .72→1.04→1）；其余存活卡走 <b>FLIP</b> 补间滑到新位（WAAPI 200ms，见下方动画一览）</td><td>1 次建原生窗（<code>pinned_window.rs:1200</code>，现有路径）</td></tr>
+<tr><td>收起（不要这张）</td><td>卡纸右上 ×（20×20，命中区 ≥24×24 U7）</td><td><code>Delete</code></td><td>进贴图管理面板列表，<b>不删数据</b>。<b>动效</b>：卡身克隆播 <code>suckIn</code>（朝右下方面板吸入 + 缩 .3 + 淡出 300ms 一次性），其余卡 FLIP 补位</td><td>1 次 DOM 移除</td></tr>
+<tr><td>整绳收衣</td><td>「收衣」按钮 / 绳上右键「全部收下」</td><td><code>Esc</code>（第二级）</td><td>N 张进面板 + toast「绳空了」。<b>动效</b>：N 张各克隆一份同时 <code>suckIn</code> 吸向面板（每个克隆体在 <code>#fxLayer</code> 独立播、300ms 后自删），toast <code>toastIn</code> 200ms</td><td>N 次列表插入，一次性</td></tr>
+<tr><td>拖动整条绳的位置</td><td>拖两锚点之间的<b>绳本身</b>（绳是把手）</td><td>—</td><td>端点留边在 16～80 之间可调，改完写 <code>clothesline_top</code></td><td>1 次 <code>set_position</code>，走 <code>todo_island_stage.rs:451-500</code> 同款主线程队列 + 在飞闸丢帧</td></tr>
+<tr><td>超上限（cap）</td><td>自动：最旧那张先「收衣」进面板</td><td>—</td><td>toast「绳满 8 张，最早 1 张已收进贴图管理」——<b>不静默丢弃</b>（15.3）。<b>动效</b>：被挤出的最旧卡 <code>suckIn</code> 吸向面板，新卡照常 <code>hangOn</code> 挂上，其余 FLIP 补位</td><td>0 额外</td></tr>
+<tr><td>摆不下（imgW &lt; 96）</td><td>自动：多出来的卡片<b>排队不进绳</b>，出口面板那行写「绳上摆 K 张，另 M 张排队」</td><td><code>G</code> 聚焦绳后滚轮换档（加速器）</td><td>宁可不挂也不缩成看不清的纸片；排队的不消失，随时能点面板挂回</td><td>0 额外（少建 K 个节点）</td></tr>
+<tr><td>这次别挂</td><td>撤销条按钮；hover 撤销条时倒计时暂停</td><td><code>Esc</code>（第一级）</td><td>6 秒撤销条（U4 可撤销 &gt; 弹确认）；撤销＝从绳移除并记「本条不挂」。<b>动效</b>：撤销条 <code>undoIn</code>（下方滑入 18px + 淡入 200ms）；到点或 Esc 走 <code>undoOut</code>（下滑淡出 150ms）后再隐藏</td><td>1 个 one-shot 6s 计时</td></tr>
+<tr><td>关掉整个功能</td><td>设置里开关，即时生效</td><td>—</td><td>绳窗销毁，顶缘点击全部还给下层窗口。<b>动效</b>：关＝绳层 <code>ropeOut</code>（上收 16px + scaleY .5 + 淡出 200ms）播完再 <code>display:none</code>；开＝<code>ropeIn</code>（下落淡入 200ms）</td><td>见 §7/§8</td></tr>
+</tbody>
+</table>
+<p class="lead">🔴 两处要你在「鼠标全流程可达」下点头的取舍：① <b>拖出绳=取下</b> 是唯一的「手取」路径，没有拖 = 只能靠 × 和按钮（都能用鼠标，但拖出去那一下是最顺手的）；② 卡片是<b>水平顺序</b>排列、各自带独立 y，实测相邻卡片<b>不会互相压住</b>（表① 的 Δ 判据 + §3 表② 的重叠对数都为 0）——所以「被压住那张点不到」这个我上一版担心的问题<b>不存在</b>；真代价是「imgW 随张数变窄」和「条带撑高遮挡桌面顶缘」，处置见 §3 末段的排队规则。另按 18.3「预览不污染产出」：绳是屏幕顶缘实物，<b>用户截屏时相框会被截进去</b>；我不做「截屏时绳自动隐身」，只做 <code>G</code> 一键收衣。</p>
+
+<p class="lead">🎞 <b>动画一览（全事件驱动、全一次性、静止态零合成层）</b>：本稿共 18 条 <code>@keyframes</code>，逐条已在浏览器实测 <code>iteration-count=1</code>（无 infinite）、<code>document.getAnimations()</code> 空闲时恒为 <b>0</b>。① 挂上 <code>hangOn</code>+<code>clipPinch</code>；② 取下 <code>flyOut</code>+落点 <code>ghostPop</code>；③ 收起/收衣/挤出 <code>suckIn</code>；④ 重排 <b>FLIP</b>（WAAPI 200ms，只对存活卡补间，新卡走入场、退卡走克隆飞出，三者不重叠）；⑤ 轻预览 <code>loupeIn</code>+遮罩 <code>fadeIn</code>；⑥ 撤销条 <code>undoIn/Out</code>、toast <code>toastIn/Out</code>；⑦ 开关绳层 <code>ropeIn/Out</code>；⑧ 状态推进 <code>stateFlash</code>、沾污 <code>shake</code>+<code>dotPop</code>；⑨ 空绳提示 <code>fadeIn</code>。全部只动 <code>transform</code>+<code>opacity</code>（可缓存纹理，无 blur/backdrop-filter，性能 8.3/8.4）；时长只取 U2 四档 150/200/300/400ms；退场用 <code>display</code> 的元素（loupe/scrim/undo/toast/rope）先播 <code>.closing/.leaving</code> 再由 JS <code>setTimeout(时长)</code> 作隐藏权威（不靠 <code>animationend</code>，因 <code>prefers-reduced-motion</code> 下 <code>animation:none</code> 时它不 fire）；<code>prefers-reduced-motion</code> 末尾统一 <code>animation:none !important</code> 收敛为瞬时到位。</p>
+
+<h2>§6 不挑截图工具：触发链与真实时延</h2>
+<p class="lead">关键事实：<b>外部工具不需要「被支持」</b>。自家写入要报备，外部写入没人报备，所以必然被采集。</p>
+<table>
+<thead><tr><th>环节</th><th>源码</th><th>对「微信截图 / Snipaste / Win+Shift+S」意味着什么</th></tr></thead>
+<tbody>
+<tr><td>写入识别</td><td><code>clipboard_monitor.rs:224-372 PasteSuppress</code>，<code>begin_write :247</code>、<code>own_write_reason :356-371</code>；竞争闸 <code>RACE_MAX=500ms</code>、身份窗口 <code>IDENTITY_WINDOW=3000ms</code></td><td>只有自家 8 个写入点会 <code>begin_write</code>。第三方进程的写入<b>不会</b>命中 <code>own_write_skip</code> ⇒ 一定进采集分支</td></tr>
+<tr><td>采集触发</td><td><code>AddClipboardFormatListener</code> + <code>WM_CLIPBOARDUPDATE</code>，50ms 尾部防抖 + 1000ms <code>GetClipboardSequenceNumber</code> 兜底</td><td>事件驱动，非轮询 ⇒ 外部截图后<b>最快 ~50ms</b> 被读到；若那次更新被自家写入吃掉，最迟 1000ms 兜底补采</td></tr>
+<tr><td>图片分支</td><td><code>:1299-1340</code>（<code>get_image()</code>=CF_DIB、<code>MAX_IMAGE_BYTES=50MB</code>、<code>dedup.is_recent</code> <code>DEDUP_TTL=1500ms</code>）；<code>:1127-1133</code> 注释直接点名「微信截图无监听线程所以没有此竞争」</td><td>CF_DIB 是几乎所有截图工具的写法 ⇒ 链路本身通用。<b>1500ms 合并窗是「湿」的真实来源</b>，也是唯一会让挂上晚一拍的地方</td></tr>
+<tr><td>入库广播</td><td><code>process_image :1747/:1782</code> emit；自家截图另有一条 <code>screenshot.rs:1640-1643</code> emit；前端单点 <code>init.ts:110-160</code></td><td>绳层只监听 <code>clipboard-changed</code> 一个事件即覆盖两条来源 ⇒ <b>不需要给截图单独造 done 事件</b>（现无该事件，<code>pinImageAt</code> 只 invoke 不 emit）</td></tr>
+<tr><td>分级原料</td><td><code>capture_foreground_source :1376-1397</code> → <code>HistoryItem.source / source_icon</code></td><td>能拿到前台窗口标题/exe ⇒ 可稳定区分「微信/Snipaste/截图工具」与「浏览器复制图片」的<b>大多数</b>情况；<b>不能</b>当拒挂依据（白名单外的 ShareX/PixPin 会被漏）——这就是你选「全挂 + 分级」的理由</td></tr>
+</tbody>
+</table>
+<p class="lead">链路做不到的两件事，写在这里不粉饰：① <b>无法区分「截图产生的图」和「Ctrl+C 的一张网图」</b>，只能靠 <code>source</code> 启发式分级；② 自家截图若正卡在 500ms 竞争闸/3s 身份窗口里，挂上会<b>晚一拍</b>（最迟 1000ms 兜底），这一拍在舞台里点「模拟微信截图」可当场看到计时。</p>
+
+<h2>§7 开关与配置（默认开）</h2>
+<table>
+<thead><tr><th>键</th><th>默认</th><th>语义</th><th>落点（五处，照 <code>doc_capture</code> 样板）</th></tr></thead>
+<tbody>
+<tr><td><code>clothesline</code></td><td><b><code>true</code></b></td><td>总开关。关 ⇒ 绳窗销毁、停止 hover 轮询、清全部 one-shot 计时；<code>clipboard-changed</code> 采集链<b>完全不动</b>（关的是显示，不是采集）</td><td>Rust 读键 ×2（<code>clipboard_monitor.rs:623-628/646-652</code> 同族位置）；建/销窗（<code>lib.rs:628-636/800-808</code> 同族）；命令（<code>commands/history.rs:379-393</code> 同族）；前端 <code>AppConfig</code> + <code>DEFAULT_CONFIG</code>（<code>appStore.ts:~158 / ~540</code>）；设置 UI <code>ToggleRow</code>（<code>CopyPasteSection.tsx:60</code>）</td></tr>
+<tr><td><code>clothesline_only_shot</code></td><td><code>false</code></td><td>收紧档：只挂疑似截图。默认关=全挂（你拍的分级方案）；开着时非截图来源<b>不入绳但在面板可见</b>，并在设置里写清「白名单外的截图工具会漏」</td><td>同上五处</td></tr>
+<tr><td><code>clothesline_cap</code></td><td><code>8</code></td><td>绳上最多几张；超出自动收衣最旧那张</td><td>同上五处</td></tr>
+<tr><td><code>clothesline_sag</code></td><td><code>mid</code></td><td>下垂档（浅/中/深）。不做自由数值滑杆——三档足够，且每档的 imgW/条带高都能进表②预计算</td><td>同上五处</td></tr>
+<tr><td><code>clothesline_dock</code></td><td><code>top-right-reserve</code></td><td>与岛共存口径：岛显示顶右时绳的右端点让开 <code>208+12</code></td><td>同上五处</td></tr>
+</tbody>
+</table>
+<p class="lead">🔴 两条硬约束照抄源码注释：① <code>clipboard_monitor.rs:612-617</code> ⇒ 读这几个新键一律 <code>Option&lt;bool&gt;</code> 语义，缺键走默认 <code>true</code>，<b>不许 <code>unwrap_or(false)</code></b>（否则老用户升级后开关「莫名变关」，且改默认值救不了他们）；② 开关变更走既有 <code>toggle_monitor</code> 的 <code>monitor-status-changed</code> 同族广播，别新开一条事件。</p>
+
+<h2>§8 性能与红线对照（规则 8；不实测就不写「开销极小」）</h2>
+<table>
+<thead><tr><th>准则</th><th>本稿的做法</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td>8.1 新增常驻轮询/定时器前先问「不可见时会停吗」</td><td>hover 轮询 60ms 仅在<b>绳窗可见 &amp;&amp; 绳非空</b>时跑；开关关闭、绳空、显示器拔掉 ⇒ 停。代次作废照抄 <code>todo_island_hover.rs:44-45</code>，防止每次 show 叠一条线程</td><td>设计已含，<b>实测待做</b>（隐藏态 CPU 占用要在 dev 里量，不在文档里宣称数字）</td></tr>
+<tr><td>8.2 辅助窗 <code>hide()</code> 后 WebView/DOM 仍存活</td><td>绳空时两种做法：<b>A 销毁窗</b>（省内存，首挂要重建）／<b>B 隐藏常驻 + 停轮询</b>（首挂零延迟，内存常驻）。我推荐 B（无动画常驻 ⇒ 隐藏态只剩静态 DOM 树），但这是<b>待拍板 ①</b>，不替用户定</td><td>待拍板</td></tr>
+<tr><td>8.3 别把 backdrop-filter 加在重复元素上</td><td>卡纸/夹子/绳<b>零 backdrop-filter</b>；无毛玻璃。每张卡片最坏 10 个节点（挂物+夹子 2+卡纸+图+水痕+水滴+徽标+×+caption），cap 8 ⇒ <b>80 个节点 + 1 条 SVG path + 2 个端点吸盘</b>；本页自检条实时印出当前节点数</td><td>已按准则设计</td></tr>
+<tr><td>8.4 blur 与几何形变同帧动画</td><td>落定动画只有 <code>transform</code>（300ms 一次性，U2 档内）；水滴/水痕是<b>静态位图</b>，湿→干 = 一次重绘 + 至多一次位移，<b>无 blur</b></td><td>已按准则设计</td></tr>
+<tr><td>8.1 全动画一次性 / 静止态零合成层</td><td>18 条 keyframes <b>全事件驱动</b>（挂/取/收/切/状态变才播），逐条实测 <code>iteration-count=1</code>；空闲时 <code>document.getAnimations().length === 0</code>（已实测），无 infinite、无 rAF 递归、无 <code>setInterval</code> 装饰动画 ⇒ <b>静止态合成层数 = 0</b>，不随窗口数相乘（8.2）。离场克隆体（<code>#fxLayer</code>）300ms 后自删，<b>并发上限 = 一次操作影响的卡数</b>（最坏＝整绳收衣 cap 8 个克隆），非常驻</td><td>已实测（浏览器 <code>getAnimations()</code> 空闲恒 0）</td></tr>
+<tr><td>8.4 FLIP 重排成本</td><td>移除/新增后其余卡用 WAAPI <code>el.animate</code> 补间（200ms，只 <code>transform</code>，纯 translate 可缓存纹理）；只对<b>重建前后都在绳、且没在播入场/状态动画</b>的存活卡跑，新卡走入场、退卡走克隆飞出，三者互不重叠 ⇒ 单卡最多 1 条补间。重建前用 <code>offsetLeft/Top</code>（布局像素，不吃 transform/scale）快照旧位</td><td>已按准则设计（实测每张存活卡恰 1 条 WAAPI）</td></tr>
+<tr><td>U2 reduced-motion</td><td>「湿」有 caption 文字 + 水滴形状两条通道 ⇒ 关掉动效后状态仍可读（U7）</td><td>已按准则设计</td></tr>
+<tr><td>图内存</td><td>绳上只用已落盘的 1080 PNG（不额外解码原图）；放大时才解码，退预览即释放</td><td>实测待做（8 张同挂时的解码峰值内存未测，不在稿里编数）</td></tr>
+</tbody>
+</table>
+
+<h2>§9 待拍板（每题都写了我的默认选择；你不答就按默认执行）</h2>
+<table>
+<thead><tr><th>#</th><th>要点头的事</th><th>我的默认</th></tr></thead>
+<tbody>
+<tr><td>①</td><td>绳空时：销毁窗（省内存/首挂慢一拍） vs 隐藏常驻（首挂零延迟/内存常驻）</td><td><b>B 隐藏常驻 + 停轮询</b>（前提：内存增量要实测才写进注释）</td></tr>
+<tr><td>②</td><td><code>cap</code> 默认 8 / 6 / 12（表② 给得出每档的 imgW 与条带高）</td><td><b>8</b></td></tr>
+<tr><td>③</td><td>下垂档默认 浅 / 中 / 深</td><td><b>中（2.0% 跨距）</b>——1440 屏约 <span data-r="sagMid">–</span>px，够读出弧又不至于把条带撑太高</td></tr>
+<tr><td>④</td><td>单击语义：单击=放大轻预览（拖出才是取下） vs 单击=直接取下为贴图</td><td><b>单击=轻预览</b>（18-P1 预览即默认，误触成本低 17.5）</td></tr>
+<tr><td>⑤</td><td>窄屏/张数多导致 <code>imgW &lt; 96</code> 时怎么办：<b>排队不进绳</b> / 缩窄继续摆 / 强制收最旧那张进面板（注：上一版我写的「重叠垂挂导致点不到」经实测<b>不成立</b>，卡片是水平顺序排、不会互相压住）</td><td><b>排队不进绳</b>，出口面板写明「摆 K 张、另 M 张排队」+ toast</td></tr>
+<tr><td>⑥</td><td>寄的粒度（稿 3 那轮你未答的问题）：单条粒度从卡片直接寄，还是成组寄</td><td><b>单条粒度、从卡片直接寄</b>（默认执行，不再追问）</td></tr>
+<tr><td>⑦</td><td>「相框会被截进屏」是否接受（我不做截屏时绳隐身）</td><td><b>接受</b>，提供 <code>G</code> 一键收衣</td></tr>
+</tbody>
+</table>
+
+<h2>§10 落地清单（拍板后按此顺序动代码，不含本次未授权的提交/升版）</h2>
+<p class="lead">
+① <code>vite.config.ts:51-66</code> 加 <code>clothesline: resolve(projectRoot,"clothesline.html")</code> + 新 <code>src/clothesline-main.tsx</code>（&lt;300 行硬线，几何纯函数进 <code>src/lib/clothesline/anchor.ts</code>）；
+② 新 <code>src-tauri/src/clothesline.rs</code>（建窗照 <code>stack_hud.rs:696-736</code>，穿透照 <code>todo_island_hover.rs</code> 同族复用，落位用 <code>get_monitor_work_area</code>）；
+③ 材质 7 个令牌进 <code>theme.css</code> 各主题块（带 <code>ui-rule-ok</code> 豁免注释），绳层样式进新 <code>clothesline.css</code>；
+④ 前端单点：<code>init.ts:110-160</code> 旁挂一个 <code>useClothesline()</code>（订 <code>clipboard-changed</code> + <code>toggle_monitor</code> 同族状态广播），<b>不改</b>采集链；
+⑤ 配置五处（§7）+ <code>ToggleRow</code>；
+⑥ 出口面板 <code>ResultActions.tsx:154-174</code> 那一行由动作改状态行；
+⑦ 用例先行（规则 23）：<code>clotheslineGeometry.test.ts</code> 钉住悬链线反解与「重叠即收窄」不变量、<code>clotheslineGate.test.ts</code> 钉住「关显示不影响采集」与 Option 缺键语义；改前红/改后绿两份输出留手。
+</p>
+</div>
+
+<script>
+/* ══════════════ 几何：与将来写进代码的同一条公式，本页不手抄第二个数 ══════════════ */
+const SIDE = 16, GAP = 12, PAD = 8, CAP_H = 20, IMG_MAX_W = 240, IMG_MAX_H = 180, MIN_IMG_W = 96;
+const BORDER = 1, EDGE = PAD + BORDER;             // 卡纸 1px 描边：外框 = 图 + 2×(padding+border)，不并入公式就会整列 Δ2px
+const CLIP_H = 10, CLIP_W = 22;                    // 与 CSS 的 --clip-h/--clip-w 同一对数（改一处必须改两处，故列在此）
+const WET_DROP = 4;                                // 与 CSS 的 --wet-drop 同一对数：湿卡 .frame 额外 translateY(4px)
+const ISLAND_W = 208, ISLAND_RESERVE = ISLAND_W + 12;
+const SAG_K = [0.010, 0.020, 0.032], SAG_NAME = ['浅 1.0%', '中 2.0%', '深 3.2%'];
+const ASPECTS = [1.78, 1.33, 2.1, 1.6, 1.0, 1.9, 1.45, 1.2];
+const SRC_SHOT = ['PastePanda 截图', '微信截图', 'Snipaste', 'Win+Shift+S', 'PixPin 区域', '长截图'];
+const SRC_WEB = ['浏览器 Ctrl+C', '图片查看器', 'IM 收到的图'];
+
+const state = { w: 1440, n: 5, sag: 1, cap: 8, island: true, on: true, items: [], pins: [], uid: 0, enteringId: null, flashIds: [], failId: null };
+
+function solveA(S, sag) {           // sag = a*(cosh(S/2a)-1)：对 a 单调递减，二分 80 次
+  let lo = 0.5, hi = 1e6;
+  for (let i = 0; i < 80; i++) {
+    const m = (lo + hi) / 2, f = m * (Math.cosh(S / (2 * m)) - 1);
+    if (!isFinite(f) || f > sag) lo = m; else hi = m;
+  }
+  return (lo + hi) / 2;
+}
+function arcUp(x, a, mid) { return a * (Math.cosh((x - mid) / a) - 1); }   // 数学弧高：mid 处 0，端点处最大
+function tangentDeg(x, a, mid) { return Math.atan(Math.sinh((x - mid) / a)) * 180 / Math.PI; }
+
+function imgWFor(S, k) { return Math.min(IMG_MAX_W, Math.floor((S - GAP * (k - 1)) / k) - 2 * EDGE); }
+
+function geo(w, n, sagIdx, island, items) {
+  const x0 = SIDE, x1 = w - SIDE - (island ? ISLAND_RESERVE : 0), S = Math.max(120, x1 - x0);
+  if (n <= 0) return { x0, x1, S, sag: 0, a: 1, mid: (x0 + x1) / 2, imgW: 0, total: 0, cards: [],
+                       strip: SIDE + 80, overlap: 0, queued: 0, overflow: 0, beyondRope: 0 };
+  const sag = Math.min(60, Math.max(6, S * SAG_K[sagIdx]));
+  const a = solveA(S, sag), mid = (x0 + x1) / 2;
+  // 窄屏/张数过多时不缩成纸片：能摆下几张摆几张，其余「排队不进绳」（见 §5 超上限那一行）
+  let k = n, queued = 0;
+  if (imgWFor(S, n) < MIN_IMG_W) {
+    k = 1;
+    for (let t = 2; t <= n; t++) { if (imgWFor(S, t) >= MIN_IMG_W) k = t; else break; }
+    queued = n - k;
+  }
+  const imgW = imgWFor(S, k);
+  const cards = [];
+  let total = 0;
+  for (let i = 0; i < k; i++) {
+    const it = items[i] || { aspect: ASPECTS[i % ASPECTS.length] };
+    const iw = imgW, ih = Math.min(IMG_MAX_H, Math.round(iw / (it.aspect || 1.6)));
+    cards.push({ iw, ih, ow: iw + 2 * EDGE, oh: ih + PAD + CAP_H + 2 * BORDER, aspect: it.aspect });
+    total += iw + 2 * EDGE;
+  }
+  total += GAP * (k - 1);
+  const overflow = Math.max(0, total - S);
+  let start = x0;                                    // 从左端点起顺序排，不居中：居中会把首张推到绳中段、末端留白
+  const out = [];
+  let cum = 0, maxRight = 0;
+  for (let i = 0; i < k; i++) {
+    const cx = start + cum + cards[i].ow / 2; cum += cards[i].ow + GAP;
+    // 屏幕坐标：端点最高（下垂 0），中段最低（下垂 = sag）。drop = sag − 弧高。
+    const drop = sag - arcUp(cx, a, mid);
+    maxRight = Math.max(maxRight, cx + cards[i].ow / 2);
+    const clips = imgW >= 150
+      ? [{ frac: 0.26, deg: -tangentDeg(cx - cards[i].ow * 0.24, a, mid) },
+         { frac: 0.74, deg: -tangentDeg(cx + cards[i].ow * 0.24, a, mid) }]
+      : [{ frac: 0.5, deg: -tangentDeg(cx, a, mid) }];
+    out.push({ ...cards[i], cx, y: drop, deg: clips[0].deg, clips, wet: !!(items[i] && items[i].status === 'wet') });
+  }
+  // 相邻盒子的真实压住判定（水平顺序排列 + 各自 y ⇒ 只有 y 差小于盒宽才会互相盖住）
+  let overlap = 0;
+  for (let i = 1; i < out.length; i++) {
+    const dy = Math.abs(out[i].y - out[i - 1].y);
+    const cover = (out[i - 1].cx + out[i - 1].ow / 2) - (out[i].cx - out[i].ow / 2);
+    if (cover > 0 && dy < out[i].oh - 4) overlap++;
+  }
+  const strip = Math.max(SIDE + sag, ...out.map((o) => SIDE + o.y + o.oh)) + 14;   // +湿滴余量
+  return { x0, x1, S, sag, a, mid, imgW, total, cards: out, strip, overlap, queued,
+           overflow, beyondRope: Math.max(0, maxRight - x1) };
+}
+
+/* ══════════════ 渲染（input 只改 CSS 变量与位置，不做任何 DOM 度量） ══════════════ */
+const stage = document.getElementById('stage');
+const ropeLayer = document.getElementById('ropeLayer');
+const hangsBox = document.getElementById('hangs');
+
+function mkItem(kind) {
+  const shot = kind === 'shot';
+  state.uid++;
+  return {
+    id: state.uid, kind, aspect: ASPECTS[state.uid % ASPECTS.length],
+    src: shot ? SRC_SHOT[state.uid % SRC_SHOT.length] : SRC_WEB[state.uid % SRC_WEB.length],
+    status: shot ? 'wet' : 'dry', t: '14:0' + (state.uid % 9),
+  };
+}
+function seed() { state.items = []; for (let i = 0; i < state.n; i++) state.items.push(mkItem(i % 2 ? 'shot' : 'web')); }
+
+function paintRope(g) {
+  const pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const x = g.x0 + (g.S * i) / 48;
+    pts.push((i ? 'L' : 'M') + x.toFixed(1) + ',' + (SIDE + g.sag - arcUp(x, g.a, g.mid)).toFixed(1));
+  }
+  document.getElementById('ropePath').setAttribute('d', pts.join(' '));
+  ropeLayer.style.setProperty('--S-total', state.w + 'px');
+  ropeLayer.style.width = state.w + 'px';
+  ropeLayer.style.setProperty('--strip', Math.round(g.strip) + 'px');
+  ropeLayer.style.height = Math.round(g.strip) + 'px';
+  document.getElementById('anchorL').style.left = (g.x0 - 6) + 'px';
+  document.getElementById('anchorR').style.left = (g.x1 - 6) + 'px';
+}
+
+function paintCards(g) {
+  // FLIP-First：重建 DOM 前先把每张在绳卡的布局位置记下来（offsetLeft/Top 是布局像素，不吃 transform/scale）。
+  const oldPos = new Map();
+  for (const old of hangsBox.children) {
+    if (old.dataset && old.dataset.id) oldPos.set(+old.dataset.id, [old.offsetLeft, old.offsetTop]);
+  }
+  hangsBox.innerHTML = '';
+  g.cards.forEach((c, i) => {
+    const it = state.items[i]; if (!it) return;
+    const el = document.createElement('div');
+    const entering = it.id === state.enteringId;
+    const flashing = state.flashIds.indexOf(it.id) >= 0;
+    const failing = state.failId === it.id;
+    el.className = 'hang' + (it.status === 'wet' ? ' wet st-state' : '') + (it.kind === 'web' ? ' webkind' : '') +
+      (entering ? ' entering' : '') + (flashing ? ' st-flash' : '') + (failing ? ' failing' : '');
+    el.dataset.id = it.id;
+    el.style.setProperty('--cx', c.cx.toFixed(1) + 'px');
+    el.style.setProperty('--cy', (SIDE + c.y).toFixed(1) + 'px');
+    el.style.setProperty('--iw', c.iw + 'px');
+    el.style.setProperty('--ih', c.ih + 'px');
+    el.style.setProperty('--tilt', c.clips[0].deg.toFixed(2) + 'deg');
+    const statusWord = { wet: '湿·处理中', damp: '半干', dry: '干', fail: '沾污·读取失败' }[it.status];
+    el.innerHTML =
+      c.clips.map((cl) => '<span class="clip' + (c.clips.length === 2 ? (cl.frac < 0.5 ? ' dualL' : ' dualR') : '') +
+        '" style="--tilt:' + cl.deg.toFixed(2) + 'deg"></span>').join('') +
+      '<div class="frame"><div class="shot' + (it.kind === 'web' ? ' web' : '') + '"></div>' +
+      (it.status === 'fail' ? '<span class="dotty"></span>' : '') +
+      (it.status === 'wet' ? '<div class="trace"></div><div class="drip"></div>' : '') +
+      '<div class="badge">' + statusWord + '</div>' +
+      '<button class="xbtn2" data-act="gather1" title="收下（进贴图管理面板，不删数据）">×</button>' +
+      '<div class="capTxt">' + statusWord + ' · ' + it.src + ' · ' + it.t + '</div></div>';
+    hangsBox.appendChild(el);
+    if (entering) {
+      // 一次性：动画播完就摘掉 .entering 并清 enteringId，后续任何重绘（滑杆/状态推进/1500ms 湿转半干）都不再重播。
+      // 450ms 硬兜底 = 动画被重绘打断（元素被 innerHTML 重建、animationend 不 fire）时也不会把 enteringId 卡住。
+      // 落定后补一次重量：入场期间 measure 会把这张标「动画中·跳过」，摆停了才量得到它的真实几何。
+      const done = () => { el.classList.remove('entering'); if (state.enteringId === it.id) state.enteringId = null; scheduleMeasure(); };
+      el.addEventListener('animationend', done, { once: true });
+      setTimeout(done, 450);
+    } else if (flashing || failing) {
+      // 状态推进 / 沾污也是一次性：播完摘类并清标记，避免下一次重绘重播；落定后补测。
+      const cls = failing ? 'failing' : 'st-flash';
+      const done = () => { el.classList.remove(cls); scheduleMeasure(); };
+      el.addEventListener('animationend', done, { once: true });
+      setTimeout(done, 360);
+    } else if (oldPos.has(it.id)) {
+      // FLIP-Invert+Play：只对「重建前后都在绳上、且没在播入场/状态动画」的存活卡做补间。
+      // 新挂上的卡走 entering，退场的卡已被 flyOut 克隆到 fxLayer，两者都不进这里。
+      const [ox, oy] = oldPos.get(it.id);
+      const dx = ox - el.offsetLeft, dy = oy - el.offsetTop;
+      if ((Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) && !RM.matches && el.animate) {
+        el.animate(
+          [{ transform: 'translateX(-50%) translate(' + dx + 'px,' + dy + 'px)' },
+           { transform: 'translateX(-50%) translate(0,0)' }],
+          { duration: ams(200), easing: 'cubic-bezier(.22,.61,.36,1)' }
+        );
+      }
+    }
+  });
+  // 一次性标记用完即清：flash/fail 只在触发它的那一次重绘里播，不留在 state 里被后续重绘重播。
+  state.flashIds = []; state.failId = null;
+  ropeLayer.classList.toggle('ropeEmpty', state.items.length === 0);
+  const hn = document.getElementById('hangN'); if (hn) hn.textContent = state.items.length;
+  const hs = document.getElementById('hangSub');
+  if (hs) hs.textContent = !state.on ? '功能关闭：绳窗已销毁，顶缘点击还给下层窗口'
+    : (g.queued ? '绳上摆 ' + g.cards.length + ' 张，另 ' + g.queued + ' 张排队不进绳（imgW 已低于 ' + MIN_IMG_W + 'px）'
+                 : '已自动挂上（微信/Snipaste 的截图同样会）');
+}
+
+/* ══════════════ 度量：只在 change / 显式重测时跑，用 offset*（布局像素，不吃 scale） ══════════════ */
+function rotDeg(el) {
+  if (!el) return NaN;
+  const tf = getComputedStyle(el).transform;
+  if (!tf || tf === 'none') return 0;
+  const m = tf.match(/matrix\(([^)]+)\)/); if (!m) return NaN;
+  const p = m[1].split(',').map(Number);
+  return Math.atan2(p[1], p[0]) * 180 / Math.PI;
+}
+function measure(g) {
+  const t0 = performance.now();
+  const k = parseFloat(getComputedStyle(stage).getPropertyValue('--k')) || 1;
+  const sr = stage.getBoundingClientRect();
+  const rows = [];
+  g.cards.forEach((c, i) => {
+    const el = hangsBox.children[i];
+    const clips = el ? [...el.querySelectorAll('.clip')] : [];
+    const degs = clips.map(rotDeg);
+    // 入场动画期间 .frame 被 keyframe 位移/旋转，此刻量它必然假红 ⇒ 整行标「动画中·跳过」，不计偏差。
+    const animating = !!(el && el.classList.contains('entering'));
+    // 两套实读并排：
+    //  ① offset*（布局像素，整数）——判据。offsetWidth/Height 与公式**精确相等**（Δ0）；offsetLeft/Top 是整数、
+    //     而公式 cx / y 可能带 .5 ⇒ 位置项有 ≤0.5px 的整数取整地板，这是 offset API 的固有精度、不是几何误差。
+    //  ② rect ÷ 舞台 scale——参考。getBoundingClientRect 会被吸附到**物理像素**，本机 dpr=1.25 时 1 物理px=0.8 CSS px，
+    //     即便把舞台 --k 临时置 1 也仍有 ~0.4px 量化地板 ⇒ 只印不作判据（详见下方 lead）。
+    const edge = el ? el.offsetLeft - el.offsetWidth / 2 : NaN;
+    const fr = el ? el.querySelector('.frame').getBoundingClientRect() : null;
+    const fEdge = fr ? (fr.left - sr.left) / k : NaN, fTop = fr ? (fr.top - sr.top) / k : NaN;
+    const fW = fr ? fr.width / k : NaN, fH = fr ? fr.height / k : NaN;
+    const devInt = (el && !animating) ? Math.max(
+      Math.abs(edge - (c.cx - c.ow / 2)),
+      Math.abs(el.offsetTop - (SIDE + c.y)),
+      Math.abs(el.querySelector('.frame').offsetWidth - c.ow),
+      Math.abs(el.querySelector('.frame').offsetHeight - c.oh),
+      Math.max(...c.clips.map((cl, j) => Math.abs((degs[j] ?? NaN) - cl.deg)))
+    ) : Infinity;
+    const devFrac = (el && !animating) ? Math.max(
+      Math.abs(fEdge - (c.cx - c.ow / 2)),
+      Math.abs(fTop - (SIDE + c.y + CLIP_H / 2 + (c.wet ? WET_DROP : 0))),  // 框顶 = 挂点 y + 夹子半高（.frame 的 margin-top:calc(--clip-h/2)）+ 湿卡 translateY(--wet-drop)
+      Math.abs(fW - c.ow), Math.abs(fH - c.oh),
+      Math.max(...c.clips.map((cl, j) => Math.abs((degs[j] ?? NaN) - cl.deg)))
+    ) : Infinity;
+    rows.push({ i, c, el, animating, edge, fEdge, fTop, fW, fH, degs: degs.map((d) => d.toFixed(2)).join('/'),
+                devInt: Number.isFinite(devInt) ? devInt : Infinity, devFrac: Number.isFinite(devFrac) ? devFrac : Infinity });
+  });
+  const cost = performance.now() - t0;
+  const fmt = (v, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : '–');
+  let bad = 0;
+  document.getElementById('geoT').innerHTML = rows.map((r) => {
+    if (r.animating) return '<tr><td class="n">' + (r.i + 1) + '</td>' +
+      '<td class="n">' + fmt(r.c.cx) + '</td><td class="n">' + fmt(r.c.y) + '</td><td class="n">' + fmt(r.c.deg, 2) + '°</td>' +
+      '<td class="n">' + r.c.clips.length + '（' + r.c.clips.map((cl) => cl.deg.toFixed(2) + '°').join(' / ') + '）</td>' +
+      '<td class="n">' + r.c.ow + '×' + r.c.oh + '</td>' +
+      '<td class="n">—（入场动画进行中）</td><td class="warn">动画中·跳过（落定后自动重量）</td></tr>';
+    if (!(r.devInt <= 0.5)) bad++;   // 判据=offset 整数口径：w/h 精确 Δ0，位置 ≤0.5px 整数地板（见 lead）
+    return '<tr><td class="n">' + (r.i + 1) + '</td>' +
+      '<td class="n">' + fmt(r.c.cx) + '</td><td class="n">' + fmt(r.c.y) + '</td><td class="n">' + fmt(r.c.deg, 2) + '°</td>' +
+      '<td class="n">' + r.c.clips.length + '（' + r.c.clips.map((cl) => cl.deg.toFixed(2) + '°').join(' / ') + '）</td>' +
+      '<td class="n">' + r.c.ow + '×' + r.c.oh + '</td>' +
+      '<td class="n">offset 框 ' + (r.el ? r.el.querySelector('.frame').offsetWidth + '×' + r.el.querySelector('.frame').offsetHeight : '–') +
+      ' · 左缘 ' + fmt(r.edge, 0) + ' · 顶 ' + (r.el ? r.el.offsetTop : '–') + ' · 夹 ' + r.degs +
+      '（rect÷k 参考：' + fmt(r.fW, 1) + '×' + fmt(r.fH, 1) + ' / 左 ' + fmt(r.fEdge, 1) + ' 顶 ' + fmt(r.fTop, 1) + '）</td>' +
+      '<td class="' + (r.devInt <= 0.5 ? 'ok' : 'bad') + '">Δ' + fmt(r.devInt, 2) + 'px（offset 判据，≤0.5 达标）' +
+      ' · rect÷k Δ' + fmt(r.devFrac, 2) + '（dpr 量化，仅参考）' + (r.el ? '' : ' · 未渲染') + '</td></tr>';
+  }).join('');
+
+  const widths = [1366, 1440, 1920, 2560];
+  let wide = '';
+  widths.forEach((w) => {
+    for (let n = 1; n <= 12; n++) {
+      const gg = geo(w, n, state.sag, true, itemsOf(n));
+      const cur = w === state.w && n === state.n;
+      wide += '<tr' + (cur ? ' style="background:var(--input-bg)"' : '') + '><td class="n">' + w + '</td><td class="n">' + n + '</td>' +
+        '<td class="n">' + Math.round(gg.S) + '</td><td class="n">' + gg.imgW + '</td>' +
+        '<td class="n">' + Math.round(gg.total) + '</td>' +
+        '<td class="' + (gg.overflow > 0 ? 'bad' : 'ok') + '">' + (gg.overflow > 0 ? '越绳右端 ' + Math.round(gg.beyondRope) + 'px' : '不越') + '</td>' +
+        '<td class="n">' + Math.round(gg.strip) + '</td><td class="n">' + fmt(gg.sag) + '</td>' +
+        '<td class="n">' + gg.cards.length + ' 摆 / ' + gg.queued + ' 排队</td>' +
+        '<td class="n">' + (state.island ? '右端让开 ' + ISLAND_RESERVE : '未让') + '</td>' +
+        '<td>' + (gg.imgW < 140 ? '<span class="warn">窄（imgW ' + gg.imgW + '）</span>' : '宽裕') + (cur ? ' ← 当前档' : '') + '</td></tr>';
+    }
+  });
+  document.getElementById('wideT').innerHTML = wide;
+  const g5 = geo(1440, 5, state.sag, true, itemsOf(5)), g6 = geo(1440, 6, state.sag, true, itemsOf(6)), g8 = geo(1440, 8, state.sag, true, itemsOf(8));
+  put('w5', g5.imgW); put('w6', g6.imgW); put('w8', g8.imgW);
+  put('sagMid', fmt(geo(1440, 5, 1, true, itemsOf(5)).sag, 0));
+  put('stripNow', Math.round(g.strip));
+  put('sNow', Math.round(g.S));
+  put('overlapNow', g.overlap + ' 对');
+  document.getElementById('geoSrc').textContent = 'geoT ' + rows.length + ' 行 / wideT ' + widths.length * 12 + ' 行 / measure ' + fmt(cost, 1) + 'ms';
+  return bad;
+}
+function itemsOf(n) { const r = []; for (let i = 0; i < n; i++) r.push({ aspect: ASPECTS[i % ASPECTS.length] }); return r; }
+function curGeo() { return geo(state.w, state.items.length, state.sag, state.island, state.items); }
+function put(k, v) { document.querySelectorAll('[data-r="' + k + '"]').forEach((e) => (e.textContent = v)); }
+
+/* ══════════════ 量具自检（逐表 cssRules 条数 + 命中判据 + overflow + 新层是否在源码） ══════════════ */
+function selfCheck(badDev) {
+  const sheets = [...document.styleSheets].map((s) => {
+    let n = -1, err = '';
+    try { n = s.cssRules.length; } catch (e) { err = 'SecurityError'; }
+    return { href: ((s.href || '').split('/').pop() || 'inline-style'), n, err };
+  });
+  const need = { 'globals.css': 1, 'theme.css': 1, 'screenshot.css': 1, 'buttons.css': 1, 'PinnedPanel.module.css': 1 };
+  const missing = Object.keys(need).filter((k) => !sheets.some((s) => s.href === k && s.n > 0));
+  const has = (sel) => { try { return [...document.styleSheets].some((s) => [...s.cssRules].some((r) => (r.selectorText || '').includes(sel))); } catch (e) { return false; } };
+  const hitAct = has('.act-panel'), hitPin = has('pin-float-img'), hitPanel = has('.panel');
+  const newLayerInSource = has('.hangRow');      // 旧稿类名：若命中说明我 link 到了别的东西
+  const bo = getComputedStyle(document.body).overflow, ho = getComputedStyle(document.documentElement).overflow;
+  const clsMap = (() => { try { const m = new Map(); [...document.styleSheets].forEach((s) => [...s.cssRules].forEach((r) => { const t = r.selectorText || ''; const g = t.match(/\.(_[A-Za-z0-9]+_[0-9a-f]{4,6}_\d+)/g); if (g) g.forEach((x) => m.set(x.slice(2).split('_')[1], x)); })); return m; } catch (e) { return new Map(); } })();
+  const ok = missing.length === 0 && hitAct && hitPin && hitPanel && !newLayerInSource &&
+    bo !== 'hidden' && ho !== 'hidden' && badDev === 0 && document.querySelectorAll('#pp .panel').length >= 0;
+  document.getElementById('probe').className = ok ? '' : 'bad';
+  document.getElementById('probe').innerHTML =
+    '<b>量具自检</b>：样式表 ' + sheets.map((s) => s.href + '(' + (s.err || s.n) + ')').join(' + ') +
+    ' ｜ 缺表 ' + (missing.length ? '<span class="bad">' + missing.join(',') + '</span>' : '<span class="ok">无</span>') +
+    ' ｜ 真规则命中 .act-panel ' + (hitAct ? '<span class="ok">✓</span>' : '<span class="bad">✗ 读数作废</span>') +
+    ' · .pin-float-img ' + (hitPin ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') +
+    ' · PinnedPanel .panel ' + (hitPanel ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>') +
+    '（module.css 走 file/静态服务器=字面类名 ✓；若经 Vite 打开则类名被作用域化、上面会全红）' +
+    ' ｜ 作用域类名映射 ' + clsMap.size + ' 条' +
+    ' ｜ 旧稿 .hangRow 已在源码? ' + (newLayerInSource ? '<span class="bad">是（说明 link 错表）</span>' : '<span class="ok">否（绳层确为本稿新增）</span>') +
+    ' ｜ overflow html/body=' + ho + '/' + bo + (bo === 'hidden' || ho === 'hidden' ? ' <span class="bad">← 文档被钉死</span>' : ' <span class="ok">✓ 可滚</span>') +
+    ' ｜ 公式↔实读偏差行 ' + (badDev === 0 ? '<span class="ok">0</span>' : '<span class="bad">' + badDev + '</span>') +
+    ' ｜ 主题 ' + document.documentElement.dataset.theme + ' ｜ 绳窗 ' + (state.on ? '开' : '关') +
+    ' ｜ 最坏 DOM 节点 ' + (hangsBox.querySelectorAll('.hang').length * 10 + 3) + '（cap ' + state.cap + ' 时 ' + (state.cap * 10 + 3) + '）';
+  return ok;
+}
+
+/* ══════════════ 六主题对比度（每主题只读一次；alpha 一律按桌面底色合成后再比，不许拿透明色直接算） ══════════════ */
+function parseColor(str) {
+  if (!str) return null;
+  str = String(str).trim();
+  let m = str.match(/^color\(srgb\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)(?:\s*\/\s*([\d.]+))?\)/);
+  if (m) return { r: +m[1] * 255, g: +m[2] * 255, b: +m[3] * 255, a: m[4] === undefined ? 1 : +m[4] };
+  m = str.match(/^rgba?\(([^)]+)\)$/);
+  if (m) { const q = m[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat); return { r: q[0], g: q[1], b: q[2], a: q.length > 3 ? q[3] : 1 }; }
+  m = str.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (m) { let s = m[1]; if (s.length === 3) s = s.split('').map((c) => c + c).join('');
+    return { r: parseInt(s.slice(0, 2), 16), g: parseInt(s.slice(2, 4), 16), b: parseInt(s.slice(4, 6), 16), a: 1 }; }
+  return null;
+}
+function over(fg, bg) { return { r: fg.a * fg.r + (1 - fg.a) * bg.r, g: fg.a * fg.g + (1 - fg.a) * bg.g, b: fg.a * fg.b + (1 - fg.a) * bg.b, a: 1 }; }
+function lum(c) { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); }
+function ratio(c1, c2) { const l1 = lum(c1), l2 = lum(c2); return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05); }
+function deskStops() {
+  // 桌面是渐变，没有单一底色 ⇒ 从 computed background-image 里把真实色标抠出来，取最暗与最亮两档做最差判据
+  const bi = getComputedStyle(stage.querySelector('.desk')).backgroundImage;
+  const stops = [];
+  const re = /(rgb[a]?\([^)]+\)|#[0-9a-fA-F]{3,6})/g;
+  let mm; while ((mm = re.exec(bi)) !== null) { const c = parseColor(mm[1]); if (c) stops.push(c); }
+  if (!stops.length) return [];
+  return [stops.reduce((p, c) => (lum(c) < lum(p) ? c : p)), stops.reduce((p, c) => (lum(c) > lum(p) ? c : p))];
+}
+function contrastTable() {
+  const themes = ['ocean', 'midnight', 'forest', 'blossom', 'dawn', 'ocean-dark'];
+  const keep = document.documentElement.dataset.theme, rows = [];
+  const probe = document.createElement('div');
+  probe.innerHTML = '<div class="frame"><div class="capTxt">x</div><div class="badge">y</div></div>';
+  document.body.appendChild(probe);
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0';
+  const stops = deskStops();
+  themes.forEach((t) => {
+    document.documentElement.dataset.theme = t;
+    const cs = getComputedStyle(probe.querySelector('.frame'));
+    const paper = parseColor(cs.backgroundColor);
+    const ink = parseColor(getComputedStyle(probe.querySelector('.capTxt')).color);
+    const bcs = getComputedStyle(probe.querySelector('.badge'));
+    const badgeBg = over(parseColor(bcs.backgroundColor), paper);
+    const badgeInk = parseColor(bcs.color);
+    const rootCs = getComputedStyle(document.documentElement);
+    const ropeRaw = parseColor(rootCs.getPropertyValue('--hang-rope'));
+    const rPaper = paper && ink ? ratio(ink, paper) : NaN;
+    const rBadge = ratio(badgeInk, badgeBg);
+    let rRope = NaN, worstStop = null;
+    if (ropeRaw && stops.length) {
+      rRope = Math.min(...stops.map((s) => ratio(over(ropeRaw, s), s)));
+      worstStop = stops.reduce((p, s) => (ratio(over(ropeRaw, s), s) < ratio(over(ropeRaw, p), p) ? s : p));
+    }
+    const okText = rPaper >= 4.5, okBadge = rBadge >= 4.5, okRope = rRope >= 3;
+    rows.push('<tr><td class="n">' + t + '</td>' +
+      '<td class="n">' + (paper ? paper.r.toFixed(0) + ',' + paper.g.toFixed(0) + ',' + paper.b.toFixed(0) : '–') + '</td>' +
+      '<td class="' + (okText ? 'ok' : 'bad') + '">' + rPaper.toFixed(2) + ':1</td>' +
+      '<td class="' + (okBadge ? 'ok' : 'bad') + '">' + rBadge.toFixed(2) + ':1</td>' +
+      '<td class="' + (okRope ? 'ok' : 'bad') + '">' + (Number.isFinite(rRope) ? rRope.toFixed(2) + ':1（合成于 ' +
+        (worstStop ? worstStop.r.toFixed(0) + ',' + worstStop.g.toFixed(0) + ',' + worstStop.b.toFixed(0) : '–') + '）' : '–') + '</td>' +
+      '<td>' + (okText && okBadge && okRope ? '<span class="ok">过（U7）</span>' : '<span class="bad">不过，落地前改令牌</span>') + '</td></tr>');
+  });
+  document.documentElement.dataset.theme = keep;
+  probe.remove();
+  document.getElementById('contrastT').innerHTML = rows.join('');
+}
+
+/* ══════════════ 交互：点=轻预览 / 拖出 4px=取下变贴图 / Esc 两级取消 / 撤销条 ══════════════ */
+let undoTimer = null, undoLeft = 0, hoverPause = false;
+const RM = window.matchMedia('(prefers-reduced-motion: reduce)');
+const ams = (ms) => (RM.matches ? 0 : ms);            // reduced-motion 时长归零：瞬时到位，隐藏不依赖 animationend
+const fxLayer = document.getElementById('fxLayer');
+const cardEl = (id) => hangsBox.querySelector('.hang[data-id="' + id + '"]');
+
+/* 离场：把「正要移除」的卡克隆进 fxLayer（落在它当前 offset 处）播一次性飞出，再删克隆。
+   必须在 paint() 重建之前调用（重建后原元素就没了）。mode='fly' 上抬（取下为贴图）/ 'suck' 吸向右下面板（收进）。 */
+function flyOut(el, mode) {
+  if (!el) return;
+  const d = ams(300);
+  if (d === 0) return;                                // reduced-motion：不克隆，直接消失
+  const clone = el.cloneNode(true);
+  clone.classList.remove('entering', 'drag', 'st-flash', 'failing');
+  clone.classList.add(mode === 'suck' ? 'suck' : 'fly');
+  clone.style.left = el.offsetLeft + 'px';
+  clone.style.top = el.offsetTop + 'px';
+  fxLayer.appendChild(clone);
+  setTimeout(() => clone.remove(), d + 30);
+}
+/* 退场元素（display 由 .on 控制）：加 .closing 播淡出，setTimeout 后摘 .on+.closing（reduced-motion 时 0ms 立即摘） */
+function deferHide(el, ms) {
+  const d = ams(ms);
+  clearTimeout(el._ht);
+  if (d === 0) { el.classList.remove('on', 'closing'); return; }
+  el.classList.remove('on'); el.classList.add('closing');   // 去掉 .on 免得进场动画和退场动画打架
+  el._ht = setTimeout(() => el.classList.remove('closing'), d);
+}
+function showScrim() { const s = document.getElementById('scrim'); clearTimeout(s._ht); s.classList.remove('closing'); s.style.display = 'block'; if (ams(200)) s.classList.add('show'); }
+function hideScrim() {
+  const s = document.getElementById('scrim'); const d = ams(150); clearTimeout(s._ht);
+  if (d === 0) { s.style.display = 'none'; s.classList.remove('show', 'closing'); return; }
+  s.classList.remove('show'); s.classList.add('closing');
+  s._ht = setTimeout(() => { s.style.display = 'none'; s.classList.remove('closing'); }, d);
+}
+/* 绳层显隐（开关）：关=上收淡出后 display:none，开=下落淡入。集中在这里，paintCards 不再直接 toggle .off */
+function setRopeVisible(on) {
+  const r = ropeLayer; clearTimeout(r._vt);
+  if (on) {
+    r.classList.remove('off', 'leaving');
+    const d = ams(200);
+    if (d) { r.classList.add('entering-rope'); r._vt = setTimeout(() => r.classList.remove('entering-rope'), d + 20); }
+  } else {
+    const d = ams(200);
+    if (d === 0) { r.classList.add('off'); r.classList.remove('leaving', 'entering-rope'); return; }
+    r.classList.remove('entering-rope'); r.classList.add('leaving');
+    r._vt = setTimeout(() => { r.classList.add('off'); r.classList.remove('leaving'); }, d);
+  }
+}
+function showToast(msg, ms = 2600) {
+  const t = document.getElementById('toast'); t.textContent = msg;
+  clearTimeout(t._h); clearTimeout(t._ht); t.classList.remove('closing'); t.classList.add('on');
+  t._h = setTimeout(() => deferHide(t, 150), ms);
+}
+function showUndo(txt) {
+  const u = document.getElementById('undoBar'); document.getElementById('undoTxt').textContent = txt;
+  clearTimeout(u._ht); u.classList.remove('closing'); u.classList.add('on'); undoLeft = 6; hoverPause = false; tickUndo();
+}
+function tickUndo() {
+  clearTimeout(undoTimer);
+  document.getElementById('undoCd').textContent = undoLeft.toFixed(1) + 's';
+  if (undoLeft <= 0) { deferHide(document.getElementById('undoBar'), 150); return; }
+  undoTimer = setTimeout(() => { if (!hoverPause) undoLeft -= 0.1; tickUndo(); }, 100);
+}
+document.getElementById('undoBar').addEventListener('mouseenter', () => (hoverPause = true));
+document.getElementById('undoBar').addEventListener('mouseleave', () => (hoverPause = false));
+document.getElementById('undoBtn').onclick = () => {
+  const it = state.items[state.items.length - 1];
+  if (it) flyOut(cardEl(it.id), 'suck');                 // 撤下的那张吸进面板，不是凭空消失
+  state.items.pop(); undoLeft = 0; tickUndo(); paint(); showToast('已从绳上取下，本条不再自动挂');
+};
+
+let loupeOn = false;
+function openLoupe(el, it) {
+  const l = document.getElementById('loupe');
+  clearTimeout(l._ht); l.classList.remove('closing'); l.classList.add('on'); loupeOn = true;
+  document.getElementById('loupeCap').textContent = it.status + ' · ' + it.src + ' · ' + it.t + ' · 原图此刻才解码';
+  l.dataset.id = it.id;
+  showScrim();
+}
+document.getElementById('loupe').addEventListener('click', (e) => {
+  const b = e.target.closest('.lbtn'); if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'close') { closeLoupe(); return; }
+  const it = state.items.find((x) => x.id === +document.getElementById('loupe').dataset.id);
+  if (!it) { closeLoupe(); return; }
+  if (act === 'pin') { detachToPin(it, null, 640, 300); closeLoupe(); }
+  else if (act === 'copy') showToast('复制（复用现有剪贴板写入链，走 begin_write 报备）');
+  else if (act === 'rc') showToast('寄给远程：单条粒度，从卡片直接寄（沿用稿3 默认，见 §9 ⑥）');
+});
+document.getElementById('scrim').onclick = () => closeLoupe();
+function closeLoupe() { deferHide(document.getElementById('loupe'), 150); hideScrim(); loupeOn = false; }
+
+function detachToPin(it, el, px, py) {
+  flyOut(el || cardEl(it.id), 'fly');                            // 拖出绳：卡身向上飞离（克隆到 fxLayer，原卡随重建消失）
+  const i = state.items.findIndex((x) => x.id === it.id);
+  if (i >= 0) state.items.splice(i, 1);
+  const g = geo(state.w, state.items.length, state.sag, state.island, state.items);
+  const c = g.cards[Math.min(i, g.cards.length - 1)] || { iw: 200, ih: 140 };
+  const ghost = document.createElement('div');
+  ghost.className = 'pinGhost';
+  ghost.style.setProperty('--pw', c.iw + 'px'); ghost.style.setProperty('--ph', c.ih + 'px');
+  ghost.style.left = (px != null ? px : 520) + 'px'; ghost.style.top = (py != null ? py : 300) + 'px';
+  ghost.innerHTML = '<div class="gbar">×</div><div class="gnote">取衣后 = 原生贴图窗（4px 圆角 / 空闲描边 α0.35 / 关闭键 20dip 边距 7dip）</div>';
+  ghost.querySelector('.gbar').onclick = () => { ghost.remove(); addPanel(it); showToast('收回贴图管理面板（数据不删）'); };
+  stage.appendChild(ghost);
+  showToast('拖出绳 ⇒ 在松手处建贴图窗（pinned_window.rs:1200，现有路径）');
+  paint();
+}
+function addPanel(it) {
+  const list = document.getElementById('ppList');
+  const em = list.querySelector('.empty'); if (em) em.remove();
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = '<span class="thumb thumbPh"></span><span class="name">' + it.src + ' ' + it.t + ' 收衣</span><span class="iconBtn">挂回</span><span class="dangerBtn">删</span>';
+  row.querySelector('.iconBtn').onclick = () => { state.items.push(it); state.enteringId = it.id; rebuildPanel(); paint(); showToast('已重新挂上绳子'); };
+  list.appendChild(row); rebuildPanel();
+}
+function rebuildPanel() {
+  const list = document.getElementById('ppList');
+  document.getElementById('ppCount').textContent = list.querySelectorAll('.row').length;
+  if (!list.querySelectorAll('.row').length) list.innerHTML = '<div class="empty">绳上收下来的贴图会列在这里（数据不删）</div>';
+}
+
+let drag = null;
+hangsBox.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act="gather1"]'); if (!b) return;
+  const el = b.closest('.hang'); const it = state.items.find((x) => x.id === +el.dataset.id);
+  if (!it) return;
+  flyOut(el, 'suck');                                            // 单张收下：向面板方向吸入离场
+  state.items = state.items.filter((x) => x.id !== it.id);
+  addPanel(it); paint(); measureAndCheck();
+  showToast('收下这张：进贴图管理面板，剪贴板里的数据一条不删');
+});
+hangsBox.addEventListener('pointerdown', (e) => {
+  const el = e.target.closest('.hang'); if (!el || e.target.closest('.xbtn2')) return;
+  drag = { el, id: +el.dataset.id, x0: e.clientX, y0: e.clientY, moved: false, startLeft: el.offsetLeft, startTop: el.offsetTop };
+  try { el.setPointerCapture(e.pointerId); } catch (err) { /* 合成事件无真实 pointerId；真鼠标不会走到这里 */ }
+});
+hangsBox.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const k = parseFloat(getComputedStyle(stage).getPropertyValue('--k')) || 1;
+  const dx = (e.clientX - drag.x0) / k, dy = (e.clientY - drag.y0) / k;
+  if (!drag.moved && Math.hypot(dx, dy) < 4) return;              // 17.4 位移阈值判意图
+  if (!drag.moved) { drag.moved = true; drag.el.classList.add('drag'); }
+  drag.el.style.left = drag.startLeft + dx + 'px';
+  drag.el.style.top = drag.startTop + dy + 'px';
+});
+hangsBox.addEventListener('pointerup', (e) => {
+  if (!drag) return;
+  const { el, moved, id } = drag; drag = null;
+  const it = state.items.find((x) => x.id === id); if (!it) return;
+  if (!moved) { openLoupe(el, it); return; }                     // 单击 = 轻预览
+  el.classList.remove('drag');
+  detachToPin(it, el, el.offsetLeft, el.offsetTop);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (loupeOn) { closeLoupe(); return; }                         // 第一级：回上一步
+  if (document.getElementById('undoBar').classList.contains('on')) { undoLeft = 0; tickUndo(); return; }
+  if (state.items.length) { gather(); }                          // 第二级：整绳收衣
+});
+function gather() {
+  const n = state.items.length;
+  for (const el of [...hangsBox.children]) flyOut(el, 'suck');    // 整绳收衣：每张依次吸入面板（克隆体在 fxLayer 独立播）
+  state.items.forEach(addPanel); state.items = [];
+  paint(); showToast('收衣：' + n + ' 张进贴图管理面板，数据一条不删');
+}
+document.getElementById('gather').onclick = gather;
+
+/* 模拟外部工具：微信截图 / 浏览器 Ctrl+C */
+function autoHang(kind) {
+  if (!state.on) { showToast('开关关闭 ⇒ 采集照旧入库，只是不上绳（关的是显示，不是采集）'); return; }
+  const it = mkItem(kind);
+  state.items.push(it);
+  if (state.items.length > state.cap) { const old = state.items[0]; flyOut(cardEl(old.id), 'suck'); state.items.shift(); addPanel(old); showToast('绳满 ' + state.cap + ' 张，最早 1 张已收进贴图管理（不静默丢弃）'); }
+  state.enteringId = it.id;
+  paint(); showUndo('刚把「' + it.src + '」挂上绳子');
+  setTimeout(() => { if (it.status === 'wet') { it.status = 'damp'; state.flashIds = [it.id]; } paint(); }, 1500);   // DEDUP_TTL 合并窗收口
+  setTimeout(() => { const j = state.items.find((x) => x.id === it.id); if (j && j.status === 'damp') { j.status = 'dry'; state.flashIds = [j.id]; paint(); } }, 21500);
+  return it;
+}
+document.getElementById('simShot').onclick = () => autoHang('shot');
+document.getElementById('simWeb').onclick = () => autoHang('web');
+document.getElementById('simEmpty').onclick = () => autoHang('shot');
+document.getElementById('advance').onclick = () => {
+  const order = ['wet', 'damp', 'dry'];
+  state.flashIds = [];
+  state.items.forEach((it) => {
+    if (it.status === 'fail') return;
+    const nx = order[Math.min(2, order.indexOf(it.status) + 1)];
+    if (nx !== it.status) { it.status = nx; state.flashIds.push(it.id); }   // 只对真变了的卡打闪
+  });
+  paint();
+};
+document.getElementById('failOne').onclick = () => {
+  const it = state.items[state.items.length - 1]; if (!it) return showToast('绳是空的，先挂一张');
+  it.status = 'fail'; state.failId = it.id; paint(); showToast('沾污：caption 前缀同时变「沾污·读取失败」并弹 toast（15.3 不许静默失败）');
+};
+document.getElementById('onSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  [...e.currentTarget.children].forEach((x) => x.classList.toggle('on', x === b));
+  state.on = b.dataset.on === '1';
+  setRopeVisible(state.on);                                       // 绳窗淡入/淡出（200ms），不再硬切 display
+  paint(); showToast(state.on ? '开：绳窗常驻（默认档）' : '关：绳窗销毁 + 停 hover 轮询，顶缘点击全部还给下层窗口');
+});
+document.getElementById('dontHang').onclick = () => showUndo('本条不挂（演示撤销条）');
+document.getElementById('panelCk').onchange = (e) => { document.getElementById('panel').style.display = e.target.checked ? 'block' : 'none'; };
+document.getElementById('islandCk').onchange = (e) => { state.island = e.target.checked; stage.classList.toggle('showIsland', e.target.checked); paint(); };
+document.getElementById('wSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  [...e.currentTarget.children].forEach((x) => x.classList.toggle('on', x === b));
+  state.w = +b.dataset.w; layoutStage(); paint();
+});
+document.getElementById('thSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  [...e.currentTarget.children].forEach((x) => x.classList.toggle('on', x === b));
+  document.documentElement.dataset.theme = b.dataset.t; paint(); measureAndCheck();
+});
+[['nR', 'nV', 'n', parseInt], ['sagR', 'sagV', 'sag', parseInt], ['capR', 'capV', 'cap', parseInt]].forEach(([r, v, key, cast]) => {
+  const el = document.getElementById(r);
+  el.addEventListener('input', () => {                            // 拖动中：只改 CSS 变量与位置（纯 CSS 预览浏览器自己重绘）
+    state.enteringId = null;                                      // 拖动会重建 DOM，掐掉入场动画免得每帧重播
+    state[key] = cast(el.value, 10);
+    if (key === 'sag') document.getElementById(v).textContent = SAG_NAME[state.sag]; else document.getElementById(v).textContent = el.value;
+    state.items = syncCount(state.items, key === 'n' ? state.n : state.items.length);
+    const g = curGeo();
+    paintRope(g); paintCards(g);
+  });
+  el.addEventListener('change', measureAndCheck);                 // 松手才重算表
+});
+function syncCount(arr, want) {
+  while (arr.length > want) arr.pop();
+  while (arr.length < want) arr.push(mkItem(arr.length % 2 ? 'shot' : 'web'));
+  return arr;
+}
+
+function layoutStage() {
+  const k = Math.min(0.62, 1180 / state.w);
+  stage.style.setProperty('--sw', state.w + 'px'); stage.style.setProperty('--sh', Math.round(state.w * 0.625) + 'px');
+  stage.style.setProperty('--k', k);
+  document.getElementById('stageWrap').style.width = state.w * k + 'px';
+  document.getElementById('stageWrap').style.height = state.w * 0.625 * k + 'px';
+  const isl = document.getElementById('islandGhost');
+  isl.style.right = SIDE + 'px'; isl.style.top = SIDE + 'px';
+}
+function paint() { const g = curGeo(); paintRope(g); paintCards(g); scheduleMeasure(); }
+function measureAndCheck() { const bad = measure(curGeo()); selfCheck(bad); }
+let measureT = null;
+function scheduleMeasure() {                        // 拖动中不测（只改 CSS 变量），增删卡片后 80ms 补测一次，保证表①与舞台不脱节
+  clearTimeout(measureT); measureT = setTimeout(measureAndCheck, 80);
+}
+
+/* 首屏：布局在同步脚本之后才落定 ⇒ 读数延后重量一次（不用 rAF，后台标签里 rAF 不跑） */
+seed(); layoutStage(); paint(); setRopeVisible(true);
+setTimeout(() => { measureAndCheck(); contrastTable(); }, 220);
+setTimeout(() => { measureAndCheck(); }, 700);
+</script>
+</body>
+</html>
