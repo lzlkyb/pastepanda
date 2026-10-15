@@ -16,6 +16,8 @@ import { useMobileFileSend } from "./useMobileFileSend";
 import { MobilePage } from "../ui/MobilePage";
 import { MobileSheet } from "../ui/MobileSheet";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileToast } from "../ui/MobileToast";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
 import { rcErrorText } from "./rcErrorText";
 import { useMobileReceiveDir } from "./useMobileReceiveDir";
 import { RcReceiveDirNotice } from "./RcReceiveDirNotice";
@@ -162,18 +164,18 @@ export function RcFilesView({
             tabIndex={-1}
             onChange={(event) => void startSend(event.target.files)}
           />
-          {send.note && (
-            <MobileNotice tone={send.sending ? "pending" : "info"}>{send.note}</MobileNotice>
-          )}
+          <MobileFeedbackSlot>{active && send.note ? (send.sending
+            ? <MobileNotice tone="pending" title={send.note} />
+            : <MobileToast tone="info" title={send.note} onDismiss={send.dismissNote} />) : null}</MobileFeedbackSlot>
           {send.sending && <button type="button" className={ui.secondary} disabled={send.canceling} onClick={send.cancel}>
             {send.canceling ? "正在停止准备…" : "取消本批准备"}
           </button>}
-          {send.error && <MobileNotice tone={send.partial ? "warning" : "error"} title={send.partial ? "部分文件未能提交" : "文件未能提交"}
+          <MobileFeedbackSlot>{send.error ? <MobileNotice tone={send.partial ? "warning" : "error"} title={send.partial ? "部分文件未能提交" : "文件未能提交"}
             detail={send.error} onDismiss={send.dismissError}
-            action={<button type="button" className={ui.textButton} disabled={!peer || send.sending || rc.status?.running === false || rc.status?.enabled === false} onClick={chooseFiles}>重新选择文件</button>} />}
-          {visibleAction && actionNote && (
-            <MobileNotice tone={pulling ? "pending" : "info"}>{actionNote}</MobileNotice>
-          )}
+            action={<button type="button" className={ui.textButton} disabled={!peer || send.sending || rc.status?.running === false || rc.status?.enabled === false} onClick={chooseFiles}>重新选择文件</button>} /> : null}</MobileFeedbackSlot>
+          <MobileFeedbackSlot>{active && visibleAction && actionNote ? (pulling
+            ? <MobileNotice tone="pending" title={actionNote} />
+            : <MobileToast tone="info" title={actionNote} onDismiss={() => setActionNote(null)} />) : null}</MobileFeedbackSlot>
           {visibleAction && actionErr && <>
             <MobileNotice error title="取回请求未能发出" detail={rcErrorText(actionErr, "file-receive")}
               action={!permissionErrorInfo(actionErr, "file-receive") && <button type="button" className={ui.textButton} disabled={!peer || !receiveDir || pulling || rc.status?.running === false || rc.status?.enabled === false} onClick={() => void pull()}>重试</button>} />

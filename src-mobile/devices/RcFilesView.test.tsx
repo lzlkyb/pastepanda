@@ -72,7 +72,8 @@ describe("接收落点与取回", () => {
     expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("正在发出取回请求…")).toBeTruthy();
     await act(async () => finish());
-    expect(screen.getByText("已请求 台式机 选择文件，请在电脑上确认。")).toBeTruthy();
+    // 成功回执是异步落地的通知，等它出现再读按钮状态
+    expect(await screen.findByText("已请求 台式机 选择文件，请在电脑上确认。")).toBeTruthy();
     expect((screen.getByRole("button", { name: /传输对象/ }) as HTMLButtonElement).disabled).toBe(false);
   });
   it("取回目录被拒后可重置；只有重置成功才清错，下一次请求使用新目录", async () => {
@@ -120,10 +121,10 @@ describe("接收落点与取回", () => {
   it("点取回 → rcFilePull(设备, 落点)", async () => {
     api.pull.mockResolvedValue(true);
     renderView([TARGET]);
-    await waitFor(() => expect(screen.getByRole("button", { name: /从电脑取文件/ })).toBeTruthy());
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /从电脑取文件/ }));
-    });
+    // 按钮解禁说明后端给的落点已经落地，这时点下去才会真的带上目录参数
+    const pull = screen.getByRole("button", { name: /从电脑取文件/ }) as HTMLButtonElement;
+    await waitFor(() => expect(pull.disabled).toBe(false));
+    fireEvent.click(pull);
     expect(api.pull).toHaveBeenCalledWith("pc-1", "/storage/emulated/0/Android/data/app/files/PastePanda 接收");
   });
 
@@ -165,15 +166,15 @@ describe("对方推来的 ask 卡", () => {
     snapshotFor({ asks: [ASK], tasks: [] });
     renderView([TARGET]);
     expect(await screen.findByText(/台式机 想给你发送文件/)).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "接受" }));
-    });
+    // 落点取回成功才会解禁「接受」；没解禁就点等于什么都没发生
+    const accept = screen.getByRole("button", { name: "接受" }) as HTMLButtonElement;
+    await waitFor(() => expect(accept.disabled).toBe(false));
+    fireEvent.click(accept);
     expect(api.respond).toHaveBeenCalledWith("ask-1", "/storage/emulated/0/Android/data/app/files/PastePanda 接收");
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "拒绝" }));
-    });
+    // 等这次回应真的结束（按钮不再锁着），再点拒绝：锁还没释放时第二次点击会被当成重复提交吃掉
+    const deny = screen.getByRole("button", { name: "拒绝" }) as HTMLButtonElement;
+    await waitFor(() => expect(deny.disabled).toBe(false));
+    fireEvent.click(deny);
     expect(api.respond).toHaveBeenCalledWith("ask-1", null);
   });
 

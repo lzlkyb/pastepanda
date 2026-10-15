@@ -13,6 +13,7 @@ import { classifyErr, closingText, isTerminal, taskLine } from "@/lib/rcFile";
 import type { RcFileTask } from "@/lib/api/rcFile";
 import { RcReceivedFileActions } from "./RcReceivedFileActions";
 import { MobileNotice } from "../ui/MobileNotice";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
 import styles from "./RcDevices.module.css";
 
 export function RcFileTaskList({
@@ -57,7 +58,7 @@ export function RcFileTaskList({
               />
             )}
             <div className={styles.fileTaskLine}>{taskLine(t, rateOf(t))}</div>
-            {tip && <MobileNotice compact tone={t.state === "denied" ? "warning" : "error"}>{tip}</MobileNotice>}
+            <MobileFeedbackSlot>{tip ? <MobileNotice compact tone={t.state === "denied" ? "info" : "error"}>{tip}</MobileNotice> : null}</MobileFeedbackSlot>
             {closingText(t) && <div className={styles.fileTaskSub}>{closingText(t)}</div>}
             <div className={styles.fileTaskPeer}>{t.peer_name || t.peer}</div>
             {t.state === "done" && t.dir === "recv" && t.path && <RcReceivedFileActions taskId={t.id} />}

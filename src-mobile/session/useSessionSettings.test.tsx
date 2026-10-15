@@ -1,4 +1,4 @@
-import { act, renderHook, cleanup } from "@testing-library/react";
+import { act, renderHook, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useSessionSettings } from "./useSessionSettings";
 const api = vi.hoisted(() => ({ apply: vi.fn() }));
@@ -41,7 +41,8 @@ it("快速连点忽略迟到的旧结果，不影响另一类设置", async () =
   expect(api.apply).not.toHaveBeenCalledWith("s", "quality", "smooth");
   await act(async () => { old.resolve({ status: "accepted", value: "sharp" }); });
   await act(async () => { latest.resolve({ status: "accepted", value: "smooth" }); });
-  expect(result.current.confirmed.quality).toBe("smooth");
+  // 注入档下回执落地在宏任务之后；等 quality 真的翻成 smooth（初值为 null，非永真判据）。
+  await waitFor(() => expect(result.current.confirmed.quality).toBe("smooth"));
   expect(result.current.confirmed.audio).toBe("on");
 });
 it("旧端未确认不伪造成功，仍可重新发送", async () => {

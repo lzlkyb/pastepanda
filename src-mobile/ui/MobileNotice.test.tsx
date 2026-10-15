@@ -1,13 +1,16 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { setupMotionClock } from "./mobileMotionTestUtils";
 import { MobileNotice } from "./MobileNotice";
 import { MobileToast } from "./MobileToast";
 
-afterEach(() => { cleanup(); delete document.body.dataset.mobileSheets; vi.useRealTimers(); vi.restoreAllMocks(); });
+// These cases isolate reading time; animated presence is covered by the lifecycle suite.
+beforeEach(() => { setupMotionClock().reduced.matches = true; });
+afterEach(() => { cleanup(); delete document.body.dataset.mobileSheets; vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("错误有警报语义，处理状态不宣称完成；关闭和恢复动作独立", () => {
   const dismiss = vi.fn(), retry = vi.fn();
-  const view = render(<MobileNotice tone="error" title="未能连接" detail="请检查连接状态" onDismiss={dismiss}
+  const view = render(<MobileNotice tone="error" urgency="assertive" title="未能连接" detail="请检查连接状态" onDismiss={dismiss}
     action={<button onClick={retry}>重试</button>} technical="请求未完成，错误类别：连接中断" />);
   expect(screen.getByRole("alert").textContent).toContain("请检查连接状态");
   const details = screen.getByText("查看详情").closest("details")!;

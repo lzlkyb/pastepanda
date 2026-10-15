@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MobileNotice } from "./MobileNotice";
+import { MobileFeedbackSlot } from "./MobileFeedbackSlot";
 import { MobileUpdateSheet } from "./MobileUpdateSheet";
 import { progressText, useMobileUpdate } from "./MobileUpdate";
 import ui from "./MobileUi.module.css";
@@ -7,7 +8,7 @@ import ui from "./MobileUi.module.css";
 export function MobileUpdateBanner({ quiet = false }: { quiet?: boolean }) {
   const update = useMobileUpdate();
   const [open, setOpen] = useState(false);
-  const { status, info, progress, error } = update;
+  const { status, info, progress } = update;
   const action = (label: string) => (
     <button className={ui.textButton} onClick={() => setOpen(true)}>
       {label}
@@ -29,15 +30,12 @@ export function MobileUpdateBanner({ quiet = false }: { quiet?: boolean }) {
     notice = (
       <MobileNotice variant="banner" tone="warning" title="需要允许 PastePanda 安装应用" detail="授权后返回本页自动继续，无需重新下载" action={action("去授权")} />
     );
-  } else if (status === "error") {
-    notice = (
-      <MobileNotice variant="banner" error title="更新失败" detail={error ?? undefined} onDismiss={update.dismiss} action={action("重试")} />
-    );
   }
 
   return (
     <>
-      {!quiet && notice}
+      {/* Update failures remain recoverable in Settings and the initiating sheet. */}
+      <MobileFeedbackSlot>{!quiet ? notice : null}</MobileFeedbackSlot>
       <MobileUpdateSheet open={open} onClose={() => setOpen(false)} />
     </>
   );

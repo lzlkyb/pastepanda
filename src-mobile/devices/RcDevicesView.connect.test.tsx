@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UseRc } from "@/hooks/useRc";
 import type { RcSession, RcTargetDevice } from "@/lib/api/rc";
@@ -26,8 +26,10 @@ describe("设备列表直接连接", () => {
   it("一步申请控制，详情入口独立，保留后端协商能力档", async () => {
     const { rc, scope } = setup();
     expect(screen.getByRole("button", { name: "查看 工作电脑 详情" })).toBeEnabled();
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" })));
+    fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" }));
     expect(rc.request).toHaveBeenCalledExactlyOnceWith("pc", "control");
+    // 按钮从「正在连接 工作电脑」换回「连接 工作电脑」才是请求真的返回了
+    await waitFor(() => expect(screen.getByRole("button", { name: "连接 工作电脑" })).toBeEnabled());
     expect(scope).toHaveBeenLastCalledWith(false);
   });
   it("本机的拒绝授权不误判为对方拒绝，仍允许主动连接", async () => {
@@ -63,11 +65,12 @@ describe("设备列表直接连接", () => {
     // Store 的真实失败顺序：先发布全局错误，然后 request 的 Promise 返回 false。
     act(() => useRcStore.setState({ error: "工作电脑拒绝了连接" }));
     view.rerender(<RcDevicesView {...props} rc={{ ...rc, error: "工作电脑拒绝了连接" }} active />);
-    expect(screen.getByRole("alert")).toHaveTextContent("未能连接 工作电脑");
-    expect(screen.getByRole("alert")).toHaveTextContent("工作电脑拒绝了连接");
+    // 错误反馈按温和播报呈现（role=status），按标题定位再回到播报容器读说明
+    const notice = (await screen.findByText("未能连接 工作电脑")).closest('[role="status"]') as HTMLElement;
+    expect(notice).toHaveTextContent("工作电脑拒绝了连接");
     expect(screen.queryByRole("heading", { name: "家里电脑" })).toBeNull();
     await act(async () => finish(false));
-    expect(screen.getByRole("alert")).toHaveTextContent("未能连接 工作电脑");
+    expect((await screen.findByText("未能连接 工作电脑")).closest('[role="status"]')).toHaveTextContent("工作电脑拒绝了连接");
     expect(screen.getByRole("button", { name: "查看 家里电脑 详情" })).toBeEnabled();
     expect(screen.queryByRole("dialog", { name: "设备操作" })).toBeNull();
   });
@@ -82,31 +85,34 @@ describe("设备列表直接连接", () => {
     useRcStore.setState({ error: "电脑没有同意连接" });
     const request = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const { rc, scope, props, view } = setup({ request });
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" })));
-    expect(screen.getByRole("alert")).toHaveTextContent("电脑没有同意连接");
+    fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" }));
+    // 等回执真的写进通知，而不是等一次微任务让渡
+    const notice = (await screen.findByText("未能连接 工作电脑")).closest('[role="status"]') as HTMLElement;
+    expect(notice).toHaveTextContent("电脑没有同意连接");
     expect(screen.getByRole("button", { name: "连接 工作电脑" })).toBeEnabled();
     expect(scope).toHaveBeenLastCalledWith(true);
     view.rerender(<RcDevicesView {...props} active={false} />);
     expect(scope).toHaveBeenLastCalledWith(false);
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
     view.rerender(<RcDevicesView {...props} active />);
-    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("status")).toHaveTextContent("未能连接 工作电脑");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "重试" })));
     expect(rc.request).toHaveBeenCalledTimes(2);
   });
   it("抛出的连接错误可见，按钮恢复可操作", async () => {
     setup({ request: vi.fn().mockRejectedValue("网络连接失败") });
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" })));
-    expect(screen.getByRole("alert")).toHaveTextContent("网络连接失败");
+    fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" }));
+    const notice = (await screen.findByText("未能连接 工作电脑")).closest('[role="status"]') as HTMLElement;
+    expect(notice).toHaveTextContent("网络连接失败");
     expect(screen.getByRole("button", { name: "连接 工作电脑" })).toBeEnabled();
   });
   it("转入另一台设备详情前释放本页失败，不漂移到新操作域", async () => {
     const { rc } = setup({ request: vi.fn().mockRejectedValue("工作电脑连接失败"),
       targets: [pc, { ...pc, node_id: "other", name: "家里电脑" }] });
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" })));
-    expect(screen.getByRole("alert")).toHaveTextContent("未能连接 工作电脑");
+    fireEvent.click(screen.getByRole("button", { name: "连接 工作电脑" }));
+    expect((await screen.findByText("未能连接 工作电脑")).closest('[role="status"]')).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "查看 家里电脑 详情" }));
     expect(rc.clearError).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

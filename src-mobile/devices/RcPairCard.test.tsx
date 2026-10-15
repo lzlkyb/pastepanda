@@ -127,6 +127,8 @@ describe("B 方案配对流程", () => {
     const paired = vi.fn();
     render(<RcPairCard onPaired={paired} />);
     await act(async () => { enter(); submit(); });
+    // 会合建立是异步取数：等到「正在完成双方确认」这句回执，轮询才真的开始（resolve 才有值）
+    await waitFor(() => expect(screen.getByText(/正在完成双方确认/)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "取消配对" }));
     await waitFor(() => expect(screen.getByText("已取消配对。")).toBeTruthy());
     await act(async () => { resolve("paired"); });
@@ -138,10 +140,12 @@ describe("B 方案配对流程", () => {
     render(<RcPairCard onPaired={vi.fn()} />);
     enter();
     submit();
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    // 错误反馈按温和播报呈现（role=status），按标题定位再回到播报容器读原因
+    const failure = (await screen.findByText("配对未能完成")).closest('[role="status"]') as HTMLElement;
+    expect(failure).toHaveTextContent("未能配对：配对码已过期");
     expect(screen.getByRole("button", { name: "开始配对" })).toBeEnabled();
     enter("87654321");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("配对未能完成")).toBeNull();
   });
   it("成功只回调一次，父级更新回调不会加速轮询", async () => {
     vi.useFakeTimers();
@@ -152,8 +156,15 @@ describe("B 方案配对流程", () => {
       enter();
       submit();
     });
+    // 被推迟到宏任务的取数不会因为假时钟推进而落地；每次让渡一格真实事件循环，直到等到的回执出现
+    for (let i = 0; i < 20 && !screen.queryByText(/正在完成双方确认/); i++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    }
+    expect(screen.getByText(/正在完成双方确认/)).toBeTruthy();
     expect(rc.check).toHaveBeenCalledTimes(1);
     view.rerender(<RcPairCard onPaired={latest} />);
+    // 首轮轮询的返回同样在宏任务里，等它落地下一枚 5 秒定时器才会挂上
+    await act(async () => { await rc.check.mock.results[0].value; });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4999);
     });
@@ -162,6 +173,7 @@ describe("B 方案配对流程", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
     });
+    await act(async () => { await rc.check.mock.results[1].value; });
     expect(latest).toHaveBeenCalledWith("工作电脑");
     expect(first).not.toHaveBeenCalled();
     await act(async () => {
@@ -173,10 +185,11 @@ describe("B 方案配对流程", () => {
     rc.code.mockRejectedValueOnce("网络连接失败");
     render(<RcPairCard onPaired={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    const failure = (await screen.findByText("配对未能完成")).closest('[role="status"]') as HTMLElement;
+    expect(failure).toHaveTextContent("网络连接失败");
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     await waitFor(() => expect(screen.getByLabelText("我的配对码")).toHaveTextContent("4182 0620"));
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("配对未能完成")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "隐藏配对码" }));
     fireEvent.click(screen.getByRole("button", { name: "出示本机配对码" }));
     await waitFor(() => expect(screen.getByLabelText("我的配对码")).toBeTruthy());

@@ -77,7 +77,7 @@ export function SessionFrameState({ text, hasFrame, hint, stage, onReturn }: {
   if (!hasFrame && stage) return <ConnectStageCard text={text} stage={stage} hint={hint} onReturn={onReturn} />;
   return (
     <div className={hasFrame ? styles.frameNotice : styles.frameWaiting}>
-    <MobileNotice compact={hasFrame} tone={hasFrame ? "warning" : "pending"} title={text}
+    <MobileNotice compact={hasFrame} tone={hasFrame ? "warning" : "pending"} urgency={hasFrame ? "assertive" : "polite"} title={text}
       detail={hint || (hasFrame ? "输入已暂停，收到正常画面后可继续操作。" : undefined)}
       action={<button type="button" className={styles.mkKey} onClick={onReturn}>
         {hasFrame ? "返回设备" : "取消连接"}

@@ -3,6 +3,8 @@ import { askCountdown, askPrompt } from "@/lib/rcFile";
 import { formatBytes } from "@/lib/utils";
 import type { RcFileView } from "@/hooks/useRcFile";
 import { MobileNotice, type MobileFeedback } from "../ui/MobileNotice";
+import { MobileToast } from "../ui/MobileToast";
+import { MobileFeedbackSlot } from "../ui/MobileFeedbackSlot";
 import styles from "./RcDevices.module.css";
 
 export function RcMobileFileAsks({
@@ -48,7 +50,7 @@ export function RcMobileFileAsks({
     setResult(null);
     try {
       if (await file.respond(id, dir)) {
-        setResult({ tone: "success", title: dir !== null ? "已接受文件请求，等待传输" : "已拒绝文件请求" });
+        setResult({ tone: dir !== null ? "success" : "info", title: dir !== null ? "已接受文件请求，等待传输" : "已拒绝文件请求" });
         onHandled?.();
       } else {
         setResult({ tone: "error", title: "文件请求未能处理", detail: "请重试；若请求已消失，请让电脑重新发送。" });
@@ -62,7 +64,9 @@ export function RcMobileFileAsks({
   };
   return (
     <>
-      {active && result && <MobileNotice {...result} onDismiss={() => setResult(null)} />}
+      <MobileFeedbackSlot>{active && result ? (result.tone === "error"
+        ? <MobileNotice {...result} onDismiss={() => setResult(null)} />
+        : <MobileToast {...result} onDismiss={() => setResult(null)} />) : null}</MobileFeedbackSlot>
       {file.asks.map((ask) => {
         const prompt = askPrompt(ask);
         const countdown = askCountdown(ask, now);

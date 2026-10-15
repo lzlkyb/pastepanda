@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
+import { MobileFeedbackScope } from "./MobileFeedbackScope";
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowLeft, X } from "lucide-react";
 import { useMobileBack } from "./useMobileBack";
@@ -16,6 +17,7 @@ export function MobileSheet({
   children,
   footer,
   actions,
+  initialFocusRef,
 }: {
   open: boolean;
   title: string;
@@ -29,6 +31,7 @@ export function MobileSheet({
   footer?: ReactNode;
   /** Primary actions stay reachable independently of long feedback on short screens. */
   actions?: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }) {
   const landscape = useMobileLayout();
   const back = onBack ?? onClose;
@@ -68,8 +71,9 @@ export function MobileSheet({
             ref={sheetRef}
             className={styles.sheet}
             aria-describedby={content.description ? descriptionId : undefined}
-            onOpenAutoFocus={() => {
+            onOpenAutoFocus={(event) => {
               restoreFocus.current = document.activeElement as HTMLElement;
+              if (initialFocusRef?.current) { event.preventDefault(); initialFocusRef.current.focus(); }
             }}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
@@ -93,9 +97,11 @@ export function MobileSheet({
                 {content.description}
               </Dialog.Description>
             )}
+            <MobileFeedbackScope>
             <div className={styles.sheetBody}>{content.children}</div>
             {content.footer && <div className={styles.sheetFooter}>{content.footer}</div>}
             {content.actions && <div className={styles.sheetActions}>{content.actions}</div>}
+            </MobileFeedbackScope>
           </Dialog.Content>
         </Dialog.Portal>
       )}

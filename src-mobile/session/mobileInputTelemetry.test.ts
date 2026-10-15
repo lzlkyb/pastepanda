@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 import { rcSendInput } from "@/lib/api/rcCommands";
@@ -36,8 +36,8 @@ it("失败的发送不生成操作响应样本", async () => {
   const at = { current: 0 };
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
   sendEvent({ kind: "text", text: "a" }, at);
-  await Promise.resolve();
-  expect(at.current).toBe(0);
+  // 发送时先写入时间戳，失败回滚是后到的真变化；等回滚落地而不是等让渡。
+  await waitFor(() => expect(at.current).toBe(0));
 });
 it("hook 的发送也经过相同收口，只看模式不更新输入时间", () => {
   const at = { current: 0 };
@@ -57,18 +57,20 @@ it("守卫：手机 hook 不允许新增绕过统一发送入口的调用点", (
 it("发送失败翻转健康位、恢复自动翻回、再次失败重新点亮（横幅依据）", async () => {
   const { result } = renderHook(() => useRcMobileInput({ canControl: true, hasFrame: true, canvasRef: { current: null }, contentRef: { current: { w: 1, h: 1 } } }));
   expect(result.current.sendFailed).toBe(false);
+  // 三次翻转各等各自的目标状态落地：失败经微任务回执，成功在注入档里是宏任务之后。
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
-  expect(result.current.sendFailed).toBe(true);
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
-  expect(result.current.sendFailed).toBe(false);
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
+  await waitFor(() => expect(result.current.sendFailed).toBe(true));
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
+  await waitFor(() => expect(result.current.sendFailed).toBe(false));
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); await Promise.resolve(); });
-  expect(result.current.sendFailed).toBe(true);
+  await act(async () => { result.current.sendRaw({ kind: "set_quality", quality: "auto" }); });
+  await waitFor(() => expect(result.current.sendFailed).toBe(true));
 });
 it("IME 自动上屏失败没有其他反馈出口，必须翻转健康位", async () => {
   const { result } = renderHook(() => useRcMobileInput({ canControl: true, hasFrame: true, canvasRef: { current: null }, contentRef: { current: { w: 1, h: 1 } } }));
   vi.mocked(rcSendInput).mockRejectedValueOnce(new Error("offline"));
-  await act(async () => { result.current.sendText("你好"); await Promise.resolve(); });
-  expect(result.current.sendFailed).toBe(true);
+  await act(async () => { result.current.sendText("你好"); });
+  // 等健康位真翻起来：让渡微任务在注入档里等不到失败回执。
+  await waitFor(() => expect(result.current.sendFailed).toBe(true));
 });

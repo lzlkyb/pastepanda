@@ -75,9 +75,11 @@ describe("手机阅读安全与原位反馈", () => {
     expect(mobileKnowledgeImage).toHaveBeenCalledTimes(4);
     for (let group = 0; group < 3; group++) {
       await act(async () => { pending.splice(0, 4).forEach(resolve => resolve("data:image/png;base64,aA==")); });
+      // 注入档里数据经宏任务落地，等这批 4 个 img 元素真被创建出来再派发 load。
+      await waitFor(() => expect(created).toHaveLength(4));
       await act(async () => created.splice(0, 4).forEach(image => image.dispatchEvent(new Event("load"))));
     }
-    expect(view.container.querySelectorAll("img").length).toBe(8);
+    await waitFor(() => expect(view.container.querySelectorAll("img").length).toBe(8));
     expect(mobileKnowledgeImage).toHaveBeenCalledTimes(16);
     view.rerender(<KnowledgeMarkdown content={content} active={false} onLink={vi.fn()} />);
     expect(disconnect).toHaveBeenCalled();
@@ -116,8 +118,14 @@ describe("手机阅读安全与原位反馈", () => {
     const content = Array.from({ length: 6 }, (_, index) => `![图${index}](images/${index}.png)`).join("\n\n");
     const view = render(<KnowledgeMarkdown content={content} onLink={vi.fn()} />);
     await act(async () => screen.getAllByRole("button", { name: "加载本机图片" }).forEach(button => fireEvent.click(button)));
-    await act(async () => created.splice(0).forEach(image => image.dispatchEvent(new Event("load"))));
-    await act(async () => created.splice(0).forEach(image => image.dispatchEvent(new Event("load"))));
-    expect(view.container.querySelectorAll("img")).toHaveLength(4);
+    // 并发上限 4：第 5、6 张要等前几张 load 结算后才发请求，逐批派发直到 6 张全部结算。
+    let settled = 0;
+    while (settled < 6) {
+      await waitFor(() => expect(created.length).toBeGreaterThan(0));
+      const batch = created.splice(0);
+      settled += batch.length;
+      await act(async () => batch.forEach(image => image.dispatchEvent(new Event("load"))));
+    }
+    await waitFor(() => expect(view.container.querySelectorAll("img")).toHaveLength(4));
   });
 });
