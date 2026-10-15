@@ -239,6 +239,13 @@ static MD_LIST_RE: LazyLock<Regex> =
 static MD_CODE_BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"```").unwrap());
 static MD_LINK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[^\]]*\]\([^)]+\)").unwrap());
 static MD_BLOCKQUOTE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^>\s+\S").unwrap());
+/// GFM 表格分隔行：`| --- | :---: | ---: |`——单元格全为 `:?-+:?`，至少 2 列（中间至少一条内嵌 `|`）。
+/// 收紧到 ≥2 列 + 两侧管道行，是为了不把普通 `---` 分割线、单列对齐文本误接进来。
+static MD_TABLE_DELIM_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|?$").unwrap()
+});
+/// 以 `|` 开头的表格行（trim 后）
+static MD_TABLE_ROW_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\|").unwrap());
 
 // ===== HTML 检测 =====
 static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -246,6 +253,23 @@ static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 static HTML_DOCTYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE\s+html").unwrap());
+
+// ===== XML / SVG 检测（2026-10-15 审计 P1：HTML_TAG_RE 只认 24 个 HTML 标签，
+// `<bean>`、`<dependency>`、SVG 全漏成纯文本，真实库实测 7 条）=====
+/// XML 声明/处理指令开头（`<?xml version="1.0"?>`，锚定行首）
+static XML_DECL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*<\?xml\s").unwrap());
+/// SVG 根元素（Stack Overflow 高票判据：出现 `<svg` 即可信）
+static SVG_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<svg[\s>]").unwrap());
+/// SVG 命名空间（覆盖根元素不在片段开头的情况）
+static SVG_NS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)xmlns\s*=\s*"[^"]*2000/svg""#).unwrap());
+/// 行首标签形态：`<tag` / `</tag` / `<?xml` / `<!--`（trim 后）
+static XML_LINE_START_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(</?[A-Za-z_]|[?]xml|<!--)").unwrap());
+/// 标签名捕获（含命名空间前缀与连字符：`xsi:type`、`my-tag`）
+static XML_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"</?([A-Za-z_][\w.:-]*)").unwrap());
 
 /// 常用命令白名单
 static COMMON_COMMANDS: &[&str] = &[
@@ -326,6 +350,65 @@ static COMMON_COMMANDS: &[&str] = &[
     "netstat",
     "tasklist",
     "taskkill",
+    // ===== Windows 系统命令（2026-10-15 审计 P4：白名单原缺 Windows 系）=====
+    "ipconfig",
+    "netsh",
+    "wmic",
+    "schtasks",
+    "robocopy",
+    "sfc",
+    "dism",
+    "chkdsk",
+    "bcdedit",
+    "pnputil",
+    "findstr",
+    "wevtutil",
+    "driverquery",
+    "systeminfo",
+    "whoami",
+    "getmac",
+    "hostname",
+    "powershell",
+    "pwsh",
+    // PowerShell cmdlet：动词-名词带连字符，形态唯一，不会误伤日常句子
+    "get-childitem",
+    "get-process",
+    "get-service",
+    "get-content",
+    "get-item",
+    "get-command",
+    "get-eventlog",
+    "get-winevent",
+    "set-content",
+    "new-item",
+    "copy-item",
+    "move-item",
+    "remove-item",
+    "test-path",
+    "start-process",
+    "stop-process",
+    "select-string",
+    "invoke-webrequest",
+    "invoke-restmethod",
+    "invoke-command",
+    "out-file",
+    "write-host",
+    "write-output",
+    // reg/net/sc 的**单词形态**会误伤日常句子（"reg 至于吗" 实测形态），
+    // 只收带子命令的多词形态
+    "reg add",
+    "reg query",
+    "reg delete",
+    "reg export",
+    "reg import",
+    "net user",
+    "net use",
+    "net start",
+    "net stop",
+    "sc query",
+    "sc config",
+    "sc create",
+    "sc delete",
     // 注意：这里故意**不收** claude / codebuddy 这类工具名。
     // 它们同时也是日常句子的开头词，收了代价是
     // 「claude.md 做任何功能都要考虑性能问题」被当成命令行（实测命中）。
@@ -557,6 +640,51 @@ static LANGUAGE_PROFILES: &[LanguageProfile] = &[
         ],
         patterns: &[re!(r"^#!/bin/"), re!(r"\$\{?\w+\}?"), re!(r"\$\(\s*\w+")],
     },
+    // ===== C / C++ / C#（2026-10-15 审计 P3：使用量最大的三种缺席语言，
+    // 此前只显示「代码」无语言标签）=====
+    // C 与 C++ 有意分开：C 靠库函数与预处理，C++ 靠 std::/模板/类特性。
+    // `->` 不进关键词表（Rust/PHP 也用，子串匹配会给它们白送 +3）。
+    LanguageProfile {
+        label: "C",
+        keywords: &[
+            "#include", "#define", "sizeof", "typedef", "NULL", "unsigned",
+            "printf(", "malloc(", "calloc(", "sprintf(", "strlen(", "fopen(",
+            "fclose(", "struct ", "union ",
+        ],
+        patterns: &[
+            re!(r#"#\s*include\s*[<"]"#),
+            re!(r"\bprintf\s*\("),
+            re!(r"\b(void|int|char|float|double|long)\s+\**\w+\s*\([^;)]*\)\s*\{"),
+        ],
+    },
+    LanguageProfile {
+        label: "C++",
+        keywords: &[
+            "std::", "cout", "cin", "cerr", "endl", "namespace", "template", "typename",
+            "virtual", "nullptr", "std::vector", "std::string", "public:", "private:",
+            "protected:", "using namespace",
+        ],
+        patterns: &[
+            re!(r"\bstd::\w+"),
+            re!(r"\b(cout|cin|cerr)\s*(<<|>>)"),
+            re!(r"\btemplate\s*<"),
+            re!(r"#include\s*<(iostream|vector|string|map|memory)>"),
+        ],
+    },
+    LanguageProfile {
+        label: "C#",
+        // 不收 "async "/"await "（JS/TS 也用）与 "var "（JS 也用），避免互送分
+        keywords: &[
+            "using System", "Console.", "namespace", "get; set;", "public class",
+            "public record", "public interface", "Newtonsoft",
+        ],
+        patterns: &[
+            re!(r"\busing\s+System(\.\w+)*;"),
+            re!(r"\bConsole\.\w+\("),
+            re!(r"\bget;\s*(set;|\})"),
+            re!(r"\bpublic\s+(class|record|struct|interface|enum)\b"),
+        ],
+    },
 ];
 
 /// 内容分类器
@@ -631,8 +759,13 @@ impl ContentClassifier {
         // 中文 5 字就过了阈值、要继续往下跑代码/命令检测，而 ASCII 要 15 个字符
         // 才过——中英文阈值差 3 倍。「claude.md 做任何功能都要考虑性能问题」
         // 被判成命令行就是这样漏下去的。
+        //
+        // 豁免：以已知命令开头的短串不是散文（"ipconfig /all" 13 字符，
+        // 实测被这里拦成纯文本），放行到命令行检测。
         if text.chars().count() < 15 && !text.contains('\n') && !text.contains("://") {
-            return vec!["纯文本".to_string()];
+            if !starts_with_known_command(text.trim()) {
+                return vec!["纯文本".to_string()];
+            }
         }
 
         // ===== 1. URL 检测 =====
@@ -646,8 +779,16 @@ impl ContentClassifier {
         }
 
         // ===== 1.6 HTML 检测 =====
+        // HTML 先于 XML：`<html>`/`<div>` 与 XML 标签的**行形态完全同构**，
+        // 通用 XML 判据分不开两者；HTML_TAG_RE 的白名单标签命中才是可靠信号。
+        // XHTML（<?xml + <html>）落 HTML，XHTML 也确实是 HTML 家族。
         if self.is_html(text) {
             return vec!["HTML".to_string()];
+        }
+
+        // ===== 1.65 XML/SVG 检测（HTML 白名单没接住的：`<bean>`、`<dependency>`、SVG…）=====
+        if let Some(l) = self.detect_xml(text) {
+            return vec![l.to_string()];
         }
 
         // ===== 1.7 SQL（强特征，必须先于配置 / CSV / 代码）=====
@@ -739,6 +880,9 @@ impl ContentClassifier {
             Some("JSON") => "json",
             Some("Markdown") => "markdown",
             Some("HTML") => "html",
+            // XML/SVG 与 HTML 同族：复用 html 的前端渲染管线，
+            // 价值在标签（卡片显示「XML」比「纯文本」有信息），不新增 content_type
+            Some("XML") | Some("SVG") => "html",
             Some("配置文件") => "config",
             Some("表格") => "csv",
             Some("命令行") => "shell",
@@ -898,14 +1042,15 @@ impl ContentClassifier {
             return false;
         }
 
-        // 尝试逗号分隔
-        let comma_counts: Vec<usize> = check_lines.iter().map(|l| l.split(',').count()).collect();
+        // 引号感知的字段计数（审计 P2）：朴素 split(',') 遇「"张三，李四"」
+        // 会把引号内逗号也数进去，同一张表每行「字段数」对不上而漏判
+        let comma_counts: Vec<usize> = check_lines.iter().map(|l| count_fields(l, ',')).collect();
         let all_same_comma = comma_counts.len() >= 2
             && comma_counts.iter().all(|&c| c == comma_counts[0])
             && comma_counts[0] >= 2;
 
         // 尝试制表符分隔
-        let tab_counts: Vec<usize> = check_lines.iter().map(|l| l.split('\t').count()).collect();
+        let tab_counts: Vec<usize> = check_lines.iter().map(|l| count_fields(l, '\t')).collect();
         let all_same_tab = tab_counts.len() >= 2
             && tab_counts.iter().all(|&c| c == tab_counts[0])
             && tab_counts[0] >= 2;
@@ -931,15 +1076,7 @@ impl ContentClassifier {
 
         // 检查是否以常见命令开头，且命令后须为词边界（字符串结尾/空白/非字母数字），
         // 避免 "dir"/"cat"/"find" 等前缀误伤 "directory"/"category"/"finder" 等普通单词
-        let lower = first_line.to_lowercase();
-        let starts_with_cmd = COMMON_COMMANDS.iter().any(|cmd| {
-            lower.starts_with(cmd)
-                && lower
-                    .as_bytes()
-                    .get(cmd.len())
-                    .is_none_or(|b| !b.is_ascii_alphanumeric())
-        });
-        if !starts_with_cmd {
+        if !starts_with_known_command(first_line) {
             return false;
         }
 
@@ -1307,6 +1444,12 @@ impl ContentClassifier {
         if lines < 2 {
             return false;
         }
+        // GFM 表格明路（同 SQL 的先例：确定性判据直接放行，不挤评分）：
+        // 「表头行 + 分隔行 + 数据行」是教科书级的表格，纯表格凑不出第二种特征，
+        // 2026-10-15 实测整段单据对照表（19/19 行管道行）因此落成纯文本。
+        if self.is_markdown_table(text) {
+            return true;
+        }
         let mut score = 0;
         if MD_HEADING_RE.is_match(text) {
             score += 1;
@@ -1326,7 +1469,50 @@ impl ContentClassifier {
         if MD_BLOCKQUOTE_RE.is_match(text) {
             score += 1;
         }
+        if self.has_table_row_run(text) {
+            score += 1;
+        }
         score >= 2
+    }
+
+    /// GFM 表格判定：存在「管道表头行 + 分隔行 + 管道数据行」的相邻结构。
+    ///
+    /// 表头/数据行都要求以 `|` 开头（GFM 允许省略首尾管道，但收紧判据换低误报，
+    /// 对「识别成 Markdown」这个用途足够；省略形态的表格通常还带其他特征可走评分）。
+    fn is_markdown_table(&self, text: &str) -> bool {
+        let lines: Vec<&str> = text.lines().map(|l| l.trim()).collect();
+        if lines.len() < 3 {
+            return false;
+        }
+        for (i, l) in lines.iter().enumerate() {
+            if i == 0 || i + 1 == lines.len() {
+                continue; // 分隔行的上下都必须有行
+            }
+            if MD_TABLE_DELIM_RE.is_match(l)
+                && MD_TABLE_ROW_RE.is_match(lines[i - 1])
+                && MD_TABLE_ROW_RE.is_match(lines[i + 1])
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// ≥2 行**连续**的管道行（表格局部出现、明路没接住时给评分 +1）。
+    /// 不连续的孤立管道行（如日志里的竖线分隔）不算。
+    fn has_table_row_run(&self, text: &str) -> bool {
+        let mut run = 0;
+        for l in text.lines() {
+            if MD_TABLE_ROW_RE.is_match(l) {
+                run += 1;
+                if run >= 2 {
+                    return true;
+                }
+            } else {
+                run = 0;
+            }
+        }
+        false
     }
 
     /// 检测 HTML
@@ -1342,6 +1528,77 @@ impl ContentClassifier {
             .collect();
         matches.len() >= 2
     }
+
+    /// 检测 XML / SVG（业界三级判据，xml.com / Stack Overflow 高票方案）：
+    /// ① SVG：根元素 `<svg` 或命名空间——单项即可判，误报率极低；
+    /// ② XML 声明开头（`<?xml ...?>`）；
+    /// ③ 无声明的通用 XML：标签行占比 ≥ 60%、≥ 3 行、≥ 2 种标签名。
+    /// 第 ③ 级要求行**以 `>` 收尾**且形态为 `<tag`，散文里提一句 `<div>` 不会命中
+    /// （守卫用例 test_prose_mentioning_tag_is_not_xml）。
+    fn detect_xml(&self, text: &str) -> Option<&'static str> {
+        if SVG_TAG_RE.is_match(text) || SVG_NS_RE.is_match(text) {
+            return Some("SVG");
+        }
+        if XML_DECL_RE.is_match(text) {
+            return Some("XML");
+        }
+        let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+        if lines.len() < 2 {
+            return None;
+        }
+        let mut tag_lines = 0usize;
+        let mut names = std::collections::HashSet::new();
+        for l in &lines {
+            if XML_LINE_START_RE.is_match(l) && l.trim().ends_with('>') {
+                tag_lines += 1;
+                if let Some(c) = XML_NAME_RE.captures(l) {
+                    names.insert(c[1].to_ascii_lowercase());
+                }
+            }
+        }
+        if tag_lines >= 3 && tag_lines as f64 / lines.len() as f64 >= 0.6 && names.len() >= 2 {
+            return Some("XML");
+        }
+        None
+    }
+}
+
+/// 首行是否以白名单命令开头（词边界内）。is_command 的主判据，
+/// 也是超短文本早退的豁免条件（"ipconfig /all" 13 字符不该死在早退里）。
+fn starts_with_known_command(first_line: &str) -> bool {
+    let lower = first_line.to_lowercase();
+    COMMON_COMMANDS.iter().any(|cmd| {
+        lower.starts_with(cmd)
+            && lower
+                .as_bytes()
+                .get(cmd.len())
+                .is_none_or(|b| !b.is_ascii_alphanumeric())
+    })
+}
+
+/// 引号感知的字段计数（RFC 4180 口径）：成对双引号内的分隔符不算字段分隔，
+/// `""` 是转义的引号。用 peek 而不是消费式 next——闭引号后紧跟分隔符
+///（`"a","b"`）是常态，消费式会把那个分隔符吞掉导致少计。
+fn count_fields(line: &str, delim: char) -> usize {
+    let mut fields = 1usize;
+    let mut in_quotes = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            if in_quotes {
+                if chars.peek() == Some(&'"') {
+                    chars.next(); // `""` 转义，仍在引号内
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                in_quotes = true;
+            }
+        } else if c == delim && !in_quotes {
+            fields += 1;
+        }
+    }
+    fields
 }
 
 /// 关键词命中判定。
@@ -1486,6 +1743,131 @@ mod tests {
     fn test_csv() {
         let r = classify("name,age,city\nAlice,30,NYC\nBob,25,LA");
         assert!(r.contains(&"表格".to_string()));
+    }
+
+    // ===== XML / SVG（2026-10-15 审计 P1：库内实测 7 条 XML 片段漏成纯文本） =====
+
+    /// 无 XML 声明的通用 XML（Spring 配置形态，来自真实漏判样本的结构）
+    #[test]
+    fn test_xml_snippet() {
+        let xml = "<beans>\n  <bean id=\"userService\" class=\"com.demo.UserService\">\n    <property name=\"dao\" ref=\"userDao\"/>\n  </bean>\n  <bean id=\"userDao\" class=\"com.demo.UserDao\"/>\n</beans>";
+        let r = classify(xml);
+        assert!(r.contains(&"XML".to_string()), "got {:?}", r);
+    }
+
+    /// SVG：根元素判据（SO 高票判据，单项即可）
+    #[test]
+    fn test_svg_snippet() {
+        let svg = "<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\">\n  <path d=\"M4 4h16v16H4z\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"5\"/>\n</svg>";
+        let r = classify(svg);
+        assert!(r.contains(&"SVG".to_string()), "got {:?}", r);
+    }
+
+    /// XML 声明开头
+    #[test]
+    fn test_xml_declaration() {
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <appSettings>\n    <add key=\"foo\" value=\"bar\"/>\n  </appSettings>\n</configuration>";
+        let r = classify(xml);
+        assert!(r.contains(&"XML".to_string()), "got {:?}", r);
+    }
+
+    /// XML/SVG 与 HTML 同族：content_type 都应派生为 "html"
+    #[test]
+    fn test_xml_svg_content_type_maps_to_html() {
+        assert_eq!(ContentClassifier::content_type_from_labels(&["XML".to_string()]), "html");
+        assert_eq!(ContentClassifier::content_type_from_labels(&["SVG".to_string()]), "html");
+    }
+
+    /// 负例：提到单个标签的普通句子不能判成 XML/HTML
+    #[test]
+    fn test_prose_mentioning_tag_is_not_xml() {
+        let prose = "这个函数返回一个 <div> 元素的引用，请检查 render 逻辑是否正确处理了 null 的情况，避免页面崩溃。";
+        let r = classify(prose);
+        assert!(!r.contains(&"XML".to_string()), "got {:?}", r);
+        assert!(!r.contains(&"HTML".to_string()), "got {:?}", r);
+    }
+
+    // ===== CSV 引号感知（审计 P2：split(',') 遇「"张三，李四"」判错） =====
+
+    /// 字段内含带引号逗号：每行真实字段数一致（3 列），朴素 split 会数出不同逗号数
+    #[test]
+    fn test_csv_quoted_commas() {
+        let csv = "姓名,备注,城市\n\"张三, 李四\",\"先加逗号\",北京\n王五,\"无逗号, 但是有引号\",上海\n赵六,普通字段,广州";
+        let r = classify(csv);
+        assert!(r.contains(&"表格".to_string()), "got {:?}", r);
+    }
+
+    /// 负例：引号不平衡的普通句子（每行逗号数也不同）不能因引号逻辑误判成表格
+    #[test]
+    fn test_prose_with_quotes_is_not_csv() {
+        let prose = "他说,「这个东西,我今天不想要了」\n然后转身就走了,留下了一句话\n大家都愣住了,面面相觑";
+        let r = classify(prose);
+        assert!(!r.contains(&"表格".to_string()), "got {:?}", r);
+    }
+
+    // ===== C / C++ / C#（审计 P3：使用量最大的三种缺席语言） =====
+
+    #[test]
+    fn test_c_language() {
+        let code = "#include <stdio.h>\n#include <stdlib.h>\n\nint main(int argc, char *argv[]) {\n    FILE *fp = fopen(argv[1], \"r\");\n    if (fp == NULL) {\n        printf(\"cannot open\\n\");\n        return 1;\n    }\n    char buf[256];\n    while (fgets(buf, sizeof(buf), fp) != NULL) {\n        fputs(buf, stdout);\n    }\n    fclose(fp);\n    return 0;\n}";
+        let r = classify(code);
+        assert!(r.contains(&"代码".to_string()), "got {:?}", r);
+        assert!(r.contains(&"C".to_string()), "got {:?}", r);
+    }
+
+    #[test]
+    fn test_cpp_language() {
+        let code = "#include <iostream>\n#include <vector>\n\nnamespace demo {\n\nclass Widget {\npublic:\n    Widget() = default;\n    virtual ~Widget() = default;\n    void draw() const {\n        std::cout << \"drawing widget\" << std::endl;\n    }\n};\n\n} // namespace demo\n\nint main() {\n    std::vector<int> v{1, 2, 3};\n    for (auto x : v) std::cout << x << std::endl;\n    return 0;\n}";
+        let r = classify(code);
+        assert!(r.contains(&"代码".to_string()), "got {:?}", r);
+        assert!(r.contains(&"C++".to_string()), "got {:?}", r);
+    }
+
+    #[test]
+    fn test_csharp_language() {
+        let code = "using System;\nusing System.Collections.Generic;\n\nnamespace Demo.Services {\n    public class OrderService {\n        public string Name { get; set; }\n        public async Task<List<Order>> GetAllAsync() {\n            var orders = await _repo.QueryAsync();\n            Console.WriteLine($\"loaded {orders.Count} orders\");\n            return orders;\n        }\n    }\n}";
+        let r = classify(code);
+        assert!(r.contains(&"代码".to_string()), "got {:?}", r);
+        assert!(r.contains(&"C#".to_string()), "got {:?}", r);
+    }
+
+    // ===== Windows / PowerShell 命令（审计 P4：白名单缺 Windows 系） =====
+
+    #[test]
+    fn test_windows_commands() {
+        for cmd in [
+            "ipconfig /all",
+            "netsh wlan show profiles",
+            "schtasks /create /tn backup /tr notepad.exe /sc daily",
+            "robocopy D:\\data E:\\backup /mir /xf *.tmp",
+        ] {
+            let r = classify(cmd);
+            assert!(r.contains(&"命令行".to_string()), "{cmd} got {:?}", r);
+        }
+    }
+
+    #[test]
+    fn test_powershell_cmdlets() {
+        for cmd in [
+            "Get-ChildItem -Path C:\\Windows -Filter *.log -Recurse",
+            "Get-Process | Where-Object { $_.CPU -gt 100 }",
+            "Remove-Item C:\\temp\\old.log -Force",
+        ] {
+            let r = classify(cmd);
+            assert!(r.contains(&"命令行".to_string()), "{cmd} got {:?}", r);
+        }
+    }
+
+    /// 负例：日常句子以白名单单词开头不能判成命令行（reg/net/sc 系的防线）
+    #[test]
+    fn test_prose_starting_like_command_is_not_command() {
+        for prose in [
+            "reg 至于吗，这点小事也要争。",
+            "net 流量这个月又超了，得省着点用。",
+        ] {
+            let r = classify(prose);
+            assert!(!r.contains(&"命令行".to_string()), "{prose} got {:?}", r);
+        }
     }
 
     #[test]
@@ -1946,6 +2328,47 @@ mod tests {
     fn test_markdown() {
         let md = "# Title\n\nSome **bold** text\n\n- item 1\n- item 2";
         assert!(classify(md).contains(&"Markdown".to_string()));
+    }
+
+    #[test]
+    fn test_markdown_table_pure() {
+        // 纯 GFM 管道表格（无标题/加粗/列表等其他特征）。
+        // 2026-10-15 实测漏判：分类器评分表没有表格特征，纯表格 6 项 0 分 → 落成纯文本。
+        let md = "| 收入收款申请单 | EYE8 | 营收收款申请单 |\n\
+                  | --- | --- | --- |\n\
+                  | 暂估医院收款调整单 | EYE8-Cxx-02 | 医院收款方式调整单 |\n\
+                  | HIS医院应收单 | EYE4-Cxx-01 | HIS医院营收单 |";
+        assert!(classify(md).contains(&"Markdown".to_string()));
+    }
+
+    #[test]
+    fn test_markdown_table_mixed() {
+        // 表格 + 标题混排：表格作为评分特征应命中
+        let md = "# 单据对照\n\n| A | B |\n| --- | --- |\n| 1 | 2 |";
+        assert!(classify(md).contains(&"Markdown".to_string()));
+    }
+
+    #[test]
+    fn test_pipe_text_without_delimiter_row_is_not_markdown() {
+        // 只有管道行、没有 GFM 分隔行的对齐文本（日志/手排表格）不得误判为 Markdown
+        let t = "a | b | c\nx | y | z\nfoo | bar | baz";
+        assert!(!classify(t).contains(&"Markdown".to_string()));
+        // 分隔行缺表头行（首行就是分隔行）也不算
+        let t2 = "| --- | --- |\n| a | b |";
+        assert!(!classify(t2).contains(&"Markdown".to_string()));
+    }
+
+    #[test]
+    fn test_content_type_markdown_table() {
+        let c = ContentClassifier::new();
+        assert_eq!(
+            ContentClassifier::content_type_from_labels(&c.classify(
+                "| 收入收款申请单 | EYE8 | 营收收款申请单 |\n\
+                 | --- | --- | --- |\n\
+                 | 暂估医院收款调整单 | EYE8-Cxx-02 | 医院收款方式调整单 |"
+            )),
+            "markdown"
+        );
     }
 
     #[test]
