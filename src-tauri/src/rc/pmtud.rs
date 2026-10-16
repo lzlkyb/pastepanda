@@ -11,8 +11,8 @@
 //! # 协议（借 DPLPMTUD 的三要素：探测报文 / 身份 / 确认）
 //!
 //! 被控端发 `0xD2` 探针数据报（target 总长 = 片宽 + `HEADER`，`nonce` 8B
-//! 随机身份 + 声明尺寸 2B，尾部补零到目标长）；发起端在视频数据报读取循环
-//! 里认出 `0xD2` **原样回发**；被控端的数据报读取循环认出回显 → [`note_ack`]。
+//! 探针序号 + 声明尺寸 2B，尾部补零到目标长）；发起端在视频数据报读取循环
+//! 里认出 `0xD2` **原样回发**；被控端的数据报读取循环认出回显 → [`ProbeState::note_ack`]。
 //! 回显到达 = 发起端真的**收到**了那个尺寸的数据报（收不到就不可能回），
 //! 这正是视频流方向要证的那条腿；发起端→被控端的回显腿顺带也验了。
 //!
@@ -32,7 +32,9 @@
 
 use super::vid_dgram::{FRAG, FRAG_BIG, HEADER};
 use iroh::endpoint::Connection;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// 探针标记字节（与视频数据报 `DGRAM_TAG=0xD1` 区分；误解包即弃）。
@@ -52,12 +54,39 @@ const ACK_WAIT_MS: u64 = 3_000;
 /// 重探周期。路径变化（直连↔中继切换）会改 MTU；10min 内自愈。
 const REPROBE_SECS: u64 = 600;
 
-/// 等待确认的探针身份（回显核对的唯一依据）：每个 nonce 占一个 bit。
-static ACK_SEEN: AtomicU64 = AtomicU64::new(0);
+/// 每场会话独立的片宽与回显，不能让上一场迟到的任务/ACK 操纵下一场。
+pub struct ProbeState {
+    frag: AtomicUsize,
+    ack_seen: AtomicU64,
+}
 
-/// 回显处理器调用：登记「这个 nonce 被对端确认收到」。探测循环轮询它。
-pub fn note_ack(nonce: u64) {
-    ACK_SEEN.fetch_or(nonce_bit(nonce), Ordering::Relaxed);
+impl ProbeState {
+    pub const fn new() -> Self {
+        Self { frag: AtomicUsize::new(FRAG), ack_seen: AtomicU64::new(0) }
+    }
+
+    pub fn frag(&self) -> usize {
+        self.frag.load(Ordering::Relaxed)
+    }
+
+    fn set_frag(&self, frag: usize) {
+        // 线上格式只有两档，1200 的探测结果仍只能安全落在 1000。
+        self.frag.store(if frag >= FRAG_BIG { FRAG_BIG } else { FRAG }, Ordering::Relaxed);
+    }
+
+    /// 只登记本会话的回显，数据报读取任务持有同一个实例。
+    pub fn note_ack(&self, nonce: u64) {
+        self.ack_seen.fetch_or(nonce_bit(nonce), Ordering::Relaxed);
+    }
+}
+
+/// 会话 future 完成即销毁探测 future；探测先结束则继续等会话正常收尾。
+pub async fn run_during(probe: impl Future<Output = ()>, session: impl Future<Output = ()>) {
+    tokio::pin!(session);
+    tokio::select! {
+        _ = probe => session.await,
+        _ = &mut session => {},
+    }
 }
 
 fn nonce_bit(nonce: u64) -> u64 {
@@ -85,14 +114,20 @@ pub fn parse_probe(dg: &[u8]) -> Option<(u64, u16)> {
 }
 
 /// 被控端探测任务入口。`max_frag` = 对端声明能解的最大片宽
-/// （`Request.vd_frag`，≤1000 时调用方不该 spawn 本任务，这里也再防一道）。
+/// （`Request.vd_frag`，≤1000 时调用方不启动探测，这里也再防一道）。
 ///
 /// 流程：**先复位 1000**（防上一场残留）→ 逐级试 [`LADDER`]（总长换算回
-/// 片宽写 [`super::stream_cfg::set_vd_frag`]）→ 每 [`REPROBE_SECS`] 重探
-/// （重探从当前档起，失败自动降档）。会话结束由调用方丢弃本任务
-/// （会话 id 检查在宿主循环里，与其它 inbound 任务同纪律）。
-pub async fn run(conn: Connection, max_frag: usize) {
-    super::stream_cfg::set_vd_frag(FRAG);
+/// 片宽写本会话 [`ProbeState`]）→ 每 [`REPROBE_SECS`] 重探。
+/// 宿主通过 [`run_during`] 在推流结束时取消；连接先关闭也立即停止探测。
+pub async fn run(conn: Connection, max_frag: usize, state: Arc<ProbeState>) {
+    tokio::select! {
+        _ = conn.closed() => {},
+        _ = probe_loop(&conn, max_frag, &state) => {},
+    }
+}
+
+async fn probe_loop(conn: &Connection, max_frag: usize, state: &ProbeState) {
+    state.set_frag(FRAG);
     if max_frag <= FRAG {
         return; // 旧对端：门没开，恒 1000，别白发探针
     }
@@ -101,29 +136,29 @@ pub async fn run(conn: Connection, max_frag: usize) {
         // 逐级上探：首个确认的档生效（含当前档的再确认）。
         for &total in LADDER.iter() {
             let frag = total - HEADER;
-            if frag <= current {
-                continue; // 不低于已在用的档
+            if frag <= current || frag > max_frag {
+                continue; // 只探测对端支持且高于当前档的尺寸
             }
-            if probe_once(&conn, total).await {
+            if probe_once(conn, total, state).await {
                 current = frag;
-                super::stream_cfg::set_vd_frag(current);
+                state.set_frag(current);
                 log::info!("[PMTUD] 片宽升档 {} → {}（数据报 {}B）", FRAG, current, total);
                 break;
             }
         }
-        // 等下一轮重探（路径变化 10min 内自愈；会话死了任务随宿主循环退出）。
+        // 等下一轮重探；run_during / conn.closed 会取消本等待。
         tokio::time::sleep(Duration::from_secs(REPROBE_SECS)).await;
         // 重探失败要能降档：先把 current 清回安全档再走上面的梯子。
         // （成功则梯子第一级就是它自己，立刻恢复。）
         current = FRAG;
-        super::stream_cfg::set_vd_frag(FRAG);
+        state.set_frag(FRAG);
     }
 }
 
 /// 单档探测：发 [`PROBES_PER_SIZE`] 个探针，[`ACK_WAIT_MS`] 内任意一个
 /// 被确认即算过。全静默 = 路径吃不下（或对端不认识探针），返回 false。
-async fn probe_once(conn: &Connection, total: usize) -> bool {
-    ACK_SEEN.store(0, Ordering::Relaxed);
+async fn probe_once(conn: &Connection, total: usize, state: &ProbeState) -> bool {
+    state.ack_seen.store(0, Ordering::Relaxed);
     for i in 0..PROBES_PER_SIZE {
         let nonce = 1 + i as u64; // bit 身份，见 nonce_bit
         let dg = probe_datagram(total, nonce);
@@ -137,7 +172,7 @@ async fn probe_once(conn: &Connection, total: usize) -> bool {
     let deadline = tokio::time::Instant::now() + Duration::from_millis(ACK_WAIT_MS);
     let want: u64 = (1..=PROBES_PER_SIZE as u64).map(nonce_bit).fold(0, |a, b| a | b);
     while tokio::time::Instant::now() < deadline {
-        if ACK_SEEN.load(Ordering::Relaxed) & want != 0 {
+        if state.ack_seen.load(Ordering::Relaxed) & want != 0 {
             return true;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -192,12 +227,15 @@ mod tests {
         // note_ack 是回显处理器与探测循环的唯一交汇。
         // 这里钉 bit 语义本身（fetch_or 累积、不互踩）——
         // 曾在这里犯过「fetch_or(nonce) 而不是 bit」的错，这条守卫钉住它。
-        ACK_SEEN.store(0, Ordering::Relaxed);
-        note_ack(2);
-        assert_eq!(ACK_SEEN.load(Ordering::Relaxed) & nonce_bit(2), nonce_bit(2));
-        assert_eq!(ACK_SEEN.load(Ordering::Relaxed) & nonce_bit(1), 0);
-        note_ack(1);
-        assert_ne!(ACK_SEEN.load(Ordering::Relaxed) & nonce_bit(1), 0);
-        ACK_SEEN.store(0, Ordering::Relaxed);
+        let state = ProbeState::new();
+        state.note_ack(2);
+        assert_eq!(state.ack_seen.load(Ordering::Relaxed) & nonce_bit(2), nonce_bit(2));
+        assert_eq!(state.ack_seen.load(Ordering::Relaxed) & nonce_bit(1), 0);
+        state.note_ack(1);
+        assert_ne!(state.ack_seen.load(Ordering::Relaxed) & nonce_bit(1), 0);
     }
 }
+
+#[cfg(test)]
+#[path = "pmtud/tests.rs"]
+mod lifetime_tests;

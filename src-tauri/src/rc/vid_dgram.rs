@@ -184,13 +184,11 @@ impl VidDgramSender {
         codec: super::video::FrameCodec,
         fec_rs: bool,
         loss_permille: i64,
+        frag: usize,
     ) -> Result<(), SendErr> {
         const PACE_EVERY: usize = 16;
         let m = rs_m_for_loss(loss_permille);
-        // 🔴 P3：片宽每次发送现读（`stream_cfg::vd_frag`）——pmtud 探测任务
-        // 探测成功后改写它，推流循环无需任何重启；探测不过恒为 [`FRAG`]，
-        // 行为与今天一致。会话启动时由 probe 任务先复位成 1000（防上一场残留）。
-        let frag = super::stream_cfg::vd_frag();
+        // 调用方从本会话 ProbeState 取片宽，不能读取跨会话的全局探测结果。
         let dgs = if fec_rs {
             frame_dgrams_rs(seq, data, key, at_ms, cap_ms, enc_ms, w, h, codec, m, frag)
         } else {

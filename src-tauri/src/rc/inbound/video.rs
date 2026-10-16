@@ -310,6 +310,7 @@ impl InboundVideo {
             None
         };
         Some(Self {
+            probe: Arc::new(crate::rc::pmtud::ProbeState::new()),
             svc,
             peer: peer.to_string(),
             my_id,
@@ -1038,7 +1039,7 @@ impl InboundVideo {
                 .dgram
                 .send_frame(
                     &self.conn, sq, &p.data, p.key, ts, cap_ms, enc_ms, p.width, p.height,
-                    frame_codec, self.peer_fec_rs, loss,
+                    frame_codec, self.peer_fec_rs, loss, self.probe.frag(),
                 )
                 .await
             {

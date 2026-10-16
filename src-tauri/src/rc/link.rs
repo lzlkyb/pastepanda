@@ -262,14 +262,12 @@ impl LinkState {
         }
     }
 
-    /// 事件喂入用的当前 epoch 快照（session/path 位由状态机内部维护，
-    /// 调用方只提供 network 世代）。私有：喂点全在本模块内。
+    /// session/path 由 reducer 递增；继续填 0 会让 attach 后的正常事件全部被拒。
+    /// 本方法单独取锁，调用方必须在取得快照后再锁 sched 喂事件。
     fn sched_epoch(&self) -> super::link_sched::SchedEpoch {
-        super::link_sched::SchedEpoch {
-            network: self.network_gen.load(Ordering::Relaxed),
-            session: 0,
-            path: 0,
-        }
+        let mut epoch = self.sched.lock().unwrap_or_else(|p| p.into_inner()).snapshot().epoch;
+        epoch.network = self.network_gen.load(Ordering::Relaxed);
+        epoch
     }
 
     /// 网络环境变更（换网卡/换网段）时 bump。机制见 `network_gen` 字段注释。
@@ -470,6 +468,31 @@ impl LinkState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduler_uses_current_epoch_for_loss_and_recovery() {
+        use super::super::link_sched::{Phase, SchedEvent};
+        let link = LinkState::new();
+        // 只替代连接建立；后续走实际观测入口，防 reducer 单测全绿而接线失效。
+        let epoch = link.sched_epoch();
+        link.sched.lock().unwrap().reduce(SchedEvent::Attached { epoch }, 100);
+        link.note_evidence_lost();
+        assert!(matches!(link.sched_snapshot().phase, Phase::Degraded { .. }));
+        link.note_pong(20);
+        assert!(matches!(link.sched_snapshot().phase, Phase::Recovering { .. }));
+        assert_eq!(link.sched_snapshot().rejected, 0);
+    }
+
+    #[test]
+    fn scheduler_detaches_with_current_epoch() {
+        use super::super::link_sched::{Phase, SchedEvent};
+        let link = LinkState::new();
+        let epoch = link.sched_epoch();
+        link.sched.lock().unwrap().reduce(SchedEvent::Attached { epoch }, 100);
+        link.detach();
+        assert_eq!(link.sched_snapshot().phase, Phase::Unbound);
+        assert_eq!(link.sched_snapshot().rejected, 0);
+    }
 
     /// 🔴 后台保活（2026-10-02）看门狗判据。场景背景：手机切后台 WebView/进程
     /// 冻结，心跳断是预期——旧判据 15s 就把会话收口（「切后台再回来远程就断了」

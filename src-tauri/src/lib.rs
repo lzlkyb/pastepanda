@@ -1218,6 +1218,7 @@ pub fn run() {
             commands::rc_pin_pair_begin,
             commands::rc_exchange_check,
             commands::rc_invite_preview,
+            commands::rc_invite_revoke,
             commands::rc_pair,
             commands::rc_forget,
             commands::rc_device_rename,

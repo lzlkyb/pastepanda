@@ -65,6 +65,11 @@ export function rcInviteCreate(name: string): Promise<RcInviteCreated> {
   return invoke<RcInviteCreated>("rc_invite_create", { name });
 }
 
+/** 主动作废当前邀请窗口（码已发出但还没人配成时提前关门，不用干等 TTL）。 */
+export function rcInviteRevoke(): Promise<void> {
+  return invoke("rc_invite_revoke");
+}
+
 export function rcExchangeBegin(code: string): Promise<RcExchangeStarted> {
   return invoke<RcExchangeStarted>("rc_exchange_begin", { code });
 }

@@ -38,6 +38,7 @@ function renderCreate() {
       onBack={() => {}}
       revealed
       onReveal={() => {}}
+      onRevoke={() => {}}
     />,
   );
   return { toast, onGenerate };
@@ -71,6 +72,7 @@ describe("出示屏：凭证双形态", () => {
         onBack={() => {}}
         revealed={false}
         onReveal={() => {}}
+        onRevoke={() => {}}
       />,
     );
     // 核对数不显示
@@ -81,6 +83,8 @@ describe("出示屏：凭证双形态", () => {
     expect(area.tabIndex).toBe(-1);
     // 复制按钮在遮罩态不可点
     expect((screen.getByRole("button", { name: "复制配对码" }) as HTMLButtonElement).disabled).toBe(true);
+    // 作废不依赖亮出态：收着的码同样是有效凭证，一样该能作废（差距 2，2026-10-16）
+    expect((screen.getByRole("button", { name: "作废" }) as HTMLButtonElement).disabled).toBe(false);
     // 主按钮是「出示」而不是「生成并复制」
     expect(screen.getByRole("button", { name: "出示（生成凭证）" })).toBeTruthy();
   });
@@ -101,6 +105,7 @@ describe("出示屏：凭证双形态", () => {
         onBack={() => {}}
         revealed={false}
         onReveal={() => {}}
+        onRevoke={() => {}}
       />,
     );
     expect(screen.queryByText("2849 3116")).toBeNull();

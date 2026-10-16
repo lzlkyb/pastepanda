@@ -48,11 +48,27 @@ const KNOCK_TTL_MS: i64 = 10 * 60 * 1000;
 /// 拒绝配对后的冷却：到点自动允许再敲门，避免一次误拒永久锁死。
 const DENY_TTL_MS: i64 = 30 * 60 * 1000;
 
+/// 🔴 敲门频率闸（2026-10-16 对标 p2wlan，差距 3）：同一对端在该窗口内最多
+/// [`KNOCK_RATE_MAX`] 次敲门，超限的**静默丢弃**——待确认列表是给人看的，
+/// 被同一台刷屏就掩盖了真正要确认的那一台。p2wlan 的同位设计是滑动窗口
+/// 10 次/60s（`server/database/rooms.go:406-421`），我们更严：次数更少。
+const KNOCK_RATE_WINDOW_MS: i64 = 60_000;
+const KNOCK_RATE_MAX: usize = 5;
+/// 满员时拒绝新身份而非驱逐旧账本，否则换身份可绕过限速。
+const KNOCK_RECENT_PEERS_MAX: usize = 128;
+/// 🔴 待确认列表上限：门开着时**任何**拿到有效签名的对端都能敲门（签名只证
+/// 身份、不证善意），无上限的列表既能在 UI 上无限增长，也能把真正的请求挤出
+/// 视野。满了挤最旧——它 10 分钟（KNOCK_TTL）后本来也会自己消失，提前挤掉
+/// 只是让「还在场的请求」优先显示。
+const KNOCK_PENDING_MAX: usize = 8;
+
 #[derive(Default)]
 pub struct RcJoins {
     pending: Mutex<HashMap<String, RcJoinRequest>>,
     /// node_id → 拒绝生效到什么时候（epoch ms）。
     denied: Mutex<HashMap<String, i64>>,
+    /// node_id → 窗口内历次敲门时间戳（频率闸的账本，见 KNOCK_RATE_WINDOW_MS）。
+    recent_knocks: Mutex<HashMap<String, Vec<i64>>>,
     exchange: Mutex<Option<RcExchangeIntent>>,
     short_code: Mutex<Option<RcShortCode>>,
     short_active: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -186,9 +202,42 @@ impl RcJoins {
         if self.is_denied(node_id, now_ms) {
             return false;
         }
+        // 记账与判断同锁完成；只留最近五次尝试，拒绝也更新窗口而不追加无界记录。
+        {
+            let Ok(mut r) = self.recent_knocks.lock() else {
+                return false;
+            };
+            r.retain(|_, marks| {
+                marks.retain(|t| now_ms - *t <= KNOCK_RATE_WINDOW_MS);
+                !marks.is_empty()
+            });
+            if !r.contains_key(node_id) && r.len() >= KNOCK_RECENT_PEERS_MAX {
+                return false;
+            }
+            let marks = r.entry(node_id.to_string()).or_default();
+            let limited = marks.len() >= KNOCK_RATE_MAX;
+            if limited {
+                marks.remove(0);
+            }
+            marks.push(now_ms);
+            if limited {
+                return false;
+            }
+        }
         let Ok(mut m) = self.pending.lock() else {
             return false;
         };
+        // 🔴 列表上限：只在**新**对端进门时挤最旧；已在列表里的对端刷新自己
+        // 不该把别人挤出去（它是被通知的对象，不是竞争者）。
+        if !m.contains_key(node_id) && m.len() >= KNOCK_PENDING_MAX {
+            let oldest = m
+                .values()
+                .min_by_key(|r| r.first_seen_ms)
+                .map(|r| r.node_id.clone());
+            if let Some(oldest) = oldest {
+                m.remove(&oldest);
+            }
+        }
         m.entry(node_id.to_string())
             .and_modify(|r| {
                 r.last_seen_ms = now_ms;
@@ -242,6 +291,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rate_ledger_bounds_rejected_attempts() {
+        let joins = RcJoins::new();
+        for _ in 0..10_000 { joins.knock("peer", 1000); }
+        let recent = joins.recent_knocks.lock().unwrap();
+        assert!(recent["peer"].len() <= KNOCK_RATE_MAX, "被拒请求不能无限追加时间戳");
+    }
+
+    #[test]
+    fn rate_ledger_reclaims_expired_peers() {
+        let joins = RcJoins::new();
+        for i in 0..1000 { joins.knock(&format!("peer-{i}"), 1000); }
+        assert!(joins.knock("new", 1000 + KNOCK_RATE_WINDOW_MS + 1));
+        assert_eq!(joins.recent_knocks.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rate_ledger_limits_distinct_peers_without_forgetting_existing_limits() {
+        let joins = RcJoins::new();
+        for _ in 0..KNOCK_RATE_MAX { assert!(joins.knock("first", 1000)); }
+        for i in 0..1000 { joins.knock(&format!("peer-{i}"), 1000); }
+        assert!(joins.recent_knocks.lock().unwrap().len() <= 128, "换身份也不能无限分配账本");
+        assert!(!joins.knock("first", 1001), "满员时不能驱逐账本绕过限速");
+    }
+
+    #[test]
     fn deny_blocks_then_expires() {
         let j = RcJoins::new();
         let now = 1_000_000i64;
@@ -262,6 +336,53 @@ mod tests {
         assert_eq!(list[0].tries, 2);
         assert!(j.take("a"));
         assert!(j.list(now + 1).is_empty());
+    }
+
+    /// 🔴 频率闸守卫（2026-10-16，差距 3）：60s 窗口内第 6 次敲门必须被丢。
+    /// 这条红了 = 有人把 KNOCK_RATE_MAX 改名/改义/删了闸，刷屏防护失效。
+    #[test]
+    fn knock_rate_limit_drops_the_sixth_attempt_within_the_window() {
+        let j = RcJoins::new();
+        let now = 10_000i64;
+        for i in 0..KNOCK_RATE_MAX {
+            assert!(j.knock("a", now + i as i64 * 1_000), "窗口内第 {} 次应放行", i + 1);
+        }
+        assert!(
+            !j.knock("a", now + KNOCK_RATE_MAX as i64 * 1_000),
+            "60s 内超过 {} 次应被静默丢弃",
+            KNOCK_RATE_MAX
+        );
+        // 被丢的那次不该进待确认列表（tries 停在上限值）
+        let list = j.list(now + KNOCK_RATE_MAX as i64 * 1_000);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].tries, KNOCK_RATE_MAX as u32);
+        // 窗口滑出后放行（🔴 被丢的那次**也记了账**——p2wlan 同款语义：
+        // 失败尝试照样计数，不然攻击者可以卡着上限永不滑出）；
+        // 其他对端从第一天起就不受限。
+        assert!(
+            j.knock("a", now + 5_000 + KNOCK_RATE_WINDOW_MS + 1),
+            "窗口滑出应重新放行（以最后一次敲门含被丢的那次起算）"
+        );
+        assert!(j.knock("b", now + 5_000), "频率闸只对同一对端生效");
+    }
+
+    /// 🔴 列表上限守卫：第 9 台进门时挤掉最旧的，且已在列表里的刷新不挤人。
+    #[test]
+    fn knock_pending_list_is_capped_and_evicts_the_oldest() {
+        let j = RcJoins::new();
+        let now = 10_000i64;
+        for i in 0..KNOCK_PENDING_MAX {
+            assert!(j.knock(&format!("p{i}"), now + i as i64));
+        }
+        // 已在列表里的对端刷新：不该触发挤人
+        assert!(j.knock("p1", now + 100));
+        assert_eq!(j.list(now + 100).len(), KNOCK_PENDING_MAX);
+        // 新对端进门：挤掉 first_seen 最小的 p0
+        assert!(j.knock("new", now + 101));
+        let list = j.list(now + 101);
+        assert_eq!(list.len(), KNOCK_PENDING_MAX, "上限应维持不变");
+        assert!(list.iter().all(|r| r.node_id != "p0"), "最旧的应被挤掉");
+        assert!(list.iter().any(|r| r.node_id == "new"), "新对端应进列表");
     }
 
     #[test]

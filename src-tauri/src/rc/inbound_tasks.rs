@@ -74,6 +74,7 @@ impl InboundVideo {
     /// 视频大帧把可靠流堵住时，鼠标依然每一拍都进得来。
     pub(super) fn spawn_datagram_reader(&self) {
         let svc = self.svc.clone();
+        let probe = self.probe.clone();
         let peer = self.peer.clone();
         // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
         // 重连时新旧会话 peer 相同，旧任务会因「peer 相同」误判自己仍存活；
@@ -101,7 +102,7 @@ impl InboundVideo {
                 // 只可能来自新版发起端对探针的回发；旧对端永远不会发这个 tag。
                 if bytes.first() == Some(&super::pmtud::PROBE_TAG) {
                     if let Some((nonce, _)) = super::pmtud::parse_probe(&bytes) {
-                        super::pmtud::note_ack(nonce);
+                        probe.note_ack(nonce);
                     }
                     continue;
                 }

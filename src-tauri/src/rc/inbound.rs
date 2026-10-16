@@ -69,6 +69,8 @@ pub(super) struct InboundVideo {
     pub(super) mac_video_codec:String,
     /// 本会话连接句柄：数据报读取（鼠标低延迟通道）与 QUIC stats 采样都要用。
     pub(super) conn: iroh::endpoint::Connection,
+    /// 探测状态只属于这场会话，旧任务的迟到回显不能改变下一场片宽。
+    pub(in crate::rc) probe: Arc<super::pmtud::ProbeState>,
     #[cfg(target_os = "windows")]
     pub(super) dxgi: super::dxgi::DxgiPool,
     /// R4 硬编会话；None = 不走硬编（配置 jpeg / 打不开）。

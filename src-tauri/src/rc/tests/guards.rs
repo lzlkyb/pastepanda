@@ -1638,12 +1638,12 @@ fn 守卫_pmtud大分片链路接线成对() {
         service_inbound.contains("peer_vd_frag"),
         "被控端没有解析 vd_frag 位"
     );
-    // ④ 会话入口复位 + 探测任务 spawn（复位与探测必须同在：只 spawn 不复位
-    //    会把上一场的档位灌进这一场；只复位不 spawn 则永远 1000B）
+    // ④ 每场建立独立状态，探测 future 与推流共用取消域。
     let inbound_accept = include_str!("../service/inbound_accept.rs");
     assert!(
-        inbound_accept.contains("set_vd_frag(") && inbound_accept.contains("pmtud::run"),
-        "被控端会话入口缺片宽复位或探测任务 spawn —— 残留档位会灌给旧对端"
+        inbound_accept.contains("pmtud::run_during(")
+            && include_str!("../inbound/video.rs").contains("ProbeState::new()"),
+        "探测必须随推流取消，且不复用上一场的片宽"
     );
     // ⑤ 发起端探针回显钩子（0xD2 原样回发）——删了它探测永远超时
     let outbound = include_str!("../outbound.rs");
@@ -1657,16 +1657,57 @@ fn 守卫_pmtud大分片链路接线成对() {
         inbound_tasks.contains("parse_probe") && inbound_tasks.contains("note_ack"),
         "被控端数据报读取循环缺探针确认处理 —— 探测永远超时、永远 1000B"
     );
-    // ⑦ 片宽的写入口与读出口同源（stream_cfg 单点收口，不许旁路写）
+    // ⑦ 片宽读写都来自同一场 ProbeState，禁止跨会话的全局配置。
     let pmtud = include_str!("../pmtud.rs");
     let vid_dgram = include_str!("../vid_dgram.rs");
     assert!(
-        pmtud.contains("stream_cfg::set_vd_frag") && vid_dgram.contains("stream_cfg::vd_frag()"),
-        "片宽读写未走 stream_cfg 单点收口"
+        pmtud.contains("state.set_frag(current)")
+            && include_str!("../inbound/video.rs").contains("self.probe.frag()")
+            && !include_str!("../stream_cfg.rs").contains("static VD_FRAG"),
+        "片宽读写必须属于同一会话"
     );
     // ⑧ 格式位随帧自描述（FLAG_FRAG_BIG 必须真实存在并被两侧消费）
     assert!(
         vid_dgram.contains("FLAG_FRAG_BIG") && vid_dgram.contains("FRAG_BIG"),
         "大分片格式位缺失 —— 接收端无从自描述片宽"
+    );
+}
+
+/// 🔴 守卫：撤销信任的入口必须「当场收会话」+ 邀请作废三侧成对
+/// （2026-10-16，对标 p2wlan 配对差距 1/2）。
+///
+/// 病根：`rc_forget` 早在 09-23（P1-1 审计）就补了实时断连，但当时只有它
+/// 一个入口——拉黑（`rc_set_device_allowed(false)`）漏了，已建立的会话会
+/// 活到对端自己断开。这条按源码文本钉住两件事：
+/// ① 拉黑分支里必须保留会话收尾（防将来把「先收会话再写表」当冗余删掉）；
+/// ② `rc_invite_revoke`（邀请码主动作废）命令 + 注册 + 前端 invoke 三侧成对，
+///    尺码不对就是「按钮点了没反应」。
+#[test]
+fn 守卫_拉黑设备必须当场收会话_邀请作废前后端成对() {
+    let cmd = include_str!("../../commands/rc.rs");
+    // 取 rc_set_device_allowed 的函数体（到下一个命令边界为止），
+    // 避免 rc_forget 里的同款调用把断言喂假绿。
+    let start = cmd
+        .find("pub async fn rc_set_device_allowed")
+        .expect("rc_set_device_allowed 不见了——拉黑入口被改名/搬走，本守卫要跟着指新家");
+    let end = start + cmd[start..].find("#[tauri::command]").expect("命令后没有下一个命令边界");
+    let body = &cmd[start..end];
+    assert!(
+        body.contains("!allowed") && body.contains("force_end_if_session"),
+        "拉黑分支丢了会话收尾 —— 拉黑一台正在控你的设备，控制会话会一直活到对端自己断开（差距 1 复发）"
+    );
+    // 邀请码主动作废：命令 + 注册 + 前端 invoke 三侧成对。
+    assert!(
+        cmd.contains("pub fn rc_invite_revoke"),
+        "rc_invite_revoke 命令不见了 —— 作废入口被删，用户只能干等 TTL"
+    );
+    assert!(
+        include_str!("../../lib.rs").contains("commands::rc_invite_revoke,"),
+        "rc_invite_revoke 没进 invoke_handler —— 前端点了没反应"
+    );
+    let ts_cmd = include_str!("../../../../src/lib/api/rcCommands.ts");
+    assert!(
+        ts_cmd.contains("invoke(\"rc_invite_revoke\")"),
+        "前端没有 rc_invite_revoke 的 invoke —— 作废按钮是死的"
     );
 }

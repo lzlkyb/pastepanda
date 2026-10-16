@@ -28,6 +28,15 @@ export function RcLegacyPairDialog({ rc, toast, onClose, onPairAccepted }: {
     } catch (error) { toast(String(error), "error"); }
     finally { setBusy(false); }
   };
+  /** 主动作废（差距 2，2026-10-16）：关后端邀请门 + 清屏上的码与遮罩态。 */
+  const revoke = async () => {
+    const ok = await rc.revokeInvite();
+    if (ok) {
+      setCreated(null); setExpiresAt(0);
+      cred.hide();
+      toast("配对码已作废，对方将无法再用它连接", "info");
+    }
+  };
   return <RcConnectionShell title="完整凭证配对" subtitle="兼容需要传递完整凭证的设备；日常连接使用扫码或 8 位配对码。" onClose={onClose}>
     <div className={styles.body}>
       <div className={styles.codeModes}>
@@ -37,7 +46,8 @@ export function RcLegacyPairDialog({ rc, toast, onClose, onPairAccepted }: {
       {mode === "create" ? <RcPairCreatePane name={name} setName={setName} created={created} expiresAt={expiresAt}
         now={expiresAt ? expiresAt - remain : Date.now()} busy={busy} myFp={rc.identity?.fingerprint ?? "读取中…"}
         selfName={rc.identity?.device_name ?? ""} toast={toast} onGenerate={() => void generate()} onBack={onClose}
-        revealed={cred.vis === "shown"} onReveal={() => { if (!created) void generate(); else cred.show(); }} />
+        revealed={cred.vis === "shown"} onReveal={() => { if (!created) void generate(); else cred.show(); }}
+        onRevoke={() => void revoke()} />
         : <RcPairPastePane previewInvite={async (code) => { const result = await rc.previewInvite(code); peer.current = result.node_id; return result; }}
           pair={rc.pair} selfNodeId={rc.identity?.node_id} toast={toast} onBack={onClose} onPaired={(n) => {
             void rc.refreshTargets().then(() => { toast(`已配对远程设备「${n || "新设备"}」`, "success"); if (peer.current) onPairAccepted?.(peer.current); onClose(); });

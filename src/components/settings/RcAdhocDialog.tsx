@@ -96,6 +96,16 @@ export function RcAdhocDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane]);
 
+  /** 主动作废（差距 2，2026-10-16）：关后端邀请门 + 清屏上的码。 */
+  const revoke = async () => {
+    const ok = await rc.revokeInvite();
+    if (ok) {
+      setCode(null);
+      setExpiresAt(0);
+      toast("帮助码已作废，对方将无法再用它连接", "info");
+    }
+  };
+
   // 码的剩余时间：只在有码之后跑计时器，关掉即清。
   useEffect(() => {
     if (!code || !expiresAt) return;
@@ -147,6 +157,7 @@ export function RcAdhocDialog({
                 error={err}
                 toast={toast}
                 onGenerate={generate}
+                onRevoke={() => void revoke()}
                 onBack={onClose}
               />
             ) : (

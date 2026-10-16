@@ -108,7 +108,9 @@ impl InboundVideo {
         // 还是「还没到 5s 间隔」。
         crate::rc::perf::log_startup_hint();
         loop {
-            if !self.svc.session_is(SessionPhase::InboundActive, &self.peer) {
+            if !self.svc.session_id_is(&self.my_id)
+                || !self.svc.session_is(SessionPhase::InboundActive, &self.peer)
+            {
                 break;
             }
             if self.svc.session_expired() {
