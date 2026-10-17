@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>贴图拖入应用 · A 方案交互设计稿</title>
+  <link rel="stylesheet" href="./pin-drop-a.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>贴图拖入应用</h1>
+      <p>从绳上拉离照片，不松手拖到输入区。已取下的贴图，仍可用「拖入应用」手柄交付。</p>
+    </header>
+    <div class="demo-controls" aria-label="设计稿演示控制">
+      <span class="demo-label">交互演示</span>
+      <label>模拟客户端 <select id="client"><option>微信</option><option>企业微信</option></select></label>
+      <label>接收状态 <select id="scenario"><option value="accept">允许接收图片</option><option value="reject">不支持图片拖入</option><option value="closed">目标窗口已关闭</option></select></label>
+      <button id="demo-drop">演示一次拖入</button>
+      <button id="use-pin">显示已有贴图</button>
+      <button id="reset">重置演示</button>
+    </div>
+    <div class="stage-scroll">
+      <section id="stage" aria-label="桌面交互模拟">
+        <div class="scene-note" id="scene-note">桌面前台模拟 · 拉离绳带后连续拖入应用</div>
+        <div id="rope" aria-label="从桌面绳子取下照片">
+          <svg class="rope-line" viewBox="0 0 480 80" aria-hidden="true"><path d="M8 10Q240 64 472 10"/><circle cx="8" cy="10" r="5"/><circle cx="472" cy="10" r="5"/></svg>
+          <button id="hang-photo" aria-label="按住绳上照片，拉离绳带后拖入输入区"><span class="clip"></span><svg viewBox="0 0 600 400"><use href="#capture-art"/></svg></button>
+          <p>按住照片 → 拉离绳带 → 不松手拖入输入区</p>
+        </div>
+        <div id="flow-status" role="status" aria-live="polite">原图 480 × 320 · 取下后继续拖动</div>
+        <section id="chat" aria-label="聊天输入区模拟">
+          <div class="chat-head"><strong id="client-name">微信</strong><span>聊天输入区模拟</span></div>
+          <div class="conversation">
+            <div class="recipient"><span class="avatar">设</span><div><strong>设计讨论</strong><small>演示会话</small></div></div>
+            <p class="chat-message">把截图放到下方输入区，再检查后发送。</p>
+            <div class="conversation-hint">此区域不接收拖入的图片</div>
+          </div>
+          <div id="input-zone">
+            <div class="input-label"><strong id="zone-title">拖到这里，松开鼠标</strong><span id="zone-state">图片接收区</span></div>
+            <p id="empty-input">图片会先进入输入区，等待用户确认。</p>
+            <div id="attachment" hidden>
+              <svg class="attachment-art" viewBox="0 0 600 400" aria-label="待发送原图缩略图"><use href="#capture-art"/></svg>
+              <div><strong>截图.png</strong><small>480 × 320 · 原图</small><span>模拟待发送附件</span></div>
+              <button id="remove" aria-label="移除待发送附件"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+            </div>
+            <div class="send-row"><span>未连接真实客户端，不会发送消息</span><button disabled>发送</button></div>
+          </div>
+        </section>
+        <div id="closed-note" hidden>目标窗口已关闭<br><span>松开后保留原贴图，可重新拖入。</span></div>
+        <section id="pin" aria-label="原尺寸贴图" hidden>
+          <svg id="photo" viewBox="0 0 600 400" role="img" aria-label="示例截图，480乘320像素。拖动图片可移动贴图。">
+            <defs>
+              <g id="capture-art">
+                <rect class="art-bg" width="600" height="400"/>
+                <path class="art-line" d="M0 60H600M36 134H564M36 198H564M36 262H564M36 326H564"/>
+                <text class="art-heading" x="36" y="104">截图晾衣绳 · 交互验收</text>
+                <text class="art-meta" x="36" y="170">桌面显示</text><text class="art-value" x="340" y="170">进入其它应用自动隐藏</text>
+                <text class="art-meta" x="36" y="234">取下贴图</text><text class="art-value" x="340" y="234">原图 1:1 · 跨应用置顶</text>
+                <text class="art-meta" x="36" y="298">图片交付</text><text class="art-value" x="340" y="298">保留原贴图 · 手动发送</text>
+                <text class="art-foot" x="36" y="366">示例截图 / 480 × 320 px</text>
+              </g>
+            </defs>
+            <use href="#capture-art"/>
+          </svg>
+          <div class="pin-tools">
+            <button id="handle" aria-describedby="handle-help"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>拖入应用</button>
+            <span id="handle-help">按住拖动</span>
+            <button id="close-pin" aria-label="关闭贴图"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+          </div>
+          <div id="pin-feedback" role="status" aria-live="polite"><span id="feedback-text">拖图片移动；拖手柄交付原图。</span><button id="copy" hidden>复制图片</button></div>
+        </section>
+        <button id="restore-pin" hidden>恢复示例贴图</button>
+        <div id="ghost" hidden aria-hidden="true">
+          <svg viewBox="0 0 600 400"><use href="#capture-art"/></svg>
+          <span id="ghost-status">移动到输入区</span>
+        </div>
+      </section>
+    </div>
+    <footer><span>原图保留</span><span>拒绝或取消可重试</span><span>右键复制仍可备用</span><p>设计稿模拟接收反馈；真实客户端的图片与附件行为，以后续实机验证为准。</p></footer>
+  </main>
+  <script type="module" src="./pin-drop-a.mjs"></script>
+</body>
+</html>

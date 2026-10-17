@@ -279,6 +279,10 @@ pub struct RcService {
     /// 脏块帧不能丢、不能乱序，前端经 `rc_drain_frames` 按序批量取走；
     /// `last_frame` 槽位只是 latest-wins，留给旧命令 `rc_latest_frame` 兜底。
     frame_outbox: Mutex<super::video::FrameOutbox>,
+    // Serializes queue consumption and decode across overlapping viewer requests.
+    viewer_drain: Mutex<()>,
+    #[cfg(target_os = "macos")]
+    av1_receiver: Mutex<crate::macos::av1_receive::Receiver>,
     /// 发起端 → 被控端的发送半流（R2 键鼠 / R3 剪贴板）。tokio Mutex：跨 await 持锁。
     pub(super) outbound_send: tokio::sync::Mutex<Option<iroh::endpoint::SendStream>>,
     /// 发起端本会话的连接句柄：鼠标移动走 QUIC 数据报（P0-3）要用它。
@@ -635,6 +639,9 @@ impl RcService {
             discovery,
             last_frame: Mutex::new(None),
             frame_outbox: Mutex::new(super::video::FrameOutbox::new()),
+            viewer_drain: Mutex::new(()),
+            #[cfg(target_os = "macos")]
+            av1_receiver: Mutex::new(crate::macos::av1_receive::Receiver::default()),
             outbound_send: tokio::sync::Mutex::new(None),
             outbound_conn: tokio::sync::Mutex::new(None),
             remote_loss_permille: std::sync::atomic::AtomicU32::new(0),

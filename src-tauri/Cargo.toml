@@ -170,8 +170,12 @@ tiny_http = "0.12"
 # 一条测试都跑不了）。MCP 过线测试因此不用 mock_app，见 src/mcp/tests.rs。
 
 [target.'cfg(windows)'.dependencies]
+windows-core = "0.58"
 pastepanda-rc-scale = { path = "crates/rc-scale" }
 windows = { version = "0.58", features = [
+    "implement",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     # 截图控件级吸附 Tier2：UI Automation / MSAA 取现代 App（Chrome/Edge/VS Code/Electron/WPF/UWP/Qt）的逻辑控件

@@ -74,7 +74,7 @@ fn 画质五档加auto合法其余被拒() {
 }
 
 #[test]
-fn 编码只认_jpeg_h264_hevc() {
+fn 编码只认_jpeg_h264_hevc_av1() {
     let s = c();
     assert!(s.set_codec("jpeg").is_ok());
     assert!(s.snapshot().force_jpeg(), "jpeg ⇒ 强制本会话走 JPEG");
@@ -86,8 +86,10 @@ fn 编码只认_jpeg_h264_hevc() {
         StreamCodec::Hevc,
         "hevc ⇒ 硬编 HEVC（打不开自动回落 H.264）"
     );
-    let err = s.set_codec("vp9").expect_err("只认三种编码");
-    assert_eq!(err, "编码只能是 jpeg / h264 / hevc");
+    assert!(s.set_codec("av1").is_ok());
+    assert_eq!(s.snapshot().codec, StreamCodec::Av1);
+    let err = s.set_codec("vp9").expect_err("只认四种编码");
+    assert_eq!(err, "编码只能是 jpeg / h264 / hevc / av1");
 }
 
 #[test]

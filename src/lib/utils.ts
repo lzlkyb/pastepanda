@@ -1178,7 +1178,6 @@ export function remoteCodecLabel(codec: string): string {
     default: return "未知编码";
   }
 }
-
 /** Shared recording clock; backend elapsed time already excludes paused intervals. */
 export function formatRecordingTime(ms: number): string {
   const sec = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0) / 1000);

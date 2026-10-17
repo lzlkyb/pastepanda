@@ -2,11 +2,16 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Pin, RotateCw, FlipHorizontal, X } from "lucide-react";
 import { logger } from "@/lib/logger";
+import {useToast} from "@/components/Toast";
+import {useAppStore} from "@/stores/appStore";
 import styles from "./PinnedPanel.module.css";
 
 /** 贴图管理面板（V6.19）：托盘"贴图管理"→ 主窗口弹层。
  *  列表显示当前所有置顶贴图，支持复制 / 重新编辑 / 关闭单张 / 关闭全部。 */
 export default function PinnedPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const {toast}=useToast();
+  const clothesline=useAppStore(s=>s.config.clothesline);
+  const [hanging,setHanging]=useState<string|null>(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -77,6 +82,12 @@ export default function PinnedPanel({ open, onClose }: { open: boolean; onClose:
   const closeAll = () => {
     void invoke("close_pinned_image");
     setPaths([]);
+  };
+  const hangOne=async(path:string)=>{
+    setHanging(path);
+    try{await invoke("clothesline_hang_path",{path});await load();toast("已挂回晾衣绳","success");}
+    catch(error){toast("挂回失败，原贴图保留："+String(error),"error");}
+    finally{setHanging(null);}
   };
 
   return (
@@ -149,6 +160,10 @@ export default function PinnedPanel({ open, onClose }: { open: boolean; onClose:
               </button>
               <button type="button" className={styles.textBtn} onClick={() => editOne(p)}>
                 编辑
+              </button>
+              <button type="button" className={styles.textBtn} disabled={!clothesline||hanging!==null}
+                title={clothesline?"挂回晾衣绳":"先在设置中开启晾衣绳"} onClick={()=>void hangOne(p)}>
+                {hanging===p?"挂回中…":"挂回"}
               </button>
               <button
                 type="button"

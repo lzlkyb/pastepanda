@@ -353,6 +353,8 @@ pub fn save_config(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     store.save_config(&config)?;
+    #[cfg(desktop)]
+    crate::clothesline::configure(&app,&config);
 
     // 刷新栈浮标开关缓存（HUD 显示/调整读的是进程内原子量，不每次读库）。
     // 只有本次报文真的带了这个键才刷新：其它 save_config 调用不带它，

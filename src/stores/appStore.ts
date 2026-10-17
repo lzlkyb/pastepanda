@@ -145,6 +145,10 @@ export interface AppConfig {
   note_template_overrides: string;
   auto_frame_window: boolean; // 截图自动框选光标所在窗口（微信同款，v6.19）
   screenshot_window_persist: boolean; // 截图窗口常驻（默认关）：开启后关窗仅隐藏，再次截图秒开；代价=常驻约几十~百MB
+  clothesline:boolean;
+  clothesline_wind:boolean;
+  clothesline_locked:boolean;
+  clothesline_anchors:Record<string,unknown>|null;
   // ❌ 键名用 snake_case：本接口整体直接序列化进后端 config 表（save_config 按键 upsert），
   // 其余字段全是 snake_case；单独用 camelCase 会在后端要读它时成为一个意外。
   ocr_select_mode: OcrSelectMode; // 截图标注态 OCR 选字模式（smart 智能意图 / modifier Ctrl 修饰键）
@@ -529,6 +533,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   note_template_overrides: "",
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
   screenshot_window_persist: false, // 默认关：截图窗用完即销毁（省内存）；开启后常驻隐藏、再次截图秒开（微信同款）
+  clothesline:true,
+  clothesline_wind:true,
+  clothesline_locked:false,
+  clothesline_anchors:null,
   ocr_select_mode: "smart", // 默认智能意图：落在文字上拖即选字（离开文字带则冻结选区）
   auto_chain_after_screenshot: "", // 默认不自动执行动作链
   quick_paste_layout: "grid",

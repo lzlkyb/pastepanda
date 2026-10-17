@@ -1197,11 +1197,16 @@ pub fn rc_latest_frame(svc: State<'_, Arc<RcService>>) -> Result<Option<RcFrameP
 /// | `rect x,y,w,h 4×u32`（has_rect=0 时忽略）
 /// | `data_len u32` | `data`
 pub fn encode_frame_batch(frames: &[crate::rc::video::VideoFrame]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8 + frames.len() * 48);
+    encode_frame_batch_native(frames, &[])
+}
+fn encode_frame_batch_native(frames: &[crate::rc::video::VideoFrame], native: &[usize]) -> Vec<u8> {
+    let capacity = 8 + frames.iter().map(|f| 44 + f.jpeg.len()).sum::<usize>();
+    let mut buf = Vec::with_capacity(capacity);
     buf.extend_from_slice(b"RCF2");
     buf.extend_from_slice(&(frames.len() as u32).to_le_bytes());
-    for f in frames {
-        buf.push(f.codec.as_u8());
+    for (i, f) in frames.iter().enumerate() {
+        // 0x83 exists only in local IPC, never in the network frame protocol.
+        buf.push(f.codec.as_u8() | if native.contains(&i) { 0x80 } else { 0 });
         buf.push(f.key as u8);
         buf.push(f.full as u8);
         let r = f.rect;
@@ -1223,9 +1228,15 @@ pub fn encode_frame_batch(frames: &[crate::rc::video::VideoFrame]) -> Vec<u8> {
 
 /// 前端按帧批量取画面。返回原始字节（前端 invoke 拿到 ArrayBuffer）。
 #[tauri::command]
-pub fn rc_drain_frames(svc: State<'_, Arc<RcService>>) -> tauri::ipc::Response {
-    let frames = svc.drain_frames();
-    tauri::ipc::Response::new(encode_frame_batch(&frames))
+pub async fn rc_drain_frames(svc: State<'_, Arc<RcService>>, session_id: Option<String>) -> Result<tauri::ipc::Response, String> {
+    // Legacy callers get the unchanged compressed batch. New viewers provide
+    // their session ID, enabling native receive and stale-session rejection.
+    let Some(session) = session_id else { return Ok(tauri::ipc::Response::new(encode_frame_batch(&svc.drain_frames()))); };
+    let svc = svc.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (frames, native) = svc.drain_frames_for_viewer(&session)?;
+        Ok(tauri::ipc::Response::new(encode_frame_batch_native(&frames, &native)))
+    }).await.map_err(|_| "原生取帧任务失败".to_string())?
 }
 
 // ── G3 音频 ─────────────────────────────────────────────────────────────
@@ -1397,6 +1408,27 @@ pub async fn rc_video_pause_set(
 #[cfg(test)]
 mod frame_batch_tests {
     use super::*;
+
+    #[test]
+    fn native_av1_is_local_binary_rgba_with_measured_conversion_metadata() {
+        let mut pixels = vec![120; 8 + 1920 * 1080 * 4];
+        pixels[..4].copy_from_slice(&800u32.to_le_bytes());
+        pixels[4..8].copy_from_slice(&1500u32.to_le_bytes());
+        let frames = vec![crate::rc::video::VideoFrame {
+            width: 1920, height: 1080, jpeg: pixels, at_ms: 123, full: true, rect: None,
+            codec: FrameCodec::Av1, key: true, cap_ms: 0, enc_ms: 0,
+        }];
+        let start = std::time::Instant::now();
+        for _ in 0..30 {
+            let batch = encode_frame_batch_native(&frames, &[0]);
+            assert_eq!(batch[8], 0x83);
+            assert_eq!(batch.len(), 52 + 8 + 1920 * 1080 * 4);
+            assert_eq!(&batch[52..60], &frames[0].jpeg[..8]);
+            assert_eq!(&batch[60..], &frames[0].jpeg[8..]);
+        }
+        println!("native RGBA 1080p IPC serialization+byte verification {:.3}ms/frame (30 owned frames, excludes WebKit transport)", start.elapsed().as_secs_f64() * 1000.0 / 30.0);
+        assert_eq!(encode_frame_batch(&frames)[8], 3, "legacy payload must retain its original codec byte");
+    }
 
     /// 编码↔前端解析必须共享同一份布局常量：这里锁死字节布局，
     /// 前端 `parseFrameBatch` 按同一张表读。改任何一处都要同步另一处。

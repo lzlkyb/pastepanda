@@ -530,16 +530,6 @@ pub(super) async fn handle_inbound_input(
             }
             return;
         }
-        InputEvent::SetCodec { codec } => {
-            if let Err(e) = svc.set_stream_codec(codec) {
-                log::warn!("[RC] {e}");
-            } else {
-                log::info!("[RC] 对端要求编码：{codec}");
-                // Q10：编码切换同样要被控端可见（H.264 ↔ JPEG 观感差异明显）
-                svc.emit_stream_note("codec", codec);
-            }
-            return;
-        }
         // G3-C：发起端要求静音 / 恢复**本机（被控端）主机扬声器**。
         //
         // 🔴 要求 Control —— 这动的是本机的**物理输出环境**（屋里人听不听得到），

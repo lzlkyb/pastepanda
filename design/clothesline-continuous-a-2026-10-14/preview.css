@@ -1,0 +1,22 @@
+:root { --proposal-desktop: #203449; }
+html, body { background: var(--proposal-desktop); }
+.proposalInfo { position: fixed; right: 16px; bottom: 16px; z-index: 100; width: min(420px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px; border-radius: 12px; background: var(--card-bg); color: var(--text-primary); box-shadow: var(--shadow-lg); font-size: 13px; line-height: 1.6; }
+.proposalInfo h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.proposalInfo p { margin: 8px 0; }
+.proposalInfo .note { font-size: 12px; color: var(--text-secondary); }
+.proposalControls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.proposalControls label { display: flex; align-items: center; gap: 4px; }
+#proposalStatus { min-height: 3.2em; margin-top: 12px; color: var(--text-primary); }
+.proposalPin { position: absolute; left: var(--pin-x); top: var(--pin-y); width: var(--pin-width); height: var(--pin-height); z-index: 90; box-sizing: border-box; background: var(--paper); border-radius: 4px; box-shadow: var(--shadow-lg); cursor: grab; touch-action: none; user-select: none; }
+.proposalPin img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.proposalPinSize { position: absolute; left: 8px; top: 8px; padding: 4px 8px; border-radius: 4px; background: var(--card-bg); color: var(--text-primary); font-size: 12px; pointer-events: none; }
+.proposalPin.dragging .proposalPinSize { visibility: hidden; }
+.proposalPin button { position: absolute; right: 8px; bottom: 8px; font-size: 12px; }
+.proposalPin.dragging { cursor: grabbing; }
+.proposalPin.dragging button { visibility: hidden; }
+.applicationTarget { position: fixed; top: 80px; right: 16px; width: min(256px, calc(100vw - 32px)); box-sizing: border-box; padding: 16px; border-radius: 12px; background: var(--card-bg); color: var(--text-primary); font-size: 13px; line-height: 1.6; z-index: 60; }
+.applicationTarget p { margin: 8px 0 0; font-size: 12px; }
+.applicationTarget.receiving { outline: 2px solid var(--accent); outline-offset: 4px; }
+.proposalInfo :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.proposalInfo ::selection { color: var(--text-primary); background: var(--selection-bg); }
+@media (max-width: 600px) { .proposalInfo { padding: 12px; max-height: 44vh; overflow: auto; } .proposalInfo h1 { font-size: 15px; } }

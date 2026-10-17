@@ -26,10 +26,13 @@ const paths = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.link}"/></svg>`;
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const button = (action, label, kind='text-button', image='') => `<button class="${kind}" data-action="${action}">${image ? icon(image) : ''}${label}</button>`;
+const button = (action, label, kind='text-button', image='') => `<button type="button" class="${kind}" data-action="${action}">${image ? icon(image) : ''}${label}</button>`;
 let scene = 'home', sheet = '', link = '', remarks = '', tags = '', category = '未分类', title = sampleTitle;
 let pending = false, hasDraft = false, saved = false, missing = 0, favorite = false, result = '', toast = '';
 let taskTimer = 0, toastTimer = 0, taskToken = 0, focusBeforeSheet = null, renderedScene = '', infoMessage = '', completingBookmark = false;
+let savedRecord = null, pendingRecord = null;
+const snapshot = () => ({ link, title, remarks, tags, category, missing, completingBookmark });
+function restore(record) { ({ link, title, remarks, tags, category, missing, completingBookmark } = record); }
 
 function header(name, reader=false) {
   return `<header class="page-head ${reader ? 'reader-head' : ''}">${button('back','返回','text-button','back')}${reader ? '<span class="center">知识库</span>' : `<h2>${name}</h2>`}${reader ? button('more','更多','text-button','more') : ''}</header>`;
@@ -93,7 +96,7 @@ function saveArticle(retry=false) {
   if(scene==='storage'&&!retry) { result='手机可用空间不足。清理空间后重试，正文和备注仍保留。'; render(); return; }
   result=''; go('loading'); const token=taskToken;
   app.innerHTML=`<section class="page">${header('保存文章')}<div class="scroll"><p class="loading-title" role="status">${icon('clock')}正在保存到手机…</p><p class="subtle">正在提交这篇文章的正文与附件。</p></div></section>`;
-  taskTimer=setTimeout(()=>{ if(token!==taskToken) return; saved=true; pending=false; scene='saved'; showToast(missing?'正文已保存，图片可以稍后补齐。':completingBookmark?'正文已补充到原笔记':'文章已保存到手机'); completingBookmark=false; },900);
+  taskTimer=setTimeout(()=>{ if(token!==taskToken) return; saved=true; pending=false; pendingRecord=null; savedRecord={...snapshot(),linkOnly:false}; scene='saved'; showToast(missing?'正文已保存，图片可以稍后补齐。':completingBookmark?'正文已补充到原笔记':'文章已保存到手机'); completingBookmark=false; },900);
 }
 function openSheet(kind) { focusBeforeSheet=document.activeElement; sheet=kind; renderSheet(); }
 function closeSheet() { document.querySelector('.sheet-layer')?.remove(); if(app.querySelector('.page')) app.querySelector('.page').inert=false; sheet=''; focusBeforeSheet?.isConnected && focusBeforeSheet.focus(); }
@@ -116,7 +119,7 @@ function info(message) { infoMessage=message; openSheet('info'); }
 
 app.addEventListener('submit',e=>{ if(e.target.id==='link-form') { e.preventDefault(); startFetch(document.querySelector('#url').value.trim()); } });
 app.addEventListener('input',e=>{
-  if(e.target.id==='url') { link=e.target.value; e.target.removeAttribute('aria-invalid'); document.querySelector('#url-error').hidden=true; }
+  if(e.target.id==='url') { ++taskToken; link=e.target.value; e.target.removeAttribute('aria-invalid'); document.querySelector('#url-error').hidden=true; }
   if(e.target.id==='remarks') remarks=e.target.value;
   if(e.target.id==='tags') tags=e.target.value;
   if(e.target.id==='article-title') title=e.target.value;
@@ -129,24 +132,25 @@ app.addEventListener('click',async e=>{
   const el=e.target.closest('[data-action]'); if(!el) return;
   switch(el.dataset.action) {
     case 'home': go('home'); break;
-    case 'back': pending=!saved&&['preview','partial','error','loading','storage'].includes(scene); go('home'); break;
+    case 'back': if(['preview','partial','error','loading','storage'].includes(scene)) { pending=true; pendingRecord={...snapshot(),scene:scene==='loading'?'preview':scene}; } go('home'); break;
     case 'new': openSheet('new'); break;
     case 'close-sheet': closeSheet(); break;
-    case 'article': closeSheet(); go('link'); break;
+    case 'article': closeSheet(); if(pendingRecord) { restore(pendingRecord); go(pendingRecord.scene); } else { link=''; remarks=''; tags=''; category='未分类'; title=sampleTitle; missing=0; completingBookmark=false; go('link'); } break;
     case 'sample': link=sampleUrl; startFetch(link); break;
     case 'paste': {
-      try { const text=await navigator.clipboard.readText(); if(!text.trim()) throw new Error(); document.querySelector('#url').value=text; startFetch(text.trim()); }
-      catch { const error=document.querySelector('#url-error'); if(error) { error.hidden=false; error.textContent='未能读取剪贴板。请长按输入框粘贴，或试用示例链接。'; } } break;
+      const token=taskToken, field=document.querySelector('#url');
+      try { const text=await navigator.clipboard.readText(); if(token!==taskToken || field!==document.querySelector('#url')) return; if(!text.trim()) throw new Error(); field.value=text; startFetch(text.trim()); }
+      catch { if(token!==taskToken || field!==document.querySelector('#url')) return; const error=document.querySelector('#url-error'); if(error) { error.hidden=false; error.textContent='未能读取剪贴板。请长按输入框粘贴，或试用示例链接。'; } } break;
     }
-    case 'resume': startFetch(link||sampleUrl,missing?'partial':'preview'); break;
+    case 'resume': if(pendingRecord) { restore(pendingRecord); go(pendingRecord.scene); } else startFetch(link||sampleUrl,missing?'partial':'preview'); break;
     case 'retry-fetch': startFetch(link||sampleUrl); break;
     case 'save': saveArticle(); break;
     case 'save-retry': saveArticle(true); break;
-    case 'bookmark-save': pending=false; saved=true; go('bookmark'); showToast('链接已保存到手机，尚未保存正文'); break;
-    case 'existing': saved=true; pending=false; missing=0; remarks='下次整理项目文档时，再读一下“留下有用的问题”这一段。'; go('saved'); break;
+    case 'bookmark-save': pending=false; pendingRecord=null; saved=true; savedRecord={...snapshot(),linkOnly:true}; go('bookmark'); showToast('链接已保存到手机，尚未保存正文'); break;
+    case 'existing': if(savedRecord) { restore(savedRecord); go(savedRecord.linkOnly?'bookmark':'saved'); } else { saved=true; missing=0; remarks='下次整理项目文档时，再读一下“留下有用的问题”这一段。'; go('saved'); } break;
     case 'fill-body': completingBookmark=true; startFetch(link||sampleUrl); break;
-    case 'image-one': missing=Math.max(0,missing-1); if(scene==='saved') showToast('这张图片已补齐到原笔记'); else render(); break;
-    case 'image-all': missing=0; showToast('剩余图片已补齐到原笔记'); break;
+    case 'image-one': missing=Math.max(0,missing-1); if(scene==='saved') { if(savedRecord) savedRecord.missing=missing; showToast('这张图片已补齐到原笔记'); } else render(); break;
+    case 'image-all': missing=0; if(savedRecord) savedRecord.missing=0; showToast('剩余图片已补齐到原笔记'); break;
     case 'favorite': favorite=!favorite; showToast(favorite?'已加入常用':'已取消常用'); break;
     case 'dismiss-toast': clearTimeout(toastTimer); toast=''; document.querySelector('.flow-toast')?.remove(); break;
     case 'more': openSheet('more'); break;
@@ -172,7 +176,7 @@ document.addEventListener('keydown',e=>{
 });
 document.querySelector('#scenarios').addEventListener('click',e=>{
   const el=e.target.closest('[data-scene]'); if(!el) return;
-  clearTimeout(toastTimer); toast=''; result=''; title=sampleTitle; remarks=''; tags=''; category='未分类'; saved=false; pending=false; hasDraft=false; completingBookmark=false; missing=el.dataset.scene==='partial'?2:0; link=sampleUrl;
+  clearTimeout(toastTimer); savedRecord=null; pendingRecord=null; toast=''; result=''; title=sampleTitle; remarks=''; tags=''; category='未分类'; saved=false; pending=false; hasDraft=false; completingBookmark=false; missing=el.dataset.scene==='partial'?2:0; link=sampleUrl;
   go(el.dataset.scene);
   if(scene==='draft') { hasDraft=true; pending=true; render(); openSheet('draft'); }
   if(scene==='storage') { result='手机可用空间不足。清理空间后重试，正文和备注仍保留。'; render(); }

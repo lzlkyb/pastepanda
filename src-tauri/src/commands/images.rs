@@ -133,7 +133,10 @@ pub fn save_rich_image(
 
 /// 读取图片文件并返回 base64 data URL（原图，用于预览）
 #[tauri::command]
-pub fn get_image_data_url(path: String) -> Result<String, String> {
+pub async fn get_image_data_url(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || image_data_url(&path)).await.map_err(|e| e.to_string())?
+}
+fn image_data_url(path: &str) -> Result<String, String> {
     use std::io::Read;
 
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
@@ -157,7 +160,14 @@ pub fn get_image_data_url(path: String) -> Result<String, String> {
 /// 生成图片缩略图并写入应用数据目录，返回文件路径（最大宽度 300px，用于卡片列表）
 /// 使用文件路径而非 base64 data URL，浏览器可原生缓存图片
 #[tauri::command]
-pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
+pub async fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
+    static DECODERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+    let _permit = DECODERS.acquire().await.map_err(|e| e.to_string())?;
+    // 解码和缩放不能占用 Tauri 命令线程，否则其它取挂/就绪 IPC 会被慢图阻塞。
+    tokio::task::spawn_blocking(move || image_thumbnail(&app_handle, &path))
+        .await.map_err(|e| e.to_string())?
+}
+fn image_thumbnail(app_handle: &tauri::AppHandle, path: &str) -> Result<String, String> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     use std::io::BufWriter;
@@ -167,7 +177,7 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
 
     // 修复 C16：与其他图片命令一致的严格路径校验（canonicalize + 白名单）
-    let canonical = validate_image_file_path(&path)?;
+    let canonical = validate_image_file_path(path)?;
     let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!("图片文件过大 ({}MB)", metadata.len() / 1024 / 1024));
@@ -183,19 +193,20 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
         .modified()
         .map(|t| {
             t.duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
+                .map(|d| d.as_nanos())
                 .unwrap_or(0)
         })
         .unwrap_or(0);
     modified.hash(&mut hasher);
+    metadata.len().hash(&mut hasher);
     let hash = hasher.finish();
     let thumb_name = format!("thumb_{:016x}.jpg", hash);
 
-    let thumb_dir = get_thumb_dir(&app_handle)?;
+    let thumb_dir = get_thumb_dir(app_handle)?;
     let thumb_path = thumb_dir.join(&thumb_name);
 
     // 如果缩略图已存在且源文件未变化，直接返回路径
-    if thumb_path.exists() {
+    if thumbnail_cache_valid(&thumb_path) {
         return Ok(thumb_path.to_string_lossy().to_string());
     }
 
@@ -207,7 +218,14 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     } else {
         let ratio = MAX_WIDTH as f64 / w as f64;
         let new_h = ((h as f64 * ratio) as u32).max(1);
-        img.resize_exact(MAX_WIDTH, new_h, image::imageops::FilterType::Lanczos3)
+        #[cfg(windows)]
+        {
+            let rgba = img.into_rgba8();
+            let pixels = pastepanda_rc_scale::rgba_thumbnail(&rgba, w, h, MAX_WIDTH, new_h)?;
+            image::DynamicImage::ImageRgba8(image::RgbaImage::from_raw(MAX_WIDTH, new_h, pixels).ok_or("缩略图像素尺寸不匹配")?)
+        }
+        #[cfg(not(windows))]
+        { img.resize_exact(MAX_WIDTH, new_h, image::imageops::FilterType::Lanczos3) }
     };
 
     // 写入 JPEG 格式（比 PNG 小 3-5 倍，适合照片类图片）
@@ -221,15 +239,55 @@ pub fn get_image_thumbnail(app_handle: tauri::AppHandle, path: String) -> Result
     //
     // 保留它的理由：读代码的人不必去查 write_to 内部做了什么，
     // 且以后若改成显式 encoder 也不会突然坏掉。
-    let file =
-        std::fs::File::create(&thumb_path).map_err(|e| format!("无法创建缩略图文件: {}", e))?;
+    // 并发列表可能同时请求同一张图；写完再发布，不能让另一个请求读到半张 JPEG。
+    let pending_path = crate::atomic_write::unique_tmp_path(&thumb_path);
+    let file = std::fs::File::create(&pending_path).map_err(|e| format!("无法创建缩略图文件: {}", e))?;
     let mut writer = BufWriter::new(file);
-    image::DynamicImage::ImageRgb8(output_img.to_rgb8())
+    let written = image::DynamicImage::ImageRgb8(output_img.to_rgb8())
         .write_to(&mut writer, image::ImageFormat::Jpeg)
-        .map_err(|e| format!("无法写入缩略图: {}", e))?;
-    writer.flush().map_err(|e| e.to_string())?;
+        .map_err(|e| format!("无法写入缩略图: {}", e))
+        .and_then(|_| writer.flush().map_err(|e| e.to_string()));
+    drop(writer);
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&pending_path);
+        return Err(error);
+    }
+    publish_thumbnail(&pending_path, &thumb_path)?;
 
     Ok(thumb_path.to_string_lossy().to_string())
+}
+
+fn thumbnail_cache_valid(path: &std::path::Path) -> bool {
+    // An existing cache file is not necessarily decodable; retry must repair only this entry.
+    image::open(path).is_ok()
+}
+
+fn publish_thumbnail(pending: &std::path::Path, target: &std::path::Path) -> Result<(), String> {
+    // Rebuilt cache entries must replace corrupt files; finish_rename preserves any existing target.
+    std::fs::rename(pending, target).map_err(|error| {
+        let _ = std::fs::remove_file(pending);
+        error.to_string()
+    })
+}
+
+#[cfg(test)]
+mod thumbnail_cache_tests {
+    use super::{thumbnail_cache_valid, publish_thumbnail};
+    #[test]
+    fn corrupt_existing_thumbnail_is_not_a_cache_hit() {
+        let root = std::env::temp_dir().join(format!("pp-thumb-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("thumb.jpg");
+        std::fs::write(&path, b"not a jpeg").unwrap();
+        assert!(path.exists(), "counterexample must exist to exercise the old cache-hit mechanism");
+        assert!(!thumbnail_cache_valid(&path));
+        let pending = root.join("rebuilt.jpg");
+        image::RgbImage::new(2, 2).save(&pending).unwrap();
+        publish_thumbnail(&pending, &path).unwrap();
+        assert!(thumbnail_cache_valid(&path));
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 }
 
 /// 获取图片信息（尺寸、文件大小）

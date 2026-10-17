@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>晾衣绳 A · 首张自动显示与连续拖下</title>
+<link rel="stylesheet" href="/src/styles/globals.css">
+<link rel="stylesheet" href="/src/styles/theme.css">
+<link rel="stylesheet" href="/src/clothesline/clothesline.css">
+<link rel="stylesheet" href="./clothesline-continuous-a-2026-10-14/preview.css"></head>
+<body>
+<div id="viewport" class="stageViewport"><div id="stageWrap"><div id="stage" class="stage">
+  <div id="ropeLayer" class="ropeLayer">
+    <svg id="ropeSvg" class="ropeSvg" aria-hidden="true"><path id="ropeShadow" class="ropeShadow"></path><path id="ropePath"></path></svg>
+    <button id="anchorLeft" class="anchor" aria-label="拖动左端点，方向键微调" title="拖动左端点 · 方向键微调"><span></span></button>
+    <button id="anchorRight" class="anchor" aria-label="拖动右端点，方向键微调" title="拖动右端点 · 方向键微调"><span></span></button>
+    <button id="moveRope" class="moveGrip" aria-label="拖动整根绳子，方向键微调" title="拖动整根绳子 · 方向键微调"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M5 3h1m4 0h1M5 8h1m4 0h1M5 13h1m4 0h1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>移动整绳</button>
+    <div id="slotMarker" class="slotMarker" hidden><span>挂在这里</span></div><div id="hangs"></div>
+    <div id="emptyRope" class="emptyRope"><strong>绳子空了</strong><span>下一张图片会自动挂上来</span></div>
+  </div>
+  <nav id="ropeToolbar" class="ropeToolbar" aria-label="晾衣绳操作">
+    <button id="gather">收当前绳上 · 转贴图</button><span id="batchProgress" role="status" hidden></span><button id="stopBatch" hidden>停止剩余</button><button id="clear">大风吹走</button>
+    <button id="managePins">贴图管理</button>
+    <label><input id="locked" type="checkbox">锁定位置</label><button id="restoreAnchors">恢复默认</button>
+    <span id="countValue"></span>
+  </nav>
+  <div id="pins"></div><div id="dragHint" class="dragHint" hidden></div>
+  <section id="loupe" class="loupe" aria-label="图片预览" hidden><div id="loupeImage"></div><p id="loupeCaption"></p>
+    <p id="previewLoad" role="status" hidden></p><div class="loupeActions"><button id="fitImage">适应</button><button id="actualImage">100%</button><button id="pinPreview" class="primary">取下为贴图</button><button id="closePreview">关闭预览 · Esc</button></div>
+  </section>
+  <div id="undoBar" class="undoBar" role="status" hidden><span id="undoText"></span><button id="undo">撤销</button><span id="undoTime"></span></div>
+  <div id="toast" class="toast" role="status" hidden></div><div id="takeProgress" class="takeProgress" role="status" hidden><span>正在准备取下 · 可拉回绳子取消</span><button id="cancelTake">取消取下 · Esc</button></div><div id="fxLayer" aria-hidden="true"></div>
+  <div id="queue" class="queue" aria-label="排队照片"></div>
+  <div hidden aria-hidden="true">
+    <input id="enabled" type="checkbox" checked><input id="wind" type="checkbox" checked>
+    <span id="stageStatus"></span><span id="windStatus"></span><span id="sagValue"></span><span id="motionValue"></span><span id="anchorValue"></span>
+  </div>
+</div></div></div>
+<section id="applicationTarget" class="applicationTarget" aria-label="应用接收演示">
+<strong>应用接收演示</strong><p>按住小图拖到这里，松手发送原图。</p><p id="applicationResult" role="status">本地模拟，不向外部应用发送。</p>
+</section>
+<aside class="proposalInfo" aria-label="A 方案交互验收">
+<h1>按住，一路拖下</h1>
+<p>首张截图自动出现。按住下拖、停住、继续拖，直到松手；主动拉回绳带或 Esc 才取消取下。</p>
+<p>按住时保持小图。桌面松手后，以松手位置为中心展开原图（100%）；拖入应用发送时不展开。</p>
+<p>原图再次拖动也收成小图。鼠标靠近绳子就显示挂回位置，松手挂回；移开继续拖，Esc 恢复原位。</p>
+<div class="proposalControls"><button id="replayFirst">重演首张自动显示</button><button id="qaAdd">采集一张</button><button id="qaReset">重置预览</button></div>
+<div class="proposalControls"><label><input id="slowPrepare" type="checkbox">慢速准备（1.8 秒）</label><label><input id="failPrepare" type="checkbox">下次准备失败</label></div>
+<div class="proposalControls"><button id="demoHold">演示按住停住</button><button id="demoContinue" disabled>继续下拖</button><button id="demoRelease" disabled>松手落下</button><button id="demoSend" disabled>演示发送到应用</button><button id="demoReturn" disabled>拉回取消</button></div>
+<p id="proposalStatus" role="status" aria-live="polite"></p>
+<p class="note">HTML 交互稿：沿用当前相框、绳子和工具栏。贴图接力与首次显示为浏览器模拟；Windows 实机效果在产品修复后验证。</p>
+</aside>
+<script type="module" src="./clothesline-continuous-a-2026-10-14/preview.mjs"></script>
+</body></html>

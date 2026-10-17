@@ -364,7 +364,7 @@ impl FrameOutbox {
                 Some(d) => {
                     self.bytes -= d.jpeg.len();
                     if let Some(head) = self.q.front() {
-                        if head.codec == FrameCodec::H264 && !head.key {
+                        if head.codec.interframe() && !head.key {
                             self.corrupt = true;
                         }
                     }
@@ -373,7 +373,7 @@ impl FrameOutbox {
             }
         }
         if self.corrupt {
-            if f.codec == FrameCodec::H264 && !f.key {
+            if f.codec.interframe() && !f.key {
                 // 引用链已断的 P 帧解出来只能是花屏，拦下别发给前端
                 return;
             }

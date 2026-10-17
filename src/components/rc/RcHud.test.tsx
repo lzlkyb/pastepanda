@@ -29,6 +29,14 @@ function trigger(container: HTMLElement) {
 }
 
 describe("RcHud 连接详情入口", () => {
+  it("AV1 画面必须显示 AV1，不能写成 JPEG 兜底", () => {
+    const { container } = renderHud({ codec: "av1", fps: 30 });
+    fireEvent.click(trigger(container)!);
+    const text = panel(container)!.textContent ?? "";
+    expect(text).toContain("AV1 · 30fps");
+    expect(text).not.toContain("JPEG");
+    expect(text).not.toContain("兜底路径");
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     // 趋势环形缓冲是模块级单例，逐用例清零避免互相喂样本

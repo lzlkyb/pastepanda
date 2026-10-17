@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>PastePanda · 内容优先体验优化</title><link rel="stylesheet" href="../src/styles/theme.css"><link rel="stylesheet" href="mobile-focus-upgrade-2026-10-10.css"></head>
+<body>
+<main class="board">
+  <aside class="brief">
+    <p class="eyebrow">PASTEPANDA / 手机体验优化</p><h1>内容先出现，<br>工具随任务。</h1>
+    <p>沿用实底、蓝色强调和现有功能。这版重点调整内容空间、状态层级与返回流程。</p>
+    <p class="disclaimer">待确认设计稿 · 全部为模拟数据<br>不会连接电脑或修改真实笔记。</p>
+    <fieldset><legend>页面</legend><div class="options" id="pages"><button data-page="knowledge" aria-pressed="true">知识库</button><button data-page="reader" aria-pressed="false">全文阅读</button><button data-page="editor" aria-pressed="false">写笔记</button><button data-page="files" aria-pressed="false">文件</button><button data-page="remote" aria-pressed="false">横屏远控</button></div></fieldset>
+    <fieldset><legend>响应式验收</legend><div class="options" id="sizes"><button data-size="portrait" aria-pressed="true">竖屏 390</button><button data-size="small" aria-pressed="false">小屏 320</button><button data-size="landscape" aria-pressed="false">横屏 844</button><button data-size="short" aria-pressed="false">短横屏 568</button></div><div class="checks"><label><input type="checkbox" id="large">大字体</label><label><input type="checkbox" id="dark">深色</label></div></fieldset>
+    <div class="options"><button id="errorDemo">失败与恢复</button><button id="reset">重置演示</button></div>
+    <section class="change"><h2 id="changeTitle">知识库：首页更安静</h2><p id="changeCopy">草稿、修改和收集集中在一个待处理入口；搜索和正文列表成为首页主内容。</p></section>
+    <ol class="rules"><li>阅读、编辑退出主导航；返回恢复列表。</li><li>失败就地恢复，普通反馈短暂出现。</li><li>文件请求和进行中任务优先。</li><li>远控工具收起，画面获得更多空间。</li></ol>
+    <p class="scope">拟调整：任务页导航、待处理聚合、远控侧栏、文件分组。保留配对、安全授权、草稿持久化、四种操作方式和真实设置回执。</p>
+  </aside>
+  <section class="stage" aria-label="交互设计预览"><header class="stageHead"><strong id="pageName">知识库</strong><span id="dimensions">390 × 740</span></header><div class="stageScroll"><div class="phone" id="phone" data-size="portrait"><div class="app" id="app"></div><div class="modal" id="modal" hidden></div></div></div><p class="stageHint">点击笔记、待处理、传输分组、画面工具，体验完整流程。</p></section>
+</main>
+<script type="module" src="mobile-focus-upgrade-2026-10-10.js"></script>
+</body></html>

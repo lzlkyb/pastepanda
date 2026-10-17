@@ -118,6 +118,39 @@ int32_t pp_mac_keychain_create(const uint8_t *key, size_t length) {
     }
 }
 
+// Only called after an explicit MCP enable action. Legacy Keychain partitions
+// may still reject an ad-hoc rebuild even after its path is added in Access Control.
+// Let Security authenticate that application once; never replace the existing key.
+int32_t pp_mac_keychain_authorize(uint8_t *key, size_t capacity) {
+    if (!key || capacity != 32) return errSecParam;
+    OSStatus policy = SecKeychainSetUserInteractionAllowed(true);
+    if (policy != errSecSuccess) return policy;
+    OSStatus status;
+    @autoreleasepool {
+        NSDictionary *query = @{
+            (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+            (__bridge id)kSecAttrService: @"com.pastepanda.app.encryption",
+            (__bridge id)kSecAttrAccount: @"local-key-v1",
+            (__bridge id)kSecReturnData: @YES,
+            (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+            (__bridge id)kSecUseAuthenticationUI: (__bridge id)kSecUseAuthenticationUIAllow
+        };
+        CFTypeRef result = NULL;
+        status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+        if (status == errSecSuccess) {
+            if (!result || CFGetTypeID(result) != CFDataGetTypeID() || CFDataGetLength((CFDataRef)result) != 32) {
+                status = errSecDecode;
+            } else {
+                memcpy(key, CFDataGetBytePtr((CFDataRef)result), 32);
+            }
+        }
+        if (result) CFRelease(result);
+    }
+    // Authorization must never change the policy of later background calls.
+    OSStatus restored = SecKeychainSetUserInteractionAllowed(false);
+    return status == errSecSuccess ? restored : status;
+}
+
 int32_t pp_mac_write_clipboard(const uint8_t *json, size_t length, bool files) {
     @autoreleasepool {
         NSData *data = [NSData dataWithBytes:json length:length];

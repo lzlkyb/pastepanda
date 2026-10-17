@@ -25,6 +25,8 @@ pub mod autostart;
 #[cfg(test)]
 mod bench;
 mod clipboard_monitor;
+#[cfg(desktop)]
+mod clothesline;
 mod commands;
 pub mod user_paths;
 // DPAPI 加解密的公共收口（AI 密钥与 MCP 令牌共用同一份 unsafe FFI）
@@ -53,6 +55,12 @@ mod paste_target;
 // 手机 RC 客户端无贴图概念——模块级门控，不为它逐点写 32 个空壳。
 #[cfg(all(desktop, not(target_os = "macos")))]
 mod pinned_window;
+#[cfg(windows)]
+mod pinned_transfer;
+#[cfg(windows)]
+mod pin_drag_policy;
+#[cfg(windows)]
+mod pinned_transfer_ui;
 #[cfg(target_os = "macos")]
 #[path = "macos/pinned.rs"]
 mod pinned_window;
@@ -331,6 +339,7 @@ pub fn run() {
         // （FileProvider 拉起系统安装器），桌面 no-op。见 commands::update_android 注释。
         .plugin(commands::update_android::init())
         .plugin(commands::mobile_knowledge_share::init())
+        .plugin(commands::mobile_interaction::init())
         .setup(|app| {
             log::info!("[BOOT] 0 setup 进入");
             // 🔴 硬编诊断 P1：Tauri 插件链已装、业务子系统尚未初始化。
@@ -636,77 +645,7 @@ pub fn run() {
             let doc_capture_enabled = cache_patch.doc_capture.unwrap_or(true);
             // 全局热键配置（桌面专属：类型在 hotkey_manager，mobile 不编译）
             #[cfg(desktop)]
-            let hotkey_config = hotkey_manager::HotkeyConfig {
-                show_window: saved_config
-                    .get("hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+V")
-                    .to_string(),
-                seq_paste: saved_config
-                    .get("sequential_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+Q")
-                    .to_string(),
-                index_prefix: "Ctrl+Alt".to_string(),
-                stack_toggle: saved_config
-                    .get("stack_toggle_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+K")
-                    .to_string(),
-                stack_paste: saved_config
-                    .get("stack_paste_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+P")
-                    .to_string(),
-                quick_paste: saved_config
-                    .get("quick_paste_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Alt+V")
-                    .to_string(),
-                // 截图标注热键（v6.18 新增）；默认 Ctrl+Q（2 键，避开 QQ/微信截图热键占用）
-                screenshot: saved_config
-                    .get("screenshot_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Q")
-                    .to_string(),
-                // 今日速记（B2 #3 / D11）
-                daily_note: saved_config
-                    .get("daily_note_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+D")
-                    .to_string(),
-                // 待办岛唤起（critique P1-1）
-                todo_island: saved_config
-                    .get("todo_island_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Alt+T")
-                    .to_string(),
-                // 屏幕录制热键（R 键：Record）。上面已占 Ctrl+Alt+V/Q/K/P/D、Alt+V/T、Ctrl+Q，
-                // Ctrl+Alt+R 无冲突（设计稿 §1）。
-                screen_record: saved_config
-                    .get("rec_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+R")
-                    .to_string(),
-                // 录制中：暂停/继续（四期 1.1）。Ctrl+Alt+P 被 stack_paste 占，取 Space。
-                rec_pause: saved_config
-                    .get("rec_pause_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+Space")
-                    .to_string(),
-                // 录制中：停止并保存。默认留空（rec_hotkey 录制中本就是停止）。
-                rec_stop: saved_config
-                    .get("rec_stop_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                // 录制中：标记时刻（四期 1.3，写入 sidecar）。
-                rec_mark: saved_config
-                    .get("rec_mark_hotkey")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Ctrl+Alt+M")
-                    .to_string(),
-            };
+            let hotkey_config = hotkey_manager::HotkeyConfig::from_saved(&saved_config);
 
             // 开机自启对账（修复「自启有时候失效」）：条目只在设置开关切换那一刻写一次，
             // 被清理工具删值/重装换目录后不会自愈且界面仍显示已开启。启动时按配置核对：
@@ -746,6 +685,8 @@ pub fn run() {
             }
 
             app.manage(store);
+            #[cfg(desktop)]
+            clothesline::init(&handle,&saved_config);
 
             // 一次性补填迁移：后台为旧数据（content_type 为 NULL）运行统一分类器回填，
             // 使前端可以完全依赖持久化的 content_type，不再需要本地检测回退
@@ -1322,6 +1263,38 @@ pub fn run() {
             commands::ocr_image_cached,
             commands::detect_barcodes_cached,
             commands::open_pinned_image,
+            #[cfg(desktop)]
+            clothesline::clothesline_state,
+            #[cfg(desktop)]
+            clothesline::clothesline_ready,
+            #[cfg(desktop)]
+            clothesline::clothesline_report_error,
+            #[cfg(desktop)]
+            clothesline::clothesline_retry,
+            #[cfg(desktop)]
+            clothesline::clothesline_regions,
+            #[cfg(desktop)]
+            clothesline::clothesline_remove,
+            #[cfg(desktop)]
+            clothesline::clothesline_restore,
+            #[cfg(desktop)]
+            clothesline::clothesline_order,
+            #[cfg(desktop)]
+            clothesline::clothesline_idle,
+            #[cfg(desktop)]
+            clothesline::clothesline_take,
+            #[cfg(desktop)]
+            clothesline::clothesline_show_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_start_drag,
+            #[cfg(desktop)]
+            clothesline::clothesline_close_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_return_pin,
+            #[cfg(desktop)]
+            clothesline::clothesline_hang_path,
+            #[cfg(desktop)]
+            clothesline::clothesline_config,
             commands::close_pinned_image,
             screenshot::capture_screen,
             screenshot::capture_region,
@@ -1462,6 +1435,16 @@ pub fn run() {
             commands::note_count_expired,
             commands::note_get,
             commands::mobile_knowledge_list,
+            commands::mobile_article_begin,
+            commands::mobile_article_get,
+            commands::mobile_article_pending,
+            commands::mobile_article_discard,
+            commands::mobile_article_for_note,
+            commands::mobile_article_put,
+            commands::mobile_article_ack_sources,
+            commands::mobile_article_save,
+            commands::mobile_article_fetch,
+            commands::mobile_article_image_fetch,
             commands::mobile_knowledge_image,
             commands::mobile_knowledge_meta,
             commands::mobile_knowledge_set_common,
@@ -1479,6 +1462,8 @@ pub fn run() {
             commands::mobile_knowledge_asset_fetch,
             commands::mobile_knowledge_asset_cancel,
             commands::mobile_knowledge_share_list,
+            commands::mobile_interaction_set,
+            commands::mobile_interaction_haptic,
             commands::mobile_knowledge_share_ack,
             commands::mobile_knowledge_share_pick_images,
             commands::mobile_knowledge_share_send,

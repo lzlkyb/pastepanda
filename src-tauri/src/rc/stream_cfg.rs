@@ -879,7 +879,11 @@ impl StreamCfg {
                 g.codec = StreamCodec::Hevc;
                 Ok(())
             }
-            _ => Err("编码只能是 jpeg / h264 / hevc".into()),
+            "av1" => {
+                g.codec = StreamCodec::Av1;
+                Ok(())
+            }
+            _ => Err("编码只能是 jpeg / h264 / hevc / av1".into()),
         }
     }
 

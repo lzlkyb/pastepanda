@@ -171,10 +171,11 @@
 /* ===== 流程图 --diagram-* 令牌（规则 8.3：节点实底、玻璃只在浮层） ===== */
 /* 只在本处声明一次，值全部引用各主题自身令牌，运行时惰性求值 → 6 主题自适应，无需逐主题重写 */
 :root {
-  /* 画布底色不能等于 --app-bg：同值时画布与外面连成一片，看不出这是一块工作区。
-     往 --text-primary 掺 8%：浅色主题得浅灰、深色主题得更深，一条式子服务 6 套主题，
+  /* --app-bg 是渐变，不能作为 color-mix 的颜色输入（会使画布底色失效）。
+     实底 --card-bg 往 --text-primary 掺 8%：浅色主题得浅灰、深色主题得较亮工作区，
+     一条式子服务 6 套主题，
      不用逐主题改写（搭配 .root 的 inset 内圈 + 内投影，见 DiagramCanvas.module.css）。 */
-  --diagram-canvas-bg: color-mix(in srgb, var(--app-bg, #0b1220) 92%, var(--text-primary, #0f172a));
+  --diagram-canvas-bg: color-mix(in srgb, var(--card-bg, #ffffff) 92%, var(--text-primary, #0f172a));
   --diagram-node-bg: var(--card-bg, #ffffff);
   --diagram-node-text: var(--text-primary, #0f172a);
   --diagram-node-border: var(--border-color, #e0e4eb);
