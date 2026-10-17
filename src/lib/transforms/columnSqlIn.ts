@@ -1,3 +1,4 @@
+import { sqlListRelevance } from "@/lib/utils";
 /**
  * transforms/columnSqlIn.ts — 一列值 → SQL IN（P0 功能 #1）。
  *
@@ -18,8 +19,11 @@ export const columnToSqlInTransform: Transform = {
   detect(ctx: TransformContext): number {
     const info = ctx.features?.columnList ?? parseColumnList(ctx.text);
     if (!info.ok) return 0;
-    // 行数越多越像列数据，0.5 起步、封顶 0.9
-    return Math.min(0.5 + info.count * 0.05, 0.9);
+    return (info.relevance ?? sqlListRelevance(info.values)).score;
+  },
+  matchReason(ctx) {
+    const info = ctx.features?.columnList ?? parseColumnList(ctx.text);
+    return info.ok ? (ctx.features?.columnList?.relevance ?? sqlListRelevance(info.values)).text : undefined;
   },
   run(text: string, opts?: Record<string, unknown>): TransformResult {
     const info = parseColumnList(text);

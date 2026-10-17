@@ -14,6 +14,8 @@ import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 export interface NlParseResult {
   /** 命中的动作 id；null = 没听懂 */
   actionId: string | null;
+  /** 用户明确查找工作台时才打开，不由内容自动推断。 */
+  workbench?: "qr" | "codec";
   /** 动作参数（如 tone=formal / lang=en） */
   params?: Record<string, string>;
   /** 人类可读的命中描述（如「改写为正式语气」） */
@@ -97,6 +99,17 @@ export function parseNlCommand(input: string): NlParseResult {
   const t = input.trim();
   if (!t) return { actionId: null };
   const lower = t.toLowerCase();
+
+  if (/二维码|\bqr(?:\s*code)?\b/.test(lower)) {
+    return { actionId: null, workbench: "qr", label: "二维码工作台" };
+  }
+  if (/编解码|编码工作台|解码工作台/.test(lower)) {
+    return { actionId: null, workbench: "codec", label: "编解码工作台" };
+  }
+  if (/base64/.test(lower)) {
+    const encode = /编码|encode/.test(lower) && !/解码|decode/.test(lower);
+    return { actionId: encode ? "base64_encode" : "base64_decode", label: encode ? "Base64 编码" : "Base64 解码" };
+  }
 
   for (const rule of RULES) {
     const matched = rule.keys.find((k) => lower.includes(k.toLowerCase()));

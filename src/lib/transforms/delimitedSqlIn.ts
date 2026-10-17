@@ -1,3 +1,4 @@
+import { sqlListRelevance } from "@/lib/utils";
 /**
  * transforms/delimitedSqlIn.ts — 单行分隔值 → SQL IN。
  *
@@ -24,8 +25,11 @@ export const delimitedSqlInTransform: Transform = {
   detect(ctx: TransformContext): number {
     const info = ctx.features?.delimited ?? parseDelimitedValues(ctx.text);
     if (!info.ok) return 0;
-    // 值越多越像数据列表，0.55 起步、封顶 0.88
-    return Math.min(0.55 + info.count * 0.03, 0.88);
+    return (ctx.features?.delimited?.relevance ?? sqlListRelevance(info.values)).score;
+  },
+  matchReason(ctx) {
+    const info = ctx.features?.delimited ?? parseDelimitedValues(ctx.text);
+    return info.ok ? (ctx.features?.delimited?.relevance ?? sqlListRelevance(info.values)).text : undefined;
   },
   run(text: string, opts?: Record<string, unknown>): TransformResult {
     const info = parseDelimitedValues(text);

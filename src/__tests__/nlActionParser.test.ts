@@ -16,6 +16,14 @@ beforeEach(() => {
   setAiAvailable(true);
 });
 
+it("explicit local tool intent works with AI disabled", () => {
+  setAiAvailable(false);
+  expect(parseNlCommand("生成二维码")).toMatchObject({ actionId: null, workbench: "qr" });
+  expect(parseNlCommand("打开编解码工作台")).toMatchObject({ workbench: "codec" });
+  expect(parseNlCommand("Base64 解码")).toMatchObject({ actionId: "base64_decode" });
+  expect(parseNlCommand("Base64 编码")).toMatchObject({ actionId: "base64_encode" });
+});
+
 describe("关键词命中", () => {
   it("正式/礼貌 → ai-rewrite tone=formal", () => {
     const r = parseNlCommand("把这个改得正式一点");

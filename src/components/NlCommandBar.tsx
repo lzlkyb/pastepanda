@@ -14,6 +14,7 @@ import { memo, useRef, useState } from "react";
 import { CornerDownLeft, Lightbulb } from "lucide-react";
 import { parseNlCommand, type NlParseResult } from "@/lib/nlActionParser";
 import { Composer, type ComposerHandle } from "@/components/Composer";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import styles from "./NlCommandBar.module.css";
 
 export const NlCommandBar = memo(function NlCommandBar({
@@ -29,7 +30,7 @@ export const NlCommandBar = memo(function NlCommandBar({
     const r = parseNlCommand(value);
     onResult(r);
     // 命中后清空输入，方便连续尝试不同指令
-    if (r.actionId) setValue("");
+    if ((r.actionId && !r.aiDisabled) || r.workbench) setValue("");
     // 未命中就把原文选中：用户要的是改两个词，不是从头再打一遍
     else composerRef.current?.select();
   };
@@ -44,7 +45,7 @@ export const NlCommandBar = memo(function NlCommandBar({
       onSubmit={submit}
       /* ❗ 不给空值禁用发送钮：空着点 ⏎ 也要走解析器，那边才有「没看懂」的反馈。
          禁用它就是把一个动作变成「点了没反应」（规则 15.3）。 */
-      placeholder="想做什么？如：改得正式一点 / 翻译成英文 / 总结要点"
+      placeholder={isAiAvailable() ? "想做什么？如：生成二维码 / Base64 解码 / 总结要点" : "想做什么？如：生成二维码 / Base64 解码 / SQL IN"}
       ariaLabel="自然语言指令"
       lead={
         <span className={styles.icon}>

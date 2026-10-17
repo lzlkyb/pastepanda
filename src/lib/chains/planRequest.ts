@@ -1,14 +1,15 @@
 /**
- * chains/planRequest.ts —— AI 编链（B）的请求编排。
+ * chains/planRequest.ts —— AI 设计流程的请求编排。
  *
  * 把“收集可用动作 → 调后端 → 解析 → 白名单校验”收在一处，
- * 调用方（变换枢纽）只面对一个 {@link PlanOutcome} 分支。
+ * 调用方只面对一个 {@link PlanOutcome} 分支。
  *
- * 不把这些写进组件的理由：`TransformHubDialog` 已经 375 行（规则 #7 上限 300），
- * 而这段逻辑与 UI 无关、且以后可能多处复用（卡片右键、建议条）。
+ * 请求、候选清单与白名单校验独立于界面，供流程会话复用。
  */
 
-import { listTransforms } from "@/lib/transforms/registry";
+import { chainStepTransforms } from "./registry";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
+import { parseNlCommand } from "@/lib/nlActionParser";
 import { aiPlanChain } from "@/lib/api/ai";
 import { parseChainPlan, plannedToChain } from "./planner";
 import type { Chain } from "./types";
@@ -39,19 +40,27 @@ export type PlanOutcome =
 export async function requestPlannedChain(
   text: string,
   force?: boolean,
+  goal?: string,
 ): Promise<PlanOutcome> {
+  if (!isAiAvailable()) throw new Error("AI 功能未启用");
   // 排除执行类：它们产生副作用而不产出文本，本来就不能当链的步骤。
   // planner 那边也会再拦一道（输入来自模型，不能只靠这里），
   // 但不把它们放进清单能省一大截 prompt，也少一个误导模型的机会。
-  const actions = listTransforms()
-    .filter((t) => t.kind !== "action")
+  // 后端最多接收 60 项。不能让注册较晚的 AI / 脱敏操作被静默截掉，
+  // 同时保留既有的输入体积上限；显式目标与基础步骤优先，其余 AI 次之。
+  const requested = parseNlCommand(goal ?? "").actionId;
+  const essentials = new Set([requested, "mask-sensitive", "strip_html", "strip_lines", "strip", "json_format"]);
+  const priority = (t: ReturnType<typeof chainStepTransforms>[number]) => essentials.has(t.id) ? 2 : t.remote ? 1 : 0;
+  const actions = chainStepTransforms()
+    .sort((a, b) => priority(b) - priority(a))
+    .slice(0, 60)
     .map((t) => ({
       id: t.id,
       label: t.label,
       description: t.description ?? "",
     }));
 
-  const res = await aiPlanChain(text, actions, force);
+  const res = await aiPlanChain(text, actions, force, goal);
 
   if (res.status === "needsConfirm") {
     return { status: "needsConfirm", reason: res.reason };

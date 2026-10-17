@@ -8,6 +8,7 @@
 
 /** parseColumnList 的解析结果 */
 export interface ColumnListInfo {
+  relevance?: { score: number; text: string };
   ok: boolean;
   /** 值的行数 */
   count: number;

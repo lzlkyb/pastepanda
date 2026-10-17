@@ -4,7 +4,7 @@
  * 重点盯三件事：
  * 1. **冷启动**：数据不足（< MIN_EVENTS）时完全退回静态分，不能给新用户一个
  *    "还没学会"的排序；
- * 2. **权重只改顺序、不动展示分**：score 字段保持 detect 原始分，UI 百分比不失真；
+ * 2. **权重只改顺序、不动展示分**：score 字段保持 detect 原始分，展示内容证据而非概率；
  * 3. **负反馈必须生效**：「不再推荐这个」命中的动作从排序里消失（含全局空类型）。
  *
  * 注意：测试统一用**本地变换**（sql-in / json-insert），不用 AI 动作——
@@ -21,11 +21,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 import {
   recommendScored,
   loadRecommendState,
+  isRecommendReady,
   __resetRecommendForTest,
   MIN_EVENTS,
   STRENGTH,
-  LOW_CONF_THRESHOLD,
-  AI_BOOST_SCORE,
   computeQualityFactor,
   qualityFactorOf,
   QUALITY_MIN_SAMPLES,
@@ -63,7 +62,7 @@ function sw(
 /**
  * mock invoke：按 `loadRecommendState` 里 Promise.all 的**顺序**逐个返回。
  *
- * **六个都得 mock**：少一个就会在 `undefined.catch()` 上同步抛 TypeError，
+ * **七个都得 mock**：少一个就会在 `undefined.catch()` 上同步抛 TypeError，
  * 被外层 try 接住后静默走进降级分支——测试会"通过"，但测的是冷启动
  * 而不是它以为在测的权重逻辑。（profile_action_boosts 之前就漏了。）
  */
@@ -81,7 +80,8 @@ const weights = (
     .mockResolvedValueOnce(dis) // action_dismissals
     .mockResolvedValueOnce(boosts) // profile_action_boosts
     .mockResolvedValueOnce(feedback) // ai_feedback_stats
-    .mockResolvedValueOnce(transitions); // sequence_transitions
+    .mockResolvedValueOnce(transitions) // sequence_transitions
+    .mockResolvedValueOnce([]); // action_pins
 };
 
 beforeEach(() => {
@@ -364,10 +364,10 @@ describe("场景感知排序", () => {
 });
 
 // ============================================================
-// v6.3 AI 兜底：本地规则拿不准时，AI 动作抬进推荐区
+// AI 适用性：不能把不确定的内容强行升级为推荐
 // ============================================================
 
-describe("AI 兜底（低置信提升）", () => {
+describe("AI 保留原始适用性", () => {
   // AI 动作是运行时 initAiTransforms 注册的，测试环境不跑 → 手动注册一个 remote 动作模拟。
   // detect 也模拟真实 AI 动作的门控（aiAvailable=false 时返回 0，规则 15）。
   async function registerFakeAi() {
@@ -383,11 +383,11 @@ describe("AI 兜底（低置信提升）", () => {
     } as never);
   }
 
-  // 英文长句：本地动作最高 0.25（strip 系列），maxLocal < 0.5 → 触发兜底
+  // 本地缺少证据也不代表用户需要 AI。
   const PLAIN_EN =
     "The quick brown fox jumps over the lazy dog while the sun sets in the west.";
 
-  it("AI 可用 + 非代码 + 本地全低分 → AI 动作抬到 AI_BOOST_SCORE", async () => {
+  it("AI 可用但证据不足时仍保留 0.55，不抬入推荐区", async () => {
     setAiAvailable(true);
     await registerFakeAi();
     weights([], []);
@@ -396,7 +396,7 @@ describe("AI 兜底（低置信提升）", () => {
     const list = recommendScored(ctx(PLAIN_EN));
     const ai = list.find((s) => s.transform.id === "ai-fake");
     expect(ai).toBeDefined();
-    expect(ai!.score).toBeGreaterThanOrEqual(AI_BOOST_SCORE);
+    expect(ai!.score).toBe(0.55);
   });
 
   it("AI 不可用 → 不兜底（AI 动作 score=0 不可见）", async () => {
@@ -415,12 +415,12 @@ describe("AI 兜底（低置信提升）", () => {
     weights([], []);
     await loadRecommendState();
 
-    // json 内容：sql-in 等高置信本地动作存在，且 isCodeish 阻止兜底
+    // JSON 本地动作与 AI 动作各自保留适用性判断。
     const list = recommendScored(ctx(JSON_TEXT, "json"));
     const ai = list.find((s) => s.transform.id === "ai-fake");
-    // isCodeish → 不兜底：ai-fake 保持 0.55（若出现）或 sql-in 高分在前
+    // 不受其他动作分数影响。
     if (ai) {
-      expect(ai.score).toBeLessThan(AI_BOOST_SCORE);
+      expect(ai.score).toBe(0.55);
     }
   });
 
@@ -430,18 +430,15 @@ describe("AI 兜底（低置信提升）", () => {
     weights([], []);
     await loadRecommendState();
 
-    // 中文句子命中 unicode_encode 0.6（本地拿得准）→ 不兜底
+    // 普通中文不自动推断编码或 AI 意图。
     const list = recommendScored(ctx("这是一段普通的中文内容，讲的是今天发生的事情。"));
     const ai = list.find((s) => s.transform.id === "ai-fake");
     if (ai) {
-      expect(ai.score).toBeLessThan(AI_BOOST_SCORE);
+      expect(ai.score).toBe(0.55);
     }
   });
 
-  it("阈值常量防漂移", () => {
-    expect(LOW_CONF_THRESHOLD).toBe(0.5);
-    expect(AI_BOOST_SCORE).toBe(0.6);
-  });
+
 });
 
 /**
@@ -511,11 +508,11 @@ describe("质量降权因子", () => {
  * 目的是信任：用户不知道推荐凭什么，就永远只敢拿它做能一眼验证的事。
  */
 describe("推荐理由", () => {
-  it("冷启动不给理由（没学到东西时假装懂你更损伤信任）", async () => {
+  it("冷启动只解释内容证据，不虚构使用习惯", async () => {
     weights([w("sql-in", "json", 2)]); // 总量 < MIN_EVENTS
     await loadRecommendState();
     const list = recommendScored(ctx(JSON_TEXT, "json"));
-    expect(list.every((s) => s.reason === undefined)).toBe(true);
+    expect(list.every((s) => !s.reason || s.reason.kind === "content")).toBe(true);
   });
 
   it("常用动作给出使用次数理由", async () => {
@@ -557,4 +554,18 @@ describe("推荐理由", () => {
     expect(bad?.reason?.kind).toBe("quality");
     expect(bad?.reason?.text).toContain("修改");
   });
+});
+
+it("使用习惯不能把弱匹配排到强匹配之前", async () => {
+  const { registerTransform, unregisterTransform } = await import("@/lib/transforms");
+  registerTransform({ id: "tier-strong", label: "强匹配", group: "text", detect: () => 0.8, run: () => ({ ok: true, output: "" }) });
+  registerTransform({ id: "tier-weak", label: "弱匹配", group: "text", detect: () => 0.45, run: () => ({ ok: true, output: "" }) });
+  try {
+    weights([w("tier-weak", "text", 100)]);
+    await loadRecommendState();
+    expect(isRecommendReady()).toBe(true);
+    const list = recommendScored(ctx("plain text"));
+    expect(list.findIndex(s => s.transform.id === "tier-strong")).toBeLessThan(list.findIndex(s => s.transform.id === "tier-weak"));
+    expect(list.find(s => s.transform.id === "tier-weak")?.score).toBe(0.45);
+  } finally { unregisterTransform("tier-strong"); unregisterTransform("tier-weak"); }
 });

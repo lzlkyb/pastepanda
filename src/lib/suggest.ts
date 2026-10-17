@@ -16,7 +16,7 @@
  */
 import { recommendScored, type Scene } from "@/lib/recommend";
 import type { TransformContext } from "@/lib/transforms";
-import { PRESET_CHAINS, cachedUserChains, getPresetChain } from "@/lib/chains/registry";
+import { PRESET_CHAINS, cachedUserChains, getPresetChain, isChainAvailable } from "@/lib/chains/registry";
 import { getTransform } from "@/lib/transforms";
 import { detectIntent } from "@/lib/intent";
 import { mergeSessionTexts, type SessionBucket } from "@/lib/sessionContext";
@@ -201,7 +201,7 @@ export function suggestChain(ctx: TransformContext): Suggestion | null {
   let best: { chainId: string; label: string; steps: number; score: number } | null = null;
   // 自定义链排在前面：同分时用户亲手配的链胜出（下面用的是严格大于）。
   // 不加这一句的后果：用户花功夫建了链，却永远只被推荐我们自带的预置链。
-  for (const chain of [...cachedUserChains(), ...PRESET_CHAINS]) {
+  for (const chain of [...cachedUserChains(), ...PRESET_CHAINS].filter(isChainAvailable)) {
     // 空步骤链无从跑起（自定义链来自后端 chain_defs 表，不保证非空），
     // 顺手挡掉；也避开下面 steps[0] 读到 undefined 直接抛异常。
     if (chain.steps.length === 0) continue;

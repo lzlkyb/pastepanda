@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { PRESET_CHAINS, getPresetChain, runChain } from "@/lib/chains/registry";
+import { setAiAvailable } from "@/lib/transforms/aiTransforms";
 import { registerTransform, unregisterTransform } from "@/lib/transforms/registry";
 import type { Chain } from "@/lib/chains/types";
 import type { Transform } from "@/lib/transforms/types";
@@ -72,6 +73,8 @@ describe("runChain · 链式执行", () => {
 });
 
 describe("runChain · AI 步骤确认（B2）", () => {
+  beforeEach(() => setAiAvailable(true));
+  afterEach(() => setAiAvailable(false));
   it("AI 步骤执行前调用确认钩子，拒绝则中止并定位", async () => {
     // 测试环境未初始化 AI 动作，这里直接注册一个 remote 变换充当 AI 步骤
     const remoteT: Transform = {

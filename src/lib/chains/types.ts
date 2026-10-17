@@ -71,4 +71,23 @@ export interface ChainRunResult {
   final: string;
   /** 失败步骤的索引（0 起）；成功时为 undefined */
   failedAt?: number;
+  /** 停止与失败分开；已发出的请求可能仍完成，不能承诺撤回内容或费用。 */
+  cancelled?: boolean;
+}
+
+export interface ChainRunProgress {
+  index: number;
+  state: "running" | "confirming" | "finished";
+  stages: ChainRunStage[];
+}
+
+export interface ChainRunControl {
+  signal?: AbortSignal;
+  onProgress?: (progress: ChainRunProgress) => void;
+}
+
+export interface ChainSendConfirmation {
+  transformId: string;
+  label: string;
+  input: string;
 }

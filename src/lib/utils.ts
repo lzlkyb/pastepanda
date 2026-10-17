@@ -3,6 +3,37 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { motionPreference } from "@/lib/motionPreference";
 
+/** Parsing a list is not evidence of query intent. Keep manual conversion separate. */
+export function sqlListRelevance(values: unknown[]): { score: number; text: string } {
+  const parts = values.map(value => String(value).trim());
+  if (parts.length < 2) return { score: 0, text: "没有足够的数据值" };
+  const prose = parts.some(value =>
+    /[。！？!?]/.test(value) ||
+    /^(如果|但是|因为|所以|而且|不过|然后|请|现在|我们|用户).{3,}/.test(value) ||
+    /\b(if|but|because|please|however|then|we|you|let me)\b/i.test(value) ||
+    (value.length >= 10 && /(需要|应该|不会|不能|正在|已经|可以|没有)/.test(value)) ||
+    value.split(/\s+/).length >= 5);
+  if (prose) return { score: 0, text: "内容更像连续叙述，不自动推荐 SQL IN" };
+  const identifiers = parts.every(value => /^-?\d+(?:\.\d+)?$/.test(value)) ||
+    parts.every(value => /^[A-Za-z0-9_-]+$/.test(value) && /\d/.test(value));
+  if (identifiers) return { score: 0.85, text: `识别到 ${parts.length} 个数字或短标识符，保留原始数据值` };
+  return { score: 0.45, text: `识别到 ${parts.length} 个名称或文本值，查询意图尚不明确` };
+}
+
+/** Strict round trip and readable UTF-8 prevent ordinary ASCII becoming a decode suggestion. */
+export function decodeBase64Text(input: string): string | null {
+  const clean = input.replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(clean) || clean.length % 4 === 1) return null;
+  try {
+    const binary = atob(clean);
+    if (btoa(binary).replace(/=+$/, "") !== clean.replace(/=+$/, "")) return null;
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
+    // Binary control bytes are not a useful text decode result; tab/newline remain valid.
+    // eslint-disable-next-line no-control-regex
+    return text.trim() && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text) ? text : null;
+  } catch { return null; }
+}
+
 /** Imperative animations use the same gate as CSS and Framer, including hidden WebViews. */
 export function canAnimateInterface(): boolean {
   return motionPreference.getSnapshot() && !document.hidden

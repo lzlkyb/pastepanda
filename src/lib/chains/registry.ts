@@ -8,15 +8,12 @@
  * 云端内容不自动发送），确认钩子由运行器传入。
  */
 
-import { getTransform } from "@/lib/transforms/registry";
+import { getTransform, listTransforms } from "@/lib/transforms/registry";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { chainList } from "@/lib/api/chains";
 import type { Transform } from "@/lib/transforms";
-import { maskSensitiveText } from "@/lib/mask";
 import type {
   Chain,
-  ChainRunResult,
-  ChainRunStage,
-  ChainStepCondition,
   ChainStepRisk,
 } from "./types";
 
@@ -40,46 +37,15 @@ export function riskOf(t: Transform | undefined): ChainStepRisk {
   return t?.remote ? "network" : "local";
 }
 
-/**
- * 步骤执行条件判定（v6.3，纯本地规则零 LLM）：
- * - `always`（缺省）：无条件，恒执行；
- * - `is-json`：内容可被 JSON.parse（对象或数组）；
- * - `contains-secret`：内容里识别出密钥/手机号/邮箱/身份证/IP；
- * - `is-code`：内容像代码（函数/类/关键字/分号等结构化特征）。
- */
-export function matchesCondition(
-  cond: ChainStepCondition | undefined,
-  text: string,
-): boolean {
-  if (!cond || cond.type === "always") return true;
-  const t = (text || "").trim();
-  switch (cond.type) {
-    case "is-json": {
-      try {
-        JSON.parse(t);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    case "contains-secret":
-      return maskSensitiveText(t).count > 0;
-    case "is-code":
-      return (
-        t.length > 20 &&
-        /(function\s|class\s|import\s|const\s|let\s|=>|\{[\s\S]*\}|;)/.test(t)
-      );
-    default:
-      return true;
-  }
-}
+export { matchesCondition } from "./conditions";
+export { runChain } from "./executor";
 
 /** 官方预置链（B1 四条约稿，全部 text 友好） */
 export const PRESET_CHAINS: Chain[] = [
   {
     id: "web-to-text",
-    name: "网页 → 纯文本",
-    description: "剥离 HTML 标签、清掉空行与首尾空白",
+    name: "清理网页格式",
+    description: "网页转纯文本，保留正文并清理多余空白",
     steps: [
       { transformId: "strip_html", risk: "local" },
       { transformId: "strip_lines", risk: "local" },
@@ -88,8 +54,8 @@ export const PRESET_CHAINS: Chain[] = [
   },
   {
     id: "json-clean",
-    name: "JSON 清洗并格式化",
-    description: "校验并缩进美化 JSON",
+    name: "整理 JSON",
+    description: "校验结构并整理缩进与空格",
     steps: [
       { transformId: "json_format", risk: "local" },
       { transformId: "strip", risk: "local" },
@@ -97,8 +63,8 @@ export const PRESET_CHAINS: Chain[] = [
   },
   {
     id: "mask-and-paste",
-    name: "敏感信息脱敏",
-    description: "遮罩密钥 / 手机号 / 邮箱等敏感内容",
+    name: "隐藏敏感信息",
+    description: "替换识别出的密钥、手机号等，结果需核对",
     steps: [
       { transformId: "mask-sensitive", risk: "destructive" },
       { transformId: "strip", risk: "local" },
@@ -117,7 +83,7 @@ export const PRESET_CHAINS: Chain[] = [
   // ===== v6.3 条件链（条件不满足的步骤自动跳过，输出原样传递） =====
   {
     id: "auto-mask",
-    name: "敏感自动脱敏",
+    name: "发现敏感信息时隐藏",
     description: "含密钥 / 手机号时脱敏，否则原样",
     steps: [
       { transformId: "mask-sensitive", risk: "destructive", condition: { type: "contains-secret" } },
@@ -125,7 +91,7 @@ export const PRESET_CHAINS: Chain[] = [
   },
   {
     id: "json-clean-cond",
-    name: "JSON 条件格式化",
+    name: "仅整理有效 JSON",
     description: "是 JSON 才格式化，否则原样",
     steps: [
       { transformId: "json_format", risk: "local", condition: { type: "is-json" } },
@@ -134,8 +100,8 @@ export const PRESET_CHAINS: Chain[] = [
   // ===== v6.6 会话级编排（输入 = 工作记忆拼接的连续复制内容） =====
   {
     id: "error-triage",
-    name: "排错流水线",
-    description: "合并连续复制的报错 → 修复（会话编排）",
+    name: "整理报错并给修复建议",
+    description: "合并报错内容；是代码时继续生成修复建议",
     steps: [
       { transformId: "ai-merge-polish", risk: "network" },
       { transformId: "ai-fix-code", risk: "network", condition: { type: "is-code" } },
@@ -156,12 +122,14 @@ export async function getChainAsync(id: string): Promise<Chain | undefined> {
 
 /** 自定义链（懒加载 + 缓存；force 强制刷新） */
 let userChainsCache: Chain[] | null = null;
+let cacheGeneration = 0;
 
-export async function loadUserChains(force = false): Promise<Chain[]> {
+export async function loadUserChains(force = false, throwOnError = false): Promise<Chain[]> {
   if (!force && userChainsCache) return userChainsCache;
+  const generation = cacheGeneration;
   try {
     const defs = await chainList();
-    userChainsCache = defs.map((d) => ({
+    const mapped = defs.map((d) => ({
       id: d.id,
       name: d.name,
       description: d.description,
@@ -172,7 +140,10 @@ export async function loadUserChains(force = false): Promise<Chain[]> {
       corrupted: d.stepsCorrupted,
       rawSteps: d.stepsRaw,
     }));
-  } catch {
+    if (generation === cacheGeneration) userChainsCache = mapped;
+    return mapped;
+  } catch (error) {
+    if (throwOnError) throw error;
     userChainsCache = userChainsCache ?? [];
   }
   return userChainsCache;
@@ -180,6 +151,7 @@ export async function loadUserChains(force = false): Promise<Chain[]> {
 
 /** 失效缓存（保存/删除链后调用） */
 export function invalidateUserChains(): void {
+  cacheGeneration++;
   userChainsCache = null;
 }
 
@@ -190,120 +162,27 @@ export function invalidateUserChains(): void {
  * 去起一次异步加载——建议本身是附带能力，不该引入等待。
  */
 export function cachedUserChains(): Chain[] {
-  return userChainsCache ?? [];
+  return (userChainsCache ?? []).filter(isChainAvailable);
 }
 
 /** 全部链：用户自定义在前，预置在后 */
 export async function listAllChains(): Promise<Chain[]> {
   const user = await loadUserChains();
-  return [...user, ...PRESET_CHAINS];
+  return [...user, ...PRESET_CHAINS].filter(isChainAvailable);
 }
 
-/**
- * 线性执行一条链：上一步输出 → 下一步输入。
- *
- * 规则（对齐 X1 规划）：
- * - 失败**立即停止**并返回，明确到步骤（failedAt + 该步 error）；
- * - 失败时 final = 最后一个成功步骤的输出（原始内容不丢）；
- * - 步骤不存在（未注册）也按失败处理，不会静默跳过；
- * - **AI 步骤（remote 变换）执行前调用 `onAiConfirm`**：返回 false 则中止——
- *   云端内容不自动发送（红线），中止也算失败定位（error 说明原因）。
- */
-export function runChain(
-  chain: Chain,
-  input: string,
-  opts: Record<string, unknown> = {},
-  onAiConfirm?: (step: { transformId: string; label: string }, index: number) => Promise<boolean>,
-): Promise<ChainRunResult> {
-  return (async () => {
-    const stages: ChainRunStage[] = [];
-    let current = input;
+/** AI 可用性与副作用过滤共用一处，编辑器与 AI 计划清单不能各自漂移。 */
+export function chainStepTransforms(): Transform[] {
+  return listTransforms().filter(t => t.kind !== "action" && (!t.remote || isAiAvailable()));
+}
 
-    // **0 步的链必须算失败**。之前这里没有守卫，for 循环直接不执行 → 返回
-    // `{ ok: true, stages: [], final: input }`，即“什么都没做却报告成功”——
-    // 用户以为链跑过了，实际内容一个字没变。静默成功比失败更难排查。
-    //
-    // 两种来源的文案必须分开：`corrupted` 是后端解析 `steps` 失败退成的空数组
-    // （用户原本配过步骤，数据丢了）；普通空链是用户本来就没配。
-    if (chain.steps.length === 0) {
-      stages.push({
-        stepIndex: 0,
-        transformId: "",
-        label: chain.name,
-        risk: "local",
-        input: current,
-        output: "",
-        ok: false,
-        error: chain.corrupted
-          ? "这条链的步骤配置已损坏（后端无法解析），请重新配置后再跑"
-          : "这条链没有任何步骤，无从执行",
-        durationMs: 0,
-      });
-      return { ok: false, stages, final: current, failedAt: 0 };
-    }
+export function chainHasAiSteps(chain: Chain): boolean {
+  return chain.steps.some(step => {
+    const transform = getTransform(step.transformId);
+    return transform ? !!transform.remote : step.risk === "network" || step.transformId.startsWith("ai-");
+  });
+}
 
-    for (let i = 0; i < chain.steps.length; i++) {
-      const step = chain.steps[i];
-      const t = getTransform(step.transformId);
-      const label = step.label ?? t?.label ?? step.transformId;
-
-      if (!t) {
-        stages.push({
-          stepIndex: i, transformId: step.transformId, label, risk: step.risk,
-          input: current, output: "", ok: false, error: "变换不存在（未注册）", durationMs: 0,
-        });
-        return { ok: false, stages, final: current, failedAt: i };
-      }
-
-      // v6.3 条件执行：条件不满足 → 跳过（输出=输入，原样传递）。
-      // 放在 AI 确认之前：跳过的步骤不会执行，也就无需联网确认。
-      if (step.condition && !matchesCondition(step.condition, current)) {
-        stages.push({
-          stepIndex: i, transformId: t.id, label, risk: step.risk,
-          input: current, output: current, ok: true, durationMs: 0, skipped: true,
-        });
-        continue;
-      }
-
-      // AI 步骤：先确认再发送（红线：云端内容不自动执行）。
-      //
-      // **没传回调 = 视为未确认**，而不是跳过检查。之前写的是
-      // `t.remote && onAiConfirm`，安全检查靠调用方自觉传参；而路线图还要加
-      // 卡片动作条 / 托盘等入口，任何一处忘了传，剪贴板内容就会在用户没
-      // 确认的情况下发到云端。默认拒绝才是把红线从“自觉”变成“强制”。
-      if (t.remote) {
-        const confirmed = onAiConfirm
-          ? await onAiConfirm({ transformId: t.id, label }, i)
-          : false;
-        if (!confirmed) {
-          stages.push({
-            stepIndex: i, transformId: t.id, label, risk: step.risk,
-            input: current, output: "", ok: false,
-            error: "已取消：这一步会把内容发送到云端，需要你确认", durationMs: 0,
-          });
-          return { ok: false, stages, final: current, failedAt: i };
-        }
-      }
-
-      const started = performance.now();
-      const r = await t.run(current, opts);
-      const durationMs = Math.round(performance.now() - started);
-
-      if (r.ok && r.output !== undefined) {
-        stages.push({
-          stepIndex: i, transformId: t.id, label, risk: step.risk,
-          input: current, output: r.output, ok: true, durationMs,
-        });
-        current = r.output;
-      } else {
-        stages.push({
-          stepIndex: i, transformId: t.id, label, risk: step.risk,
-          input: current, output: "", ok: false, error: r.message ?? "变换失败", durationMs,
-        });
-        return { ok: false, stages, final: current, failedAt: i };
-      }
-    }
-
-    return { ok: true, stages, final: current };
-  })();
+export function isChainAvailable(chain: Chain): boolean {
+  return isAiAvailable() || !chainHasAiSteps(chain);
 }

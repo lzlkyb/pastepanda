@@ -37,7 +37,6 @@ import { sequenceTransitions, type SequenceTransition } from "@/lib/api/sequence
 import { aiFeedbackStats, type AiFeedbackStat } from "@/lib/api/aiFeedback";
 import { contentTypeLabel } from "@/lib/actionLabels";
 import { profileActionBoosts } from "@/lib/api/profile";
-import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 
 /** 冷启动阈值：总使用事件少于这个数就不应用权重（新用户前两周的数据量级） */
 export const MIN_EVENTS = 20;
@@ -47,12 +46,6 @@ export const STRENGTH = 1.5;
 
 /** 场景数据不足阈值：某场景总次数低于它 → 场景加成为 1（纯全局权重） */
 export const SCENE_MIN_EVENTS = 5;
-
-/** v6.3 AI 兜底：本地规则最高分低于它（拿不准）时，把 AI 动作抬进推荐区 */
-export const LOW_CONF_THRESHOLD = 0.5;
-
-/** v6.3 AI 兜底：AI 动作被抬到的展示分（进推荐区 ≥0.6） */
-export const AI_BOOST_SCORE = 0.6;
 
 /**
  * 质量降权：样本不足 N 次的动作不参与。
@@ -348,8 +341,8 @@ export function __resetRecommendForTest(): void {
 /**
  * 个性化推荐入口：applicableTransforms + 权重排序 + 场景加成 + 负反馈剔除。
  *
- * - 冷启动（数据不足/未加载）：返回静态排序，与 v6.0 行为一致；
- * - 否则：剔除负反馈命中的动作，按 detect × 全局权重 × 场景加成降序。
+ * - 冷启动（数据不足/未加载）：保留静态适用性与排序；已加载的负反馈仍生效；
+ * - 否则：先按适用档位，再在同档内按 detect × 个性化因子降序。
  * - `scene` 可选：提供「当前小时 + 来源应用」时启用场景加成；不提供则只有全局权重。
  */
 export function recommendScored(
@@ -358,30 +351,13 @@ export function recommendScored(
 ): ScoredTransform[] {
   const base = applicableTransforms(ctx);
 
-  // v6.3 AI 兜底（**独立于冷启动**——新用户没数据时同样该生效）：
-  // 本地规则全低分（< LOW_CONF_THRESHOLD）且内容非代码/结构化且 AI 可用时，
-  // 把 AI 动作抬进推荐区（展示分提到 AI_BOOST_SCORE）——本地规则拿不准，AI 最可能有用。
-  // 这只是展示调整，零调用零费用（规则 15：aiAvailable 门控）。
   const ct = ctx.contentType;
-  const isCodeish = ct === "code" || ct === "json" || ct === "config";
-  if (isAiAvailable() && !isCodeish) {
-    const maxLocal = Math.max(
-      0,
-      ...base.map((s) => (s.transform.remote ? 0 : s.score)),
-    );
-    if (maxLocal < LOW_CONF_THRESHOLD) {
-      for (const s of base) {
-        if (s.transform.remote && s.score > 0) s.score = Math.max(s.score, AI_BOOST_SCORE);
-      }
-    }
-  }
-
-  if (!weights || !dismissals || totalEvents < MIN_EVENTS) return base;
+  const filtered = base.filter(s => !dismissals?.has(key(ct, s.transform.id)) && !dismissals?.has(key("", s.transform.id)));
+  if (!weights || !dismissals || totalEvents < MIN_EVENTS) return filtered;
   // 局部收窄：闭包回调里 TS 无法保证模块变量非 null
   const wts = weights;
   const swts = sceneWeights;
   const sts = sceneTotals;
-  const dis = dismissals;
 
   const typeTotal = typeTotals?.get(ct) ?? 0;
   // 场景数据不足（< SCENE_MIN_EVENTS）→ 场景加成为空（退化为纯全局权重）
@@ -389,12 +365,6 @@ export function recommendScored(
     ? (sts?.get(sceneTotalKey(scene.hourBucket, scene.sourceCat)) ?? 0)
     : 0;
   const useScene = scene !== undefined && sceneTotal >= SCENE_MIN_EVENTS;
-
-  const filtered = base.filter(
-    (s) =>
-      !dis.has(key(ct, s.transform.id)) &&
-      !dis.has(key("", s.transform.id)),
-  );
 
   // 上一个动作整个排序共用一份：它带时间判定，逐条取的话理论上可能在同一次排序中途过期，
   // 产生“前半段有序列加成、后半段没有”的不一致排序。
@@ -405,12 +375,14 @@ export function recommendScored(
     const f = factorsOf(s, wts, swts, typeTotal, sceneTotal, ct, scene, useScene, prevId);
     return { s, f, k: orderKeyOf(s.score, f) };
   });
-  withFactors.sort((a, b) => b.k - a.k);
+  // 使用习惯只能改变同档顺序，不能替代内容适用性的证据。
+  withFactors.sort((a, b) => Number(b.s.score >= 0.6) - Number(a.s.score >= 0.6) || b.k - a.k);
 
   // 排完序再挂理由：理由是给人看的，不参与排序，也不应该影响排序性能
   return withFactors.map(({ s, f }) => {
     const reason = explainReason(f, ct, useScene ? scene : undefined);
-    return reason ? { ...s, reason } : s;
+    return { ...s, rankScore: orderKeyOf(s.score, f), reason: reason
+      ? { ...reason, text: s.reason ? `${s.reason.text} · ${reason.text}` : reason.text } : s.reason };
   });
 }
 

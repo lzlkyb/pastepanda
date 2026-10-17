@@ -36,12 +36,11 @@ export function listTransforms(): Transform[] {
 }
 
 /**
- * 推荐理由（“为什么排这里”）。由 `recommendScored` 在**排完序之后**填，
- * `applicableTransforms` 的静态结果不带（冷启动时本来就无理由可说）。
+ * 推荐理由（“为什么排这里”）。注册表提供内容证据，个性化排序可补充习惯依据。
  */
 export interface RecommendReason {
   /** usage/scene/sequence/role = 正面；quality = 负面（解释为什么被往后排） */
-  kind: "usage" | "scene" | "sequence" | "role" | "quality";
+  kind: "content" | "usage" | "scene" | "sequence" | "role" | "quality";
   text: string;
 }
 
@@ -49,7 +48,9 @@ export interface RecommendReason {
 export interface ScoredTransform {
   transform: Transform;
   score: number;
-  /** 仅个性化排序后存在；冷启动 / 无明显主导因子时为 undefined */
+  /** Personalization changes order inside an applicability tier, never the evidence score. */
+  rankScore?: number;
+  /** 内容证据与可选的个性化依据。 */
   reason?: RecommendReason;
 }
 
@@ -67,7 +68,11 @@ export function applicableTransforms(ctx: TransformContext): ScoredTransform[] {
     : { ...ctx, features: analyzeContent(ctx.text, ctx.contentType) };
 
   return listTransforms()
-    .map((transform) => ({ transform, score: transform.detect(enriched) }))
+    .map((transform): ScoredTransform => {
+      const score = transform.detect(enriched);
+      const text = score > 0 ? transform.matchReason?.(enriched) : undefined;
+      return { transform, score, ...(text ? { reason: { kind: "content", text } } : {}) };
+    })
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);
 }
