@@ -1,6 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { motionPreference } from "@/lib/motionPreference";
+
+/** Imperative animations use the same gate as CSS and Framer, including hidden WebViews. */
+export function canAnimateInterface(): boolean {
+  return motionPreference.getSnapshot() && !document.hidden
+    && (!document.documentElement.dataset.interfaceMotion || document.documentElement.dataset.interfaceMotion === "full")
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 /** 合并 Tailwind 类名，自动去重和解决冲突 */
 export function cn(...inputs: ClassValue[]) {

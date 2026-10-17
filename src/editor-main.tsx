@@ -1,6 +1,7 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { InterfaceMotion } from "./components/InterfaceMotion";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { MotionConfig } from "framer-motion";
 import { FullscreenEditor } from "./components/editors/FullscreenEditor";
 import { ToastProvider } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -28,6 +29,7 @@ if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
 }
 invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
+    setMotionPreference(cfg?.window_animation !== false);
     const themeKey = (cfg.theme as ThemeKey) || DEFAULT_THEME;
     applyTheme(themeKey);
     // 同步主题到本窗口独立 store：FullscreenEditor 内的 SkinScene 读 config.theme
@@ -53,12 +55,12 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary componentName="全屏编辑器">
-      <MotionConfig reducedMotion="user">
+    <InterfaceMotion>
+      <ErrorBoundary componentName="全屏编辑器">
         <ToastProvider>
           <FullscreenEditor />
         </ToastProvider>
-      </MotionConfig>
-    </ErrorBoundary>
-  </React.StrictMode>
+      </ErrorBoundary>
+    </InterfaceMotion>
+  </React.StrictMode>,
 );

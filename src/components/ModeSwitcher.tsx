@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 /**
  * ModeSwitcher.tsx — 顶栏三模式切换器（D15，规划 §8.1 0️⃣）。
  *
@@ -26,7 +27,16 @@ export function ModeSwitcher() {
   const setAppMode = useAppStore((s) => s.setAppMode);
 
   return (
-    <div className={styles.modes} role="tablist" aria-label="应用模式" data-tauri-drag-region="false">
+    <div className={styles.modes} role="tablist" aria-label="应用模式" data-tauri-drag-region="false"
+      onKeyDown={event => {
+        const current = MODES.findIndex(mode => mode.key === appMode);
+        const index = event.key === "Home" ? 0 : event.key === "End" ? MODES.length - 1
+          : event.key === "ArrowRight" ? (current + 1) % MODES.length
+          : event.key === "ArrowLeft" ? (current + MODES.length - 1) % MODES.length : -1;
+        if (index < 0) return;
+        event.preventDefault(); setAppMode(MODES[index].key);
+        event.currentTarget.querySelectorAll<HTMLButtonElement>("button")[index]?.focus();
+      }}>
       {MODES.map((m) => {
         const active = appMode === m.key;
         return (
@@ -34,16 +44,17 @@ export function ModeSwitcher() {
             key={m.key}
             role="tab"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
             title={m.tip}
             className={`${styles.mode}${active ? ` ${styles.modeActive}` : ""}`}
             onClick={() => setAppMode(m.key)}
           >
-            {/* 滑块用 layoutId 做位置过渡，与页签的 seg-active 同一套参数 */}
+            {/* 与内容切换并行，不等待上一页退出。 */}
             {active && (
               <motion.div
                 layoutId="mode-active"
                 className={styles.indicator}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                transition={CONTENT_TRANSITION}
               />
             )}
             <span className={styles.label}>{m.label}</span>

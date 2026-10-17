@@ -49,7 +49,7 @@
   line-height: 1;
   letter-spacing: 0.5px;
   color: var(--text-secondary);
-  transition: color 0.15s, background 0.15s;
+  transition:color var(--motion-fast), background var(--motion-fast);
   white-space: nowrap;
 }
 

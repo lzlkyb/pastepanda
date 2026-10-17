@@ -24,6 +24,13 @@ beforeEach(() => {
 });
 
 describe("ModeSwitcher", () => {
+  it("方向键切换后焦点与选中同步，Tab 只停一次", () => {
+    render(<ModeSwitcher />);
+    fireEvent.keyDown(screen.getByRole("tab", { name: "记录" }), { key: "ArrowRight" });
+    expect(useAppStore.getState().appMode).toBe("tools");
+    expect(document.activeElement).toBe(screen.getByRole("tab", { name: "工具" }));
+    expect(screen.getAllByRole("tab").filter(tab => tab.tabIndex === 0)).toHaveLength(1);
+  });
   it("三个标签是二字名且不带图标", () => {
     const { container } = render(<ModeSwitcher />);
 

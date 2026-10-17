@@ -34,18 +34,18 @@
   justify-content: center;
   color: var(--text-secondary);
   font-size: 14px;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   flex-shrink: 0;
   font-family: inherit;
 }
 
 .sidebarToggle:hover {
   background: rgba(129, 140, 248, 0.12);
-  transform: scale(1.08);
+  transform: none;
 }
 
 .sidebarToggle:active {
-  transform: scale(0.92);
+  transform: scale(var(--control-press-scale));
 }
 
 /* 非「记录」模式下禁用（D15）：侧边栏是记录模式内部的分组导航 */
@@ -131,13 +131,13 @@
   align-items: center;
   justify-content: center;
   color: var(--text-secondary);
-  transition: background 0.15s, transform 0.15s, color 0.15s;
+  transition:background var(--motion-fast), transform var(--motion-fast), color var(--motion-fast);
 }
 
 /* hover 底色用 currentColor 混色 — 图标什么色底色就跟什么色（配色方案 B：功能键各带色相） */
 .iconBtn:hover {
   background: color-mix(in srgb, currentColor 13%, transparent);
-  transform: scale(1.08);
+  transform: none;
 }
 
 /* 触发按钮激活态（栈模式开启 / 工具箱展开）：底色跟按钮自身色相混色，不改变图标颜色 */
@@ -146,7 +146,7 @@
 }
 
 .iconBtn:active {
-  transform: scale(.92);
+  transform: scale(var(--control-press-scale));
 }
 
 /* 功能键默认色相（配色方案 B）：复用工具箱瓷砖调色板，色相跨主题固定 */
@@ -184,7 +184,7 @@
   background: var(--control-glass, var(--search-bg));
   border: 1px solid var(--search-border);
   box-shadow: var(--control-elev, 0 1px 4px rgba(0, 0, 0, 0.03));
-  transition: all 0.2s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .focused {
@@ -230,7 +230,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 
 .searchClear:hover {
@@ -275,7 +275,7 @@
   font-family: inherit;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 
 .searchHistoryClearAll:hover {
@@ -290,7 +290,7 @@
   display: flex;
   align-items: center;
   padding: 0 8px 0 0;
-  transition: background 0.1s;
+  transition:background var(--motion-fast);
   color: var(--text-primary);
 }
 
@@ -345,7 +345,7 @@
   justify-content: center;
   font-size: 10px;
   opacity: 0;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .searchHistoryRemove::after {
@@ -449,7 +449,7 @@
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -497,7 +497,7 @@
   cursor: pointer;
   text-align: left;
   font-family: inherit;
-  transition: background 0.1s;
+  transition:background var(--motion-fast);
 }
 
 .filterDropdownItem:hover {
@@ -542,7 +542,7 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: all 0.2s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   z-index: 1;
   position: relative;
   font-family: inherit;
@@ -634,28 +634,28 @@
   border: 2px solid var(--border-color);
   background: var(--input-bg);
   color: var(--text-secondary);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .circleTabActive .circleIcon {
   background: var(--accent);
   color: #fff;
   box-shadow: 0 4px 16px var(--accent-shadow);
-  transform: scale(1.08);
+  transform: none;
   border-color: var(--accent);
 }
 
 .circleTab:not(.circleTabActive):hover .circleIcon {
   background: var(--hover);
   border-color: var(--border-color);
-  transform: scale(1.04);
+  transform: none;
 }
 
 .circleLabel {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  transition: color 0.2s;
+  transition:color var(--motion-base);
 }
 
 .circleTabActive .circleLabel {
@@ -708,7 +708,7 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .tagFilterClear:hover {
@@ -730,7 +730,7 @@
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .tagFilterAdd:hover {
@@ -765,7 +765,7 @@
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 
 .countsErrorHint:hover {
@@ -809,7 +809,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 
 .tagPickerClose:hover {
@@ -869,7 +869,7 @@
   font-family: inherit;
   cursor: pointer;
   position: relative;
-  transition: background 0.15s, color 0.15s, border-color 0.3s;
+  transition:background var(--motion-fast), color var(--motion-fast), border-color var(--motion-slow);
 }
 
 .whatsNewBtn:hover {

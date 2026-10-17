@@ -1,3 +1,4 @@
+import { setMotionPreference } from "@/lib/motionPreference";
 import { create } from "zustand";
 import { logger } from "@/lib/logger";
 import type { SemanticHit } from "@/lib/api/semantic";
@@ -154,7 +155,7 @@ export interface AppConfig {
   md_save_to_history: boolean; // 全屏编辑器中编辑 .md 文件保存时，是否同时写入剪贴板历史
   md_auto_save: boolean; // 全屏编辑器输入停顿后自动回写（卡片→数据库 / 文件→磁盘）
   markdown_preview_line_numbers: boolean; // 全屏编辑器 markdown 预览行号（块级编号 + 代码行号），预览面板标题栏切换
-  window_animation: boolean; // 弹框与全屏窗口打开/关闭动画（方案 B 玻璃浮升），关闭后即时显隐
+  window_animation: boolean; // 界面动效开关；系统减少动态效果另行保留状态反馈
   doc_capture: boolean; // P1：结构化文本复制保留 CF_HTML（文档保真采集）
   paste_format_default: "auto" | "plain"; // P5：doc/rich 粘贴默认格式（auto=富格式，plain=纯文本）
   table_split_enabled: boolean; // 表格拆分入栈（方案 A/B）总开关，默认开
@@ -646,6 +647,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { history: [...s.history, ...deduped], historyVersion: s.historyVersion + 1 };
     }),
   prependItem: (item) => {
+    // Snapshot mounted rows before the mutation; first-load setHistory does not animate.
+    window.dispatchEvent(new CustomEvent("new-anim", { detail: { id: item.id } }));
     set((s) => {
       // 去重：如果已存在相同 id 的记录，保留旧数据的非空字段，更新时间和内容
       const dupIdx = s.history.findIndex(h => h.id === item.id);
@@ -677,9 +680,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 刚复制的那条反而没人管——跟“复制即用”直接打架。
       return { history: [item, ...s.history], _filterCache: null, historyVersion: s.historyVersion + 1, focusId: null };
     });
-    // 新条目入顶动画事件：CardList 监听后触发 glide（下方行平滑让位）+ 落定高亮环，
-    // 与 pin-anim / delete-anim 同机制；初始加载走 setHistory/appendHistory 不触发此处。
-    window.dispatchEvent(new CustomEvent("new-anim", { detail: { id: item.id } }));
   },
   // 智能合并：将已有记录移到顶部并更新时间
   moveToTop: (id: string, newTime: string) =>
@@ -1260,6 +1260,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // updater 保持纯函数；先读旧工作区，set 之后再触发缓存失效
     const prevWorkspace = get().config.current_workspace;
     set((s) => ({ config: { ...s.config, ...clean } }));
+    if (typeof clean.window_animation === "boolean") setMotionPreference(clean.window_animation);
     if (clean.current_workspace && clean.current_workspace !== prevWorkspace) {
       import("@/lib/api").then(m => m.invalidateCountsCache()).catch(() => {});
     }

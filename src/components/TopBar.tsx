@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { configuredShortcutLabel } from "@/lib/utils";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -409,7 +410,7 @@ function SegmentedTabs({ filterType, setFilterType, counts }: {
               <motion.div
                 layoutId="seg-active"
                 className={styles.segActiveIndicator}
-                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                transition={CONTENT_TRANSITION}
               />
             )}
             <span className={styles.segIcon}>{tab.icon}</span>
@@ -488,7 +489,7 @@ function FilterDropdown<T extends string>({ label, value, options, onChange, aut
             initial={{ opacity: 0, y: -4, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            transition={CONTENT_TRANSITION}
             className={styles.filterDropdownMenu}
           >
             {options.map((opt) => (
@@ -573,7 +574,7 @@ function SourceFilterDropdown({ value, onChange, workspace, auto }: {
             initial={{ opacity: 0, y: -4, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            transition={CONTENT_TRANSITION}
             className={styles.filterDropdownMenu}
           >
             <button className={`${styles.filterDropdownItem}${!value ? ` ${styles.filterDropdownItemActive}` : ""}`}
@@ -628,7 +629,7 @@ function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
       initial={{ opacity: 0, y: -4, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -4, scale: 0.96 }}
-      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+      transition={CONTENT_TRANSITION}
       className={styles.tagPickerPopover}
     >
       <div className={styles.tagPickerHeader}>

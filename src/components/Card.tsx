@@ -1,3 +1,4 @@
+import { CardCopyButton } from "@/components/card/CardCopyButton";
 import { memo, useState, useCallback, useContext, useRef, useEffect, useMemo, useSyncExternalStore, lazy, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
@@ -27,7 +28,7 @@ import { deleteHistory, copyItemToClipboard } from "@/lib/api";
 import { pasteGuarded } from "@/lib/pasteGuard";
 import { useActionEventLog } from "@/hooks/useActionEventLog";
 import { CardActionBar } from "@/components/card/CardActionBar";
-import { Pin, Copy, Pencil, Trash2, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
+import { Pin, Pencil, Trash2, ImageIcon, Images, Link2, AtSign, Code2, Phone, FileText, Terminal, Type, Check, Hash, Lock, Palette, Workflow } from "lucide-react";
 import styles from "./CardList.module.css";
 
 const LazyMdRenderer = lazy(() => import("@/components/MarkdownRenderer").then(m => ({ default: m.MarkdownRenderer })));
@@ -342,17 +343,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         if (virtualItem) (virtualItem as HTMLElement).style.zIndex = "";
       }}
     >
-      <motion.div
+      <div
         ref={cardRef}
-        initial={{ opacity: 0, x: -20, scale: 0.97 }}
-        animate={{ opacity: 1, x: 0, scale: 1 }}
-        exit={{ opacity: 0, x: -30, scale: 0.95, transition: { duration: 0.2 } }}
-        /* #8/#9 按压·悬停微交互：必须走 framer 手势通道——motion.div 的内联 transform
-           会覆盖样式表规则，CSS 里 .card:hover / .cardClickFeedback 的 transform 是死代码。
-           手势自带 transition，避免继承入场 stagger 的 delay */
-        whileHover={{ y: -2, scale: 1.01, transition: { type: "spring", stiffness: 500, damping: 30 } }}
-        whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
-        transition={{ type: "spring", stiffness: 400, damping: 28, delay: Math.min(index * 0.003, 0.04) }}
         onMouseDown={handleMouseDown}
         className={`${styles.card} ${typeClass}${selected ? ` ${styles.selected}` : ""}${clickFeedback ? ` ${styles.cardClickFeedback}` : ""}${stackOrder ? ` ${styles.cardInStack}${stackOrder === 1 ? ` ${styles.cardStackNext}` : ""}` : ""}${stackDone ? ` ${styles.cardStackDone}` : ""}${pinFlash ? ` ${styles.cardJustPinned}` : ""}`}
         role="option"
@@ -460,7 +452,8 @@ export const Card = memo(function Card({ item, selected, onClick, onDoubleClick,
         <span className={styles.cardTime}>
           {pasting ? <span className={styles.cardPasting}><Check size={10} style={{marginRight:2}} />已复制</span> : time}
         </span>
-      </motion.div>
+        <CardCopyButton item={item} className={styles.cardCopyPrimary} tabIndex={selected ? 0 : -1} />
+      </div>
 
       {/* 栈序号角标（渲染在 cardWrap 层，避免被卡片 overflow:hidden 裁剪） */}
       {stackOrder ? <span className={`${styles.stackBadge}${stackOrder === 1 ? ` ${styles.stackBadgeNext}` : ""}`}>{stackOrder}</span> : null}
@@ -531,17 +524,6 @@ const CardHoverPopover = memo(function CardHoverPopover({
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
 
-  // 按类型分派的复制统一走 copyItemToClipboard（图片/文件/图文/纯文本），
-  // 不再在本文件里重复实现——之前拷了三份，加图文类型时三处全漏
-  const handleCopy = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    try {
-      toast(await copyItemToClipboard(item), "success");
-    } catch {
-      toast("复制失败", "error");
-    }
-  }, [item, toast]);
 
   // 复制识别文字：完整 OCR 文本（非截断标题），收口在 copyOcrTextToClipboard
   const handleCopyOcr = useCallback((e: React.MouseEvent) => {
@@ -681,9 +663,7 @@ const CardHoverPopover = memo(function CardHoverPopover({
           >
             <Pin size={12} /> <span>{item.pinned ? "已置顶" : "置顶"}</span>
           </button>
-          <button type="button" className={styles.cardPopoverBtn} onClick={handleCopy} title="复制到剪贴板">
-            <Copy size={12} /> <span>复制</span>
-          </button>
+          <CardCopyButton item={item} className={styles.cardPopoverBtn} />
           {getImageOcrFullText(item, ocrState) && (
             <button type="button" className={`${styles.cardPopoverBtn} ${styles.cardPopoverBtnOcr}`} onClick={handleCopyOcr} title="复制识别文字">
               <FileText size={12} /> <span>复制文字</span>
@@ -721,17 +701,6 @@ const InlineCardActions = memo(function InlineCardActions({
   const { toast } = useToast();
   const pinFlash = usePinFlash(item.pinned);
 
-  // 按类型分派的复制统一走 copyItemToClipboard（图片/文件/图文/纯文本），
-  // 不再在本文件里重复实现——之前拷了三份，加图文类型时三处全漏
-  const handleCopy = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    try {
-      toast(await copyItemToClipboard(item), "success");
-    } catch {
-      toast("复制失败", "error");
-    }
-  }, [item, toast]);
 
   const handleFav = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -783,15 +752,6 @@ const InlineCardActions = memo(function InlineCardActions({
         aria-pressed={item.pinned}
       >
         <Pin size={14} />
-      </button>
-      <button
-        type="button"
-        className={`${styles.cardInlineBtn} ${styles.cardInlineBtnCopy}`}
-        onClick={handleCopy}
-        title="复制到剪贴板"
-        aria-label="复制到剪贴板"
-      >
-        <Copy size={14} />
       </button>
       {(item.type === "text" || item.type === "diagram") && onEdit && (
         <button

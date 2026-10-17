@@ -21,11 +21,9 @@
 .z-confirm   { z-index: var(--z-confirm); }   /* 嵌套确认框 */
 
 .dialog-box {
-  /* 皮肤场景：玻璃对话框（方案B 沉浸磨砂）— 用 --glass-dialog-bg + backdrop-filter 让主题场景透出；
-     不透明 --dialog-bg 保留给对话框内部需实心对比的元素（如设置吸顶搜索栏、TransformHub 芯片） */
-  background: var(--glass-dialog-bg);
-  backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
-  -webkit-backdrop-filter: var(--glass-dialog-filter, blur(var(--glass-dialog-blur)) saturate(1.4));
+  background: var(--dialog-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border: 1px solid var(--glass-popover-border);
   border-radius: 16px;
   display: flex;

@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * rec-hud-main — 录屏完成/失败通知 HUD（主窗隐藏时的通知通路，设计稿二期 §1）。
  *
@@ -17,8 +19,8 @@ import "./styles/theme.css";
 import "./styles/recsel.css";
 
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => { /* 读取失败保持默认主题 */ });
 
 function Root() {
@@ -51,6 +53,8 @@ function RecHud({ data }: { data: RecHudData }) {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    <MotionPolicy>
+      <Root />
+    </MotionPolicy>
   </React.StrictMode>,
 );

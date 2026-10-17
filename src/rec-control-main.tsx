@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /** Compact recording window; backend status supplies the clock and audio health. */
 import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
@@ -19,8 +21,8 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => { /* 读取失败保持默认主题 */ });
 
 // Backend owns window cleanup; late frontend events must never close a newer session.
@@ -47,6 +49,8 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    <MotionPolicy>
+      <Root />
+    </MotionPolicy>
   </React.StrictMode>,
 );

@@ -1,3 +1,4 @@
+import { CONTROL_TRANSITION } from "@/lib/motion";
 /**
  * 主窗口右键菜单的**容器**：开合状态、焦点、渲染。
  *
@@ -148,10 +149,10 @@ export function ContextMenu({ children }: { children: ReactNode }) {
             aria-activedescendant={
               activeSubIndex === null && activeIndex >= 0 ? itemDomId(activeIndex) : undefined
             }
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            initial={{ opacity: 0, scale: 0.99, y: -3 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            exit={{ opacity: 0, scale: 0.99, y: -3 }}
+            transition={CONTROL_TRANSITION}
             className={styles.ctxMenu}
             style={{
               position: "fixed",
@@ -205,7 +206,7 @@ export function ContextMenu({ children }: { children: ReactNode }) {
                             activeSubIndex !== null ? subDomId(flatIdx, activeSubIndex) : undefined
                           }
                           className={styles.ctxSubmenu}
-                          exit={{ opacity: 0, transition: { duration: 0.12, ease: "easeIn" } }}
+                          exit={{ opacity: 0, transition: { duration: 0.15, ease: [0.2, 0, 0, 1] } }}
                           onMouseEnter={() => { setActiveIndex(flatIdx); setActiveSubIndex(null); }}
                         >
                           {item.children.map((child, j) => (

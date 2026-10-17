@@ -61,7 +61,7 @@
   -webkit-backdrop-filter: var(--glass-card-filter, none);
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--glass-card-shadow);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 /* 静态光泽层 — 始终可见的顶部微光，模拟玻璃反光。
@@ -81,43 +81,13 @@
   pointer-events: none;
 }
 
-/* 动态光泽扫过 — hover 时播放 */
-.card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 16px;
-  background: linear-gradient(
-    120deg,
-    transparent 20%,
-    var(--glass-shimmer) 35%,
-    var(--glass-shimmer) 40%,
-    var(--glass-shimmer) 45%,
-    transparent 60%
-  );
-  background-size: 200% 100%;
-  opacity: 0;
-  transition: opacity 0.4s ease;
-  z-index: 0;
-  pointer-events: none;
-}
-
-/* hover: 动态光泽扫过动画 */
-.card:hover::after {
-  opacity: 1;
-  /* 关键帧已移到 styles/surface.css（知识模式的笔记行用同一份）。
-     仍然走 `--card-shimmer-anim`：有些主题把它设成 none 来省合成层。 */
-  animation: var(--card-shimmer-anim, pp-shimmer-sweep 1.6s ease-in-out infinite);
-}
-
-/* hover: 边框亮起 + 阴影加深（抬升位移由 Card.tsx whileHover 驱动——
-   motion.div 内联 transform 会覆盖样式表 transform，此处不可再写） */
+/* hover: 卡片保持原位，只改变边框与阴影。 */
 .card:hover {
   border-color: var(--glass-card-hover-border);
   box-shadow: var(--glass-card-hover-shadow);
 }
 
-/* 点击确认闪烁（按压缩放由 Card.tsx whileTap 驱动，此处 transform 已被内联样式覆盖而失效，移除） */
+/* 点击确认保持卡片原位，以背景变化表达。 */
 .cardClickFeedback {
   background: var(--hover) !important;
 }
@@ -135,12 +105,6 @@
 }
 
 /* ===== 方案 C 置顶动画 ===== */
-/* 行 glide 过渡：置顶重排瞬间由 CardList 临时挂载 ~450ms，
-   使 virtualizer 写入的 translateY 变化平滑过渡（被置顶卡片滑向顶部、其余行让位） */
-.rowGlide {
-  transition: transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
 /* 落定高亮环：挂在行容器上（card 本体 overflow:hidden 会裁剪 inset 负值） */
 .rowLanding::after {
   content: '';
@@ -152,12 +116,12 @@
   pointer-events: none;
   z-index: 2;
   /* 关键帧在 styles/surface.css（知识模式的「移动/恢复回执」用同一份）。 */
-  animation: pp-ring-fade 0.95s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: pp-ring-fade var(--motion-large) var(--ease-standard) forwards;
 }
 
-/* ★ 弹跳微交互（收藏按钮，置顶/取消置顶瞬间由 pinFlash 挂上） */
+/* 收藏切换的短暂描边反馈，由 pinFlash 控制生命周期。 */
 .starPopping {
-  animation: starPop 0.46s cubic-bezier(0.34, 1.45, 0.4, 1);
+
   position: relative;
 }
 .starPopping::after {
@@ -168,18 +132,8 @@
   /* V3：不写硬编码 hex。原值 rgba(245,158,11,.55) 就是一个写死的橙，
      深色主题下它不跟着变，而它包的正是那个已经跟着变的置顶按钮。 */
   border: 2px solid color-mix(in srgb, var(--warning) 55%, transparent);
-  animation: starPulse 0.5s ease-out forwards;
+
   pointer-events: none;
-}
-@keyframes starPop {
-  0% { transform: scale(1); }
-  30% { transform: scale(0.5) rotate(-15deg); }
-  62% { transform: scale(1.45) rotate(10deg); }
-  100% { transform: scale(1); }
-}
-@keyframes starPulse {
-  from { transform: scale(0.6); opacity: 1; }
-  to { transform: scale(1.7); opacity: 0; }
 }
 
 /* 📌 角标弹出 / "置顶"徽章渐显：仅刚切换置顶（cardJustPinned）时播放，
@@ -256,7 +210,7 @@
 }
 
 .stackBadgeNext {
-  animation: stackBadgePulse 1.5s ease infinite;
+  box-shadow: 0 0 0 2px var(--warning);
 }
 
 .stackBadgeDone {
@@ -286,7 +240,7 @@
   justify-content: center;
   cursor: pointer;
   opacity: 0.75;
-  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+  transition:opacity var(--motion-fast), transform var(--motion-fast), box-shadow var(--motion-fast);
   z-index: 2;
 }
 
@@ -302,11 +256,6 @@
   opacity: 1;
 }
 
-@keyframes stackBadgePulse {
-  0%, 100% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 0 rgba(234, 88, 12, 0.35); }
-  50% { box-shadow: 0 2px 6px rgba(234, 88, 12, 0.4), 0 0 0 5px rgba(234, 88, 12, 0); }
-}
-
 .cardIcon {
   width: 42px;
   height: 42px;
@@ -319,7 +268,7 @@
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  transition: all 0.3s ease;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 
   /* 玻璃拟态图标底 — 主题变量驱动 */
   background: var(--glass-icon-bg);
@@ -401,9 +350,8 @@
   inset: 0;
   background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.5) 50%, transparent 75%);
   background-size: 200% 100%;
-  /* 关键帧在 styles/surface.css。它与光泽扫过刻意是两条：
-     “在加载”是信息，不能跟着装饰类动画一起被主题关掉。 */
-  animation: pp-skeleton-shimmer 1.5s infinite;
+  /* 静态骨架，加载状态由相邻的状态提示说明。 */
+
 }
 
 /* 图片加载失败 */
@@ -427,7 +375,7 @@
   border-radius: 8px;
   background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
   border: none;
 }
 .cardImgRetry:hover {
@@ -561,18 +509,18 @@
 /* ===== 按钮模式：卡片内嵌操作按钮 ===== */
 .cardInlineActions {
   /* U2：四档时长里的前两档。定在这里而不是文件顶部：本轮只碰这一块（§10）。 */
-  --dur-fast: 100ms;
+  --dur-fast: 150ms;
   --dur-std: 200ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   position: absolute;
-  right: 12px;
+  right: 96px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity var(--dur-std) var(--ease);
+  transition:opacity var(--dur-std) var(--ease);
   z-index: 5;
   pointer-events: none;
 }
@@ -587,7 +535,7 @@
 .cardInlineVisible ~ .cardTime,
 .cardWrap:has(.cardInlineVisible) .cardTime {
   opacity: 0;
-  transition: opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition:opacity var(--motion-fast) var(--ease-standard);
 }
 
 .cardInlineBtn {
@@ -602,17 +550,17 @@
   cursor: pointer;
   /* 不写 `all`：它把 box-shadow / border-color 也一并动画了，
      而这里只想让底色、图标色和缩放动。 */
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+  transition:background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
   font-family: inherit;
   background: var(--card-bg);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .cardInlineBtn:hover {
-  transform: scale(1.1);
+  transform: none;
 }
 .cardInlineBtn:active {
-  transform: scale(0.95);
+  transform: scale(var(--control-press-scale));
 }
 
 /* 色名变量→语义名（U6）。--warning 就是 --orange、--warning-bg 就是 --orange-bg，
@@ -629,18 +577,6 @@
   color: var(--warning);
   background: var(--warning-border);
   border: 1px solid var(--warning);
-}
-
-.cardInlineBtnCopy {
-  /* accent 压 accent-light 浅色主题下对比度不足 4.5:1，改用加深版 --accent-strong */
-  color: var(--accent-strong);
-  background: var(--accent-light);
-  border: 1px solid var(--accent);
-}
-.cardInlineBtnCopy:hover {
-  /* 白字压 --accent 对比度不足 4.5:1，hover 实心背景改用加深版 --accent-solid */
-  background: var(--accent-solid);
-  color: #fff;
 }
 
 .cardInlineBtnEdit {
@@ -713,7 +649,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .batchBtn:hover { background: var(--hover); }
 .batchBtnDanger {
@@ -747,7 +683,7 @@
   font-size: 11px; color: var(--accent); background: none;
   border: 1px solid var(--accent); border-radius: 6px;
   padding: 2px 10px; cursor: pointer; font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 /* hover 态下继承基础色 accent 的文字压在 accent-light 底上，浅色主题下对比度不足 4.5:1，补充加深版 --accent-strong */
 .loadMoreRetryBtn:hover { background: var(--accent-light); color: var(--accent-strong); }
@@ -777,9 +713,6 @@
   border-radius: 50%;
   border: 2px dashed var(--accent);
   opacity: 0.25;
-  /* 关键帧已移到 `styles/surface.css`（改名 `pp-ring-spin`）：
-     知识库空态要用同一个，而模块内的 `@keyframes` 名字会被哈希。 */
-  animation: pp-ring-spin 14s linear infinite;
 }
 .emptyIcon {
   width: 64px;
@@ -790,19 +723,15 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 16px var(--accent-shadow);
-  animation: emptyFloat 3.2s ease-in-out infinite;
+
 }
-@keyframes emptyFloat {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-6px); }
-}
-/* 美乐蒂皮肤空状态 — 官方立绘（粉色柔影 + 复用 emptyFloat 轻浮动） */
+/* 美乐蒂皮肤空状态 — 官方立绘与粉色柔影。 */
 .emptyMelody {
   width: 132px;
   height: 132px;
   object-fit: contain;
   filter: drop-shadow(0 8px 20px rgba(240, 86, 140, 0.28));
-  animation: emptyFloat 3.2s ease-in-out infinite;
+
 }
 .emptyTitle {
   font-size: 15px;
@@ -833,7 +762,7 @@
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .emptyClearBtn:hover {
   background: var(--hover);
@@ -851,7 +780,7 @@
   cursor: pointer;
   font-family: inherit;
   box-shadow: 0 2px 10px var(--version-badge-shadow, rgba(59, 158, 255, 0.35));
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .emptyPrimaryBtn:hover {
   transform: translateY(-1px);
@@ -892,7 +821,7 @@
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   cursor: default;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .guideCard:hover {
   border-color: var(--accent);
@@ -1127,8 +1056,8 @@
   font-weight: 500;
   color: var(--text-primary);
   /* U2：四档时长的「快」。不写 `all`——这里只需要底色与描边动。 */
-  transition: background 150ms cubic-bezier(0.2, 0, 0, 1),
-    border-color 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition:background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
   white-space: nowrap;
   user-select: none;
   font-family: inherit;
@@ -1223,7 +1152,7 @@
   flex-wrap: nowrap;
   width: max-content;
   max-width: 96%;
-  transition: background 0.3s, border-color 0.3s;
+  transition:background var(--motion-slow), border-color var(--motion-slow);
 }
 .imageDetailToolbarHint {
   margin-left: 4px;
@@ -1243,7 +1172,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   flex-shrink: 0;
 }
 .imageDetailToolBtn:hover {
@@ -1271,7 +1200,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.3s, border-color 0.3s;
+  transition:background var(--motion-slow), border-color var(--motion-slow);
   cursor: grab;
 }
 .imageDetailImg {
@@ -1385,7 +1314,7 @@
 
 /* OCR 词框 */
 .ocrWordBox {
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  transition:background var(--motion-fast), border-color var(--motion-fast), transform var(--motion-fast);
 }
 .ocrWordBox:hover {
   background: rgba(99,102,241,0.15) !important;
@@ -1465,7 +1394,7 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative; /* 实体 popover 相对面板定位 */
-  transition: border-color 0.2s;
+  transition:border-color var(--motion-base);
 }
 .ocrFullTextPanel.ocrDrawerOpen {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
@@ -1485,7 +1414,7 @@
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 .ocrDrawerHead:hover {
   background: color-mix(in srgb, var(--accent-light) 92%, var(--hover));
@@ -1506,7 +1435,7 @@
   margin-left: auto;
   font-size: 10px;
   color: var(--accent-strong);
-  transition: transform 0.2s;
+  transition:transform var(--motion-base);
   flex-shrink: 0;
 }
 .ocrDrawerBody {
@@ -1530,7 +1459,7 @@
   animation: codeRectIn 150ms ease-out;
 }
 @keyframes codeRectIn {
-  from { opacity: 0; transform: scale(0.92); }
+  from { opacity: 0; transform: scale(var(--control-press-scale)); }
   to   { opacity: 1; transform: none; }
 }
 .codeItem {
@@ -1683,7 +1612,7 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   text-decoration-style: dotted;
-  transition: all 0.12s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .ocrEntityUrl {
   color: var(--accent);
@@ -1778,7 +1707,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
 }
 .ocrActionBtn:hover { background: var(--hover); color: var(--text-primary); }
@@ -1911,7 +1840,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
 }
 .imageExportSegBtn:hover {
@@ -1961,7 +1890,7 @@
   background: var(--accent-solid);
   color: #fff;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
   box-shadow: 0 2px 8px rgba(0,120,212,0.25);
 }
@@ -2062,7 +1991,7 @@
   font-weight: 600;
   z-index: 25;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .cropRestoreBtn:hover {
   background: var(--hover);
@@ -2098,7 +2027,7 @@
   cursor: pointer;
   font-family: inherit;
   box-shadow: 0 2px 8px rgba(0,120,212,0.25);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .cropActionBtn:hover { opacity: 0.9; }
 .cropActionBtn:disabled {
@@ -2117,7 +2046,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .cropActionBtnSecondary:hover {
   border-color: var(--accent);
@@ -2150,7 +2079,7 @@
   position: relative;
   isolation: isolate;          /* 自闭合层叠上下文：卡片 hover 抬升的 z-50 只在列表内生效，不泄漏盖住 FAB */
   padding: 0;                  /* padding 移到内部 cardList */
-  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:padding-left var(--motion-slow) var(--ease-standard);
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   /* 细滚动条样式 */
@@ -2340,7 +2269,7 @@
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .fsToolBtn:hover { background: var(--section-bg); color: var(--text-primary); }
 .fsToolBtn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -2379,7 +2308,7 @@
   font-size: 11px;
   z-index: 6;
   pointer-events: none;
-  transition: opacity 0.4s ease;
+  transition:opacity 0.4s var(--ease-standard);
 }
 .fsHintFaded { opacity: 0.35; }
 .fsHintGone { opacity: 0; visibility: hidden; }
@@ -2452,7 +2381,7 @@
   font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  transition:background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .fsPanelBtn:hover:not(:disabled) { background: var(--section-bg); color: var(--text-primary); }
 .fsPanelBtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -2586,4 +2515,13 @@
   color: var(--text-muted);
   font-size: 11px;
   z-index: 8;
+}
+
+/* The primary copy action stays visible; secondary actions keep their existing mode. */
+.cardCopyPrimary { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); }
+.cardCopyPrimary:hover { background: var(--hover); }
+.cardWrap:focus-within .cardInlineActions { opacity: 1; pointer-events: auto; }
+@media (max-width: 400px) {
+  .cardCopyPrimary { min-width: 28px; padding: 4px; }
+  .cardCopyPrimary span { display: none; }
 }

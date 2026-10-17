@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { InterfaceMotion } from "./components/InterfaceMotion";
 /**
  * rc-main — 「远程电脑」独立工作台窗口入口（2A 配套，2026-09-18）。
  *
@@ -8,7 +10,6 @@
  */
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { MotionConfig } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -28,8 +29,8 @@ applyTheme(DEFAULT_THEME);
 if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
   document.documentElement.classList.add("no-anim");
 }
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => {
     /* 读取失败时保持默认主题 */
   });
@@ -43,13 +44,13 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary componentName="远程电脑工作台">
-      <MotionConfig reducedMotion="user">
+    <InterfaceMotion>
+      <ErrorBoundary componentName="远程电脑工作台">
         <ToastProvider>
           <RcWorkbench />
           <ConfirmDialogHost />
         </ToastProvider>
-      </MotionConfig>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </InterfaceMotion>
   </React.StrictMode>,
 );

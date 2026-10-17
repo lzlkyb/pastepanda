@@ -45,19 +45,20 @@ export function isDarkTheme(value: unknown): boolean {
   return THEMES.find((t) => t.key === normalizeTheme(value))?.dark ?? false;
 }
 
-/** 清除主题过渡的定时器（模块级：快速连切时只保留最后一次） */
+/** 配色提交窗口；快速连切与跨窗口回声共用一个生命周期。 */
 let transitionTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** 将主题应用到 document.documentElement */
 export function applyTheme(themeKey: ThemeKey) {
-  document.documentElement.setAttribute("data-theme", themeKey);
-  // 添加主题切换过渡 — 覆盖更多 CSS 变量相关属性
-  document.documentElement.style.transition = "background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease";
-  // 延迟清除过渡，确保动画播放完毕后不再影响后续即时切换
-  // 防止快速切换主题时旧定时器残留：先清上一次的，再排新的
+  const root = document.documentElement;
+  if (root.getAttribute("data-theme") === themeKey) return;
+  // A palette change touches the whole tree. Do not start one color/background
+  // transition per descendant; the native trace showed repeated style work here.
+  root.dataset.themeChanging = "true";
+  root.setAttribute("data-theme", themeKey);
   if (transitionTimer !== null) clearTimeout(transitionTimer);
   transitionTimer = setTimeout(() => {
-    document.documentElement.style.transition = "";
+    delete root.dataset.themeChanging;
     transitionTimer = null;
   }, 350);
 }

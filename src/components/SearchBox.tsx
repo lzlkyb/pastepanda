@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { primaryModifierHeld, primarySearchShortcut } from "@/lib/utils";
 import { blocksPageShortcuts, isConfirmLayerPresent } from "@/lib/modalLayers";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -172,10 +173,10 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
       <AnimatePresence>
         {showHistory && searchHistory.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            initial={{ opacity: 0, y: -3, scale: 0.99 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            exit={{ opacity: 0, y: -3, scale: 0.99 }}
+            transition={CONTENT_TRANSITION}
             className={styles.searchHistoryDropdown}
           >
             <div className={styles.searchHistoryHeader}>

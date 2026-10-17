@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, useMotionValue, useSpring } from "framer-motion";
 import type { TargetAndTransition, Transition } from "framer-motion";
@@ -70,12 +71,11 @@ const SLOT_SWAP: {
 /**
  * 可点徽章的按压反馈。
  *
- * 0.92 而不是卡片那套 0.985（`Card.tsx:337`）：徽章只有 20px 高，
- * 0.985 在这个尺寸上肉眼看不见，等于没加。
+ * 与其它小型控件一致，轻压后快速落定，不让文字回弹。
  */
 const TAP: TargetAndTransition = {
-  scale: 0.92,
-  transition: { type: "spring", stiffness: 600, damping: 22 },
+  scale: 0.98,
+  transition: CONTENT_TRANSITION,
 };
 
 /**
@@ -295,7 +295,7 @@ export function UpdateBadge({ nameSlot }: { nameSlot: React.ReactNode }) {
             initial={{ opacity: 0, y: -8, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={SLOT_SWAP.exit}
-            transition={{ type: "spring", stiffness: 500, damping: 18 }}
+            transition={CONTENT_TRANSITION}
             whileTap={TAP}
             className="header-badge header-badge-update"
             title={isStarting ? "正在启动下载…" : `发现新版本 v${ver}，点击下载更新`}

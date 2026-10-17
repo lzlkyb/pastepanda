@@ -36,7 +36,7 @@
   border: none;
   background: transparent;
   color: var(--text-primary);
-  transition: background 0.12s ease;
+  transition:background var(--motion-fast) var(--ease-standard);
   font-family: inherit;
   text-align: left;
   /* 🔴 7 而不是 8：容器圆角 12px 减掉它自己 5px 的 padding，内壁的有效圆角
@@ -100,7 +100,7 @@
 .ctxItemIcon {
   flex-shrink: 0;
   color: color-mix(in srgb, currentColor 62%, transparent);
-  transition: color 0.12s ease, transform 0.12s ease;
+  transition:color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -125,7 +125,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ctxItemIcon {
-    transition: none;
+    transition:none;
   }
   .ctxItem:hover .ctxItemIcon,
   .keyboardActive .ctxItemIcon {
@@ -177,13 +177,13 @@
   box-shadow: var(--float-card-shadow, var(--glass-popover-shadow));
   z-index: 91;
   /* U2：0.12s → 150ms，与主菜单/浮层入场同一档 */
-  animation: ctxSubmenuIn 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ctxSubmenuIn var(--motion-fast) var(--ease-enter);
 }
 
 .flipLeft {
   left: auto;
   right: calc(100% + 4px);
-  animation: ctxSubmenuInLeft 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ctxSubmenuInLeft var(--motion-fast) var(--ease-enter);
 }
 
 @keyframes ctxSubmenuIn {

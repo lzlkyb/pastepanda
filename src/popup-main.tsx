@@ -1,6 +1,7 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { InterfaceMotion } from "./components/InterfaceMotion";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { MotionConfig } from "framer-motion";
 import { TrayPopup } from "./components/TrayPopup";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { logger } from "./lib/logger";
@@ -31,8 +32,9 @@ window.addEventListener("unhandledrejection", (event) => {
 // 同时把主题写入本窗口独立 store——SkinScene 读 store.theme 渲染对应场景。
 applyTheme(DEFAULT_THEME);
 useAppStore.getState().updateConfig({ theme: DEFAULT_THEME });
-invoke<{ theme?: string }>("get_config")
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
+    setMotionPreference(cfg?.window_animation !== false);
     const themeKey = (cfg.theme as ThemeKey) || DEFAULT_THEME;
     applyTheme(themeKey);
     useAppStore.getState().updateConfig({ theme: themeKey });
@@ -49,17 +51,17 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary
-      componentName="托盘弹窗"
-      fallback={
-        <div style={{ padding: 12, fontSize: 12, textAlign: "center", color: "var(--text-muted)" }}>
-          ⚠️ 弹窗渲染异常，请重新打开
-        </div>
-      }
-    >
-      <MotionConfig reducedMotion="user">
+    <InterfaceMotion>
+      <ErrorBoundary
+        componentName="托盘弹窗"
+        fallback={
+          <div style={{ padding: 12, fontSize: 12, textAlign: "center", color: "var(--text-muted)" }}>
+            ⚠️ 弹窗渲染异常，请重新打开
+          </div>
+        }
+      >
         <TrayPopup />
-      </MotionConfig>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </InterfaceMotion>
   </React.StrictMode>,
 );

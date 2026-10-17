@@ -1,5 +1,6 @@
+import { useSettingsSave } from "@/hooks/useSettingsSave";
 import { primaryShortcutLabel } from "@/lib/utils";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { useUpdate } from "@/contexts/UpdateContext";
@@ -63,36 +64,7 @@ export function useSettingsShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.current_workspace]);
 
-  // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
-  // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
-  const saveChainRef = useRef(Promise.resolve() as Promise<unknown>);
-
-  const updateAndSave = async (partial: Record<string, unknown>) => {
-    // 乐观更新前先拍下本次涉及键的旧值，供失败回滚用。
-    // ❗ 只拍 partial 里的那几个键而不是整份 config：保存是串行的，整份回滚会把
-    //   排在本次之后、已经成功落盘的其它改动也一并抹掉。
-    const before = useAppStore.getState().config as unknown as Record<string, unknown>;
-    const rollback = Object.fromEntries(Object.keys(partial).map((k) => [k, before[k]]));
-    updateConfig(partial);
-    const task = saveChainRef.current.then(async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      // Zustand set 同步生效，此时 getState 已包含 partial
-      const newConfig = useAppStore.getState().config;
-      await invoke("save_config", { config: newConfig });
-    });
-    saveChainRef.current = task.catch(() => {});
-    try {
-      await task;
-    } catch (e) {
-      logger.warn("即时保存失败", e);
-      // 修复：以前只报错不还原。toast 消失后开关停在「开」而库里是旧值，
-      // 下次启动它自己变回去，用户会当成「设置存不住的怪 bug」。
-      // 同仓 useAiSettings.persist 遇到同样情况是 reload() 回填真实落盘值，这里对齐该行为：
-      // 回滚到上一次成功落盘的值（= 库里真实值），屏上与库里重新一致。
-      updateConfig(rollback);
-      toast("设置保存失败，该项已还原（请检查数据库权限）", "error");
-    }
-  };
+  const { updateAndSave, saveState, retrySave } = useSettingsSave();
 
   // 修复 U27：恢复默认设置（保留工作区等用户数据，仅重置行为/外观/热键配置）
   const handleResetDefaults = async () => {
@@ -266,7 +238,7 @@ export function useSettingsShell() {
   };
 
   return {
-    config, updateConfig, updateAndSave,
+    config, updateConfig, updateAndSave, saveState, retrySave,
     stats, statsError, retryStats: loadStats,
     appName, appVersion, hasAboutDot,
     tabStyle, handleSwitchTabStyle,

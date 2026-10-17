@@ -127,29 +127,12 @@
   letter-spacing: 0.2px;
 }
 
-/* 计时换帧：每秒重挂载触发一次 200ms 入场（旧实现是数字「啪」地替换） */
-.clockTick {
-  animation: recClockTick 200ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
-}
-
-@keyframes recClockTick {
-  from {
-    transform: scale(0.9);
-    opacity: 0.4;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 .state {
   font-size: 11px;
   color: var(--shot-bar-muted);
 }
 
-/* 状态点：实色 + 一圈 1.8s 扩散（旧版是 1.2s 透明度闪烁，与选区 2s 脉动两条节奏各走各的）。
- * 减少动效时扩散圈停掉——验收要求「红点仍是实色可辨」，实色由 .dot 本身承担。 */
+/* 静态状态点；时间与录制状态不靠周期运动表达。 */
 .dot,
 .paused,
 .unknown {
@@ -161,45 +144,12 @@
   background: var(--danger);
 }
 
-.dot::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: inherit;
-  animation: recDotBreath 1.8s cubic-bezier(0.2, 0, 0, 1) infinite;
-}
-
-@keyframes recDotBreath {
-  0% {
-    transform: scale(1);
-    opacity: 0.55;
-  }
-  70%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
-}
-
 .paused {
   background: var(--warning);
 }
 
 .unknown {
   background: var(--shot-bar-muted);
-}
-
-.paused::after,
-.unknown::after {
-  animation: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dot::after,
-  .clockTick {
-    animation: none;
-  }
 }
 
 .tinyProblem {
@@ -245,13 +195,13 @@
   border-radius: 12px;
   white-space: normal;
   transform-origin: bottom right;
-  animation: recPanelIn 300ms var(--ease-spring) both;
+  animation: recPanelIn var(--motion-slow) var(--ease-enter) both;
 }
 
 @keyframes recPanelIn {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.96);
+    transform: translateY(8px) scale(0.985);
   }
   to {
     opacity: 1;

@@ -23,7 +23,7 @@ function audioDot(requested: boolean | undefined, active: boolean | null | undef
  * ① **尺寸不再由 TS 公式算**：旧代码里 260/288/80/104 × 28/36/192/280 六个数字散在
  *    `useState` 附近，每加一个元素都要重算；现在量 `.surface` 的自然尺寸后上报，
  *    窗口恰好等于看得见的那块（不留透明大窗拦桌面操作）；
- * ② 三态（正常 / 更多 / 收起）是同一条的形变，面板入场走 `--ease-spring`；
+ * ② 三态（正常 / 更多 / 收起）是同一条的形变，面板按 B 方案短距离进入；
  * ③「更多」从三行灰字 <p> + 四个按钮改成「标签 + 值」信息卡，动作区独立；
  * ④ 一屏一个实色：只有「停止」是实底，丢弃改成描边红（`arm`）。
  */
@@ -152,8 +152,7 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
           <span className={styles.grip} data-tauri-drag-region title="拖动控制条"><GripVertical size={12} aria-hidden="true" /></span>
           <span className={styles.timer} data-tauri-drag-region aria-label={stateLabel}>
             <i className={stateDot} />
-            {/* key 变化 = 换帧入场；clock 不变时不会有多余动画 */}
-            <span key={clock} className={`${styles.clock} ${styles.clockTick}`}>{clock}</span>
+            <span className={styles.clock}>{clock}</span>
             {preparing && <span className={styles.state}>{stateLabel}</span>}
           </span>
           <button type="button" onClick={() => void togglePause()} disabled={control.busy || preparing} title={control.status?.paused ? "继续录制" : "暂停录制"}>
