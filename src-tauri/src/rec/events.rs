@@ -16,6 +16,8 @@ use std::io::Write as _;
 use std::path::Path;
 
 use super::event_types::RecEvent;
+#[path="output.rs"]
+mod output;
 
 #[derive(Serialize, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -44,6 +46,7 @@ struct Region {
 }
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all="camelCase")]
 struct SidecarDoc<'a> {
     version: u32,
     /// 视频时间轴时长（= rec-done 的 durationMs 口径）。
@@ -54,6 +57,8 @@ struct SidecarDoc<'a> {
     video: VideoInfo,
     /// 隐私与坐标口径说明（人读）。
     note: &'a str,
+    #[serde(skip_serializing_if="Option::is_none")]
+    result_note: Option<&'a str>,
     events: &'a [SidecarEvent],
 }
 
@@ -138,9 +143,12 @@ impl SidecarRecorder {
         region: (i32, i32, u32, u32),
         video: (u32, u32, u32),
     ) -> Result<(), String> {
-        if !self.enabled {
-            return Ok(());
-        }
+        if !self.enabled {return Ok(());}
+        self.write_result(mp4_path,duration_ms,region,video,None)
+    }
+
+    pub fn write_result(&self,mp4_path:&Path,duration_ms:u64,region:(i32,i32,u32,u32),video:(u32,u32,u32),result_note:Option<&str>)->Result<(),String> {
+
         let doc = SidecarDoc {
             version: 1,
             duration_ms,
@@ -156,24 +164,32 @@ impl SidecarRecorder {
                 fps: video.2,
             },
             note: NOTE,
+            result_note,
             events: &self.events,
         };
         let path = sidecar_path(mp4_path);
         let json = serde_json::to_vec_pretty(&doc).map_err(|e| format!("sidecar 序列化：{e}"))?;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|e| format!("创建 {}：{e}", path.display()))?;
-        f.write_all(&json)
-            .and_then(|_| f.flush())
-            .map_err(|e| format!("写 {}：{e}", path.display()))
+        let (pending,mut file)=output::PendingOutput::new(&path,false)?;
+        file.write_all(&json).and_then(|_|file.flush()).and_then(|_|file.sync_all()).map_err(|e|format!("写 {}：{e}",path.display()))?;
+        drop(file);
+        pending.commit()
+
     }
 }
 
 /// `x.mp4` → `x.events.json`。
 pub fn sidecar_path(mp4_path: &Path) -> std::path::PathBuf {
     mp4_path.with_extension("events.json")
+}
+
+fn read_sidecar_bytes(path:&Path)->Option<Vec<u8>> {
+    if std::fs::metadata(path).ok()?.len()>32*1024*1024 {return None;}
+    std::fs::read(path).ok()
+}
+pub fn read_result_note(mp4_path:&Path)->Option<String> {
+    let bytes=read_sidecar_bytes(&sidecar_path(mp4_path))?;
+    let doc:serde_json::Value=serde_json::from_slice(&bytes).ok()?;
+    doc.get("resultNote").or_else(||doc.get("result_note"))?.as_str().filter(|text|!text.trim().is_empty()).map(str::to_owned)
 }
 
 /// 裁剪重映射（纯函数）：保留 `t ∈ [in_ms, out_ms)` 的事件并平移到 0 基，
@@ -203,6 +219,7 @@ pub fn remap_events(raw: &serde_json::Value, in_ms: u64, out_ms: u64) -> Option<
         .collect();
     let mut doc = raw.clone();
     let obj = doc.as_object_mut()?;
+    obj.remove("duration_ms");
     obj.insert("durationMs".into(), serde_json::json!(out_ms - in_ms));
     obj.insert("events".into(), serde_json::json!(kept));
     Some(doc)
@@ -212,7 +229,7 @@ pub fn remap_events(raw: &serde_json::Value, in_ms: u64, out_ms: u64) -> Option<
 /// （sidecar 是附属品，绝不影响裁剪主流程）。
 pub fn write_sidecar_for_trim(src_mp4: &Path, dst_mp4: &Path, in_ms: u64, out_ms: u64) {
     let src = sidecar_path(src_mp4);
-    let Ok(raw) = std::fs::read(&src) else { return };
+    let Some(raw)=read_sidecar_bytes(&src) else {return};
     let Ok(doc) = serde_json::from_slice::<serde_json::Value>(&raw) else {
         log::warn!(
             "[Rec] 裁剪：源 sidecar 不是合法 JSON，跳过重映射（{}）",
@@ -368,5 +385,21 @@ mod tests {
         // 缺 t 的单条事件按「跳过」处理（宽容），不整体失败
         let out = remap_events(&doc(serde_json::json!([{ "type": "mark" }])), 0, 100).unwrap();
         assert_eq!(out["events"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn sidecar_duration_is_one_camel_case_schema_including_legacy_trim() {
+        let folder=std::env::temp_dir().join(format!("rec_schema_{}",std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path=folder.join("schema.mp4");
+        let _=std::fs::remove_file(sidecar_path(&path));
+        SidecarRecorder::new(true).write(&path,1000,(0,0,16,16),(16,16,30)).unwrap();
+        let raw:serde_json::Value=serde_json::from_slice(&std::fs::read(sidecar_path(&path)).unwrap()).unwrap();
+        assert_eq!(raw.get("durationMs").and_then(|v|v.as_u64()),Some(1000));
+        let legacy=serde_json::json!({"duration_ms":1000,"events":[]});
+        let mapped=remap_events(&legacy,100,800).unwrap();
+        assert!(mapped.get("duration_ms").is_none());
+        assert_eq!(mapped["durationMs"],700);
+        std::fs::remove_dir_all(folder).unwrap();
     }
 }

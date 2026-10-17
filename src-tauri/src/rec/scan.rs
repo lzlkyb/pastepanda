@@ -20,12 +20,15 @@ pub struct RecFileMeta {
     pub bytes: u64,
     /// 播放器口径的时长；解析失败为 None（列表照常显示）。
     pub duration_ms: Option<u64>,
+    pub note: Option<String>,
 }
 
 /// 扫目录取最近 `limit` 条（非递归，修改时间倒序）。
-pub fn scan_recent(dir: &Path, limit: usize) -> Vec<RecFileMeta> {
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return Vec::new();
+pub fn scan_recent(dir: &Path, limit: usize) -> Result<Vec<RecFileMeta>, String> {
+    let rd = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(error) if error.kind()==std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("读取录制目录失败：{error}")),
     };
     let mut metas: Vec<(std::time::SystemTime, RecFileMeta)> = rd
         .filter_map(|e| e.ok())
@@ -45,24 +48,31 @@ pub fn scan_recent(dir: &Path, limit: usize) -> Vec<RecFileMeta> {
                     path: e.path().display().to_string(),
                     name,
                     bytes: md.len(),
-                    duration_ms: mp4_duration_ms(&e.path()),
+                    duration_ms: None,
+                    note:None,
                 },
             ))
         })
         .collect();
     metas.sort_by(|a, b| b.0.cmp(&a.0));
     metas.truncate(limit);
-    metas.into_iter().map(|(_, m)| m).collect()
+    Ok(metas.into_iter().map(|(_, mut meta)| {
+        meta.duration_ms=mp4_duration_ms(Path::new(&meta.path));
+        meta.note=super::events::read_result_note(Path::new(&meta.path));
+        meta
+    }).collect())
 }
 
 /// 校验路径是保存目录内的录屏产物（打开 / 定位 / 删除共用；不执行删除）。
 /// 🔴 命令是公网的，前端传回的路径必须过这道闸。
-pub fn validate_rec_path(save_dir: &Path, path: &Path) -> Result<(), String> {
+pub fn validate_rec_path(save_dir: &Path, path: &Path) -> Result<(), String> {validate_path(save_dir,path,false)}
+
+fn validate_path(save_dir: &Path, path: &Path, exports:bool) -> Result<(), String> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .ok_or_else(|| "路径没有文件名".to_string())?;
-    if !name.starts_with(NAME_PREFIX) || !name.ends_with(NAME_SUFFIX) {
+    if !name.starts_with(NAME_PREFIX) || !(name.ends_with(NAME_SUFFIX) || (exports && name.ends_with(".gif"))) {
         return Err("不是录屏产物".into());
     }
     let dir_canon = std::fs::canonicalize(save_dir).map_err(|e| format!("保存目录不可达：{e}"))?;
@@ -76,6 +86,9 @@ pub fn validate_rec_path(save_dir: &Path, path: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Open/reveal accepts finished exports; edit/delete retains the MP4 input gate.
+pub fn validate_rec_output_path(save_dir:&Path,path:&Path)->Result<(),String> {validate_path(save_dir,path,true)}
 
 /// 删除一个录制文件（先过 `validate_rec_path` 的路径闸）。
 /// 同名 sidecar（`.events.json`）一并删——附属品不落孤儿。
@@ -92,32 +105,31 @@ pub fn delete_rec_file(save_dir: &Path, path: &Path) -> Result<(), String> {
 /// MP4 时长（ms）：顶层盒走到 `moov`，其子盒 `mvhd` 带 timescale/duration。
 /// 泛型在 Read+Seek 上，单测直接喂内存字节。
 fn mp4_duration_ms_impl<R: Read + Seek>(mut f: R) -> Option<u64> {
-    let read_header = |f: &mut R| -> Option<(u64, [u8; 4])> {
-        let mut head = [0u8; 8];
-        f.read_exact(&mut head).ok()?;
-        let size = u32::from_be_bytes([head[0], head[1], head[2], head[3]]) as u64;
-        Some((size, [head[4], head[5], head[6], head[7]]))
-    };
-    // ── 顶层：找 moov（8 字节头步进；size=1 走 64 位 largesize；size=0 到文件尾）──
-    loop {
-        let (size, kind) = read_header(&mut f)?;
-        let body = if size == 1 {
-            let mut ext = [0u8; 8];
-            f.read_exact(&mut ext).ok()?;
-            u64::from_be_bytes(ext) - 16
-        } else if size == 0 {
-            return None; // 到文件尾都没 moov（未 Finalize 的半截文件）
-        } else {
-            size - 8
-        };
-        if &kind == b"moov" {
-            // moov 整盒读进内存（通常几十 KB），在子盒里找 mvhd
-            let mut buf = vec![0u8; body as usize];
-            f.read_exact(&mut buf).ok()?;
-            return mvhd_duration_ms(&buf);
+    let length=f.seek(SeekFrom::End(0)).ok()?;
+    f.seek(SeekFrom::Start(0)).ok()?;
+    let mut offset=0u64;
+    while offset<length {
+        let mut header=[0u8;8];
+        f.read_exact(&mut header).ok()?;
+        let size=u32::from_be_bytes(header[..4].try_into().ok()?) as u64;
+        let (size,head_len)=if size==1 {
+            let mut large=[0u8;8];
+            f.read_exact(&mut large).ok()?;
+            (u64::from_be_bytes(large),16u64)
+        } else if size==0 {(length.checked_sub(offset)?,8)} else {(size,8)};
+        let body=size.checked_sub(head_len)?;
+        let end=offset.checked_add(size)?;
+        if end>length {return None;}
+        if &header[4..]==b"moov" {
+            if body>64*1024*1024 {return None;}
+            let mut bytes=vec![0u8;usize::try_from(body).ok()?];
+            f.read_exact(&mut bytes).ok()?;
+            return mvhd_duration_ms(&bytes);
         }
-        f.seek(SeekFrom::Current(body as i64)).ok()?;
+        offset=end;
+        f.seek(SeekFrom::Start(offset)).ok()?;
     }
+    None
 }
 
 /// 在 moov 内容里找 mvhd：版本 0 → timescale@12/duration@16（u32）；
@@ -141,6 +153,7 @@ fn mvhd_duration_ms(moov: &[u8]) -> Option<u64> {
             // v0：ctime/mtime 各 4 → timescale@20、duration@24（u32）
             // v1：ctime/mtime 各 8 → timescale@28、duration@32（u64）
             let (ts_pos, dur_pos, dur64) = if v == 1 { (28, 32, true) } else { (20, 24, false) };
+            if size < dur_pos + if dur64 {8} else {4} {return None;}
             let be = |s: usize, e: usize| -> Option<u64> {
                 let sl = moov.get(off + s..off + e)?;
                 Some(sl.iter().fold(0u64, |a, b| (a << 8) | u64::from(*b)))
@@ -150,7 +163,7 @@ fn mvhd_duration_ms(moov: &[u8]) -> Option<u64> {
             if timescale == 0 {
                 return None;
             }
-            return Some(duration * 1000 / timescale);
+            return Some(((u128::from(duration)*1000)/u128::from(timescale)).min(u128::from(u64::MAX)) as u64);
         }
         off += size;
     }
@@ -252,11 +265,56 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(tmp.join("屏幕录制_b.mp4"), b"yy").unwrap();
         std::fs::write(tmp.join("无关.mp4"), b"z").unwrap();
-        let list = scan_recent(&tmp, 5);
+        let list = scan_recent(&tmp, 5).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].name, "屏幕录制_b.mp4");
         assert!(list[0].bytes == 2);
         assert!(list.iter().all(|m| m.duration_ms.is_none())); // 假文件没 moov
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn malformed_top_level_sizes_return_none_without_panicking() {
+        for size in 2u32..8 {
+            let mut bytes=size.to_be_bytes().to_vec();
+            bytes.extend_from_slice(b"moov");
+            let parsed=std::panic::catch_unwind(||mp4_duration_ms_impl(std::io::Cursor::new(bytes)));
+            assert!(parsed.is_ok(), "invalid size {size} must not panic");
+            assert!(parsed.unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn gif_is_revealable_but_not_an_edit_or_delete_input() {
+        let folder=std::env::temp_dir().join(format!("rec_gif_gate_{}",std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let gif=folder.join("屏幕录制_test.gif");
+        std::fs::write(&gif,b"GIF89a").unwrap();
+        assert!(validate_rec_output_path(&folder,&gif).is_ok());
+        assert!(validate_rec_path(&folder,&gif).is_err());
+        assert!(delete_rec_file(&folder,&gif).is_err());
+        assert!(validate_rec_output_path(&folder,&folder.join("unrelated.gif")).is_err());
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn truncated_mvhd_cannot_read_duration_from_its_next_sibling() {
+        let mut moov=12u32.to_be_bytes().to_vec();
+        moov.extend_from_slice(b"mvhd");
+        moov.extend_from_slice(&[0;4]);
+        moov.extend_from_slice(&32u32.to_be_bytes());
+        moov.extend_from_slice(b"free");
+        moov.extend_from_slice(&1000u32.to_be_bytes());
+        moov.extend_from_slice(&660u32.to_be_bytes());
+        moov.resize(44,0);
+        assert_eq!(mvhd_duration_ms(&moov),None);
+    }
+
+    #[test]
+    fn unreadable_recording_directory_reports_error_instead_of_empty_state() {
+        let path=std::env::temp_dir().join(format!("rec_scan_not_directory_{}",std::process::id()));
+        std::fs::write(&path,b"not a directory").unwrap();
+        assert!(scan_recent(&path,5).is_err());
+        std::fs::remove_file(path).unwrap();
     }
 }

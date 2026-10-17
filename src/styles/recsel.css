@@ -144,25 +144,32 @@ body {
   font-family: inherit;
 }
 
-/* ===== 确认条控件 ===== */
+/* ===== 条上的两级按钮（设计稿 §1）：实底 = 全条唯一强调，描边 = 次级。
+ * 高度统一 30px，与读数胶囊 / 音源胶囊 / 图标按钮同一根基线。 ===== */
 .rec-btn-start {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
   background: var(--accent-solid);
   color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，全站主按钮惯例（无反白 token） */
   border: none;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 12px;
-  cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 150ms cubic-bezier(0.2, 0, 0, 1), transform 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-btn-start .dot {
   width: 8px;
   height: 8px;
+  flex: none;
   border-radius: 50%;
   background: #fff; /* ui-rule-ok: 同上，实色底上的白点 */
 }
@@ -171,21 +178,40 @@ body {
   filter: brightness(1.08);
 }
 
+/* 按压回弹：走快档，与 hover 同一条曲线（transform 也是 150ms，库内少一种时长） */
+.rec-btn-start:active {
+  transform: scale(0.97);
+}
+
+.rec-btn-start:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .rec-btn-ghost {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
   background: transparent;
   color: var(--shot-bar-text);
   border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
   border-radius: 8px;
   font-size: 12px;
-  padding: 4px 8px;
-  cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), transform 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-btn-ghost:hover {
   background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.rec-btn-ghost:active {
+  transform: scale(0.97);
 }
 
 /* 🔴 这里原来写的是 `overflow: hidden`（为了给四档做圆角裁切）。它把「画质」四档的
@@ -231,31 +257,69 @@ body {
   font-weight: 600;
 }
 
+/* 音源胶囊（2026-10-16 设计稿 §1）：文字只留音源名，「开 / 关」两个字交给状态点
+ * （实心 accent = 开，空心描边 = 关）。状态语义走 aria-pressed、补充说明走 title。 */
 .rec-snd {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--shot-bar-text);
-  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 18%, transparent);
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
   border-radius: 999px;
-  padding: 4px 8px;
+  flex: none;
+  font-size: 12px;
+  color: var(--shot-bar-text);
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 16%, transparent);
   cursor: pointer;
   font-family: inherit;
   background: transparent;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* 音源关闭态：它照样可点（点下去就开），不是 disabled，所以字色仍受 AA 正文 4.5:1 管。
- * 40% 弱态在 6 个主题里全部不过（3.30 / 3.27 / 2.55 / 2.55 / 2.34 / 2.42）。
- * 提到 72% 后最差档 5.81；「关着」的观感改由**边框压暗 + 无高亮底**承担，不靠把字调虚。 */
+.rec-snd svg {
+  flex: none;
+}
+
+/* 空心圆用 border 表达，不用 box-shadow：
+ * V2 的语义是「阴影只说高度」。这里既不是高度、也不是层次，只是轮廓。
+ * （改前写的是 inset 0 0 0 1.5px var(--shot-bar-muted)：值里有 var 所以过了脚本，
+ * 但 inset / 0 0 0 / 1.5px 全是硬编码几何——V2 只查「值里有没有 var」是个盲区。） */
+.rec-snd .rec-snd-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 1.5px solid var(--shot-bar-muted);
+  background: transparent;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 关闭态：它照样可点（点下去就开），不是 disabled，所以**字色不受弱化待遇**——
+ * 「关着」由空心点 + 压暗的边框承担（旧版把字调到 40% 来报「关」，
+ * 源码注释自述 6 个主题全部不过 AA：3.30 / 3.27 / 2.55 / 2.55 / 2.34 / 2.42）。
+ * 本规则仍需保留 `color` 声明：recGlassContrastGuard 按选择器取色值，取不到即判红。 */
 .rec-snd.off {
-  color: color-mix(in srgb, var(--shot-bar-text) 72%, transparent);
+  color: var(--shot-bar-text);
   border-color: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
 }
 
 .rec-snd.on {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.rec-snd.on .rec-snd-dot {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.rec-snd:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.rec-snd.on:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 /* ===== 倒计时 ===== */
@@ -265,23 +329,72 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 12px;
   background: rgba(10, 14, 24, 0.28); /* ui-rule-ok: 见文件头① */
   pointer-events: none;
 }
 
-.rec-countdown .num {
-  font-size: 72px; /* ui-rule-ok: 倒计时主数字，唯一的大号视觉锚（设计稿 §3） */
-  font-weight: 800;
-  line-height: 1;
-  color: #fff; /* ui-rule-ok: 盖在用户画面上的倒计时层内，不随主题反色 */
-  text-shadow: 0 4px 30px color-mix(in srgb, var(--accent) 80%, transparent);
-  font-variant-numeric: tabular-nums;
+/* 3 秒进度环（2026-10-16 新增，设计稿 §2）：旧版只有一个 72px 白数字，
+ * 换帧是硬替换，读不出「还剩多久」。sweep 的 dasharray 与 keyframes 终点取同一个周长值。 */
+.rec-count-ring {
+  position: relative;
+  width: 96px;
+  height: 96px;
 }
 
-.rec-countdown .esc {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75); /* ui-rule-ok: 见文件头①（同在倒计时层内） */
+.rec-count-ring svg {
+  width: 96px;
+  height: 96px;
+  transform: rotate(-90deg);
+}
+
+.rec-count-ring .track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18); /* ui-rule-ok: 见文件头①（同在倒计时层内） */
+  stroke-width: 4;
+}
+
+.rec-count-ring .sweep {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  animation: recRingSweep 3s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+.rec-count-ring .num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 44px; /* ui-rule-ok: 倒计时主数字，本层唯一的大号视觉锚（设计稿 §2） */
+  font-weight: 700;
+  line-height: 1;
+  color: #fff; /* ui-rule-ok: 盖在用户画面上的倒计时层内，不随主题反色 */
+  /* ui-rule-ok: 数字压在半透明暗罩上，需要自带的分离影，不随主题 */
+  text-shadow: 0 4px 26px rgba(0, 0, 0, 0.5);
+  font-variant-numeric: tabular-nums;
+  animation: recTickPop 200ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+
+@keyframes recRingSweep {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 263.89;
+  }
+}
+
+@keyframes recTickPop {
+  from {
+    transform: scale(0.82);
+    opacity: 0.25;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* 倒计时层本体 pointer-events:none（不挡选区预览），取消按钮单独放开 */
@@ -289,10 +402,13 @@ body {
   pointer-events: auto;
 }
 
-/* 「取消」与「将录制」改穿玻璃底（2026-10-10 审查 P2 的实测缺口）。
+/* 「取消」与读数改穿玻璃底（2026-10-10 审查 P2 的实测缺口）。
  * 改前是 `color:#fff` 直接压在 rgba(10,14,24,.28) 的**半透明**层上，底下是用户桌面：
  * 两套对比度算法量的都是玻璃条（近不透明），这一对谁都没量过，白壁纸上大概率塌——
- * 而它是这一态唯一的鼠标逃生口。现在字色/底色都来自令牌，量得到也不随壁纸翻车。 */
+ * 而它是这一态唯一的鼠标逃生口。现在字色/底色都来自令牌，量得到也不随壁纸翻车。
+ *
+ * 2026-10-16：两者的主次改用**描边强度**区分（读数弱边、取消 accent 边 + 大命中区），
+ * 刻意不动底色——底色一改，这一对字色的 AA 前提（压在玻璃上）就不成立了。 */
 .rec-count-cancel,
 .rec-count-target {
   font-size: 12px;
@@ -301,7 +417,7 @@ body {
   background: var(--shot-bar-bg);
   border: 1px solid var(--shot-bar-border);
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 4px 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -309,7 +425,16 @@ body {
   pointer-events: auto;
   /* 倒计时里它是唯一的鼠标逃生口（§17），命中区给足：8px 16px */
   padding: 8px 16px;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   cursor: pointer;
+}
+
+/* 减少动效：环与换帧都停掉（数字本身仍在每秒变，信息不丢） */
+@media (prefers-reduced-motion: reduce) {
+  .rec-count-ring .sweep,
+  .rec-count-ring .num {
+    animation: none;
+  }
 }
 
 /* ===== 控制条窗（rec-control.html）===== */
@@ -538,7 +663,7 @@ body {
   font-size: 11px;
   padding: 0;
   flex: none;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-hud-x:hover {
@@ -577,7 +702,7 @@ body {
   color: var(--shot-bar-text);
   cursor: pointer;
   font-family: inherit;
-  transition: background 150ms ease, filter 150ms ease;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), filter 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-hud-btn:hover {
@@ -637,7 +762,7 @@ body {
   background: transparent;
   font-size: 12px;
   font-family: inherit;
-  transition: color 150ms ease;
+  transition: color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-glass-lnk:hover {
@@ -674,40 +799,76 @@ body {
   min-width: 34px;
 }
 
-/* 目标读数与 ⋯ 徽标：条上的等宽数字，扫一眼就知道「将录谁」「什么档」 */
-.rec-readout,
-.rec-badge {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 读数即控制（2026-10-10 审查 P1，规则 17）：目标是一扇窗时读数变成按钮，
- * 点它 = 放弃窗口改录整屏。字色沿用 .rec-glass-lnk 的同一档表达式（实测 8.267 / 8.088 /
- * 6.449 / 6.098 / 4.978 / 4.819，六主题最差 4.819，过 AA），边框只是把「这段文字可点」
- * 说出来，不额外造一档强调度。 */
-.rec-target-lnk {
+/* 目标读数胶囊（2026-10-16 设计稿 §1）：一枚胶囊说清「录多大」——来源靠图标、量级靠数字。
+ * 「将录制」前缀与「改录整屏 ↔」后缀都删掉（§5.1）：整枚可点即切换，来源由图标表意，
+ * 它们只是悬停时 title 的补充。文字量 22 字 → 0 字，但它仍是「读数即控制」（规则 17）那枚控件。 */
+.rec-target-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  flex: none;
   font-family: inherit;
   font-size: 12px;
-  color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
-  background: transparent;
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
-  /* 圆角与内距同 .rec-btn-ghost（同一条上的兄弟按钮），不另造一档 */
-  border-radius: 8px;
-  padding: 4px 8px;
-  cursor: pointer;
-  transition: color 150ms ease;
-}
-
-.rec-target-lnk:hover {
-  color: color-mix(in srgb, var(--accent) 55%, var(--shot-bar-text));
-}
-
-.rec-target-lnk .rec-swap {
   color: var(--shot-bar-text);
-  font-size: 11px;
+  background: transparent;
+  /* 轮廓用 border，不用 inset box-shadow：同一枚胶囊在改动里同时出现两种画法
+   * 会让 hover 里改哪个属性变得看运气（V2 只说高度）。 */
+  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 16%, transparent);
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rec-target-chip svg {
+  flex: none;
+  color: var(--shot-bar-muted);
+}
+
+.rec-target-chip .rec-target-v {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 可点态（目标是一扇窗时）：整枚就是「改录整屏」的按钮；不可点时是 <span>，样式不变 */
+button.rec-target-chip {
+  cursor: pointer;
+}
+
+button.rec-target-chip:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+}
+
+/* 条上的分组竖线：只在三级之间用（主动作 │ 目标 │ 设置），不拿 `|`、`·` 字符当分隔符。
+ * 两侧的呼吸由容器的 8px gap 给，不额外写 margin。 */
+.rec-sep {
+  width: 1px;
+  height: 20px;
+  flex: none;
+  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+}
+
+/* 纯图标按钮（条右端的 `?` 与 ✕）：与文字按钮同高同圆角，命中区给足 30×30 */
+.rec-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--shot-bar-muted);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rec-icon-btn:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+  color: var(--shot-bar-text);
 }
 
 /* 启动失败：这一句是「必须被看见」的，所以它用危险语义色打底，不再像改前那样
@@ -731,7 +892,7 @@ body {
   white-space: nowrap;
 }
 
-/* ===== 预览裁剪窗（rec-preview 窗；四期 1.4，§18 轻预览范式） ===== */
+/* ===== 预览窗（设计稿 §05：三条原生滑杆 → 一条自绘轨道） ===== */
 .rec-pv-root {
   width: 100vw;
   height: 100vh;
@@ -751,7 +912,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px 8px;
+  padding: 12px 12px 8px;
   flex: none;
 }
 
@@ -772,25 +933,12 @@ body {
   font-weight: 400;
 }
 
-.rec-pv-x {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  color: var(--shot-bar-muted);
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  font-size: 11px;
-  padding: 0;
-  flex: none;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.rec-pv-x:hover {
-  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
-  color: var(--shot-bar-text);
+/* 画面区：视频自己带黑信纸边，播放按钮与读数浮在它上面 */
+.rec-pv-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .rec-pv-video {
@@ -802,155 +950,328 @@ body {
   cursor: pointer;
 }
 
-.rec-pv-timerow {
-  display: flex;
+/* 播放读数：压在**视频画面**上，所以与主题无关（和播放按钮同一条理由，见下）。
+ * 它只报事实，不参与任何主题切换——浅色主题下改成浅底会把白字吃掉。 */
+.rec-pv-badge {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  height: 20px;
+  padding: 0 8px;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 12px 0;
-  flex: none;
-}
-
-.rec-pv-time {
-  font-variant-numeric: tabular-nums;
-  color: var(--shot-bar-muted);
+  border-radius: 999px;
   font-size: 11px;
-  flex: none;
-  min-width: 38px;
+  font-variant-numeric: tabular-nums;
+  background: rgb(20 20 24 / 55%); /* ui-rule-ok: 浮在不可控的视频画面上，必须与主题无关 */
+  color: #fff; /* ui-rule-ok: 同上（深色半透明底上的白字，播放器惯例） */
 }
 
+/* 画面正中的播放入口（设计稿 §05）。
+ * 🔴 它压的是**视频内容**（可能是白底文档），所以底与字色都不能跟主题走：
+ * 用 token 会在浅色主题下变成浅底白图标 = 图标消失。深底白图标是播放器的通行做法，
+ * 与 .rec-pv-video 的 `#000` 信纸边同一条判据（那也是本文件里唯一的另一处豁免）。
+ * 播放中**淡出**而不是卸载：卸载后画面正中就没有「暂停」这个出口了。 */
+.rec-pv-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgb(20 20 24 / 62%); /* ui-rule-ok: 浮在不可控的视频画面上，必须与主题无关 */
+  color: #fff; /* ui-rule-ok: 同上 */
+  box-shadow: var(--float-card-shadow);
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1), opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rec-pv-play:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
+.rec-pv-stage[data-playing] .rec-pv-play {
+  opacity: 0;
+}
+
+/* 鼠标回来 / 键盘聚焦都把它带回来——不靠 hover 才能用的兜底 */
+.rec-pv-stage[data-playing] .rec-pv-play:hover,
+.rec-pv-stage[data-playing] .rec-pv-play:focus-visible {
+  opacity: 1;
+}
+
+/* ===== 自绘时间轴 =====
+ * 几何比例（保留段入出点、保留宽度、播放头）由组件以 `--pv-*` 下发：
+ * 它们每帧都在变，静态样式表达不了。 */
 .rec-pv-track {
   position: relative;
-  flex: 1;
-  height: 26px;
+  flex: none;
+  height: 30px;
+  margin: 0 12px;
   cursor: pointer;
+  touch-action: none;
+}
+
+.rec-pv-track[data-disabled] {
+  cursor: default;
 }
 
 .rec-pv-base {
   position: absolute;
-  inset: 8px 0;
-  border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--accent) 26%, transparent),
-    color-mix(in srgb, var(--accent) 12%, transparent)
+  left: 0;
+  right: 0;
+  top: 12px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* 保留段：与两侧斜纹同高同圆角，一眼看出「剪完剩这段」 */
+.rec-pv-keep {
+  position: absolute;
+  left: var(--pv-in, 0%);
+  width: var(--pv-keep, 100%);
+  top: 12px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.rec-pv-cut {
+  position: absolute;
+  top: 12px;
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--shot-bar-text) 24%, transparent) 0 3px,
+    transparent 3px 6px
   );
+}
+
+.rec-pv-cut.before {
+  left: 0;
+  width: var(--pv-in, 0%);
+}
+
+.rec-pv-cut.after {
+  left: var(--pv-out, 100%);
+  right: 0;
 }
 
 .rec-pv-kf {
   position: absolute;
-  top: 11px;
+  top: 9px;
   width: 1px;
-  height: 10px;
-  background: color-mix(in srgb, var(--shot-bar-text) 32%, transparent);
+  height: 12px;
+  background: color-mix(in srgb, var(--shot-bar-text) 26%, transparent);
   pointer-events: none;
 }
 
-/* 手柄外区域 = 会被剪掉：斜纹压暗（设计稿 §2，一眼看懂方向） */
-.rec-pv-cut {
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in srgb, var(--shot-bar-bg) 72%, transparent) 0 4px,
-    transparent 4px 8px
-  );
-  pointer-events: none;
-}
-
-.rec-pv-sel {
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  box-sizing: border-box;
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--accent) 62%, transparent);
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  pointer-events: none;
-}
-
+/* 播放头。2px 宽的圆头（不是 2px 圆角方块：`border-radius: 2px` 不在 U5 的 4/8/12 档里，
+ * 而 2px 的宽度下 999px 与「圆角」视觉等价）。 */
 .rec-pv-playhead {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  left: var(--pv-head, 0%);
+  top: 6px;
   width: 2px;
-  margin-left: -1px;
+  height: 18px;
+  transform: translateX(-50%);
+  border-radius: 999px;
   background: var(--shot-bar-text);
-  opacity: 0.75;
+  opacity: 0.85;
   pointer-events: none;
 }
 
+/* 两枚手柄：命中区 18×28（比看得见的滑块宽，拖起来不飘），滑块本体走 ::after
+ * ——这样 hover 的 scaleY 只作用在滑块上，命中区不跟着变。 */
 .rec-pv-handle {
   position: absolute;
-  top: 0;
-  width: 16px;
-  height: 24px;
-  margin-left: -8px;
+  top: 1px;
+  width: 18px;
+  height: 28px;
   padding: 0;
-  border: none;
-  border-radius: 4px;
+  border: 0;
+  border-radius: 8px;
+  transform: translateX(-50%);
   background: transparent;
   cursor: ew-resize;
+}
+
+.rec-pv-handle.in {
+  left: var(--pv-in, 0%);
+}
+
+.rec-pv-handle.out {
+  left: var(--pv-out, 100%);
 }
 
 .rec-pv-handle::after {
   content: "";
   position: absolute;
-  left: 4px;
-  right: 4px;
-  top: 5px;
-  bottom: 5px;
-  border-radius: 4px;
-  background: var(--accent);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
-  transition: transform 150ms ease;
+  left: 5px;
+  right: 5px;
+  top: 6px;
+  bottom: 6px;
+  border-radius: 999px;
+  background: var(--accent-solid);
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-pv-handle:hover::after,
 .rec-pv-handle:active::after {
-  transform: scaleY(1.18);
+  transform: scaleY(1.22);
 }
 
-/* 拖动中的时间气泡（吸附前原始值，灰字语义） */
+/* 拖动中的读数气泡：挂在手柄**内部**（手柄已经定位在该端点，气泡只要自己居中），
+ * 所以它不需要任何内联几何。 */
 .rec-pv-bubble {
   position: absolute;
-  top: -20px;
+  left: 50%;
+  top: -22px;
   transform: translateX(-50%);
-  padding: 0 8px;
-  border-radius: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--shot-bar-text);
-  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
-  pointer-events: none;
   white-space: nowrap;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  border: 1px solid var(--shot-bar-border);
+  pointer-events: none;
+}
+
+/* ===== 起止点读数芯片 + 保留时长 =====
+ * 看得见的是芯片，真正的控件是它内部那枚视觉隐藏的原生 range（.rec-rangeback）：
+ * 芯片本身不是控件，所以 Tab 只停一次，焦点环画在芯片上（:focus-within）。 */
+.rec-pv-trimrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  flex: none;
+}
+
+.rec-pv-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  flex: none;
+  border-radius: 999px;
+  border: 1px solid var(--shot-bar-border);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.rec-pv-chip:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+}
+
+.rec-pv-chip:focus-within {
+  border-color: var(--accent);
+}
+
+.rec-pv-chip .k {
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+.rec-pv-keep {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 12px;
+  color: var(--shot-bar-muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 视觉隐藏但**可聚焦**：`clip-path` 而不是 `display:none` / `visibility:hidden`
+ * ——后两者会连焦点和方向键一起拿掉，那正是这条设计要保的东西（设计稿 §05）。 */
+.rec-rangeback {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* ===== 进度 / 说明 / 动作 ===== */
+.rec-pv-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  font-size: 12px;
+  color: var(--shot-bar-muted);
+  flex: none;
+}
+
+/* 用真 `<progress>` 而不是「一个 div + 内联 width%」：宽度不给内联样式，
+ * 读屏也直接拿到进度语义（role=progressbar 是白送的）。 */
+.rec-pv-bar {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+}
+
+.rec-pv-bar::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+  border-radius: 999px;
+}
+
+.rec-pv-bar::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.rec-pv-note {
+  margin: 0;
+  padding: 4px 12px 0;
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+  flex: none;
+}
+
+.rec-pv-ok {
+  margin: 0;
+  padding: 8px 12px 0;
+  font-size: 11px;
+  color: var(--success);
+  flex: none;
 }
 
 .rec-pv-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px 4px;
+  padding: 12px;
   flex: none;
 }
 
-.rec-pv-range {
+.rec-pv-sp {
   flex: 1;
-  min-width: 0;
-  color: var(--shot-bar-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.rec-pv-ok {
-  flex: 1;
-  min-width: 0;
-  color: var(--success);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.rec-pv-errorRow {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 0;
+  flex: none;
 }
 
 .rec-pv-btn {
@@ -963,7 +1284,7 @@ body {
   cursor: pointer;
   flex: none;
   white-space: nowrap;
-  transition: background 150ms ease;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .rec-pv-btn:hover:not(:disabled) {
@@ -983,29 +1304,8 @@ body {
 }
 
 .rec-pv-err {
-  margin: 4px 12px 0;
+  margin: 4px 12px 12px;
   color: var(--danger);
   font-size: 11px;
   flex: none;
-}
-
-.rec-pv-hints {
-  display: flex;
-  gap: 12px;
-  padding: 8px 12px 8px;
-  color: var(--shot-bar-muted);
-  font-size: 11px;
-  flex: none;
-  flex-wrap: wrap;
-}
-
-.rec-pv-hints kbd {
-  font-size: 11px;
-  padding: 0 8px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--shot-bar-text) 22%, transparent);
-  border-bottom-width: 2px;
-  color: var(--shot-bar-text);
-  font-family: inherit;
 }

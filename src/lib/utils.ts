@@ -1139,3 +1139,26 @@ export function remoteCodecLabel(codec: string): string {
     default: return "未知编码";
   }
 }
+
+/** Shared recording clock; backend elapsed time already excludes paused intervals. */
+export function formatRecordingTime(ms: number): string {
+  const sec = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0) / 1000);
+  const parts = [Math.floor(sec / 60) % 60, sec % 60];
+  if (sec >= 3600) parts.unshift(Math.floor(sec / 3600));
+  return parts.map(part => String(part).padStart(2, "0")).join(":");
+}
+
+/** Show a saved artifact's parent without assuming a platform separator. */
+export function recordingParentDir(path: string): string {
+  const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  if (index < 0) return "";
+  if (index === 0) return path.slice(0, 1);
+  if (index === 2 && path[1] === ":") return path.slice(0, 3);
+  return path.slice(0, index);
+}
+
+/** Editing positions preserve milliseconds, including sub-second recordings. */
+export function formatRecordingPosition(ms: number): string {
+  const value = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0));
+  return `${formatRecordingTime(value)}.${String(value % 1000).padStart(3, "0")}`;
+}

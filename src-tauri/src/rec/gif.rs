@@ -17,14 +17,16 @@ use windows::Win32::Media::MediaFoundation::{
 };
 
 use super::scan;
+#[path="gif_frames.rs"]
+mod gif_frames;
+#[path="output.rs"]
+mod output;
 
 /// 导出参数（规格定死的档位，不做设置项）。
 const TARGET_FPS: u64 = 12;
 const TARGET_WIDTH: u32 = 480;
-/// GIF 帧延迟单位是 10ms：1000/12 ≈ 83ms → 8 = 80ms（实际 12.5fps）。
-const GIF_DELAY_UNITS: u16 = 8;
 
-pub use super::gif_job::{GifStatus,status,cancel};
+pub use super::gif_job::{status,cancel};
 pub fn start(src:PathBuf)->Result<(),String>{super::gif_job::start(src,run_export)}
 
 /// 产物路径：同名 `.gif`。
@@ -85,17 +87,23 @@ unsafe fn export_inner(
         let mt = MFCreateMediaType().map_err(mf_err)?;
         mt.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video).map_err(mf_err)?;
         mt.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32).map_err(mf_err)?;
-        mt.SetUINT64(&MF_MT_FRAME_SIZE, ((tw as u64) << 32) | th as u64).map_err(mf_err)?;
-        mt.SetUINT32(&MF_MT_DEFAULT_STRIDE, tw * 4).map_err(mf_err)?;
+        mt.SetUINT64(&MF_MT_FRAME_SIZE, ((src_w as u64) << 32) | src_h as u64).map_err(mf_err)?;
+        mt.SetUINT32(&MF_MT_DEFAULT_STRIDE, src_w.checked_mul(4).ok_or("源视频宽度异常")?).map_err(mf_err)?;
         reader
             .SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32, None, &mt)
             .map_err(mf_err)?;
+
+        let decoded=reader.GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32).map_err(mf_err)?;
+        let decoded_size=decoded.GetUINT64(&MF_MT_FRAME_SIZE).map_err(mf_err)?;
+        let (decoded_w,decoded_h)=((decoded_size>>32) as u32,decoded_size as u32);
+        let stride=decoded.GetUINT32(&MF_MT_DEFAULT_STRIDE).unwrap_or(decoded_w.checked_mul(4).ok_or("解码尺寸异常")?) as i32;
+        if th>u16::MAX as u32 {return Err("GIF 输出高度超出支持范围".into());}
 
         // 进度估算总量（scan.rs 的 mvhd 解析；读不到就无进度，只有转圈）
         let total_ms = scan::mp4_duration_ms(src).unwrap_or(0);
 
         let dst = dst_of(src);
-        let out = std::fs::File::create(&dst).map_err(|e| format!("创建 {}：{e}", dst.display()))?;
+        let (pending_output,out)=output::PendingOutput::new(&dst,true)?;
         let mut encoder =
             gif::Encoder::new(out, tw as u16, th as u16, &[]).map_err(|e| format!("GIF 编码器初始化：{e}"))?;
         encoder.set_repeat(gif::Repeat::Infinite).map_err(|e| format!("GIF 循环设置：{e}"))?;
@@ -104,10 +112,11 @@ unsafe fn export_inner(
         let mut next_tick_100: i64 = 0;
         let tick_100: i64 = 10_000_000 / TARGET_FPS as i64; // 1/12s（100ns 单位）
         let mut kept: u64 = 0;
+        let mut pending_frame:Option<(gif::Frame<'static>,i64)>=None;
+        let mut last_end_100=0i64;
         loop {
             if cancel.load(Ordering::Relaxed) {
                 drop(encoder);
-                let _ = std::fs::remove_file(&dst);
                 return Err("已取消".into());
             }
             let mut flags = 0u32;
@@ -123,19 +132,17 @@ unsafe fn export_inner(
                     Some(&mut sample),
                 )
                 .map_err(mf_err)?;
-            if flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 {
+            if flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 && sample.is_none() {
                 break;
             }
             let Some(s) = sample else { continue };
-            // 不在 12fps 网格上的帧：直接丢（解码便宜，量化才贵）
-            if ts < next_tick_100 {
-                continue;
-            }
-            next_tick_100 += tick_100;
+            last_end_100=ts.saturating_add(s.GetSampleDuration().unwrap_or(tick_100)).max(last_end_100);
             if total_ms > 0 {
-                let pct = ((((ts / 10_000).max(0) as u64).min(total_ms)) * 99 / total_ms) as u8;
-                *percent.lock().unwrap_or_else(|p| p.into_inner()) = pct;
+                let pct=(((ts/10_000).max(0) as u128)*99/u128::from(total_ms)).min(99) as u8;
+                *percent.lock().unwrap_or_else(|p|p.into_inner())=pct;
             }
+            if ts<next_tick_100 {continue;}
+            next_tick_100=(ts.max(0)/tick_100+1)*tick_100;
 
             // BGRA(解码) → 缩放到 ≤480 → α=255 → NeuQuant → 索引帧
             let buf = s.ConvertToContiguousBuffer().map_err(mf_err)?;
@@ -149,18 +156,12 @@ unsafe fn export_inner(
                 std::slice::from_raw_parts(data, cur_len as usize).to_vec()
             };
             let _ = buf.Unlock();
-            if bytes.len() < (tw * th * 4) as usize {
-                return Err("解码帧不完整（尺寸不符）".into());
-            }
-            let scaled: Vec<u8> = if (tw, th) == (src_w, src_h) {
-                bytes
-            } else {
-                scaler.resize(&bytes, src_w, src_h, tw, th)?.to_vec()
+            let bytes=gif_frames::packed_bgra(&bytes,decoded_w,decoded_h,stride)?;
+            let scaled=if (tw,th)==(decoded_w,decoded_h) {bytes} else {
+                scaler.resize(&bytes,decoded_w,decoded_h,tw,th)?.to_vec()
             };
             let mut rgba = scaled;
-            for px in rgba.chunks_exact_mut(4) {
-                px[3] = 255;
-            }
+            gif_frames::bgra_to_rgba(&mut rgba);
             // color_quant 1.1：new(samplefac, colors, pixels)，只读入参内部拷贝
             let nq = color_quant::NeuQuant::new(10, 256, &rgba);
             let palette: Vec<u8> = nq
@@ -173,7 +174,7 @@ unsafe fn export_inner(
                 .map(|px| nq.index_of(px) as u8)
                 .collect();
             let frame = gif::Frame {
-                delay: GIF_DELAY_UNITS,
+                delay: 0,
                 dispose: gif::DisposalMethod::Keep,
                 width: tw as u16,
                 height: th as u16,
@@ -181,16 +182,35 @@ unsafe fn export_inner(
                 buffer: std::borrow::Cow::Owned(indexed),
                 ..Default::default()
             };
-            encoder.write_frame(&frame).map_err(|e| format!("GIF 写帧：{e}"))?;
+            if let Some((mut previous,start))=pending_frame.take() {
+                write_timed_frame(&mut encoder,&mut previous,start,ts,cancel)?;
+            }
+            pending_frame=Some((frame,if kept==0 {0}else{ts}));
             kept += 1;
         }
-        drop(encoder);
         if kept == 0 {
-            let _ = std::fs::remove_file(&dst);
             return Err("没有解出任何帧（文件损坏或不是录屏产物？）".into());
         }
+        if let Some((mut frame,start))=pending_frame.take() {
+            let end=last_end_100.max((total_ms.saturating_mul(10_000)).min(i64::MAX as u64) as i64).max(start+1);
+            write_timed_frame(&mut encoder,&mut frame,start,end,cancel)?;
+        }
+        let file=encoder.into_inner().map_err(|error|format!("GIF 收尾：{error}"))?;
+        file.sync_all().map_err(|error|format!("GIF 写文件：{error}"))?;
+        drop(file);
+        if cancel.load(Ordering::Relaxed) {return Err("已取消".into());}
+        pending_output.commit()?;
         Ok(dst)
     }
+}
+
+fn write_timed_frame<W:std::io::Write>(encoder:&mut gif::Encoder<W>,frame:&mut gif::Frame<'_>,start:i64,end:i64,cancel:&AtomicBool)->Result<(),String> {
+    for delay in gif_frames::frame_delays(start,end) {
+        if cancel.load(Ordering::Relaxed) {return Err("已取消".into());}
+        frame.delay=delay;
+        encoder.write_frame(frame).map_err(|error|format!("GIF 写帧：{error}"))?;
+    }
+    Ok(())
 }
 
 fn mf_err(e: windows::core::Error) -> String {
@@ -214,5 +234,35 @@ mod tests {
         let _ = MFVideoFormat_HEVC;
         let s = status(std::path::Path::new(r"C:\x\a.mp4"));
         assert!(!s.running && s.done_path.is_none() && s.error.is_none());
+    }
+
+    #[test]
+    fn cancelled_gif_preserves_previous_export_and_retry_keeps_sparse_duration() {
+        let dir=std::env::temp_dir().join(format!("gif_cancel_{}_{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dst=dir.join("previous.gif");
+        std::fs::write(&dst,b"previous successful GIF").unwrap();
+        let mut frame=gif::Frame {width:1,height:1,palette:Some(vec![255,0,0]),buffer:std::borrow::Cow::Owned(vec![0]),..Default::default()};
+        {
+            let (_pending,file)=output::PendingOutput::new(&dst,true).unwrap();
+            let mut encoder=gif::Encoder::new(file,1,1,&[]).unwrap();
+            assert!(write_timed_frame(&mut encoder,&mut frame,0,20_000_000,&AtomicBool::new(true)).is_err());
+        }
+        assert_eq!(std::fs::read(&dst).unwrap(),b"previous successful GIF");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(),1);
+        let (pending,file)=output::PendingOutput::new(&dst,true).unwrap();
+        let mut encoder=gif::Encoder::new(file,1,1,&[]).unwrap();
+        write_timed_frame(&mut encoder,&mut frame,0,20_000_000,&AtomicBool::new(false)).unwrap();
+        let file=encoder.into_inner().unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        pending.commit().unwrap();
+        let mut options=gif::DecodeOptions::new();
+        options.set_color_output(gif::ColorOutput::RGBA);
+        let mut reader=options.read_info(std::fs::File::open(&dst).unwrap()).unwrap();
+        let result=reader.read_next_frame().unwrap().unwrap();
+        assert_eq!(result.delay,200);
+        assert_eq!(result.buffer.as_ref(),[255,0,0,255]);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

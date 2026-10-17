@@ -256,9 +256,9 @@ describe("录屏玻璃条字色在 6 个主题下都要过 AA", () => {
  */
 describe("审查后新增的字色对同样要过 AA；画质档不许再用 overflow 裁焦点环", () => {
   const NEW_PAIRS = [
-    ".rec-target-lnk", // 读数即控制（常态字）
-    ".rec-target-lnk:hover",
-    ".rec-target-lnk .rec-swap", // 「改录整屏」后缀
+    ".rec-target-chip", // 读数即控制（2026-10-16 起只留尺寸，来源交给左侧图标）
+    ".rec-snd", // 音源名字：「开 / 关」两字去掉后，字色成了这一对的主承载
+    ".rec-icon-btn", // 条右端的 `?` 与 ✕（纯图标，仍按正文档钉）
     ".rec-count-cancel", // 倒计时的鼠标逃生口
     ".rec-count-target", // 倒计时里的读数
     ".rec-err", // 「⚠ 没能开始录制」

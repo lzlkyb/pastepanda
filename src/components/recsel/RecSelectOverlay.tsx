@@ -6,12 +6,12 @@ import { capturePixelRatio } from "@/lib/utils";
  *   preview（悬停高亮窗口；**条上就有「开始录制」/Enter = 录当前目标**）
  *   → 拖拽自定义 / 单击采纳 → confirm（确认条可改档位与音源；Esc 回预览）
  *   → countdown（3s，进档即并行预热编码器；Esc 回确认条）
- *   → recording（归零先隐身再开录，整窗鼠标穿透；出口只有停止条）
+ *   → recording（归零先隐藏原生选区窗再开录；出口是独立小控制条）
  *   → 完成/失败事件 → 后端关窗。
  *
  * 五期甲案（2026-10-10）：零基础用户从热键到成片只需「按 Enter / 点开始录制」一步
- * （默认整屏，行业基线）；要录窗口就悬停再点同一枚按钮。画质与音源收进 ⋯，结果留
- * 在条上当徽标。「目标一旦成立就粘住」（useRecSelectMouse §3）是这条最短路径的
+ * （默认整屏，行业基线）；要录窗口就悬停再点同一枚按钮。音源常驻文字开关，画质渐进展开。
+ * 「目标一旦成立就粘住」（useRecSelectMouse §3）是这条最短路径的
  * 前提——否则鼠标移进玻璃条点按钮会把「录这扇窗」悄悄换成「录整屏」。
  *
  * 🔴 本窗不承担任何「失败展示」职责（2026-10-06 实录踩坑后移除 FatalCard/failed 态）：
@@ -25,7 +25,7 @@ import { capturePixelRatio } from "@/lib/utils";
  * 画质声音浮层在 RecSettingsCluster，矩形工具在 snap。
  */
 import { useEffect, useState } from "react";
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   recCloseWindows,
@@ -38,11 +38,14 @@ import {
 } from "@/lib/api/rec";
 import { recQualityOf, type RecQualityItem } from "@/lib/recQuality";
 import { normalizeEven, type Rect } from "./snap";
-import { ConfirmBar, CountdownOverlay, PreviewBar, recTargetReadout, TargetFrames } from "./RecOverlayParts";
+import { ConfirmBar, CountdownOverlay, PreviewBar, recTarget } from "./RecOverlayParts";
+import { TargetFrames } from "./RecTargetFrames";
 import { SizeHintBar, StartErrBar } from "./RecSourceHints";
 import { useRecOverlayKeys } from "@/hooks/useRecOverlayKeys";
 import { useRecSelectMouse, type Phase } from "@/hooks/useRecSelectMouse";
 import { useRecStart } from "@/hooks/useRecStart";
+import { useRecAudioCheck } from "@/hooks/useRecAudioCheck";
+import styles from "./RecOffice.module.css";
 
 export function RecSelectOverlay({ config }: { config: Record<string, unknown> | null }) {
   const [phase, setPhase] = useState<Phase>("preview");
@@ -54,8 +57,12 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
   const [quality, setQuality] = useState<RecQualityItem>(() => recQualityOf(null));
   const [sysAudio, setSysAudio] = useState(true);
   const [micAudio, setMicAudio] = useState(false);
-  // 画质/声音浮层（⋯）：两处玻璃条共用一份开合，Esc 先关它（§18 两级取消）
+  const audioCheck = useRecAudioCheck(sysAudio, micAudio);
+  const { checkAudio } = audioCheck;
+  // 画质浮层（⋯）：两处玻璃条共用一份开合，Esc 先关它（§18 两级取消）
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 条右端 `?` 的就地说明（§5.1：常驻教学行删掉后收在这里）。与画质浮层同受 Esc 两级取消管辖。
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // 鼠标状态机（预览悬停 / 拖拽吸附 / 单击采纳 / 两级取消）与可吸附窗口列表
   const mouse = useRecSelectMouse(phase, setPhase, screen);
@@ -79,8 +86,8 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
             w: plan.w / dpr,
             h: plan.h / dpr,
           });
-          setCountdown(3);
-          setPhase("countdown");
+          setPhase("confirm");
+          void checkAudio(() => { setCountdown(3); setPhase("countdown"); }, { sysAudio: plan.sysAudio, micAudio: plan.micAudio });
         });
       }
     }).catch((error) => {
@@ -95,7 +102,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     void recReady();
     // setRect 来自 useRecSelectMouse（useState setter，恒定）——eslint 认不出自定义
     // hook 返回值的稳定性，须显式列出
-  }, [config, setRect]);
+  }, [config, setRect, checkAudio]);
 
   /** 当前生效的选区（CSS 坐标）。预览态/未落子 = 整屏（遮罩零面积 = 不压暗，设计稿 §1）。
    *  screen 是物理像素，÷dpr 转 CSS；dpr 统一走 capturePixelRatio（多屏混合缩放取屏参，
@@ -110,23 +117,25 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
   const previewTarget = mouse.hoverRect ? normalizeEven(mouse.hoverRect) : null;
 
   /** 终点动作（预览/确认态共用）：预览态先把粘住的悬停目标落子，再进倒计时。 */
-  const startFromCurrent = () => {
+  const startFromCurrent = () => void checkAudio(() => {
     if (phase === "preview") mouse.commitHovered();
     setStartErr(null);
     setSettingsOpen(false);
+    setHelpOpen(false);
     setCountdown(3);
     setPhase("countdown");
-  };
+  });
+  useEffect(() => { if (phase === "preview") setStartErr(null); }, [phase]);
 
   // Esc 两级取消 + Enter 加速器都在 useRecOverlayKeys（改前这段曾整段丢失，
   // 守卫 recOverlayEscapeGuard.test.ts 钉的就是那个文件）。
   useRecOverlayKeys({
     phase,
     setPhase,
-    settingsOpen,
-    onCloseSettings: () => setSettingsOpen(false),
-    onBackToPreview: backToPreview,
-    onQuit: () => void recCloseWindows(),
+    settingsOpen: settingsOpen || helpOpen,
+    onCloseSettings: () => { setSettingsOpen(false); setHelpOpen(false); },
+    onBackToPreview: () => { audioCheck.cancelCheck(); backToPreview(); },
+    onQuit: () => { audioCheck.cancelCheck(); void recCloseWindows(); },
     onStart: startFromCurrent,
   });
 
@@ -150,29 +159,18 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
   // 倒计时归零 → 预热已就位 → 隐身 → 开录（时序纪律与理由见 hooks/useRecStart）
   useRecStart({ phase, setPhase, countdown, setCountdown, buildReq, setStartErr });
 
-  // 会话收尾事件 → 关窗。后端已是收尾主体（清槽 + destroy），这里纯冗余保险；
-  // rec-failed 不再进本窗展示（错误走主窗 toast / HUD，规则 15.1 可见性域）。
-  useEffect(() => {
-    const close = () => void recCloseWindows();
-    const un1 = listen("rec-done", close);
-    const un2 = listen("rec-discarded", close);
-    const un3 = listen("rec-failed", close);
-    return () => {
-      void un1.then((f) => f());
-      void un2.then((f) => f());
-      void un3.then((f) => f());
-    };
-  }, []);
+  // 后端按会话归属销毁录制窗口。这里不响应跨窗完成事件关窗，避免旧事件误关新选区。
 
   if (!screen || !activeRect) return null;
 
   const recording = phase === "recording";
   const { hoverRect, snapRect, rectFromWindow } = mouse;
-  /** 落子之后（确认/倒计时）的读数宾语：来源是窗口就叫窗口，自由框选叫选区，rect=null 叫整屏。 */
-  const committedReadout = mouse.rect
-    ? recTargetReadout(mouse.rect, { w: screen.width, h: screen.height }, dpr,
+  /** 落子之后（确认/倒计时）的目标读数：来源是窗口就叫窗口，自由框选叫选区，rect=null 叫整屏。
+   *  2026-10-16：读数只回尺寸，**来源改为交给胶囊上的图标**（`kind`），文字里不再出现「窗口所在区域」。 */
+  const committedTarget = mouse.rect
+    ? recTarget(mouse.rect, { w: screen.width, h: screen.height }, dpr,
         rectFromWindow ? "window" : "region")
-    : recTargetReadout(null, { w: screen.width, h: screen.height }, dpr);
+    : recTarget(null, { w: screen.width, h: screen.height }, dpr);
 
   // 档位与音源的接线（两处玻璃条同一套，规则 11.1 分支收口在 SettingsCluster）
   const audio = {
@@ -180,16 +178,17 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
     onQuality: setQuality,
     sysAudio,
     micAudio,
-    onSys: () => setSysAudio((v) => !v),
-    onMic: () => setMicAudio((v) => !v),
+    onSys: () => { audioCheck.clearAudioError(); setSysAudio((v) => !v); },
+    onMic: () => { audioCheck.clearAudioError(); setMicAudio((v) => !v); },
+    checking: audioCheck.checking,
     settingsOpen,
     onToggleSettings: () => setSettingsOpen((v) => !v),
   };
 
   return (
     <div
-      onMouseDown={mouse.onMouseDown}
-      onMouseMove={mouse.onMouseMove}
+      onMouseDown={(event) => { if (!audioCheck.checking) mouse.onMouseDown(event); }}
+      onMouseMove={(event) => { if (!audioCheck.checking) mouse.onMouseMove(event); }}
       onMouseUp={mouse.onMouseUp}
       onMouseEnter={() => void getCurrentWindow().setFocus()}
       style={{ width: "100%", height: "100%", position: "relative" }}
@@ -205,7 +204,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
       />
 
       {/* 选区上方提示条（非预览态）——纯展示，见 RecSourceHints */}
-      {(phase === "dragging" || phase === "confirm") && (
+      {phase === "dragging" && (
         <SizeHintBar
           phase={phase}
           rect={activeRect}
@@ -215,14 +214,16 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
         />
       )}
 
-      {/* 预览条（甲案 §1）：终点 + 实时读数 + ⋯；想录整屏不必挪鼠标（默认即整屏） */}
+      {/* 预览条（甲案 §1）：终点 + 实时读数 + `?`；想录整屏不必挪鼠标（默认即整屏） */}
       {phase === "preview" && (
         <PreviewBar
-          readout={recTargetReadout(previewTarget, { w: screen.width, h: screen.height }, dpr)}
+          target={recTarget(previewTarget, { w: screen.width, h: screen.height }, dpr)}
           hasWindowTarget={previewTarget !== null}
-          onReleaseTarget={mouse.clearHover}
+          onReleaseTarget={() => { audioCheck.cancelCheck(); mouse.clearHover(); }}
           screenCssH={screen.height / dpr}
-          onCancel={() => void recCloseWindows()}
+          helpOpen={helpOpen}
+          onToggleHelp={() => setHelpOpen((v) => !v)}
+          onCancel={() => { audioCheck.cancelCheck(); void recCloseWindows(); }}
           onStart={startFromCurrent}
           {...audio}
         />
@@ -232,11 +233,13 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
       {phase === "confirm" && (
         <ConfirmBar
           rect={activeRect}
-          readout={committedReadout}
+          target={committedTarget}
           screenCssW={screen.width / dpr}
           screenCssH={screen.height / dpr}
-          onRedraw={backToPreview}
-          onCancel={() => void recCloseWindows()}
+          helpOpen={helpOpen}
+          onToggleHelp={() => setHelpOpen((v) => !v)}
+          onRedraw={() => { audioCheck.cancelCheck(); backToPreview(); }}
+          onCancel={() => { audioCheck.cancelCheck(); void recCloseWindows(); }}
           onStart={startFromCurrent}
           {...audio}
         />
@@ -244,6 +247,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
 
       {/* 启动失败提示（rec_start 同步报错；非阻断，重试/重画/Esc 全部可用） */}
       {phase === "confirm" && startErr && <StartErrBar rect={activeRect} message={startErr} />}
+      {audioCheck.audioError && <div className={`rec-glass ${styles.audioError}`} role="alert"><p>{audioCheck.audioError}</p><button type="button" className="rec-btn-ghost" disabled={audioCheck.checking} onClick={startFromCurrent}>重新检查</button></div>}
 
       {/* 读屏播报（审查 P2）：本窗存在期间**恒在**的 live 区域。
           🔴 不能等出错了再挂这个节点——带内容一起插入的 live 区域多数读屏不播报；
@@ -258,7 +262,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
         <CountdownOverlay
           rect={activeRect}
           count={countdown}
-          readout={committedReadout}
+          readout={committedTarget.text}
           onCancel={() => setPhase("confirm")}
         />
       )}

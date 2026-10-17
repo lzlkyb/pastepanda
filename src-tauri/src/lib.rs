@@ -1349,6 +1349,10 @@ pub fn run() {
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_status,
             #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_audio_check,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::rec_control_resize,
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_virtual_screen,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_ready,
@@ -1372,6 +1376,10 @@ pub fn run() {
             rec::commands::rec_keyframes,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_trim,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_trim_status,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_trim_cancel,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_open_preview,
             #[cfg(any(windows, target_os = "macos"))]

@@ -222,6 +222,21 @@ static PPRecorder *recorder(uint64_t token) {
     }
 }
 @end
+void pp_rec_audio_check(bool sys,bool mic,bool *sys_ok,bool *mic_ok) {
+    if(sys_ok) *sys_ok=false;
+    if(mic_ok) *mic_ok=false;
+    if(@available(macOS 13.0,*)) {
+        @autoreleasepool {
+            if(sys_ok && sys) *sys_ok=CGPreflightScreenCaptureAccess();
+            if(mic_ok && mic) {
+                NSString *usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSMicrophoneUsageDescription"];
+                *mic_ok=[usage isKindOfClass:NSString.class] && usage.length>0 &&
+                    [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio]==AVAuthorizationStatusAuthorized &&
+                    [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeAudio]!=nil;
+            }
+        }
+    }
+}
 int32_t pp_rec_start(uint64_t token,const uint8_t *json,size_t length,PPRecordCallback callback,PPEventCallback eventCallback) {
     if(!token || !json || !callback || length>65536) return 1;
     if(NSThread.isMainThread) return 9;

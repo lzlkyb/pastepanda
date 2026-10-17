@@ -21,7 +21,7 @@
 
 use std::sync::mpsc::channel;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use crate::rc::encode_h264::{ensure_mf_startup, H264SessionEncoder, VideoCodec};
@@ -91,6 +91,7 @@ enum Slot {
 }
 
 static SLOT: Mutex<Slot> = Mutex::new(Slot::Empty);
+static CHANGE: Condvar = Condvar::new();
 static GEN: AtomicU64 = AtomicU64::new(0);
 
 fn slot() -> MutexGuard<'static, Slot> {
@@ -113,23 +114,17 @@ pub fn request(key: EncKey) {
 }
 
 /// 取用预热好的编码器。`wait_max` = 预热仍在途时最多等多久（到点自行打开，不等第二份）。
-pub fn take(key: EncKey, wait_max: Duration) -> Option<H264SessionEncoder> {
-    let started = Instant::now();
+pub fn take(key: EncKey, wait_max: Duration, cancelled: &std::sync::atomic::AtomicBool) -> Option<H264SessionEncoder> {
+    let started=Instant::now();
+    let mut guard=slot();
     loop {
-        let mut guard = slot();
-        if matches!(&*guard, Slot::Ready(_)) {
-            return drain_ready(&mut guard, key);
-        }
-        if matches!(&*guard, Slot::Warming { .. }) {
-            if started.elapsed() >= wait_max {
-                log::warn!("[Rec] 等预热超过 {}ms，本次自行打开编码器", wait_max.as_millis());
-                return None;
-            }
-            drop(guard);
-            std::thread::sleep(Duration::from_millis(20));
-            continue;
-        }
-        return None; // Empty：这一场没预热过（预热失败 / 已被取走）
+        if cancelled.load(Ordering::SeqCst) {return None;}
+        if matches!(&*guard,Slot::Ready(_)) {return drain_ready(&mut guard,key);}
+        if !matches!(&*guard,Slot::Warming{..}) {return None;}
+        let remaining=wait_max.saturating_sub(started.elapsed());
+        if remaining.is_zero() {return None;}
+        let (next,_)=CHANGE.wait_timeout(guard,remaining.min(Duration::from_millis(100))).unwrap_or_else(|p|p.into_inner());
+        guard=next;
     }
 }
 
@@ -155,16 +150,7 @@ fn drain_ready(guard: &mut Slot, want: EncKey) -> Option<H264SessionEncoder> {
 
 /// 预热线程主体：开编码器 → 存槽 → 守着结果期间不解 COM → 被取走/过期后配平退出。
 fn warm(key: EncKey, gen: u64) {
-    let com_owned = unsafe {
-        windows::Win32::System::Com::CoInitializeEx(
-            None,
-            windows::Win32::System::Com::COINIT_MULTITHREADED,
-        )
-        .is_ok()
-    };
-    let uninit = || unsafe { windows::Win32::System::Com::CoUninitialize() };
-    let t = Instant::now();
-    let opened = match ensure_mf_startup() {
+    warm_with_open(key, gen, || match ensure_mf_startup() {
         Err(e) => {
             log::warn!("[Rec] 预热失败（{e}），开录走原路");
             None
@@ -180,8 +166,25 @@ fn warm(key: EncKey, gen: u64) {
                 None
             }
         }
+    });
+}
+
+fn warm_with_open(key:EncKey, gen:u64, open:impl FnOnce()->Option<H264SessionEncoder>) {
+    let com_owned = unsafe {
+        windows::Win32::System::Com::CoInitializeEx(
+            None,
+            windows::Win32::System::Com::COINIT_MULTITHREADED,
+        )
+        .is_ok()
     };
+    let uninit = || unsafe { windows::Win32::System::Com::CoUninitialize() };
+    let t = Instant::now();
+    let opened = open();
     let Some(enc) = opened else {
+        let mut guard=slot();
+        if matches!(&*guard,Slot::Warming{gen:g} if *g==gen) {*guard=Slot::Empty;}
+        drop(guard);
+        CHANGE.notify_all();
         if com_owned {
             uninit();
         }
@@ -194,6 +197,7 @@ fn warm(key: EncKey, gen: u64) {
     if !mine {
         drop(guard);
         log::warn!("[Rec] 预热完成但本场已作废（{}ms），丢弃", t.elapsed().as_millis());
+        drop(enc);
         if com_owned {
             uninit();
         }
@@ -201,6 +205,7 @@ fn warm(key: EncKey, gen: u64) {
     }
     *guard = Slot::Ready(Stored { gen, key, enc, made_at: Instant::now(), _keep: keep });
     drop(guard);
+    CHANGE.notify_all();
     log::info!("[Rec] 编码器预热完成（{}ms）", t.elapsed().as_millis());
     // 编码器还住在槽里 = 本线程的 COM 还不能解：等断链（被取走/替换）或 TTL 到点
     if matches!(
@@ -306,5 +311,13 @@ mod tests {
             "超过 TTL → 丢弃"
         );
         assert!(reusable(key, now - TTL + Duration::from_millis(1), key, now));
+    }
+
+    #[test]
+    fn failed_warm_releases_its_own_generation_immediately() {
+        let key=enc_key(RecQuality::High,0,0,1920,1080,CANVAS);
+        *slot()=Slot::Warming{gen:90001};
+        warm_with_open(key,90001,||None);
+        assert!(matches!(*slot(),Slot::Empty),"failed prewarm must not make start wait four seconds");
     }
 }

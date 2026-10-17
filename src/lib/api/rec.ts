@@ -29,6 +29,8 @@ export interface RecStartReq {
 
 export interface RecStatus {
   recording: boolean;
+  /** 编码器就绪前不把准备耗时显示成成片时长。 */
+  starting: boolean;
   finalizing: boolean;
   /** true = 暂停中（不录内容、控制条计时冻结）。 */
   paused: boolean;
@@ -37,6 +39,12 @@ export interface RecStatus {
   /** 已写入的媒体字节（视频+音频裸流；控制条体积显示，暂停冻结）。 */
   bytes: number;
   quality: RecQualityKey | null;
+  warnings: string[];
+  sysAudio: boolean;
+  micAudio: boolean;
+  /** null = 初始化中；请求值与实际采集状态分别展示。 */
+  sysAudioActive: boolean | null;
+  micAudioActive: boolean | null;
 }
 
 export interface RecDone {
@@ -56,6 +64,7 @@ export interface RecFileMeta {
   path: string;
   bytes: number;
   durationMs: number | null;
+  note?: string | null;
 }
 
 /** 重录上次区域的计划（rec_take_rerecord 一次性消费；虚拟屏物理像素）。 */
@@ -118,6 +127,18 @@ export function recSetPaused(paused: boolean): Promise<void> {
 
 export function recStatus(): Promise<RecStatus> {
   return invokeJson("rec_status");
+}
+
+/** 只探测本次请求的音源；正式开录仍会再次初始化。 */
+export function recCheckAudio(sysAudio: boolean, micAudio: boolean): Promise<{
+  sysAudio: boolean; micAudio: boolean; warnings: string[];
+}> {
+  return invokeJson("rec_audio_check", { sysAudio, micAudio });
+}
+
+/** 同步调整原生窗口，避免透明的旧命中范围拦住桌面操作。 */
+export function recResizeControl(width: number, height: number): Promise<void> {
+  return invokeVoid("rec_control_resize", { width, height });
 }
 
 export function recReady(): Promise<void> {
@@ -205,6 +226,25 @@ export function recKeyframes(path: string): Promise<RecKeyframeIndex> {
 /** 关键帧对齐无损剪切：产物落新文件（原名 + _剪），原文件不动。 */
 export function recTrim(path: string, inMs: number, outMs: number): Promise<RecTrimResult> {
   return invokeJson("rec_trim", { path, inMs, outMs });
+}
+
+export interface RecTrimStatus {
+  running: boolean;
+  percent: number;
+  donePath: string | null;
+  error: string | null;
+  inMs: number | null;
+  outMs: number | null;
+}
+
+/** 保存窗卸载后仍可恢复原始文件对应的后台裁剪状态。 */
+export function recTrimStatus(path: string): Promise<RecTrimStatus> {
+  return invokeJson("rec_trim_status", { path });
+}
+
+/** 取消只作用于匹配源文件的任务，不影响已完成产物。 */
+export function recTrimCancel(path: string): Promise<void> {
+  return invokeVoid("rec_trim_cancel", { path });
 }
 
 /** 打开预览裁剪窗（HUD「✂ 预览」/ 最近录制行尾 ✂ 共用入口）。 */

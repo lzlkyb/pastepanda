@@ -22,6 +22,7 @@ struct Active {
     paused: bool,
     sidecar: super::events::SidecarRecorder,
     video_stop: Arc<AtomicBool>,
+    warnings: Vec<String>,
 }
 extern "C" {
     fn pp_rec_start(
@@ -43,6 +44,20 @@ extern "C" {
     fn pp_rec_mark(token: u64) -> i32;
     fn pp_rec_pause(token: u64, paused: bool) -> i32;
     fn pp_rec_progress(token: u64, frames: *mut u64, elapsed: *mut u64) -> i32;
+    fn pp_rec_audio_check(sys: bool, mic: bool, sys_ok: *mut bool, mic_ok: *mut bool);
+}
+/// Inspect existing permissions only; starting capture remains the final device check.
+pub fn check_audio(sys: bool, mic: bool) -> serde_json::Value {
+    let (mut sys_ok, mut mic_ok) = (false, false);
+    unsafe { pp_rec_audio_check(sys, mic, &mut sys_ok, &mut mic_ok); }
+    let mut warnings = Vec::new();
+    if sys && !sys_ok {
+        warnings.push("系统声音尚不可用：需要 macOS 13 及以上和屏幕录制权限，请在系统设置中检查后重试");
+    }
+    if mic && !mic_ok {
+        warnings.push("麦克风尚不可用：请检查输入设备、麦克风权限及应用包权限说明后重试");
+    }
+    serde_json::json!({"sysAudio": sys_ok, "micAudio": mic_ok, "warnings": warnings})
 }
 fn error(code: i32) -> String {
     match code {
@@ -107,6 +122,7 @@ pub fn start(app: AppHandle, opts: RecOpts, path: PathBuf) -> Result<(), String>
             paused: false,
             sidecar: super::events::SidecarRecorder::new(opts.event_sidecar),
             video_stop: video_stop.clone(),
+            warnings: Vec::new(),
         });
     }
     let capture = if external {
@@ -341,6 +357,13 @@ extern "C" fn recorded_event(
     };
     a.sidecar.record(&event, xy, time);
 }
+pub fn add_warning(message: &str) {
+    if let Some(active) = ACTIVE.lock().unwrap_or_else(|p| p.into_inner()).as_mut() {
+        if !active.warnings.iter().any(|warning| warning == message) {
+            active.warnings.push(message.into());
+        }
+    }
+}
 pub fn status() -> RecStatus {
     let snapshot = ACTIVE
         .lock()
@@ -354,17 +377,24 @@ pub fn status() -> RecStatus {
                 a.starting,
                 a.stopping,
                 a.paused,
+                a.opts.sys_audio,
+                a.opts.mic_audio,
+                a.warnings.clone(),
             )
         });
-    let Some((token, path, quality, starting, stopping, paused)) = snapshot else {
+    let Some((token, path, quality, starting, stopping, paused, sys_audio, mic_audio, warnings)) = snapshot else {
         return RecStatus {
             recording: false,
+            starting: false,
             finalizing: false,
             paused: false,
             path: None,
             elapsed_ms: 0,
             bytes: 0,
             quality: None,
+            warnings: Vec::new(),
+            sys_audio: false, mic_audio: false,
+            sys_audio_active: Some(false), mic_audio_active: Some(false),
         };
     };
     let (mut frames, mut elapsed) = (0, 0);
@@ -373,12 +403,16 @@ pub fn status() -> RecStatus {
     }
     RecStatus {
         recording: !starting && !stopping,
+        starting,
         finalizing: starting || stopping,
         paused,
         path: Some(path.display().to_string()),
         elapsed_ms: elapsed,
         bytes: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
         quality: Some(quality.as_str().into()),
+        warnings, sys_audio, mic_audio,
+        sys_audio_active: if starting && sys_audio { None } else { Some(sys_audio) },
+        mic_audio_active: if starting && mic_audio { None } else { Some(mic_audio) },
     }
 }
 extern "C" fn completed(token: u64, code: i32, frames: u64, duration_ms: u64) {
@@ -401,11 +435,22 @@ extern "C" fn completed(token: u64, code: i32, frames: u64, duration_ms: u64) {
             if hud {super::open_hud_window(&a.app,&serde_json::json!({"ok":false,"message":message}));}return;}
         let bytes=std::fs::metadata(&a.path).map(|m|m.len()).unwrap_or(0);
         let (w,h)=super::quality::encoded_size(a.opts.quality,a.opts.w,a.opts.h);
-        let note=a.sidecar.write(&a.path,duration_ms,(a.opts.x,a.opts.y,a.opts.w,a.opts.h),(w,h,a.opts.quality.fps()))
-            .err().or_else(||a.sidecar.warning().map(str::to_owned));
-        let data=serde_json::json!({"path":a.path.display().to_string(),"bytes":bytes,"duration_ms":duration_ms,"frames":frames,"note":note,"hud":hud});
+        let mut messages = a.warnings;
+        if let Some(message) = a.sidecar.warning() {
+            if !messages.iter().any(|existing| existing == message) { messages.push(message.into()); }
+        }
+        let mut note = (!messages.is_empty()).then(|| messages.join("；"));
+        // Result notes survive reopening even when event capture was disabled.
+        if let Err(message) = a.sidecar.write_result(
+            &a.path, duration_ms, (a.opts.x,a.opts.y,a.opts.w,a.opts.h),
+            (w,h,a.opts.quality.fps()), note.as_deref(),
+        ) {
+            let message = format!("事件文件写入失败：{message}");
+            note = Some(match note { Some(note) => format!("{note}；{message}"), None => message });
+        }
+        let data=serde_json::json!({"path":a.path.display().to_string(),"bytes":bytes,"durationMs":duration_ms,"frames":frames,"note":note,"hud":hud});
         let _=a.app.emit("rec-done",data.clone());
-        if hud {super::open_hud_window(&a.app,&serde_json::json!({"ok":true,"path":a.path.display().to_string(),"bytes":bytes,"duration_ms":duration_ms,"note":note}));}
+        if hud {super::open_hud_window(&a.app,&serde_json::json!({"ok":true,"path":a.path.display().to_string(),"bytes":bytes,"durationMs":duration_ms,"note":note}));}
     });
     if let Err(e) = result {
         log::error!("Mac 录屏收尾通知失败: {e}");

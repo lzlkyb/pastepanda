@@ -7,6 +7,7 @@
  */
 import type { Rect } from "./snap";
 import type { Phase } from "@/hooks/useRecSelectMouse";
+import styles from "./RecOffice.module.css";
 
 /** 拖拽/确认态选区上方的来源提示（拖拽态额外带实时裸尺寸）。 */
 export function SizeHintBar({
@@ -33,15 +34,15 @@ export function SizeHintBar({
             {Math.round(rect.w * dpr)}×{Math.round(rect.h * dpr)}
           </span>
           <span className="muted">
-            {snapRect ? "松手录制该窗口 · 拖离自由框选" : "拖边缘可调整（重画）· Esc 重选"}
+            {snapRect ? "松手保留自选区域" : "松手保留自选区域 · Esc 重选"}
           </span>
         </>
       )}
       {phase === "confirm" && (
         <span className="muted">
           {rectFromWindow
-            ? "按窗口位置录制，窗口移动不跟随 · Esc 重选"
-            : "拖边缘可调整（重画）· Esc 重选"}
+            ? "按当前位置录制；移动或遮挡窗口会改变录到的内容 · Esc 重选"
+            : "点「重画」重新框选 · Esc 重选"}
         </span>
       )}
     </div>
@@ -49,15 +50,15 @@ export function SizeHintBar({
 }
 
 /** 启动失败条（非阻断；重试 / 重画 / Esc 全部可用，规则 15.3 不静默）。 */
-export function StartErrBar({ rect, message }: { rect: Rect; message: string }) {
+export function StartErrBar({ message }: { rect: Rect; message: string }) {
   return (
     <div
-      className="rec-glass"
-      style={{ left: rect.x, top: Math.max(8, rect.y - 78) }} /* ui-rule-ok: 动态定位（跟随选区），同 recsel 既有模式 */
+      className={`rec-glass ${styles.audioError}`}
+      role="alert"
       title={message}
     >
       <span className="rec-err">⚠ 没能开始录制</span>
-      <span className="muted">点「开始录制」重试 · Esc 退出</span>
+      <span className="muted">{message} · 点「开始录制」重试 · Esc 重选</span>
     </div>
   );
 }

@@ -3,8 +3,8 @@
 //! - `quality` 档位表（纯函数）；`timeline` 视频时间轴（墙钟槽 + 静止补帧）；
 //!   `sink` MF SinkWriter mux；`session` 采集会话；`commands` Tauri 命令。
 //!   Windows 使用 DXGI/MF，Mac 使用 ScreenCaptureKit/AVAssetWriter。
-//! - 窗口两个：`rec-select`（全屏透明覆盖层：预览 → 确认条 → 倒计时 → 录制中红框，
-//!   录制中整窗鼠标穿透）＋ `rec-control`（置顶小条：REC / 计时 / 停止，可拖动）。
+//! - 窗口两个：`rec-select`（全屏透明覆盖层：预览 → 确认条 → 倒计时，开录前隐藏）
+//!   ＋ `rec-control`（置顶小条：计时 / 暂停 / 停止，可拖动）。
 //! - 窗口机制照抄截图窗（screenshot.rs）：运行时创建、物理像素定位、前端 ready
 //!   存活探针（React 树崩了 / webview 白屏时自动关窗，不让用户被困在遮罩后面）。
 
@@ -34,6 +34,8 @@ pub mod quality;
 #[cfg(windows)]
 pub mod prewarm;
 mod control_layout;
+#[cfg(windows)]
+mod capture_exclusion;
 pub mod scan;
 #[cfg(windows)]
 pub mod session;
@@ -64,6 +66,8 @@ pub const PREVIEW_LABEL: &str = "rec-preview";
 
 /// 防止快速连按热键并发创建同名窗口（同 screenshot::CREATING）。
 static CREATING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(windows)]
+static PREVIOUS_FOREGROUND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// 窗口世代号：每次新建 +1，探针据此不误杀新一轮窗口。
 static GEN: AtomicU64 = AtomicU64::new(0);
@@ -77,7 +81,8 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 static HUD_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
 /// 一次性交给预览裁剪窗的数据（窗挂载后 rec_preview_take 取走；重开覆盖旧值）。
 static PREVIEW_DATA: Mutex<Option<serde_json::Value>> = Mutex::new(None);
-/// HUD 安全网世代号：15s 强制关窗只关自己那一代（前端 8/10s 自关是主路径）。
+static PREVIEW_OPEN: Mutex<()> = Mutex::new(());
+/// Only an unconsumed HUD payload may time out; displayed results remain until dismissal.
 static HUD_GEN: AtomicU64 = AtomicU64::new(0);
 /// 「重录上次区域」计划：open_rerecord 存入，选区窗挂载经 URL 参数确认后取走。
 /// URL 带模式标记，普通开窗绝不消费——建窗失败残留的旧计划不会劫持下一次开窗。
@@ -126,9 +131,18 @@ pub fn take_preview_data() -> Option<serde_json::Value> {
 
 /// 打开预览裁剪窗（rec_open_preview 校验路径并放行资产白名单后调用）。
 /// 居中于主屏偏上；数据经 PREVIEW_DATA 下发，重开时旧窗顶掉重建。
-pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) {
+pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) -> Result<(), String> {
+    // Commands run on workers: serialize replacements while the UI thread releases the old label.
+    let _opening = PREVIEW_OPEN.lock().unwrap_or_else(|p| p.into_inner());
     if let Some(w) = app.get_webview_window(PREVIEW_LABEL) {
-        let _ = w.close();
+        w.destroy().map_err(|error| format!("关闭旧预览失败：{error}"))?;
+        let closing = std::time::Instant::now();
+        while app.get_webview_window(PREVIEW_LABEL).is_some() {
+            if closing.elapsed() >= Duration::from_secs(2) {
+                return Err("旧预览尚未关闭，请从最近录制重新打开".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
     *PREVIEW_DATA.lock().unwrap_or_else(|p| p.into_inner()) = Some(data);
     let (mx, my, mw, mh, scale) = primary_screen_metrics(app);
@@ -161,12 +175,13 @@ pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) {
             let _ = window.show();
             let _ = window.set_focus();
         }
-        Err(e) => log::warn!("[Rec] 创建预览窗失败: {e}"),
+        Err(e) => return Err(format!("创建预览窗失败：{e}")),
     }
+    Ok(())
 }
 
 /// 打开 HUD 轻浮窗（主窗隐藏时的完成/失败通知，规则 15.1）。
-/// 右下角贴主屏工作区；前端 8/10s 自关，这里留 15s 安全网（只关自己那一代）。
+/// Completed results persist; only a page that never consumes its payload times out.
 pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
     if let Some(w) = app.get_webview_window(HUD_LABEL) {
         let _ = w.close();
@@ -174,17 +189,17 @@ pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
     *HUD_DATA.lock().unwrap_or_else(|p| p.into_inner()) = Some(data.clone());
     let gen = HUD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let (mx, my, mw, mh, scale) = primary_screen_metrics(app);
-    // 内容按逻辑 320×118 设计；物理尺寸 = 逻辑 × scale——🔴 不乘的话 125% 缩放下
+    // Result card uses logical 440×280; physical size follows the monitor scale.——🔴 不乘的话 125% 缩放下
     // CSS 视口只有 256×94，按钮和进度条会被裁掉（P1，2026-10-05 二期审查）
-    let win_w = (320.0 * scale).round() as i32;
-    let win_h = (118.0 * scale).round() as i32;
+    let win_w = (440.0 * scale).round() as i32;
+    let win_h = (280.0 * scale).round() as i32;
     let margin_x = (14.0 * scale).round() as i32;
     let margin_y = (52.0 * scale).round() as i32;
     let x = mx + mw - win_w - margin_x;
     let y = my + mh - win_h - margin_y;
     let built = WebviewWindowBuilder::new(app, HUD_LABEL, WebviewUrl::App("rec-hud.html".into()))
         .title("")
-        .inner_size(320.0, 118.0) // 逻辑值占位；下方按物理覆盖
+        .inner_size(440.0, 280.0) // 逻辑值占位；下方按物理覆盖
         .position(x as f64, y as f64)
         .resizable(false);
     let built = built
@@ -207,7 +222,7 @@ pub fn open_hud_window(app: &AppHandle, data: &serde_json::Value) {
             let probe = app.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_secs(15)).await;
-                if HUD_GEN.load(Ordering::SeqCst) == gen {
+                if HUD_GEN.load(Ordering::SeqCst) == gen && HUD_DATA.lock().unwrap_or_else(|p| p.into_inner()).is_some() {
                     if let Some(w) = probe.get_webview_window(HUD_LABEL) {
                         let _ = w.close();
                     }
@@ -277,10 +292,13 @@ pub(crate) fn selector_screen_metrics(app: &AppHandle) -> Result<(i32, i32, i32,
 }
 fn report_startup_failure(app: &AppHandle, message: &str) {
     log::warn!("[Rec] {message}");
+    let hud = app.get_webview_window("main")
+        .is_none_or(|w| !w.is_visible().unwrap_or(false) || w.is_minimized().unwrap_or(false));
     let _ = app.emit(
         "rec-failed",
-        serde_json::json!({"message":message,"hud":false}),
+        serde_json::json!({"message":message,"hud":hud}),
     );
+    if hud { open_hud_window(app, &serde_json::json!({"ok":false,"message":message})); }
 }
 
 /// 打开（或聚焦）录屏选区窗。热键 / 工具箱 / 托盘共用入口。
@@ -309,6 +327,14 @@ pub fn open_selector_window(app: &AppHandle) {
 fn create_selector(app: &AppHandle, url: &str) {
     if CREATING.swap(true, Ordering::SeqCst) {
         return;
+    }
+    #[cfg(windows)]
+    unsafe {
+        let foreground = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as isize;
+        let own_surface = [SELECT_LABEL, CONTROL_LABEL, HUD_LABEL].iter().any(|label| {
+            app.get_webview_window(label).and_then(|w| w.hwnd().ok()).is_some_and(|h| h.0 as isize == foreground)
+        });
+        if !own_surface { PREVIOUS_FOREGROUND.store(foreground, Ordering::SeqCst); }
     }
     let app = app.clone();
     let url = url.to_string();
@@ -345,6 +371,7 @@ fn create_selector(app: &AppHandle, url: &str) {
             .build();
         match built {
             Ok(window) => {
+                // This transparent selector is hidden by useRecStart before capture begins.
                 // builder 的 inner_size/position 收逻辑像素（同截图窗的坑），
                 // 用物理量覆盖一次；此时窗还 invisible，用户看不到中间帧。
                 #[cfg(target_os="macos")]
@@ -396,9 +423,12 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) -> Res
         WebviewUrl::App("rec-control.html".into()),
     )
     .title("")
-    .inner_size(496.0, 48.0) // 逻辑值占位；下方按物理覆盖
+    .inner_size(260.0, 36.0) // 逻辑值占位；下方按物理覆盖
     .position(bx as f64, by as f64)
-    .resizable(false);
+    .resizable(false)
+    .focused(false)
+    .focusable(false)
+    .visible(false);
     let built = builder
         .decorations(false)
         .always_on_top(true)
@@ -419,8 +449,33 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) -> Res
     #[cfg(not(target_os="macos"))]
     window.set_position(tauri::PhysicalPosition::new(bx,by)).map_err(|e|format!("定位录制控制条失败：{e}"))?;
     window.show().map_err(|e|format!("显示录制控制条失败：{e}"))?;
+    // The selector is already hidden; exclude only the visible controller.
+    #[cfg(windows)]
+    for label in [CONTROL_LABEL] {
+        if let Some(surface) = app.get_webview_window(label) {
+            if let Err(error) = capture_exclusion::protect(&surface) {
+                log::warn!("[Rec] 无法排除录屏浮层：{error}");
+                session::add_warning("无法排除录屏控制条，浮层可能进入成片，请先核对录像");
+            }
+        }
+    }
+    #[cfg(windows)]
+    restore_recording_focus(app);
     log::info!("[Rec] 控制条已显示 {bx},{by} {bar_w}×{bar_h}");
     Ok(())
+}
+
+#[cfg(windows)]
+fn restore_recording_focus(app: &AppHandle) {
+    use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow}};
+    let previous = PREVIOUS_FOREGROUND.load(Ordering::SeqCst);
+    if previous == 0 { return; }
+    // Only release focus held by our recording UI; never override a user's app switch.
+    let current = unsafe { GetForegroundWindow().0 as isize };
+    let ours = [SELECT_LABEL, CONTROL_LABEL].iter().any(|label| {
+        app.get_webview_window(label).and_then(|w| w.hwnd().ok()).is_some_and(|h| h.0 as isize == current)
+    });
+    if ours { unsafe { let _ = SetForegroundWindow(HWND(previous as *mut _)); } }
 }
 
 /// 物理坐标所在显示器的缩放系数（跨屏 DPI 各异：控制条贴着选区落在哪块屏，
@@ -454,4 +509,22 @@ pub fn close_windows(app: &AppHandle) {
             }
         }
     }
+}
+
+/// Resize only the calling control window; expanded panels preserve its bottom anchor.
+#[tauri::command]
+pub async fn rec_control_resize(window: tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+    if window.label() != CONTROL_LABEL { return Err("此窗口不能调整录屏控制条".into()); }
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let screen = if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let origin = monitor.position();
+        let bounds = monitor.size();
+        (origin.x, origin.y, bounds.width as i32, bounds.height as i32)
+    } else { selector_screen_metrics(window.app_handle())? };
+    let next = control_layout::resize(screen, (position.x, position.y, size.width, size.height), (width, height), scale)?;
+    window.set_size(tauri::PhysicalSize::new(next.w, next.h)).map_err(|e| e.to_string())?;
+    window.set_position(tauri::PhysicalPosition::new(next.x, next.y)).map_err(|e| e.to_string())?;
+    Ok(())
 }

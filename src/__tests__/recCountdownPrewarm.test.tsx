@@ -25,6 +25,8 @@ const api = vi.hoisted(() => ({
   recCloseWindows: vi.fn(),
   recTakeRerecord: vi.fn(),
   setIgnore: vi.fn(),
+  hide: vi.fn(),
+  show: vi.fn(),
   /** 跨模块的顺序取证：谁先发生，数组里就谁在前。 */
   order: [] as string[],
 }));
@@ -47,6 +49,8 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(()
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     setFocus: () => Promise.resolve(),
+    hide: api.hide,
+    show: api.show,
     setIgnoreCursorEvents: (v: boolean) => {
       api.order.push(v ? "穿透" : "交互归还");
       return api.setIgnore(v);
@@ -56,6 +60,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import { RecSelectOverlay } from "@/components/recsel/RecSelectOverlay";
+import { TargetFrames } from "@/components/recsel/RecTargetFrames";
 
 /** 1280×720 虚拟屏，dpr=1（jsdom 默认）⇒ CSS 像素与物理像素同值。 */
 const SCREEN = { originX: 0, originY: 0, width: 1280, height: 720 };
@@ -69,16 +74,26 @@ function mount() {
   api.recCloseWindows.mockResolvedValue(undefined);
   api.recTakeRerecord.mockResolvedValue(null);
   api.setIgnore.mockResolvedValue(undefined);
+  api.hide.mockResolvedValue(undefined);
+  api.show.mockResolvedValue(undefined);
   vi.mocked(invoke).mockImplementation((cmd: string) =>
-    Promise.resolve(cmd === "enum_window_rects" ? [] : undefined),
+    Promise.resolve(cmd === "enum_window_rects" ? [] : cmd === "rec_audio_check" ? { sysAudio: true, micAudio: true, warnings: [] } : undefined),
   );
   return render(<RecSelectOverlay config={null} />);
 }
 
-/** 就绪判据 = 预览条读数真的落地了（组件在 screen 未就位前整体 return null）。 */
+/**
+ * 就绪判据 = 预览条读数真的落地了（组件在 screen 未就位前整体 return null）。
+ *
+ * 🔴 判据改成逐字写死的尺寸，不写 `/将录制/`：2026-10-16 苹果风重做把「将录制 + 来源」
+ * 这段前缀从视觉里删了（§5.1，那六个字现在只留在 `title` 里），`queryByText` 不匹配
+ * title ⇒ 旧探针会永远等不到。期望值按 `SCREEN`（1280×720）与 dpr=1 逐字算出来：
+ * `phys(v) = Math.max(16, Math.round(v) & ~1)` ⇒ `1280 × 720`（偶数对齐后原值不变）。
+ * 这里刻意不 import `recTarget` 去算期望值——期望值取自被测常量会让探针永远为真。
+ */
 async function mounted() {
   const q = mount();
-  await waitUntilRenderedContent(() => !!q.queryByText(/将录制/), "预览条读数（屏参已落地）");
+  await waitUntilRenderedContent(() => !!q.queryByText("1280 × 720"), "预览条读数（屏参已落地）");
   return q;
 }
 
@@ -128,7 +143,9 @@ describe("乙案①② 倒计时一开始就预热，且预热的就是要开录
   it("改档后再开录：预热的档位跟着变（两处共用同一条换算，规则 11.1）", async () => {
     const q = await mounted();
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: "⋯" }));
+      // §5.1 把 `画质：高清` 的冒号删了（设置名与值之间本来就是空格分节，冒号是纯装饰）。
+      // 这里连空格一起钉住，免得它被改回带冒号的写法。
+      fireEvent.click(q.getByRole("button", { name: /^画质 / }));
     });
     await act(async () => {
       fireEvent.click(q.getByRole("button", { name: "流畅" }));
@@ -143,6 +160,23 @@ describe("乙案①② 倒计时一开始就预热，且预热的就是要开录
 });
 
 describe("乙案③ 归零先隐身再开录（「1」不许进成品）", () => {
+  it("unmounts the recording border and its permanent animation", () => {
+    const q = render(<TargetFrames phase="recording" recording rect={{ x: 0, y: 0, w: 800, h: 600 }}
+      hoverRect={null} snapRect={null} screenCss={{ w: 1280, h: 720 }} />);
+    expect(q.container.childElementCount).toBe(0);
+  });
+  it("hides the whole selector before capture and restores it after a start failure", async () => {
+    const q = await mounted();
+    api.recStart.mockImplementation(() => {
+      expect(api.hide).toHaveBeenCalledTimes(1);
+      return Promise.reject(new Error("启动失败"));
+    });
+    await act(async () => { fireEvent.click(startBtn(q)); });
+    await runCountdown();
+    expect(api.hide).toHaveBeenCalledTimes(1);
+    expect(api.show).toHaveBeenCalledTimes(1);
+    expect(q.getByRole("button", { name: /开始录制/ })).toBeTruthy();
+  });
   it("顺序是 预热 → 穿透 → recStart，且 recStart 那一刻本窗已无倒计时数字", async () => {
     const q = await mounted();
     api.recPrewarm.mockImplementation(() => {

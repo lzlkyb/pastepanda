@@ -1,37 +1,93 @@
-/* RecRecentList.module.css — 工具箱「最近录制」区块（设计稿二期 §2）。
- * 视觉对齐 ToolboxView：卡片底 / 8px 行圆角 / 11–12px 字号 / 150ms hover。 */
+/* RecRecentList.module.css — 工具箱「最近录制」（设计稿 §06：一行两枚动作）。
+ *
+ * 移植口径（相对设计稿的三处刻意偏离，都有据可查）：
+ * ① 设计稿的 --mat-* / inset 0 0 0 1px 描边：本列表在主窗卡片面上，不在玻璃条上，
+ *    一律换成 --card-bg / --border-color / --float-card-* 一族；轮廓用 border（V2：
+ *    box-shadow 只说高度，不说轮廓）。
+ * ② 时长角标的硬编码 scrim（rgba(10,12,18,.72)）：V3rgb 要令牌，改成实色芯片
+ *    （--card-bg 底 + --border-color 线），在 56×34 的缩略位上同样读得清。
+ * ③ 浮层入场不新造 keyframes：用全局 pp-float-card-in（与 ContextMenu/Toast 同源），
+ *    曲线取 U2 两条里的「进入视野」cubic-bezier(0.05,0.7,0.1,1)——globals 里那条
+ *    (0.2,0.8,0.2,1) 是 P0 遗留的第三条，新行不跟。 */
 
 .list {
   margin-top: 8px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   font-size: 12px;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition:
+    background 150ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .item:hover {
-  background: color-mix(in srgb, var(--card-bg) 88%, var(--accent));
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+  background: color-mix(in srgb, var(--accent) 4%, var(--card-bg));
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-color));
 }
 
-.fic {
+/* 删除二次确认：整行描边转红（U4——不可恢复动作的语义色；
+ * hover 的强调色不许把这条红盖掉，所以 armed 的 hover 显式写回 danger）。 */
+.armed,
+.armed:hover {
+  background: var(--card-bg);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border-color));
+}
+
+/* 56×34 影片块：让列表可以扫读（原来只有 13px emoji 加文件名） */
+.thumb {
+  position: relative;
+  width: 56px;
+  height: 34px;
   flex: none;
-  font-size: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 26%, var(--section-bg)), var(--section-bg));
+  border: 1px solid var(--border-color);
+  color: var(--accent-strong);
+}
+
+.thumb svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 时长角标：缩略位右下角，等宽数字不抖 */
+.dur {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .name {
-  flex: 1;
-  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -39,95 +95,302 @@
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
   padding: 0;
-  transition: color 150ms ease;
+  transition: color 150ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .name:hover {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .meta {
-  flex: none;
   font-size: 11px;
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
-.ops {
+/* 提示写在它所属的行：跟着那一段录像，不在列表底部放全局条 */
+.bad {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* GIF 进行中：行内进度条（点击进度条旁边那枚链接 = 取消） */
+.progress {
   display: flex;
-  gap: 4px;
-  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
 }
 
-.op {
-  min-width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  display: grid;
-  place-items: center;
-  color: var(--text-tertiary);
-  cursor: pointer;
+.pbar {
+  flex: 1;
+  min-width: 48px;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-tertiary) 22%, transparent);
+  overflow: hidden;
+}
+
+.pbar i {
+  display: block;
+  height: 100%;
+  width: var(--p, 0%);
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.pct {
   font-size: 11px;
-  padding: 0 4px;
-  background: transparent;
-  border: none;
-  font-family: inherit;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.op:hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--text-primary);
-}
-
-/* 两段确认态：语义色警示底（删除是不可恢复动作，U4） */
-.opArm {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-  color: var(--danger);
-  font-weight: 600;
-}
-
-.opArm:hover {
-  background: color-mix(in srgb, var(--danger) 24%, transparent);
-  color: var(--danger);
-}
-
-/* 空态：教学位给可执行的下一步（L3） */
-.empty {
-  margin-top: 8px;
-  padding: 14px 16px;
-  border-radius: 8px;
-  border: 1px dashed var(--border-color);
-  text-align: center;
-  font-size: 12px;
   color: var(--text-tertiary);
-  line-height: 1.9;
-}
-
-.empty kbd {
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  background: var(--card-bg);
-  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .err {
-  margin-top: 6px;
+  margin: 8px 0 0;
   font-size: 11px;
   color: var(--danger);
   line-height: 1.6;
 }
 
-/* GIF 导出进行中：进度数字等宽不抖动（点击 = 取消） */
-.opGif {
-  min-width: 38px;
-  font-variant-numeric: tabular-nums;
+.err p {
+  margin: 0 0 4px;
+}
+
+.err p:last-of-type {
+  margin-bottom: 0;
+}
+
+/* 行内/告警里的文字链（取消导出 GIF / 重新查询 / 重新加载） */
+.link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent-strong);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.link:hover {
   color: var(--accent);
+}
+
+.link:disabled {
+  opacity: 0.5;
+  cursor: wait;
+  text-decoration: none;
+}
+
+/* 裁剪后台状态（RecTrimRecovery）：与 GIF 进度同行内呈现 */
+.hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+.ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.menu {
+  position: relative;
+}
+
+/* ── 行内按钮四态 ──────────────────────────────
+ * 主按钮 = 描边款（一屏一实色 V3：这个列表不引入实色填充，
+ * 唯一的实色是缩略位渐变与进度条）；危险确认 = 红描边；其余 = 文字款。 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 150ms cubic-bezier(0.2, 0, 0, 1),
+    transform 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.btnOutline {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btnOutline:hover {
+  background: var(--section-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border-color));
+}
+
+.btnArm {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border-color));
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.btnArm:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.btnText {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0 8px;
+}
+
+.btnText:hover {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+.btnIcon {
+  width: 30px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.btnIcon:hover {
+  background: var(--section-bg);
+  color: var(--text-primary);
+}
+
+/* ── ⋯ 菜单 ──────────────────────────────
+ * 开合用 hidden 属性（读屏与 Tab 都到不了关着的菜单）；z-index 30 与格式栏同级，
+ * 盖过 DOM 靠后的兄弟行（子元素带 absolute 浮层的容器必须显式压层，判据 11）。 */
+.pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 184px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--float-card-bg);
+  border: 1px solid var(--float-card-border);
+  border-radius: 12px;
+  box-shadow: var(--float-card-shadow);
+  animation: pp-float-card-in 200ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+  transform-origin: top right;
+}
+
+.pop[hidden] {
+  display: none;
+}
+
+.mi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.mi:hover {
+  background: var(--section-bg);
+}
+
+.mi:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: transparent;
+}
+
+.mi svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.miDanger,
+.miDanger svg {
+  color: var(--danger);
+}
+
+.miDanger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+/* 完成态菜单有 5 项，删除前加一道发丝线分组 */
+.dash {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border-color);
+}
+
+/* 空态只留一句（设计稿 §06：原来的后半句在指一个已经看得见的按钮）；
+ * 列表头的「最多 5 个」同步删掉——一个上限说明不改变任何动作。 */
+.empty {
+  margin-top: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--section-bg);
+  border: 1px solid var(--border-color);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 2;
+}
+
+.empty kbd {
+  font: 11px/1 inherit;
+  padding: 4px;
+  border-radius: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
 }

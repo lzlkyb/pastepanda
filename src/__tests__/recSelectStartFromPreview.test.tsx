@@ -6,8 +6,15 @@
  * ② 🔴 终点必须录「刚悬停过的那扇窗」，**即使鼠标是为了点按钮而移进玻璃条**
  *    （`useRecSelectMouse.ts` 那句 `closest(".rec-glass") ? null` 会让读数在按下前
  *    最后一刻退回整屏 = 用户要录窗口、成片全桌，且画面一切正常）；
- * ③ 画质/音源收进 ⋯ 后，结果必须留在条上当徽标（规则 15.1 同可见性域），
+ * ③ 目标读数在「预览 / 确认 / 倒计时」三态都不许消失（承诺成立的三态信息量最低），
  *    且浮层开着时 Esc 先关浮层（§18 两级取消，不能一步退出选屏）。
+ *
+ * 🔴 2026-10-16 苹果风重做后，读数的**文字契约变了**（方案 §5.1）：视觉上只留尺寸，
+ * 数字之间是 ` × `（两侧各一个半角空格）；来源（整个屏幕 / 窗口所在区域）交给左侧图标，
+ * 而「将录制…」整句只剩在 `title` / `aria-label` 里——`queryByText` **不匹配** title，
+ * 所以拿读数的探针一律按尺寸找（见 READ_FULL / READ_WIN）。
+ * 另一处同步：画质触发器从 `画质：高清` 改成 `画质 高清`，音源胶囊从
+ * `电脑声音 开` 改成 `电脑声音` + `aria-pressed`（状态交给状态点，不再写进可访问名）。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
@@ -19,6 +26,7 @@ const api = vi.hoisted(() => ({
   recReady: vi.fn(),
   recCloseWindows: vi.fn(),
   recTakeRerecord: vi.fn(),
+  recCheckAudio: vi.fn(),
 }));
 
 vi.mock("@/lib/api/rec", async () => {
@@ -30,6 +38,7 @@ vi.mock("@/lib/api/rec", async () => {
     recReady: api.recReady,
     recCloseWindows: api.recCloseWindows,
     recTakeRerecord: api.recTakeRerecord,
+    recCheckAudio: api.recCheckAudio,
   };
 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -38,6 +47,8 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     setFocus: () => Promise.resolve(),
     setIgnoreCursorEvents: () => Promise.resolve(),
+    hide: () => Promise.resolve(),
+    show: () => Promise.resolve(),
   }),
 }));
 
@@ -55,6 +66,15 @@ const WIN = { x: 300, y: 100, w: 400, h: 300 };
 const WIN_BG = { x: 0, y: 0, w: 1280, h: 720 };
 
 /**
+ * 读数探针的两个期望值，**逐字写死**（不从 `recTarget` 反算——期望值取自被测常量
+ * 会让探针恒真，AGENTS 23）。取值按 `phys(v) = Math.max(16, Math.round(v) & ~1)`
+ * 与 dpr=1 手算：整屏 1280/720 都是偶数，窗口 400/300 也是偶数 ⇒ 对齐后原值不变。
+ * 元组分隔符是 ` × `，两侧各一个半角空格。
+ */
+const READ_FULL = "1280 × 720";
+const READ_WIN = "400 × 300";
+
+/**
  * 模块装载时（`vi.useFakeTimers()` 之前）抓住真实 setTimeout：慢取数注入把 mock 的
  * resolve 推迟到真实宏任务，假计时器永远不推进它，RTL waitFor 在假计时器下也 poll 不动
  * ——就绪只能按「内容变真」逐拍等真实宏任务。等数据用 @/test-helpers/waitUntil，
@@ -68,13 +88,15 @@ async function mount(windows: { x: number; y: number; w: number; h: number }[] =
   api.recReady.mockResolvedValue(undefined);
   api.recCloseWindows.mockResolvedValue(undefined);
   api.recTakeRerecord.mockResolvedValue(null);
+  api.recCheckAudio.mockResolvedValue({ sysAudio: true, micAudio: true, warnings: [] });
   vi.mocked(invoke).mockImplementation((cmd: string) =>
-    Promise.resolve(cmd === "enum_window_rects" ? windows : undefined),
+    Promise.resolve(cmd === "enum_window_rects" ? windows : cmd === "rec_audio_check" ? { sysAudio: true, micAudio: true, warnings: [] } : undefined),
   );
   const utils = render(<RecSelectOverlay config={null} />);
   // 🔴 就绪信号必须是「真数据进了 DOM」：组件在 screen 未就位前整体 return null
   // （RecSelectOverlay 唯一渲染闸），所以等预览条读数出现，而不是空转一轮计时器。
-  await waitUntilRenderedContent(() => !!utils.queryByText(/将录制/), "预览条读数（屏参已落地）");
+  // 读数文字 = 屏参对齐后的尺寸（「将录制…」前缀只留在 title，取不到）。
+  await waitUntilRenderedContent(() => !!utils.queryByText(READ_FULL), "预览条读数（屏参已落地）");
   return utils;
 }
 
@@ -107,7 +129,7 @@ async function runCountdown() {
  * 「读数出现」才证明 enum_window_rects 已落地（窗口清单比屏参晚一拍取），
  * 未落地帧上的读数只会是空壳整屏。
  */
-async function hoverUntil(q: ReturnType<typeof render>, matcher: RegExp, x = 350, y = 150) {
+async function hoverUntil(q: ReturnType<typeof render>, matcher: string | RegExp, x = 350, y = 150) {
   for (let tick = 0; ; tick++) {
     await act(async () => {
       fireEvent.mouseMove(root(q), { clientX: x, clientY: y });
@@ -124,6 +146,19 @@ beforeEach(() => {
 });
 
 describe("甲案① 预览态就摆终点", () => {
+  it("abandons a delayed audio check when the user switches back to the full screen", async () => {
+    const q = await mount();
+    await hoverUntil(q, READ_WIN);
+    let complete!: (value: { sysAudio: boolean; micAudio: boolean; warnings: string[] }) => void;
+    api.recCheckAudio.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await act(async () => { fireEvent.click(startBtn(q)); });
+    fireEvent.click(q.getByRole("button", { name: /改录整个屏幕/ }));
+    await act(async () => { complete({ sysAudio: true, micAudio: true, warnings: [] }); });
+    expect(q.queryByText("3")).toBeNull();
+    await runCountdown();
+    expect(api.recStart).not.toHaveBeenCalled();
+    expect(q.getByText(READ_FULL)).toBeTruthy();
+  });
   it("预览态（未做任何点击）条上就有「开始录制」", async () => {
     const q = await mount();
     expect(startBtn(q)).toBeTruthy();
@@ -158,7 +193,7 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
   it("悬停窗口 → 鼠标移进玻璃条点「开始录制」→ 录的是那扇窗，不是整屏", async () => {
     const q = await mount();
     // 悬停窗口（目标成立，蓝框亮）
-    await hoverUntil(q, /将录制：窗口 400×300/);
+    await hoverUntil(q, READ_WIN);
     // 为了点按钮把鼠标移到「开始录制」上：它在 .rec-glass 里。
     // 🔴 这条**不带**坐标 ⇒ 走的是「条下恰好是窗外」的分支，只钉住规则的一半；
     //    另一半（条下压着另一扇窗）由下一条带坐标的那条钉。两条缺一，规则就不成立。
@@ -176,14 +211,14 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
 
   it("🔴 玻璃条压在另一扇窗上时也不许换目标（真实桌面：屏底那条多半压着最大化窗）", async () => {
     const q = await mount([WIN, WIN_BG]);
-    await hoverUntil(q, /将录制：窗口 400×300/);
-    expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
+    await hoverUntil(q, READ_WIN);
+    expect(q.getByText(READ_WIN)).toBeTruthy();
     // 带坐标的这次派发才是常态：(700,660) 在 WIN 外、在背景大窗内 ⇒ 命中判定给的是 WIN_BG。
     // 改前的 `hit === null && closest(".rec-glass")` 只挡 null 分支，这里目标会当场变成整屏。
     await act(async () => {
       fireEvent.mouseMove(startBtn(q), { clientX: 700, clientY: 660 });
     });
-    expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
+    expect(q.getByText(READ_WIN)).toBeTruthy();
     await act(async () => {
       fireEvent.click(startBtn(q));
     });
@@ -193,44 +228,53 @@ describe("甲案③ 终点不许把悬停目标弄丢（玻璃条上的移动不
     );
   });
 
-  it("预览条读数实时写明「将录制」谁", async () => {
+  it("预览条读数：数字实时跟着目标走，来源与动作收进可访问名", async () => {
     const q = await mount();
-    expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
-    await hoverUntil(q, /将录制：窗口 400×300/);
-    expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
+    // 整屏态：读数是一枚静态胶囊（没有可放弃的目标），来源只在 title 上
+    expect(q.getByText(READ_FULL)).toBeTruthy();
+    expect(q.getByTitle(`将录制整个屏幕 ${READ_FULL}`)).toBeTruthy();
+    await hoverUntil(q, READ_WIN);
+    // 悬停窗口后数字跟着换，且整枚变成「改录整个屏幕」的按钮（§17 纯鼠标路径），
+    // 读屏拿到的仍是完整一句（来源 + 尺寸 + 动作）
+    expect(q.getByText(READ_WIN)).toBeTruthy();
+    expect(
+      q.getByRole("button", { name: `将录制窗口所在区域 ${READ_WIN}；点这里改录整个屏幕` }),
+    ).toBeTruthy();
   });
 
   // ===== 审查 P1：读数在「确认 / 倒计时」两态不许消失（承诺成立的两态信息量最低）=====
-  it("确认条也写着「将录制」（改前红：ConfirmBar 里没有这条读数）", async () => {
+  it("确认条也留着读数（改前红：ConfirmBar 里没有这条读数）", async () => {
     const q = await mount();
-    await hoverUntil(q, /将录制：窗口 400×300/);
+    await hoverUntil(q, READ_WIN);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });
     await act(async () => {
       fireEvent.mouseUp(root(q), { clientX: 350, clientY: 150 });
     });
-    expect(q.getByText(/将录制：窗口 400×300/)).toBeTruthy();
+    expect(q.getByText(READ_WIN)).toBeTruthy();
+    // 落子之后读数不再可改（要改走条上的「重画」）⇒ 它退回静态胶囊，来源只剩 title
+    expect(q.getByTitle(`将录制窗口所在区域 ${READ_WIN}`)).toBeTruthy();
   });
 
-  it("倒计时层也写着「将录制」（最后可中止的那一秒必须说清在中止什么）", async () => {
+  it("倒计时层也留着读数（最后可中止的那一秒必须说清在中止什么）", async () => {
     const q = await mount();
     await act(async () => {
       fireEvent.click(startBtn(q));
     });
-    expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
+    expect(q.getByText(READ_FULL)).toBeTruthy();
   });
 });
 
 describe("甲案 审查 P1：整屏必须有鼠标路径（§17 鼠标全流程可达）", () => {
   it("悬停出窗口 → 读数变成按钮「… 改录整屏」，点它 = 放弃窗口，再按开始录制录整屏", async () => {
     const q = await mount([WIN, WIN_BG]);
-    await hoverUntil(q, /将录制：窗口 400×300/);
+    await hoverUntil(q, READ_WIN);
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: /改录整屏/ }));
+      fireEvent.click(q.getByRole("button", { name: /改录整个屏幕/ }));
     });
     // 控制与反馈同一可见性域（规则 15.1）：点完读数自己就改成整屏
-    expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
+    expect(q.getByText(READ_FULL)).toBeTruthy();
     await act(async () => {
       fireEvent.click(startBtn(q));
     });
@@ -243,8 +287,8 @@ describe("甲案 审查 P1：整屏必须有鼠标路径（§17 鼠标全流程�
   it("没悬停任何窗口时不给死控件（读数不是按钮）", async () => {
     const q = await mount();
     // 先钉「预览条真的画出来了」：否则「按钮不存在」的负断言在空壳首帧上恒真
-    expect(q.getByText(/将录制：整个屏幕 1280×720/)).toBeTruthy();
-    expect(q.queryByRole("button", { name: /改录整屏/ })).toBeNull();
+    expect(q.getByText(READ_FULL)).toBeTruthy();
+    expect(q.queryByRole("button", { name: /改录整个屏幕/ })).toBeNull();
   });
 });
 
@@ -255,44 +299,51 @@ describe("甲案 审查 P2：⋯ 浮层的选项语义", () => {
   it("画质四档暴露选中态（改前红：只有 class，读屏听不出哪档在用）", async () => {
     const q = await mount();
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: "⋯" }));
+      fireEvent.click(q.getByRole("button", { name: /^画质 / }));
     });
     expect(q.getByRole("group", { name: "画质档位" })).toBeTruthy();
     expect(q.getByRole("button", { name: "高清" }).getAttribute("aria-pressed")).toBe("true");
     expect(q.getByRole("button", { name: "流畅" }).getAttribute("aria-pressed")).toBe("false");
     // 触发器与浮层的关系也要能读出来
-    expect(q.getByRole("button", { name: "⋯" }).getAttribute("aria-controls")).toBe("rec-pop");
+    expect(q.getByRole("button", { name: /^画质 / }).getAttribute("aria-controls")).toBe("rec-pop");
     expect(q.getByRole("group", { name: "画质与声音" }).getAttribute("id")).toBe("rec-pop");
   });
 });
 
-describe("甲案② 画质/音源收进 ⋯，结果留在条上（规则 15.1）", () => {
-  it("默认态条上就写着「高清 · 🔊」，不开浮层也看得见", async () => {
+describe("办公清晰版B：画质渐进展开，音源文字常驻（规则 15.1）", () => {
+  it("默认态条上线源只留名字，开 / 关交给 aria-pressed 与 title", async () => {
     const q = await mount();
-    expect(q.getByText(/高清\s*·\s*🔊/)).toBeTruthy();
+    // §5.1：可访问名里只剩音源名（改前是「电脑声音 开」）——状态两个字不再占条的宽度，
+    // 但它**没有丢**：读屏走 aria-pressed，悬停补充走 title，视觉走点的实心/空心。
+    const sys = q.getByRole("button", { name: "电脑声音" });
+    expect(sys.getAttribute("aria-pressed")).toBe("true");
+    expect(sys.getAttribute("title")).toBe("电脑声音：已开");
+    const mic = q.getByRole("button", { name: "麦克风" });
+    expect(mic.getAttribute("aria-pressed")).toBe("false");
+    expect(mic.getAttribute("title")).toBe("麦克风：已关");
     // 四档技术名词不再摆在最高频路径上
     expect(q.queryByRole("button", { name: "原画" })).toBeNull();
   });
 
-  it("⋯ 展开改档 → 徽标同步；音源同理", async () => {
+  it("画质展开改档后触发器同步，音源开关也同步", async () => {
     const q = await mount();
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: "⋯" }));
+      fireEvent.click(q.getByRole("button", { name: /^画质 / }));
     });
     await act(async () => {
       fireEvent.click(q.getByRole("button", { name: "流畅" }));
     });
-    expect(q.getByText(/流畅\s*·\s*🔊/)).toBeTruthy();
+    expect(q.getByRole("button", { name: "画质 流畅" })).toBeTruthy();
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: /系统声音/ }));
+      fireEvent.click(q.getByRole("button", { name: /电脑声音/ }));
     });
-    expect(q.getByText(/流畅\s*·\s*无声/)).toBeTruthy();
+    expect(q.getByRole("button", { name: "电脑声音" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("浮层开着时按 Esc 只关浮层，不退出选屏（§18 两级取消）", async () => {
     const q = await mount();
     await act(async () => {
-      fireEvent.click(q.getByRole("button", { name: "⋯" }));
+      fireEvent.click(q.getByRole("button", { name: /^画质 / }));
     });
     await act(async () => {
       fireEvent.keyDown(window, { key: "Escape" });
@@ -309,7 +360,7 @@ describe("甲案② 画质/音源收进 ⋯，结果留在条上（规则 15.1�
 describe("现网既有行为不得回归", () => {
   it("Esc 两级取消照旧（预览退出 / 确认回预览）", async () => {
     const q = await mount();
-    await hoverUntil(q, /将录制：窗口 400×300/);
+    await hoverUntil(q, READ_WIN);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });
@@ -321,7 +372,8 @@ describe("现网既有行为不得回归", () => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
     expect(api.recCloseWindows).not.toHaveBeenCalled();
-    expect(q.getByText(/将录制/)).toBeTruthy();
+    // 回预览态后读数仍在（尺寸形态，不钉具体值：这一步只验「没消失」）
+    expect(q.getByText(/^\d+ × \d+$/)).toBeTruthy();
     // 预览态：Esc 退出
     await act(async () => {
       fireEvent.keyDown(window, { key: "Escape" });
@@ -331,7 +383,7 @@ describe("现网既有行为不得回归", () => {
 
   it("单击采纳窗口后进确认态，确认条的「开始录制」仍录那扇窗", async () => {
     const q = await mount();
-    await hoverUntil(q, /将录制：窗口 400×300/);
+    await hoverUntil(q, READ_WIN);
     await act(async () => {
       fireEvent.mouseDown(root(q), { clientX: 350, clientY: 150 });
     });

@@ -1,6 +1,6 @@
 # 设计稿索引（design/）
 
-> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-10-12）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
+> 本文件由 `scripts/gen-design-index.mjs` 自动生成（最近生成：2026-10-16）。**不要手改**——下次生成会覆盖。要调分组规则，改脚本里的 `RULES`。
 
 ## 这份目录是什么
 
@@ -60,16 +60,17 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | `installer/` | 2 | 5 KB | NSIS 安装器品牌位图 |
 | `mobile-ui-unification-2026-10-09/` | 2 | 182 KB |  |
 | `probe-cert/` | 2 | 3 KB |  |
-| `*.html`（根目录） | 340 | — | 设计稿正文，见下方按主题分组 |
+| `*.html`（根目录） | 344 | — | 设计稿正文，见下方按主题分组 |
 
-## 设计稿清单（340 份，按主题分组）
+## 设计稿清单（344 份，按主题分组）
 
-### 视觉与品牌（25）
+### 视觉与品牌（26）
 
 *主题、色彩、图标、Logo、吉祥物、质感、全局规则审计。改观感前先看这里。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
+| [`录屏UI-苹果风重做-设计稿`](./%E5%BD%95%E5%B1%8FUI-%E8%8B%B9%E6%9E%9C%E9%A3%8E%E9%87%8D%E5%81%9A-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | — | 94 KB |
 | [`mobile-ui-unification-2026-10-09`](./mobile-ui-unification-2026-10-09.html) | 2026-10-09 近期 | 3 KB |
 | [`皮肤整改-角色替换与石墨深色与跟随系统-设计稿`](./%E7%9A%AE%E8%82%A4%E6%95%B4%E6%94%B9-%E8%A7%92%E8%89%B2%E6%9B%BF%E6%8D%A2%E4%B8%8E%E7%9F%B3%E5%A2%A8%E6%B7%B1%E8%89%B2%E4%B8%8E%E8%B7%9F%E9%9A%8F%E7%B3%BB%E7%BB%9F-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 65 KB |
 | [`手机端UI-C方案落地预览-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AFUI-C%E6%96%B9%E6%A1%88%E8%90%BD%E5%9C%B0%E9%A2%84%E8%A7%88-2026-10-02.html) | 2026-10-06 近期 | 4 KB |
@@ -115,10 +116,10 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`截图晾衣绳-载重弹性与风动-A方案-设计稿-2026-10-12`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E8%BD%BD%E9%87%8D%E5%BC%B9%E6%80%A7%E4%B8%8E%E9%A3%8E%E5%8A%A8-A%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-12.html) | — | 7 KB |
-| [`截图晾衣绳-湿干状态-1比1-设计稿-2026-10-11`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E6%B9%BF%E5%B9%B2%E7%8A%B6%E6%80%81-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | — | 39 KB |
-| [`截图晾衣绳-悬链线相框-开关与通用捕获-1比1-设计稿-2026-10-11`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E6%82%AC%E9%93%BE%E7%BA%BF%E7%9B%B8%E6%A1%86-%E5%BC%80%E5%85%B3%E4%B8%8E%E9%80%9A%E7%94%A8%E6%8D%95%E8%8E%B7-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | — | 105 KB |
-| [`截图晾衣绳-可摆绳与取挂闭环-设计稿-2026-10-12`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E5%8F%AF%E6%91%86%E7%BB%B3%E4%B8%8E%E5%8F%96%E6%8C%82%E9%97%AD%E7%8E%AF-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-12.html) | — | 8 KB |
+| [`截图晾衣绳-载重弹性与风动-A方案-设计稿-2026-10-12`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E8%BD%BD%E9%87%8D%E5%BC%B9%E6%80%A7%E4%B8%8E%E9%A3%8E%E5%8A%A8-A%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-12.html) | 2026-10-15 近期 | 7 KB |
+| [`截图晾衣绳-湿干状态-1比1-设计稿-2026-10-11`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E6%B9%BF%E5%B9%B2%E7%8A%B6%E6%80%81-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | 2026-10-15 近期 | 39 KB |
+| [`截图晾衣绳-悬链线相框-开关与通用捕获-1比1-设计稿-2026-10-11`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E6%82%AC%E9%93%BE%E7%BA%BF%E7%9B%B8%E6%A1%86-%E5%BC%80%E5%85%B3%E4%B8%8E%E9%80%9A%E7%94%A8%E6%8D%95%E8%8E%B7-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | 2026-10-15 近期 | 105 KB |
+| [`截图晾衣绳-可摆绳与取挂闭环-设计稿-2026-10-12`](./%E6%88%AA%E5%9B%BE%E6%99%BE%E8%A1%A3%E7%BB%B3-%E5%8F%AF%E6%91%86%E7%BB%B3%E4%B8%8E%E5%8F%96%E6%8C%82%E9%97%AD%E7%8E%AF-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-12.html) | 2026-10-15 近期 | 8 KB |
 | [`macOS贴图-交互预览`](./macOS%E8%B4%B4%E5%9B%BE-%E4%BA%A4%E4%BA%92%E9%A2%84%E8%A7%88.html) | 2026-10-09 近期 | 8 KB |
 | [`PastePanda-截图出口面板图标统一-设计稿`](./PastePanda-%E6%88%AA%E5%9B%BE%E5%87%BA%E5%8F%A3%E9%9D%A2%E6%9D%BF%E5%9B%BE%E6%A0%87%E7%BB%9F%E4%B8%80-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-02 近期 | 39 KB |
 | [`PastePanda-截图AI弹层整改-1比1-设计稿`](./PastePanda-%E6%88%AA%E5%9B%BEAI%E5%BC%B9%E5%B1%82%E6%95%B4%E6%94%B9-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-02 近期 | 47 KB |
@@ -195,12 +196,12 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`知识库回收站-W1-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E5%9B%9E%E6%94%B6%E7%AB%99-W1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-02 近期 | 27 KB |
 | [`知识库MCP服务-设置面板-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93MCP%E6%9C%8D%E5%8A%A1-%E8%AE%BE%E7%BD%AE%E9%9D%A2%E6%9D%BF-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-02 近期 | 48 KB |
 | [`知识库MCP写权限-M5-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93MCP%E5%86%99%E6%9D%83%E9%99%90-M5-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-02 近期 | 9 KB |
-| [`转笔记模板-B2-8-设计稿`](./%E8%BD%AC%E7%AC%94%E8%AE%B0%E6%A8%A1%E6%9D%BF-B2-8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 18 KB |
-| [`知识库问答雏形-B2-10-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E9%97%AE%E7%AD%94%E9%9B%8F%E5%BD%A2-B2-10-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 17 KB |
-| [`知识库问答-第三栏改版-B2-10b-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E9%97%AE%E7%AD%94-%E7%AC%AC%E4%B8%89%E6%A0%8F%E6%94%B9%E7%89%88-B2-10b-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 18 KB |
-| [`知识库字段视图-B2-9-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E5%AD%97%E6%AE%B5%E8%A7%86%E5%9B%BE-B2-9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 14 KB |
-| [`今日速记-B2-3-设计稿`](./%E4%BB%8A%E6%97%A5%E9%80%9F%E8%AE%B0-B2-3-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 13 KB |
-| [`PastePanda-知识库视图-设计稿`](./PastePanda-%E7%9F%A5%E8%AF%86%E5%BA%93%E8%A7%86%E5%9B%BE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 32 KB |
+| [`转笔记模板-B2-8-设计稿`](./%E8%BD%AC%E7%AC%94%E8%AE%B0%E6%A8%A1%E6%9D%BF-B2-8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 18 KB |
+| [`知识库问答雏形-B2-10-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E9%97%AE%E7%AD%94%E9%9B%8F%E5%BD%A2-B2-10-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 17 KB |
+| [`知识库问答-第三栏改版-B2-10b-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E9%97%AE%E7%AD%94-%E7%AC%AC%E4%B8%89%E6%A0%8F%E6%94%B9%E7%89%88-B2-10b-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 18 KB |
+| [`知识库字段视图-B2-9-设计稿`](./%E7%9F%A5%E8%AF%86%E5%BA%93%E5%AD%97%E6%AE%B5%E8%A7%86%E5%9B%BE-B2-9-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 14 KB |
+| [`今日速记-B2-3-设计稿`](./%E4%BB%8A%E6%97%A5%E9%80%9F%E8%AE%B0-B2-3-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 13 KB |
+| [`PastePanda-知识库视图-设计稿`](./PastePanda-%E7%9F%A5%E8%AF%86%E5%BA%93%E8%A7%86%E5%9B%BE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 32 KB |
 | [`kb-c-ai-autotag-summary`](./kb-c-ai-autotag-summary.html) | 2026-08-28 | 50 KB |
 | [`kb-b-library-view`](./kb-b-library-view.html) | 2026-08-26 | 95 KB |
 | [`kb-a-note-dialog`](./kb-a-note-dialog.html) | 2026-08-26 | 79 KB |
@@ -274,7 +275,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`PastePanda-栈循环粘贴-AB方案-设计稿`](./PastePanda-%E6%A0%88%E5%BE%AA%E7%8E%AF%E7%B2%98%E8%B4%B4-AB%E6%96%B9%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-17 近期 | 36 KB |
 | [`工具模式UI-美化升级对照稿`](./%E5%B7%A5%E5%85%B7%E6%A8%A1%E5%BC%8FUI-%E7%BE%8E%E5%8C%96%E5%8D%87%E7%BA%A7%E5%AF%B9%E7%85%A7%E7%A8%BF.html) | 2026-09-14 近期 | 21 KB |
 | [`工具模式-体验升级第三档`](./%E5%B7%A5%E5%85%B7%E6%A8%A1%E5%BC%8F-%E4%BD%93%E9%AA%8C%E5%8D%87%E7%BA%A7%E7%AC%AC%E4%B8%89%E6%A1%A3.html) | 2026-09-14 近期 | 17 KB |
-| [`PastePanda-工具箱与模式切换器-设计稿`](./PastePanda-%E5%B7%A5%E5%85%B7%E7%AE%B1%E4%B8%8E%E6%A8%A1%E5%BC%8F%E5%88%87%E6%8D%A2%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 31 KB |
+| [`PastePanda-工具箱与模式切换器-设计稿`](./PastePanda-%E5%B7%A5%E5%85%B7%E7%AE%B1%E4%B8%8E%E6%A8%A1%E5%BC%8F%E5%88%87%E6%8D%A2%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 31 KB |
 | [`二维码双向编辑器-设计稿`](./%E4%BA%8C%E7%BB%B4%E7%A0%81%E5%8F%8C%E5%90%91%E7%BC%96%E8%BE%91%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-23 | 7 KB |
 | [`PastePanda-表格拆分进粘贴栈-设计稿`](./PastePanda-%E8%A1%A8%E6%A0%BC%E6%8B%86%E5%88%86%E8%BF%9B%E7%B2%98%E8%B4%B4%E6%A0%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-14 | 20 KB |
 | [`PastePanda-粘贴栈-chip内容预览-设计稿`](./PastePanda-%E7%B2%98%E8%B4%B4%E6%A0%88-chip%E5%86%85%E5%AE%B9%E9%A2%84%E8%A7%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-14 | 11 KB |
@@ -293,7 +294,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`全屏编辑器-单窗口多标签-设计稿`](./%E5%85%A8%E5%B1%8F%E7%BC%96%E8%BE%91%E5%99%A8-%E5%8D%95%E7%AA%97%E5%8F%A3%E5%A4%9A%E6%A0%87%E7%AD%BE-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 近期 | 55 KB |
 | [`全屏编辑器-工作台化-方案B-设计稿`](./%E5%85%A8%E5%B1%8F%E7%BC%96%E8%BE%91%E5%99%A8-%E5%B7%A5%E4%BD%9C%E5%8F%B0%E5%8C%96-%E6%96%B9%E6%A1%88B-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-21 近期 | 67 KB |
 | [`md-editor-outline-jump-方案C-设计稿`](./md-editor-outline-jump-%E6%96%B9%E6%A1%88C-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-20 近期 | 21 KB |
-| [`PastePanda-MD导出导入-设计稿`](./PastePanda-MD%E5%AF%BC%E5%87%BA%E5%AF%BC%E5%85%A5-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 13 KB |
+| [`PastePanda-MD导出导入-设计稿`](./PastePanda-MD%E5%AF%BC%E5%87%BA%E5%AF%BC%E5%85%A5-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 13 KB |
 | [`颜色调色板渐变编辑器-设计稿`](./%E9%A2%9C%E8%89%B2%E8%B0%83%E8%89%B2%E6%9D%BF%E6%B8%90%E5%8F%98%E7%BC%96%E8%BE%91%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-23 | 8 KB |
 | [`配置结构化编辑器-设计稿`](./%E9%85%8D%E7%BD%AE%E7%BB%93%E6%9E%84%E5%8C%96%E7%BC%96%E8%BE%91%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-23 | 9 KB |
 | [`编解码编辑器-设计稿`](./%E7%BC%96%E8%A7%A3%E7%A0%81%E7%BC%96%E8%BE%91%E5%99%A8-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-23 | 9 KB |
@@ -315,7 +316,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`远程电脑-桌面寄件单-1比1-设计稿-2026-10-11`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%A1%8C%E9%9D%A2%E5%AF%84%E4%BB%B6%E5%8D%95-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | — | 68 KB |
+| [`远程电脑-桌面寄件单-1比1-设计稿-2026-10-11`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%A1%8C%E9%9D%A2%E5%AF%84%E4%BB%B6%E5%8D%95-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | 2026-10-15 近期 | 68 KB |
 | [`远程电脑-连接建立阶段化-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E8%BF%9E%E6%8E%A5%E5%BB%BA%E7%AB%8B%E9%98%B6%E6%AE%B5%E5%8C%96-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-07 近期 | 61 KB |
 | [`mobile-update-notes-sheet-2026-10-07`](./mobile-update-notes-sheet-2026-10-07.html) | 2026-10-07 近期 | 31 KB |
 | [`远程电脑-手机锁屏明示-S1-设计稿`](./%E8%BF%9C%E7%A8%8B%E7%94%B5%E8%84%91-%E6%89%8B%E6%9C%BA%E9%94%81%E5%B1%8F%E6%98%8E%E7%A4%BA-S1-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-06 近期 | 25 KB |
@@ -390,7 +391,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`sync-devices-mockup`](./sync-devices-mockup.html) | 2026-09-04 近期 | 7 KB |
 | [`sync-conflicts-mockup`](./sync-conflicts-mockup.html) | 2026-09-04 近期 | 6 KB |
 | [`update-notes-dialog-fix-B`](./update-notes-dialog-fix-B.html) | 2026-09-03 近期 | 10 KB |
-| [`PastePanda-版本快照-设计稿`](./PastePanda-%E7%89%88%E6%9C%AC%E5%BF%AB%E7%85%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 近期 | 13 KB |
+| [`PastePanda-版本快照-设计稿`](./PastePanda-%E7%89%88%E6%9C%AC%E5%BF%AB%E7%85%A7-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-01 | 13 KB |
 | [`whatsnew-routeC`](./whatsnew-routeC.html) | 2026-08-19 | 14 KB |
 
 ### 主窗口与导航（32）
@@ -399,8 +400,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`剪贴板失物招领-时间拨盘-1比1-设计稿-2026-10-11`](./%E5%89%AA%E8%B4%B4%E6%9D%BF%E5%A4%B1%E7%89%A9%E6%8B%9B%E9%A2%86-%E6%97%B6%E9%97%B4%E6%8B%A8%E7%9B%98-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | — | 41 KB |
-| [`dev-workflow-flowchart-2026-10-10`](./dev-workflow-flowchart-2026-10-10.html) | — | 22 KB |
+| [`剪贴板失物招领-时间拨盘-1比1-设计稿-2026-10-11`](./%E5%89%AA%E8%B4%B4%E6%9D%BF%E5%A4%B1%E7%89%A9%E6%8B%9B%E9%A2%86-%E6%97%B6%E9%97%B4%E6%8B%A8%E7%9B%98-1%E6%AF%941-%E8%AE%BE%E8%AE%A1%E7%A8%BF-2026-10-11.html) | 2026-10-15 近期 | 41 KB |
+| [`dev-workflow-flowchart-2026-10-10`](./dev-workflow-flowchart-2026-10-10.html) | 2026-10-15 近期 | 22 KB |
 | [`手机端-触屏与微动体验升级-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AF-%E8%A7%A6%E5%B1%8F%E4%B8%8E%E5%BE%AE%E5%8A%A8%E4%BD%93%E9%AA%8C%E5%8D%87%E7%BA%A7-2026-10-02.html) | 2026-10-06 近期 | 6 KB |
 | [`手机端-延时与连接详情落地预览-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AF-%E5%BB%B6%E6%97%B6%E4%B8%8E%E8%BF%9E%E6%8E%A5%E8%AF%A6%E6%83%85%E8%90%BD%E5%9C%B0%E9%A2%84%E8%A7%88-2026-10-02.html) | 2026-10-06 近期 | 0 KB |
 | [`手机端-延时与连接详情方案-2026-10-02`](./%E6%89%8B%E6%9C%BA%E7%AB%AF-%E5%BB%B6%E6%97%B6%E4%B8%8E%E8%BF%9E%E6%8E%A5%E8%AF%A6%E6%83%85%E6%96%B9%E6%A1%88-2026-10-02.html) | 2026-10-06 近期 | 4 KB |
@@ -422,7 +423,7 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`PastePanda-顶栏模式专属按钮组-设计稿`](./PastePanda-%E9%A1%B6%E6%A0%8F%E6%A8%A1%E5%BC%8F%E4%B8%93%E5%B1%9E%E6%8C%89%E9%92%AE%E7%BB%84-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-06 近期 | 17 KB |
 | [`PastePanda-内容区视图切换动画-设计稿`](./PastePanda-%E5%86%85%E5%AE%B9%E5%8C%BA%E8%A7%86%E5%9B%BE%E5%88%87%E6%8D%A2%E5%8A%A8%E7%94%BB-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-05 近期 | 9 KB |
 | [`wide-screen-cardlist`](./wide-screen-cardlist.html) | 2026-09-04 近期 | 10 KB |
-| [`PastePanda-顶栏三模式-设计稿`](./PastePanda-%E9%A1%B6%E6%A0%8F%E4%B8%89%E6%A8%A1%E5%BC%8F-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-31 近期 | 39 KB |
+| [`PastePanda-顶栏三模式-设计稿`](./PastePanda-%E9%A1%B6%E6%A0%8F%E4%B8%89%E6%A8%A1%E5%BC%8F-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-31 | 39 KB |
 | [`PastePanda-反馈面板-设计稿`](./PastePanda-%E5%8F%8D%E9%A6%88%E9%9D%A2%E6%9D%BF-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-08-23 | 14 KB |
 | [`sponsor-card`](./sponsor-card.html) | 2026-08-20 | 8 KB |
 | [`toast-error-copy-mockup`](./toast-error-copy-mockup.html) | 2026-08-15 | 15 KB |
@@ -432,13 +433,16 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`ui-1to1-restoration-draft`](./ui-1to1-restoration-draft.html) | 2026-08-06 | 92 KB |
 | [`search-box-unify`](./search-box-unify.html) | 2026-08-06 | 16 KB |
 
-### 未分类（42）
+### 未分类（45）
 
 *文件名没命中任何规则。给个更贴主题的文件名，或去脚本 `RULES` 里补一条。*
 
 | 设计稿 | 入库 | 体量 |
 |---|---|---|
-| [`pastepanda-source-video-2026-10-11`](./pastepanda-source-video-2026-10-11.html) | — | 0 KB |
+| [`录屏-办公清晰版-B-2026-10-16`](./%E5%BD%95%E5%B1%8F-%E5%8A%9E%E5%85%AC%E6%B8%85%E6%99%B0%E7%89%88-B-2026-10-16.html) | — | 41 KB |
+| [`pastepanda-source-video-2026-10-11`](./pastepanda-source-video-2026-10-11.html) | 2026-10-15 | 0 KB |
+| [`pastepanda-shorts-target-2026-10-13`](./pastepanda-shorts-target-2026-10-13.html) | 2026-10-15 | 3 KB |
+| [`pastepanda-shorts-first8-2026-10-13`](./pastepanda-shorts-first8-2026-10-13.html) | 2026-10-15 | 3 KB |
 | [`屏幕录制-默认整屏一步开录-甲案-设计稿`](./%E5%B1%8F%E5%B9%95%E5%BD%95%E5%88%B6-%E9%BB%98%E8%AE%A4%E6%95%B4%E5%B1%8F%E4%B8%80%E6%AD%A5%E5%BC%80%E5%BD%95-%E7%94%B2%E6%A1%88-%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-10-10 | 49 KB |
 | [`mobile-knowledge-detail-2026-10-07`](./mobile-knowledge-detail-2026-10-07.html) | 2026-10-08 | 6 KB |
 | [`mobile-knowledge-collection-attachments-2026-10-08`](./mobile-knowledge-collection-attachments-2026-10-08.html) | 2026-10-08 | 8 KB |
@@ -481,8 +485,8 @@ PastePanda 所有 UI 改动都走「**先出设计稿 → 用户确认 → 再�
 | [`待办灵动岛-液态玻璃-3a设计稿`](./%E5%BE%85%E5%8A%9E%E7%81%B5%E5%8A%A8%E5%B2%9B-%E6%B6%B2%E6%80%81%E7%8E%BB%E7%92%83-3a%E8%AE%BE%E8%AE%A1%E7%A8%BF.html) | 2026-09-25 | 13 KB |
 | [`md-outline-jump-microanim-方案2`](./md-outline-jump-microanim-%E6%96%B9%E6%A1%882.html) | 2026-09-20 | 11 KB |
 
-> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 8 份。
+> 「近期」= 近 45 天内入库。其中尚未提交 git 的稿子共 2 份。
 
 ---
 
-_共 340 份设计稿。重新生成：`npm run gen:design-index`_
+_共 344 份设计稿。重新生成：`npm run gen:design-index`_
