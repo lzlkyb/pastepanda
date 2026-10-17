@@ -1,6 +1,11 @@
 //! macOS container passthrough: supports AVAssetWriter B-frame/sample tables.
 pub use crate::rec::trim_types::{snap, KeyframeIndex};
 use std::{ffi::CString, path::Path};
+#[path = "../rec/output.rs"]
+mod output;
+#[path = "../rec/trim_job.rs"]
+mod trim_job;
+pub use trim_job::{cancel as cancel_job, start as start_job, status as job_status, TrimJob};
 extern "C" {
     fn pp_trim_index(path: *const std::ffi::c_char, bytes: *mut *mut u8, length: *mut usize)
         -> i32;
@@ -59,6 +64,12 @@ pub fn scan_keyframes(path: &Path) -> Result<KeyframeIndex, String> {
     })
 }
 pub fn trim(src: &Path, begin: u64, end: u64, dst: &Path) -> Result<(u64, u64, u64), String> {
+    trim_with_job(src, begin, end, dst, None)
+}
+pub fn trim_with_job(
+    src: &Path, begin: u64, end: u64, dst: &Path, job: Option<&TrimJob>,
+) -> Result<(u64, u64, u64), String> {
+    if let Some(job) = job { job.check_cancelled()?; }
     if begin >= end {
         return Err("选段为空（入点不早于出点）".into());
     }
@@ -67,39 +78,34 @@ pub fn trim(src: &Path, begin: u64, end: u64, dst: &Path) -> Result<(u64, u64, u
     if begin >= end {
         return Err("选段没有可保留的视频".into());
     }
-    if dst.exists() {
-        return Err(error(4));
-    }
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_nanos();
-    let temporary = dst.with_file_name(format!(
-        ".pastepanda-trim-{}-{stamp}.mp4",
-        std::process::id()
-    ));
+    let source = path_string(src)?;
+    let (pending, file) = output::PendingOutput::new(dst, false)?;
+    drop(file);
+    // AVAssetExportSession requires an absent output URL; PendingOutput still owns cleanup.
+    std::fs::remove_file(pending.temporary_path()).map_err(|e| format!("准备裁剪文件失败：{e}"))?;
+    let temporary = path_string(pending.temporary_path())?;
+    if let Some(job) = job { job.check_cancelled()?; }
     let code = unsafe {
         pp_trim_export(
-            path_string(src)?.as_ptr(),
-            path_string(&temporary)?.as_ptr(),
+            source.as_ptr(),
+            temporary.as_ptr(),
             begin,
             end,
         )
     };
-    let finish = (|| {
-        if code != 0 {
-            return Err(error(code));
-        }
-        let bytes = temporary.metadata().map_err(|e| e.to_string())?.len();
-        if bytes == 0 {
-            return Err("裁剪文件为空".into());
-        }
-        // hard_link provides no-clobber publication even if another export wins the name race.
-        std::fs::hard_link(&temporary, dst).map_err(|e| format!("保存裁剪失败：{e}"))?;
-        Ok((bytes, begin, end))
-    })();
-    let _ = std::fs::remove_file(&temporary);
-    finish
+    // Native export is synchronous here: cancellation prevents publication after it returns.
+    // No synthetic percentage is reported while AVAssetExportSession owns the work.
+    if let Some(job) = job { job.check_cancelled()?; }
+    if code != 0 { return Err(error(code)); }
+    let file = std::fs::OpenOptions::new().write(true).open(pending.temporary_path())
+        .map_err(|e| e.to_string())?;
+    let bytes = file.metadata().map_err(|e| e.to_string())?.len();
+    if bytes == 0 { return Err("裁剪文件为空".into()); }
+    file.sync_all().map_err(|e| format!("保存裁剪失败：{e}"))?;
+    drop(file);
+    if let Some(job) = job { job.check_cancelled()?; }
+    pending.commit()?;
+    Ok((bytes, begin, end))
 }
 #[cfg(test)]
 mod tests {

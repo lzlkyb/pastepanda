@@ -1,6 +1,6 @@
 //! 会话归属、媒体闭环与上屏打点；仅在有待确认帧时运行反馈任务。
 use super::*;
-use crate::rc::media_flow::{Admission, Flow, MediaFeedback, Receiver};
+use crate::rc::media_flow::{Admission, Flow, MediaFeedback, PathInfo, Receiver};
 
 #[derive(Default)]
 pub(super) struct MediaState {
@@ -30,15 +30,26 @@ impl RcService {
         Some(f(&mut state))
     }
 
+    /// 媒体闭环的**唯一**路径判据（规则 11.1）：预算种子、fps 门槛、码率上限、
+    /// 接收端传播基线全从这里取。过去四处各自 `path_kind_str()` 拼字符串，
+    /// 「内网直连」和「公网直连」被压成同一个 bool ⇒ 加一档必漏一处。
+    /// 心跳恢复预算（`session::lifecycle` 的 `heartbeat_timeout_ms`）是**另一套口径**
+    /// （无会话时按快路径给短超时），刻意不并进来。
+    /// 甲-④（2026-10-11）：`pub(in crate::rc)` 是给 `[RC-PERF]` 汇总行取标签用的——
+    /// 诊断也必须走这一把尺，不在推流循环里再拼一次字符串判路径。
+    pub(in crate::rc) fn media_path(&self) -> PathInfo {
+        PathInfo::from_kind(self.link.path_kind().unwrap_or_default())
+    }
+
     pub(in crate::rc) fn media_budget_kbps(&self, id: &str) -> u32 {
-        let relay = !matches!(self.link.path_kind_str().as_str(), "lan" | "direct");
-        self.with_media(id, |s| s.flow.budget(relay, self.stream.media_ceiling_kbps())).unwrap_or(400)
+        let path = self.media_path();
+        self.with_media(id, |s| s.flow.budget(path.relay, self.stream.media_ceiling_kbps(path.lan))).unwrap_or(400)
     }
 
     pub(in crate::rc) fn media_fps_limit(&self, id: &str) -> u32 {
-        let relay = !matches!(self.link.path_kind_str().as_str(), "lan" | "direct");
+        let path = self.media_path();
         let now = crate::rc::mono::mono_ms() as u64;
-        self.with_media(id, |s| { s.flow.budget(relay, self.stream.media_ceiling_kbps()); s.flow.fps_limit(relay, now) }).unwrap_or(10)
+        self.with_media(id, |s| { s.flow.budget(path.relay, self.stream.media_ceiling_kbps(path.lan)); s.flow.fps_limit(path, now) }).unwrap_or(10)
     }
 
     pub(in crate::rc) fn media_admission(&self, id: &str) -> Admission {
@@ -95,11 +106,12 @@ impl RcService {
             let Some(s) = inner.session.as_ref() else { return; };
             s.id.clone()
         };
+        let lan = self.media_path().lan;
         self.with_media(&id, |s| {
             let before = s.flow.kbps;
             let now = crate::rc::mono::mono_ms() as u64;
             let loss = self.loss_permille();
-            s.flow.feedback(now, f, self.stream.media_ceiling_kbps(), loss, self.video_rtt_ms());
+            s.flow.feedback(now, f, self.stream.media_ceiling_kbps(lan), loss, self.video_rtt_ms());
             // 覆盖旧 NetHint 帧龄口径：auto_quality 也应看到额外积压，而非传播时间。
             // 口径是线上积压：对面合成器的固有渲染深度不该把自动档一路踩到 smooth。
             self.set_peer_queue_ms(s.flow.backlog_ms);
@@ -130,7 +142,7 @@ impl RcService {
     pub(in crate::rc) fn note_media_received(self: &Arc<Self>, id: &str, frame: &crate::rc::video::VideoFrame) {
         let now = crate::rc::mono::mono_ms() as u64;
         let age = (now_ms() - frame.at_ms + self.clock_skew_ms()).max(0);
-        let relay = !matches!(self.link.path_kind_str().as_str(), "lan" | "direct");
+        let relay = self.media_path().relay;
         let schedule = self.with_media(id, |s| {
             // 视频已移到独立 uni 流，主控制流的 note_inbound 不再覆盖这些帧。
             // 必须在会话归属校验之内更新，旧 reader 不能给新会话续命。

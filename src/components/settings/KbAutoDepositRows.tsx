@@ -14,7 +14,7 @@ import styles from "../Settings.module.css";
 
 interface Props {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function KbAutoDepositRows({ config, updateAndSave }: Props) {

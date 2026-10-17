@@ -1,19 +1,11 @@
-/**
- * rec-control-main — 录屏控制条窗独立入口（小置顶条）。
- *
- * 窗体由后端 rec_start 成功后创建（位置吸附选区上缘外）。职责只有三件：
- * REC 脉动 + 计时（前端自计，秒级够用）+ 停止（可丢弃）。
- * 计时不与后端对时：无暂停/无中途改参，起点误差可忽略（设计稿 §4）。
- */
-import React, { useEffect, useState } from "react";
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
+/** Compact recording window; backend status supplies the clock and audio health. */
+import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
-import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecControlBar } from "./components/recsel/RecControlBar";
-import { recStatus } from "./lib/api/rec";
-import { recQualityOf } from "./lib/recQuality";
 import { logger } from "./lib/logger";
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from "./lib/theme";
 import "./styles/globals.css";
@@ -29,51 +21,25 @@ window.addEventListener("unhandledrejection", (event) => {
 });
 
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => { /* 读取失败保持默认主题 */ });
 
-// 会话收尾 → 后端事件。rec-done / rec-discarded = 收尾完成，关掉全部录屏窗；
-// rec-failed = 会话已不存在且不会有后续事件——控制条只关**自己**（用 getCurrentWindow
-// 关本窗，不动选区窗的错误卡），否则「正在写入」永远挂在那里等一个不会来的事件。
+// Backend owns window cleanup; late frontend events must never close a newer session.
 function Root() {
   const [finalizing, setFinalizing] = useState(false);
-  const [qualityLabel, setQualityLabel] = useState("");
-  useEffect(() => {
-    recStatus()
-      .then((s) => {
-        if (s.quality) {
-          const q = recQualityOf(s.quality);
-          setQualityLabel(`${q.label} · ${q.key === "original" ? "60" : "30"}fps`);
-        }
-      })
-      .catch(() => { /* 读不到档位就不显示徽标 */ });
-    const close = () => invoke("rec_close_windows").catch(() => { /* 保底出口 */ });
-    const un1 = listen("rec-done", close);
-    const un2 = listen("rec-discarded", close);
-    const un3 = listen("rec-failed", () => {
-      void getCurrentWindow().close().catch(() => {
-        // 自关失败（权限异常）才退回写入态兜底展示
-        setFinalizing(true);
-      });
-    });
-    return () => {
-      void un1.then((f) => f());
-      void un2.then((f) => f());
-      void un3.then((f) => f());
-    };
-  }, []);
   return (
     <ErrorBoundary componentName="录屏控制条" fallback={null}>
       <RecControlBar
-        qualityLabel={qualityLabel}
+        qualityLabel=""
         finalizing={finalizing}
         onStop={(discard) => {
           setFinalizing(true);
-          invoke("rec_stop", { discard }).catch((e: unknown) => {
+          return invoke<void>("rec_stop", { discard }).catch((e: unknown) => {
             logger.error("停止录制失败", e);
             // 停止失败不能让控制条卡死在「正在写入」：回退可再按
             setFinalizing(false);
+            throw e;
           });
         }}
       />
@@ -83,6 +49,8 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    <MotionPolicy>
+      <Root />
+    </MotionPolicy>
   </React.StrictMode>,
 );

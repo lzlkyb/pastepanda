@@ -228,6 +228,8 @@ mod mobile_knowledge_edit;
 mod mobile_knowledge_asset;
 pub mod mobile_knowledge_share;
 pub mod mobile_received_file;
+pub mod net_diag;
+pub use net_diag::*;
 pub mod mobile_interaction;
 mod paste;
 pub(crate) mod profile;

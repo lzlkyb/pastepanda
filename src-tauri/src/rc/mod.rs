@@ -35,6 +35,7 @@ pub mod keep_awake;
 /// RC 会话前台服务保活（B 方案）。仅 Android 装载 Kotlin 插件，桌面 no-op。
 pub mod keepalive;
 pub mod link;
+pub mod link_sched;
 pub mod local_input;
 pub(crate) mod media;
 pub(crate) mod media_flow;
@@ -44,6 +45,7 @@ pub mod outbound;
 pub mod pace;
 pub mod perf;
 pub mod pin;
+pub mod pmtud;
 pub mod pressed;
 pub mod probe_out;
 pub mod protocol;

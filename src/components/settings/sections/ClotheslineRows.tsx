@@ -9,7 +9,9 @@ export function ClotheslineRows({
   updateAndSave,
 }: {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  // fa821dba 起 updateAndSave 返回「本次保存是否成功」（失败已回滚）；
+  // 签名与其余 settings section 对齐为 Promise<boolean>。
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }) {
   const { toast } = useToast();
   return (

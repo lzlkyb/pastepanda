@@ -36,6 +36,43 @@ fn scale_hold_satisfied(candidate_since: std::time::Instant, now: std::time::Ins
     diff >= SCALE_JUMP_PCT || now.duration_since(candidate_since) >= SCALE_HOLD
 }
 
+/// 硬编档连败多少帧就改用软编（甲-1，2026-10-12）。
+///
+/// 口径来自业界对照（`docs/硬编熔断降级-GitHub业界做法对照-2026-10-12.md`）：
+/// RustDesk 1.5.0 `video_service.rs:1280-1284` 是 3（Android 硬编 9）、scrcpy
+/// v5.0.1 `SurfaceEncoder.java:37` 的 `MAX_CONSECUTIVE_ERRORS` 也是 3。
+/// 我们过去是 **60** —— 在 1fps 的坏环境下要整整一分钟才熔断，而这 60 帧
+/// 每帧都在白试同一个坏编码器（Issue #19 的 `编码重开 131` 就是这么攒的）。
+pub(in crate::rc) const ENC_FAIL_TO_SOFTWARE: u32 = 3;
+/// 软编档再连败多少帧才熔断整场走 JPEG（带冷却重试，口径不变）。
+pub(in crate::rc) const ENC_FAIL_FUSE: u32 = 3;
+
+/// [`encode_fail_verdict`] 的判决。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::rc) enum FailVerdict {
+    /// 还没到任何一档的门槛：本帧回 JPEG，下一帧按当前引擎再试。
+    RetrySameEngine,
+    /// 硬编档定罪：本会话改用软编 MFT，重开不再重试硬编。
+    SwitchToSoftware,
+    /// 软编档也定罪：调用方停掉逐帧重开（`h264 = None`）并安排冷却重试。
+    Fuse,
+}
+
+/// 连败判决（纯函数，规则 11.1：判据只许有一份，红/绿取证见 `硬编连败阶梯`）。
+///
+/// 阶梯形状 = **换引擎不换协议**：硬编 → 软编 H.264 → 才 JPEG。业界五家
+/// （RustDesk / Sunshine / KasmVNC / WebRTC / scrcpy+FreeRDP）无一例外把
+/// 「静图幻灯片」放在最后一档，见上面那份对照文档 §0。
+pub(in crate::rc) fn encode_fail_verdict(streak: u32, hw_broken: bool) -> FailVerdict {
+    if hw_broken {
+        if streak >= ENC_FAIL_FUSE { FailVerdict::Fuse } else { FailVerdict::RetrySameEngine }
+    } else if streak >= ENC_FAIL_TO_SOFTWARE {
+        FailVerdict::SwitchToSoftware
+    } else {
+        FailVerdict::RetrySameEngine
+    }
+}
+
 /// 会话包装：open 失败则标记不可用，调用方走 JPEG。
 ///
 /// P1：CPU（内存 NV12）与 GPU（D3D11 零拷贝）双模。码率变化不再立刻重开，
@@ -67,6 +104,24 @@ pub struct H264SessionEncoder {
     /// 触发重开——否则每帧「切 HEVC → 打不开 → 回 H.264」来回翻烧饼，
     /// 隔帧掉 JPEG。
     pub(in crate::rc) hevc_broken: bool,
+    /// 甲-1（2026-10-12）：本会话已证实**硬编档**不可用（连败定罪后换引擎）。
+    /// 置位后：选型只走软编 MFT（[`super::mft_pick`] 的 software tier）、
+    /// FF 整档跳过（nvenc/qsv/amf 全是硬件编码器）、`set_codec` 拒绝
+    /// HEVC/AV1（本机没有它们的软编），并且**会话内单向保持**——
+    /// 冷却重试不再去重探硬编（RustDesk `encoder.disable()` 同款取舍：
+    /// 换一次会话才重探，见 `docs/硬编熔断降级-GitHub业界做法对照-2026-10-12.md` §1）。
+    pub(in crate::rc) hw_broken: bool,
+    /// 甲-1：连续编码失败计数（成功清零）。判决口径只有一份，见
+    /// [`encode_fail_verdict`]。
+    pub(in crate::rc) enc_fail_streak: u32,
+    /// 乙-3（2026-10-12）：false = 锁档（自动档已关闭）。此时**不为改码率重开**
+    /// 编码器（热 `set_bitrate` 仍照走），由 `inbound/video.rs` 每圈按
+    /// `RcService::auto_enabled()` 同步。
+    pub(in crate::rc) bitrate_reopen_allowed: bool,
+    /// 锁档下「码率保持不动」已经说过一次没有（限频，别每拍刷日志）。
+    /// 可见性给到本模块：单测要钉「说过一次」这条（规则 15.3 不许静默失败），
+    /// 而 warn 本身在无 COM 环境的单测里observable 不到。
+    pub(in crate::rc::encode_h264) bitrate_lock_noticed: bool,
     /// P2-8：CPU 路径 NV12 输出缓冲（跨帧复用，尺寸变化时 resize 自适应）。
     pub(in crate::rc) nv12_buf: Vec<u8>,
     pub(in crate::rc) scaler: super::scale::BgraScaler,
@@ -148,6 +203,13 @@ impl Backend {
 /// HEVC→H264 的会话级回落语义在调用方（`try_open_with_scale` / `on_open_fail`），
 /// 那里把目标标准改成 H264 后重走本函数。
 /// `file=true` = 本地录制档（质量导向码控，见 [`MfH264Encoder::open_for_file`]）。
+///
+/// `skip_hw`（甲-3，2026-10-12）：本会话已证实硬编档坏（`hw_broken`）时的口径
+/// —— **只许走软件编码器**。FF 三候选（`ff/mod.rs:59-95` 的 nvenc/qsv/amf 与
+/// 它们的 HEVC/AV1 同名族）全是硬件编码器，所以整档跳过；MF 那边由
+/// `mft_pick` 的 software tier 兜住。缺这一档时的真机形态就是 Issue #19：
+/// 枚举到 3 台硬编 MFT、全部试编失败 → MF 报 Err → FF 也全报 Err →
+/// 整会话 GDI JPEG 幻灯片。
 fn open_chain(
     codec: VideoCodec,
     width: u32,
@@ -155,9 +217,14 @@ fn open_chain(
     fps: u32,
     bitrate: u32,
     file: bool,
+    skip_hw: bool,
 ) -> Result<Backend, String> {
     // P2.3：MF 无 AV1——直接走 FF 候选链（av1_nvenc/qsv/amf）。
     if codec == VideoCodec::Av1 {
+        // AV1 候选全是硬件编码器：硬编档已定罪的会话不许再来一遍。
+        if skip_hw {
+            return Err("硬编档已定罪，AV1 无软编候选".into());
+        }
         return if file {
             FfEncoder::open_file(codec, width, height, fps, bitrate)
         } else {
@@ -166,13 +233,17 @@ fn open_chain(
         .map(Backend::Ff);
     }
     let mf = if file {
-        MfH264Encoder::open_for_file(codec, width, height, fps, bitrate)
+        MfH264Encoder::open_for_file(codec, width, height, fps, bitrate, skip_hw)
     } else {
-        MfH264Encoder::open(codec, width, height, fps, bitrate)
+        MfH264Encoder::open(codec, width, height, fps, bitrate, skip_hw)
     };
     match mf {
         Ok(e) => Ok(Backend::Mf(e)),
         Err(mf_err) => {
+            // FF 候选全是硬件编码器 ⇒ 硬编档定罪后不再试，直接报合并错误。
+            if skip_hw {
+                return Err(mf_err);
+            }
             let ff = if file {
                 FfEncoder::open_file(codec, width, height, fps, bitrate)
             } else {
@@ -214,7 +285,11 @@ impl H264SessionEncoder {
 
     /// 结构体装配收口：三个出口（开成 / HEVC 回落 / 打不开）只差
     /// `enc` / `codec` / `hevc_broken`，其余字段同值——别抄三遍。
-    fn shell(
+    ///
+    /// 对 `encode_h264` 子树可见：单测用它造「没有后端的编码器」来驱动判决
+    /// 阶梯（真 MFT 在单测里造不出来，但阶梯必须被验证过），
+    /// 这样加字段时不会再有第二处手写字面量要跟着改。
+    pub(in crate::rc::encode_h264) fn shell(
         codec: VideoCodec,
         enc: Option<Backend>,
         base_bitrate: u32,
@@ -233,6 +308,10 @@ impl H264SessionEncoder {
             gpu_fail_streak: 0,
             hevc_fail_streak: 0,
             hevc_broken,
+            hw_broken: false,
+            enc_fail_streak: 0,
+            bitrate_reopen_allowed: true,
+            bitrate_lock_noticed: false,
             nv12_buf: Vec::new(),
             scaler: Default::default(),
             cpu_perf: Default::default(),
@@ -273,13 +352,13 @@ impl H264SessionEncoder {
         let base_bitrate = bitrate_for_width(width);
         // 初始打开的实际码率 = 基准 × 帧率因子 × 缩放，与 scaled_bitrate 同口径
         let initial = ((base_bitrate as u64 * fps_bitrate_factor(fps) * scale as u64) / 10_000) as u32;
-        match open_chain(codec, width, height, fps, initial, false) {
+        match open_chain(codec, width, height, fps, initial, false, false) {
             Ok(enc) => Self::shell(codec, Some(enc), base_bitrate, fps, scale, false),
             Err(e) => {
                 if codec == VideoCodec::Hevc {
                     // HEVC 目标回落 H.264 时走同一条 open_chain：MF H264 也不行
                     // 还会试 FF（2026-09-19 P2 修复的延续，FF 是链上新增的下一级）。
-                    if let Ok(enc) = open_chain(VideoCodec::H264, width, height, fps, initial, false) {
+                    if let Ok(enc) = open_chain(VideoCodec::H264, width, height, fps, initial, false, false) {
                         log::warn!("[RC] HEVC 初始打开失败，按回落链改用 H.264：{e}");
                         return Self::shell(
                             VideoCodec::H264,
@@ -305,26 +384,47 @@ impl H264SessionEncoder {
     /// 指定码率打开（bit/s，下限 400k），HEVC 打不开自动回落 H.264。
     /// 原为远控「发送预算」专用（pub(in crate::rc)）；录屏（rec/）同样按
     /// 固定码率开本地编码会话——budget 路径下重开时码率恒定，语义正合适。
-    pub fn try_open_with_budget(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32) -> Self {
-        Self::try_open_fixed(codec, w, h, fps, bps, false)
+    ///
+    /// `hw_broken`（甲-1/3）：本会话是否已定罪硬编档。远控推流侧的冷却重试
+    /// 会带着它重开（`inbound/video.rs` 的 `open_h264`），于是「硬编坏了」
+    /// 这件事在一次会话里只付一次探测成本。
+    pub fn try_open_with_budget(
+        codec: VideoCodec,
+        w: u32,
+        h: u32,
+        fps: u32,
+        bps: u32,
+        hw_broken: bool,
+    ) -> Self {
+        let mut result = Self::try_open_fixed(codec, w, h, fps, bps, false, hw_broken);
+        result.hw_broken = hw_broken;
+        result
     }
 
     /// 本地录制（rec/）专用：固定码率 + **质量导向码控**（MF=PeakConstrainedVBR、
     /// FF=峰值受限），失败重开同档。与 `try_open_with_budget` 唯一差别是打开
     /// 链走 file 档。
     pub fn try_open_for_file(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32) -> Self {
-        Self::try_open_fixed(codec, w, h, fps, bps, true)
+        Self::try_open_fixed(codec, w, h, fps, bps, true, false)
     }
 
     /// 结构体装配收口（规则 11.1 同款）：budget 与 file 两个出口只差 `file`，
     /// 装配逻辑只许有一份。
-    fn try_open_fixed(codec: VideoCodec, w: u32, h: u32, fps: u32, bps: u32, file: bool) -> Self {
+    fn try_open_fixed(
+        codec: VideoCodec,
+        w: u32,
+        h: u32,
+        fps: u32,
+        bps: u32,
+        file: bool,
+        skip_hw: bool,
+    ) -> Self {
         let bps = bps.max(400_000);
-        let enc = open_chain(codec, w, h, fps, bps, file);
+        let enc = open_chain(codec, w, h, fps, bps, file, skip_hw);
         let mut result = match enc {
             Ok(enc) => Self::shell(codec, Some(enc), bitrate_for_width(w), fps, 100, false),
             Err(_) if codec == VideoCodec::Hevc => Self::shell(VideoCodec::H264,
-                open_chain(VideoCodec::H264, w, h, fps, bps, file).ok(), bitrate_for_width(w), fps, 100, true),
+                open_chain(VideoCodec::H264, w, h, fps, bps, file, skip_hw).ok(), bitrate_for_width(w), fps, 100, true),
             Err(e) => { log::warn!("[RC] 编码器起播失败：{e}");
                 Self::shell(codec, None, bitrate_for_width(w), fps, 100, false) }
         };
@@ -341,6 +441,23 @@ impl H264SessionEncoder {
         if self.enc.as_mut().is_some_and(|e| e.set_bitrate(bps)) {
             self.budget_bps = Some(bps);
             self.pending_budget = None;
+            return;
+        }
+        // 乙-3（2026-10-12，学 RustDesk 1.5.0 `video_service.rs:1418-1441` 的
+        // `latest_quality().is_custom()`）：**锁档时不为改码率重开编码器**。
+        // Issue #19 的现场就是「实际生效 锁档 ultra」+ 3 分钟 30 次流重建 +
+        // `编码重开 131`——拥塞控制器每拍给的预算不同，而本机驱动不支持热改
+        // 码率，于是每一次调整都变成一次全链重开（几百 ms 空窗，期间出帧失败
+        // 就落 JPEG）。锁档语义是「用户指定的画质/码率优先」，那就保持开档时
+        // 的码率，只把「为什么没跟上去」说一次（规则 15.3：不许静默失败）。
+        if !self.bitrate_reopen_allowed {
+            if !self.bitrate_lock_noticed {
+                self.bitrate_lock_noticed = true;
+                log::warn!(
+                    "[RC] 锁档（自动档已关闭）+ 本机驱动不支持热改码率 ⇒ 码率保持 {}kbps，拥塞控制不再为此重开编码器",
+                    self.scaled_bitrate() / 1000
+                );
+            }
             return;
         }
         // 不支持动态改码率的驱动，候选稳住且冷却结束才重开；容忍小幅探测变化。
@@ -370,6 +487,13 @@ impl H264SessionEncoder {
         // 本会话已证实 HEVC 打不开（回落过）：不再反复切 HEVC 重试，
         // 否则「切 HEVC → 打不开 → 回 H.264」每两帧烧一个 JPEG 帧。
         if codec == VideoCodec::Hevc && self.hevc_broken {
+            return;
+        }
+        // 甲-3（2026-10-12）：硬编档已定罪的会话只认 H.264 —— 本机唯一可达的
+        // 软编 MFT 就是它（HEVC 软编按 SKU 缺席，AV1 的候选链 `ff/mod.rs:98-106`
+        // 全是 nvenc/qsv/amf 硬件编码器）。放行就等于每圈「切 AV1 → open_chain
+        // 直接 Err → 又一帧 JPEG」，把换引擎的收益全花回去。
+        if self.hw_broken && codec != VideoCodec::H264 {
             return;
         }
         if codec != self.codec {
@@ -472,16 +596,18 @@ impl H264SessionEncoder {
             // 本会话已经用 FF 正常出包时，重开先复用已验证的后端；不能每次
             // 换 fps/尺寸都花约 1 秒重试刚失败的 MF。FF 再失败仍走完整回落链。
             // file 档（rec/）重开同样保持质量导向码控，不许悄悄退回 CBR。
-            let opened = if matches!(self.enc.as_ref(), Some(Backend::Ff(_))) {
+            // ⚠️ 甲-3：`hw_broken` 时**不许**复用 FF——FF 三候选（nvenc/qsv/amf）
+            // 全是硬件编码器，定罪之后复用它等于原地再撞一次同一堵墙。
+            let opened = if !self.hw_broken && matches!(self.enc.as_ref(), Some(Backend::Ff(_))) {
                 let open_ff: fn(VideoCodec, u32, u32, u32, u32) -> Result<FfEncoder, String> =
                     if self.file_mode { FfEncoder::open_file } else { FfEncoder::open };
                 open_ff(self.codec, ew, eh, self.fps, self.scaled_bitrate())
                     .map(Backend::Ff)
                     .or_else(|_| {
-                        open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode)
+                        open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode, self.hw_broken)
                     })
             } else {
-                open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode)
+                open_chain(self.codec, ew, eh, self.fps, self.scaled_bitrate(), self.file_mode, self.hw_broken)
             };
             match opened {
                 Ok(e) => {
@@ -511,6 +637,48 @@ impl H264SessionEncoder {
         let encoded = enc.encode_nv12(&self.nv12_buf);
         self.cpu_perf.note((w, h), (ew, eh), [open_time, scale_time, convert_time, encode_start.elapsed()]);
         self.stamp_packets(encoded)
+    }
+
+    /// 甲-1/3/4（2026-10-12）：本帧编码成功 ⇒ 连败计数清零。
+    /// **不清 `hw_broken`** —— 定罪是会话级单向的（RustDesk `encoder.disable()`
+    /// 同样是本进程内不复位），瞬态好转要重探硬编留给下一次会话建立。
+    pub(in crate::rc) fn note_encode_ok(&mut self) {
+        self.enc_fail_streak = 0;
+    }
+
+    /// 甲-1/3/4：本帧编码失败 ⇒ 走连败阶梯，返回调用方该怎么处置。
+    ///
+    /// 阶梯：**硬编 → 软编 H.264 → 才 JPEG**。判据只有 [`encode_fail_verdict`]
+    /// 一份；调用方（`inbound/video.rs`）不许再自己数帧，否则两处阈值会静默分叉
+    /// （规则 11.1）。
+    pub(in crate::rc) fn note_encode_fail(&mut self) -> FailVerdict {
+        self.enc_fail_streak = self.enc_fail_streak.saturating_add(1);
+        let verdict = encode_fail_verdict(self.enc_fail_streak, self.hw_broken);
+        match verdict {
+            FailVerdict::RetrySameEngine => {}
+            FailVerdict::SwitchToSoftware => {
+                self.hw_broken = true;
+                // 计数归零：软编档自己数自己的三连败（`ENC_FAIL_FUSE`）。
+                self.enc_fail_streak = 0;
+                // 下一帧就按软编档重开（`open_chain` 的 skip_hw 读 `hw_broken`）。
+                self.reopen_needed = true;
+            }
+            FailVerdict::Fuse => {
+                // 调用方停掉逐帧重开（`h264 = None`）并安排冷却；这里只把
+                // 计数留在门槛上，冷却期满重开后从 0 起算。
+            }
+        }
+        verdict
+    }
+
+    /// 丙（可见性）：本会话当前用的是哪一档编码器。日志与状态上报共用一份口径。
+    pub(in crate::rc) fn uses_software_encoder(&self) -> bool {
+        self.hw_broken
+    }
+
+    /// 乙-3：同步「锁档」状态位（`RcService::auto_enabled()` 的取反）。
+    pub(in crate::rc) fn set_bitrate_reopen_allowed(&mut self, allowed: bool) {
+        self.bitrate_reopen_allowed = allowed;
     }
 
     /// Q3：打开失败时的编码标准回退（**仅 CPU 链**，GPU 路径 streak 已拆分）。

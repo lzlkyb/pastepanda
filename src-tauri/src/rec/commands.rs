@@ -63,11 +63,7 @@ pub async fn rec_start(
         return Err("已有录制在进行".into());
     }
     // 画质档：非法值宁可报错也不默默换档（用户自选画质是硬需求）
-    let quality =
-        RecQuality::of_str(&req.quality).ok_or_else(|| format!("未知画质档：{}", req.quality))?;
-    if req.w < 16 || req.h < 16 {
-        return Err("选区太小（至少 16×16）".into());
-    }
+    let quality = check_start_req(&req)?;
     // 事件轨开关（四期 1.3）：开始录制那一刻定死，录制中改设置不影响本场
     let cfg = store.get_config().unwrap_or_default();
     let opts = RecOpts {
@@ -88,6 +84,9 @@ pub async fn rec_start(
             .unwrap_or(true),
     };
     let path = decide_output_path(&app, &store)?;
+    // 归零到「控制条出现」的这段就是用户眼里的「卡一下」：预热命中后应当是几十毫秒级，
+    // 打点是为了让「还差多少」有数字，不是靠猜（规则 8）。
+    let opened_at = std::time::Instant::now();
     session::start(app.clone(), opts, path.clone())?;
     if let Err(error) = open_control_window(&app, (req.x, req.y, req.w, req.h)) {
         // 控制条是停止入口；创建失败不能留下无出口的后台采集。保留已有内容。
@@ -95,6 +94,57 @@ pub async fn rec_start(
         session::stop(false)?;
         return Err(error);
     }
+    log::info!("[Rec] rec_start 返回用时 {}ms", opened_at.elapsed().as_millis());
+    Ok(())
+}
+
+/// Explicit device setup probe; availability is checked again by the recording worker.
+#[tauri::command]
+pub async fn rec_audio_check(sys_audio:bool,mic_audio:bool)->Result<serde_json::Value,String> {
+    tauri::async_runtime::spawn_blocking(move||session::check_audio(sys_audio,mic_audio)).await.map_err(|error|format!("检查声音设备失败：{error}"))
+}
+
+/// 开录入参的公共校验（`rec_start` 与 `rec_prewarm` 同一套；规则 11.1：两处各写
+/// 一遍，预热就会带着「start 会拒绝的参数」去开一个编码器）。
+/// 画质与尺寸两处都必须同源——它们进的就是编码器键。
+fn check_start_req(req: &RecStartReq) -> Result<RecQuality, String> {
+    let quality =
+        RecQuality::of_str(&req.quality).ok_or_else(|| format!("未知画质档：{}", req.quality))?;
+    if req.w < 16 || req.h < 16 {
+        return Err("选区太小（至少 16×16）".into());
+    }
+    Ok(quality)
+}
+
+/// 倒计时期间预热编码器（乙案，2026-10-11）：把「开硬件编码器」那 ≈2.8s 从
+/// `rec_start` 挪进倒计时的 3 秒空档，归零时 `rec_start` 才能秒回。
+/// 命令本身即刻返回——预热在工作线程上跑，前端不等它。
+/// 预热失败/超时不影响正确性：正式路径照旧自行打开（见 `rec::prewarm`）。
+#[tauri::command]
+pub fn rec_prewarm(app: AppHandle, req: RecStartReq) -> Result<(), String> {
+    let quality = check_start_req(&req)?;
+    prewarm_encoder(&app, quality, &req)
+}
+
+#[cfg(windows)]
+fn prewarm_encoder(app: &AppHandle, quality: RecQuality, req: &RecStartReq) -> Result<(), String> {
+    // 画布尺寸这里只能取 GetSystemMetrics（DXGI 复制画布要等会话首帧）；
+    // 两者不一致时键不命中，正式路径自行打开——是慢一次，不是错一次。
+    let (ox, oy, cw, ch) = super::selector_screen_metrics(app)?;
+    super::prewarm::request(super::prewarm::enc_key(
+        quality,
+        req.x,
+        req.y,
+        req.w,
+        req.h,
+        (ox, oy, cw.max(0) as u32, ch.max(0) as u32),
+    ));
+    Ok(())
+}
+
+/// Mac 无这一段开销（AVAssetWriter 不需要 MF 选型），预热留空操作让前端只有一条调用路径。
+#[cfg(not(windows))]
+fn prewarm_encoder(_app: &AppHandle, _quality: RecQuality, _req: &RecStartReq) -> Result<(), String> {
     Ok(())
 }
 
@@ -126,12 +176,15 @@ pub fn rec_status() -> serde_json::Value {
     let s = session::status();
     serde_json::json!({
         "recording": s.recording,
+        "starting": s.starting,
         "finalizing": s.finalizing,
         "paused": s.paused,
         "path": s.path,
         "elapsedMs": s.elapsed_ms,
         "bytes": s.bytes,
         "quality": s.quality,
+        "warnings":s.warnings, "sysAudio":s.sys_audio,"micAudio":s.mic_audio,
+        "sysAudioActive":s.sys_audio_active,"micAudioActive":s.mic_audio_active,
     })
 }
 
@@ -172,11 +225,11 @@ pub fn rec_list_files(
     store: State<'_, DataStore>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let dir = save_dir(&app, &store)?;
-    Ok(scan::scan_recent(&dir, 5)
+    Ok(scan::scan_recent(&dir, 5)?
         .into_iter()
         .map(|m| {
             serde_json::json!({
-                "name": m.name, "path": m.path, "bytes": m.bytes, "durationMs": m.duration_ms,
+                "name": m.name, "path": m.path, "bytes": m.bytes, "durationMs": m.duration_ms,"note":m.note,
             })
         })
         .collect())
@@ -202,7 +255,7 @@ pub fn rec_open_file(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let dir = save_dir(&app, &store)?;
-    scan::validate_rec_path(&dir, Path::new(&path))?;
+    scan::validate_rec_output_path(&dir, Path::new(&path))?;
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| format!("打开失败：{e}"))
@@ -213,7 +266,7 @@ pub fn rec_open_file(
 pub fn rec_reveal(app: AppHandle, store: State<'_, DataStore>, path: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let dir = save_dir(&app, &store)?;
-    scan::validate_rec_path(&dir, Path::new(&path))?;
+    scan::validate_rec_output_path(&dir, Path::new(&path))?;
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|e| format!("定位失败：{e}"))
@@ -273,16 +326,20 @@ pub async fn rec_trim(
         dst = dir.join(format!("{stem}_剪{n}.mp4"));
         n += 1;
     }
+    let job=trim::start_job(&src)?;
+    let _ = app.emit("rec-files-changed", ());
     let trim_source = src.clone();
     let trim_destination = dst.clone();
-    let (bytes, in_m, out_m) = tauri::async_runtime::spawn_blocking(move || {
-        trim::trim(&trim_source, in_ms, out_ms, &trim_destination)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    // sidecar 跟着剪：事件重映射进 [in, out)，落「_剪」同名 .events.json
-    events::write_sidecar_for_trim(&src, &dst, in_m, out_m);
+    let worker=job.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(||trim::trim_with_job(&trim_source,in_ms,out_ms,&trim_destination,Some(&worker))))
+            .unwrap_or_else(|_|Err("裁剪处理异常，原录像未修改".into()))
+    }).await.unwrap_or_else(|error|Err(format!("裁剪任务失败：{error}")));
+    if let Ok((_,start,end))=result.as_ref() {events::write_sidecar_for_trim(&src,&dst,*start,*end);}
+    job.finish(&result,&dst);
+    // A preview can be destroyed at any time; the main list receives all terminal states.
     let _ = app.emit("rec-files-changed", ());
+    let (bytes,in_m,out_m)=result?;
     Ok(serde_json::json!({
         "path": dst.to_string_lossy(),
         "bytes": bytes,
@@ -291,10 +348,23 @@ pub async fn rec_trim(
     }))
 }
 
+#[tauri::command]
+pub fn rec_trim_status(app:AppHandle,store:State<'_,DataStore>,path:String)->Result<serde_json::Value,String> {
+    let source=validated_rec_path(&app,&store,&path)?;
+    serde_json::to_value(trim::job_status(&source)).map_err(|error|error.to_string())
+}
+#[tauri::command]
+pub fn rec_trim_cancel(app:AppHandle,store:State<'_,DataStore>,path:String)->Result<(),String> {
+    let source=validated_rec_path(&app,&store,&path)?;
+    trim::cancel_job(&source);
+    let _ = app.emit("rec-files-changed", ());
+    Ok(())
+}
+
 /// 打开预览裁剪窗（HUD「✂ 预览」/ 最近录制行尾 ✂ 共用入口）。
 /// <video> 走 asset 协议读文件，产物目录在 $APPDATA 外——按次放行资产白名单。
 #[tauri::command]
-pub fn rec_open_preview(
+pub async fn rec_open_preview(
     app: AppHandle,
     store: State<'_, DataStore>,
     path: String,
@@ -314,8 +384,7 @@ pub fn rec_open_preview(
     open_preview_window(
         &app,
         serde_json::json!({ "path": p.to_string_lossy(), "name": name, "bytes": bytes }),
-    );
-    Ok(())
+    )
 }
 
 /// 预览窗挂载后取数据（一次性消费；None = 已被重开的窗取走）。
@@ -398,4 +467,13 @@ fn decide_output_path(app: &AppHandle, store: &State<'_, DataStore>) -> Result<P
         n += 1;
     }
     Ok(candidate)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn preview_window_command_runs_off_the_main_thread() {
+        let declaration = include_str!("commands.rs").split("/// 打开预览裁剪窗").nth(1).unwrap().split("/// 预览窗挂载").next().unwrap();
+        assert!(declaration.contains("pub async fn rec_open_preview("), "native webview construction must run off the Tauri main thread");
+    }
 }

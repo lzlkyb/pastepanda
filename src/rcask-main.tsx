@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * rcask-main —— 丙-①：入站远程申请**置顶浮层**（窗口 `rc-ask`）的独立入口。
  *
@@ -31,8 +33,8 @@ window.addEventListener("unhandledrejection", (event) => {
 
 // 浮层压在任意应用之上，必须跟系统里那套主题走（浅色主题下深玻璃会糊成一块黑）
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => {
     /* 读取失败时保持默认主题 */
   });
@@ -45,6 +47,8 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RcAskPop />
+    <MotionPolicy>
+      <RcAskPop />
+    </MotionPolicy>
   </React.StrictMode>,
 );

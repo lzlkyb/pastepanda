@@ -803,3 +803,46 @@
   color: var(--orange);
   white-space: nowrap;
 }
+
+/* 按需工具入口：只展开名称列表，卡片区域仍可独立滚动。 */
+.tools { flex-shrink: 0; border-top: 1px solid var(--border-color); }
+.toolsToggle {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 12px; border: 0; background: transparent;
+  color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer;
+}
+.toolsToggle:hover { color: var(--accent); background: var(--accent-light); }
+.toolsChevronOpen { transform: rotate(180deg); }
+.toolsBody { padding: 0 12px 12px; }
+.toolSearch {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  color: var(--text-secondary); background: var(--input-bg);
+}
+.toolSearch:focus-within { border-color: var(--accent); }
+.toolSearch input {
+  width: 100%; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 12px;
+}
+.toolSearch input::placeholder { color: var(--text-secondary); }
+.toolList { max-height: 24vh; overflow-y: auto; margin-top: 8px; }
+.toolEntry {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-primary);
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+}
+.toolEntry svg { flex-shrink: 0; color: var(--text-secondary); }
+.toolEntry:hover { background: var(--accent-light); color: var(--accent); }
+.toolHint, .toolEmpty { margin: 8px 0 0; color: var(--text-secondary); font-size: 11px; }
+.workbenchLink {
+  display: flex; align-items: center; gap: 4px; margin: 0 12px 12px; padding: 4px 0;
+  border: 0; background: transparent; color: var(--accent-strong); font: inherit;
+  font-size: 11px; cursor: pointer;
+}
+.workbenchLink:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tools button:focus-visible, .workbenchLink:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+
+/* 子流程接管同一工作面板，保留 Hub 卡片状态但不叠加遮罩或焦点。 */
+.suspended { display: none !important; }

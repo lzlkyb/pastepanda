@@ -289,6 +289,11 @@ impl InboundVideo {
         // 既有口径（起步 5s、翻倍至 60s）补上，见 `try_hardware_path`。
         #[cfg(target_os = "windows")]
         let enc_retry_after: Option<std::time::Instant> = None;
+        // 甲-3（2026-10-12）：本会话是否已定罪硬编档。放在 InboundVideo 上而不是
+        // 只放在编码器里，是因为熔断会把 `h264` 置 None（停止逐帧重开）——
+        // 定罪记录必须活过「编码器被丢掉」这一步，冷却期满重开时才不会再撞硬编。
+        #[cfg(target_os = "windows")]
+        let enc_hw_broken: bool = false;
         #[cfg(target_os = "windows")]
         let enc_first_open_at =
             Some(std::time::Instant::now() + std::time::Duration::from_millis(ENC_OPEN_GRACE_MS));
@@ -305,6 +310,7 @@ impl InboundVideo {
             None
         };
         Some(Self {
+            probe: Arc::new(crate::rc::pmtud::ProbeState::new()),
             svc,
             peer: peer.to_string(),
             my_id,
@@ -323,11 +329,13 @@ impl InboundVideo {
             #[cfg(target_os = "windows")]
             h264,
             #[cfg(target_os = "windows")]
-            enc_fail_streak: 0,
+            enc_hw_broken,
             #[cfg(target_os = "windows")]
             enc_retry_after,
             #[cfg(target_os = "windows")]
             enc_retry_backoff,
+            // 丙（2026-10-12）：本场还没向发起端报过档位（None = 没发过）。
+            last_pipe_code: None,
             #[cfg(target_os = "windows")]
             enc_first_open_at,
             #[cfg(target_os = "windows")]
@@ -361,21 +369,25 @@ impl InboundVideo {
             static_refined: false,
             perf: crate::rc::perf::FrameStats::new(),
             perf_last: crate::rc::perf::FrameTiming::idle(),
+            perf_media_fps: 0,
             tick_jpeg: false,
             _keep_awake: keep_awake,
         })
     }
 
     /// R6 硬编会话：配置强制 JPEG 时不开；打不开也回 None（走 JPEG）。
-    /// Q3：配置 `hevc` 时按 HEVC 打开（打不开 SessionEncoder 会话内自动回落
+    /// Q3：编码标准按会话参数打开（打不开 SessionEncoder 会话内自动回落
     /// H.264，不再整个退 JPEG）。打开尺寸跟**当前抓取范围**的物理分辨率走
     /// （会话中换范围时 `encode_bgra` 检测到尺寸变化会自己重开）。
-    /// 时间戳统一按 30fps 步进：输入提帧的上限也是 30fps（BOOST_MIN_GAP），
-    /// 保证时间戳单调不倒退。
+    ///
+    /// `hw_broken`（甲-3，2026-10-12）：本会话是否已定罪硬编档。冷却期满重开时
+    /// 要把它传进来（读 `InboundVideo::enc_hw_broken`），否则每次重试都回到硬件
+    /// MFT 再撞一遍同一堵墙 —— Issue #19 里「编码重开 131」的来源。
     #[cfg(target_os = "windows")]
     pub(in crate::rc) fn open_h264(
         svc: &Arc<RcService>,
         virt: bool,
+        hw_broken: bool,
     ) -> Option<crate::rc::encode_h264::H264SessionEncoder> {
         // Q3：编码标准统一从会话参数快照取——`reset_stream_opts_from_cfg` 已把
         // 本机配置（rc_codec）解析进去，与会话中 SetCodec 的切换同一条通路；
@@ -401,11 +413,18 @@ impl InboundVideo {
         // 起播也使用发送器的绝对预算，不能按另一套百分比开出过量码流。
         let budget = svc.media_budget_kbps(&id) * 1000;
         let enc = crate::rc::encode_h264::H264SessionEncoder::try_open_with_budget(
-            codec, pw, ph, fps, budget,
+            codec, pw, ph, fps, budget, hw_broken,
         );
         if enc.available() {
+            // 引擎名按**开出来的实际档位**说，不许恒打「硬编」：软编档也是 H.264，
+            // 但成本完全不同（规则 15.3：不许静默降级）。
+            let engine = if enc.uses_software_encoder() {
+                "软编 MFT"
+            } else {
+                "硬编"
+            };
             log::info!(
-                "[RC] {} 硬编已启用 @ {pw}x{ph} {fps}fps（媒体预算 {}kbps，范围：{}）",
+                "[RC] {} {engine}已启用 @ {pw}x{ph} {fps}fps（媒体预算 {}kbps，范围：{}）",
                 codec.as_str().to_uppercase(),
                 enc.scaled_bitrate() / 1000,
                 if virt { "虚拟屏" } else { "主屏" }
@@ -427,6 +446,11 @@ impl InboundVideo {
 
     /// 探针：本圈**实际**出的帧走了哪条管线（不是「本应走哪条」）。
     ///
+    /// 返回 `(档名, 中文标签)`：档名是跨端协议用的稳定枚举（见
+    /// [`crate::rc::service::video_pipe`] 的档位表），标签给人看。两者在**同一个
+    /// match 臂**里定，不是两份判据（规则 11.1）——过去 `pipeline_label()` 只有
+    /// 中文，发起端要按 substring 猜，改一个字就静默错判。
+    ///
     /// 🔴 2026-10-06：这里过去只看 `self.h264.is_some()`，于是抓屏熔断后整场
     /// 每帧编 JPEG、标签却恒打 `管线 H264`——硬编对象一直在，只是再也喂不进去
     /// （`grab` 直接报 `DXGI 已禁用`）。那条谎报让我反过来否掉了用户看到的实况，
@@ -435,34 +459,75 @@ impl InboundVideo {
     /// - `抓屏已熔断` = DXGI 整池判死，`grab` 直接报错（编码器其实活着）；
     /// - `单帧回退` = 编码器在、抓屏在，这一帧没编出来（奇数尺寸 / 单帧编码失败）。
     #[cfg(target_os = "windows")]
-    pub(in crate::rc) fn pipeline_label(&self) -> String {
+    pub(in crate::rc) fn pipeline_state(&self) -> (&'static str, String) {
         if self.tick_jpeg {
-            let why = if self.h264.is_none() {
-                "无硬编"
+            let (code, why) = if self.h264.is_none() {
+                // 甲-4：熔断后的 JPEG 和「这台机器压根没有硬编」是两回事——
+                // 前者下一圈还会随冷却期满自动重试，后者整场不会。
+                if self.enc_hw_broken {
+                    ("enc_fuse", "编码已熔断")
+                } else {
+                    ("no_enc", "无硬编")
+                }
             } else if !self.dxgi.is_enabled() {
-                "抓屏已熔断"
+                ("grab_fuse", "抓屏已熔断")
             } else {
-                "单帧回退"
+                ("single", "单帧回退")
             };
-            return format!("JPEG（{why}）");
+            return (code, format!("JPEG（{why}）"));
         }
         // 编码标准取自编码器本体（HEVC 可能已回落 H.264）
-        match self.h264.as_ref().map(|e| e.codec().as_str().to_uppercase()) {
+        match self.h264.as_ref().map(|e| (e.codec().as_str().to_uppercase(), e.uses_software_encoder())) {
             // GPU 模式不好从外面读（`gpu_mode` 私有），但 `gpu_disabled` 能区分
-            // 「零拷贝可用」与「已判死回落 CPU」，够诊断用了。
-            Some(std) if self.gpu_disabled => format!("{std}-CPU（零拷贝已判死）"),
-            Some(std) => std,
-            None => "JPEG（无硬编）".to_string(),
+            // 「零拷贝可用」与「已判死回落 CPU」，够诊断用了。档名仍是 `hw`：
+            // 编码器没换，换的是送帧路径，发起端不该为它摆「降级」。
+            Some((std, false)) if self.gpu_disabled => ("hw", format!("{std}-CPU（零拷贝已判死）")),
+            // 甲-3：软编档必须单独看得见——它和硬编的成本差一个量级，
+            // 「管线 H264」在两种档位下长得分一模一样就没法解释帧率为什么掉。
+            Some((std, true)) => ("sw", format!("{std}-软编MFT")),
+            Some((std, false)) => ("hw", std),
+            None => ("no_enc", "JPEG（无硬编）".to_string()),
+        }
+    }
+
+    /// 中文标签（日志 / 汇总行用）。判据只有一份，见 [`Self::pipeline_state`]。
+    #[cfg(target_os = "windows")]
+    pub(in crate::rc) fn pipeline_label(&self) -> String {
+        self.pipeline_state().1
+    }
+
+    /// 丙（2026-10-12，Issue #19）：档位变了才推给发起端——判据只有
+    /// [`Self::pipeline_state`] 一份，这里只比「与上次**发出去的**是否同一档」。
+    ///
+    /// 挂在 5s 汇总那一拍（`video_run.rs` 唯一调用点）：一场会话里这个值最多变
+    /// 几档，按圈比会把一次字符串比较 + 一把锁塞进帧热路径，不值。
+    ///
+    /// 记账看 `emit_video_pipe` 的返回值：控制流不在（还没 Accept / 已断）时这一档
+    /// **没送达**，就不能记成已发——熔断往往正好发生在流不稳的时候，而它下一次变档
+    /// 可能是永远。
+    pub(in crate::rc) async fn emit_pipe_if_changed(&mut self) {
+        let (code, label) = self.pipeline_state();
+        if self.last_pipe_code == Some(code) {
+            return;
+        }
+        if self.svc.emit_video_pipe(code, &label).await {
+            self.last_pipe_code = Some(code);
         }
     }
 
     /// mobile 宿主没有硬编管线，恒 JPEG（相关字段在这个 cfg 下根本不存在）。
     #[cfg(not(target_os = "windows"))]
-    pub(in crate::rc) fn pipeline_label(&self) -> String {
+    pub(in crate::rc) fn pipeline_state(&self) -> (&'static str, String) {
         #[cfg(target_os="macos")]
-        {if self.tick_jpeg {"JPEG".to_string()} else if self.mac_video_codec.starts_with("AV1") {self.mac_video_codec.clone()} else {format!("{} (VideoToolbox)",self.mac_video_codec)}}
+        {if self.tick_jpeg {("jpeg","JPEG".to_string())} else if self.mac_video_codec.starts_with("AV1"){("hw",self.mac_video_codec.clone())} else {("hw",format!("{} (VideoToolbox)",self.mac_video_codec))}}
         #[cfg(not(target_os="macos"))]
-        {"JPEG".to_string()}
+        {("jpeg", "JPEG".to_string())}
+    }
+
+    /// mobile 宿主的中文标签。
+    #[cfg(not(target_os = "windows"))]
+    pub(in crate::rc) fn pipeline_label(&self) -> String {
+        self.pipeline_state().1
     }
 
     /// 探针（2026-09-21）：组装汇总行的运行时上下文——档位 / 节奏 / 实际管线。
@@ -503,6 +568,11 @@ impl InboundVideo {
             pace_scale: self.pace_scale,
             pipeline,
             active_quality,
+            // 甲-④：这一行要能自己回答「30fps 是谁给的」。路径走 `media_path()`
+            // 那把唯一的尺（不在诊断里另拼一遍字符串），帧率上限读本圈算好的值
+            // ——`media_fps_limit()` 会推进控制器状态，汇总路径不能再调一次。
+            path: self.svc.media_path().label().to_string(),
+            fps_cap: self.perf_media_fps,
             pick: None,
         }
     }
@@ -525,6 +595,7 @@ impl InboundVideo {
     pub(in crate::rc) async fn try_hardware_path(&mut self, opts: &crate::rc::stream_cfg::StreamOpts) -> Step {
         #[cfg(target_os = "windows")]
         {
+            use crate::rc::encode_h264::{FailVerdict, ENC_FAIL_FUSE, ENC_FAIL_TO_SOFTWARE};
             // 🔴 起播宽限闸（2026-10-03）：宽限内先不开硬编，等对端倍率/链路
             // 信息到位（`peer_net_seen`）或到期。宽限内本圈返回 FallThrough →
             // JPEG 兜底先出图（首帧反而更快，MFT 初始化要几百 ms），倍率到位后
@@ -548,11 +619,10 @@ impl InboundVideo {
                             "，等满"
                         }
                     );
-                    self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
+                    self.h264 = Self::open_h264(&self.svc, opts.virtual_screen, self.enc_hw_broken);
                     if self.h264.is_none() {
                         // 首次打开失败：按既有退避口径安排重试（起步 5s、
                         // 翻倍至 60s），别让一次瞬态失败变成整场 JPEG。
-                        self.enc_fail_streak = 0;
                         self.enc_retry_after =
                             Some(now + std::time::Duration::from_secs(self.enc_retry_backoff));
                     }
@@ -572,9 +642,12 @@ impl InboundVideo {
                 if !opts.force_jpeg() {
                     if let Some(t) = self.enc_retry_after {
                         if std::time::Instant::now() >= t {
-                            log::info!("[RC] 硬编冷却期满，尝试重新启用");
-                            self.h264 = Self::open_h264(&self.svc, opts.virtual_screen);
-                            self.enc_fail_streak = 0;
+                            log::info!(
+                                "[RC] 硬编冷却期满，尝试重新启用（{}）",
+                                if self.enc_hw_broken { "已定罪硬编 ⇒ 软编档" } else { "硬编档" }
+                            );
+                            self.h264 =
+                                Self::open_h264(&self.svc, opts.virtual_screen, self.enc_hw_broken);
                             self.enc_retry_after = None;
                             // 退避翻倍（上限 60s）：坏环境里别把 CPU 烧在反复重开上
                             self.enc_retry_backoff = (self.enc_retry_backoff * 2).min(60);
@@ -606,6 +679,11 @@ impl InboundVideo {
             let codec = want_stream_codec(opts.profile.hevc, &opts.codec);
             henc.set_codec(codec);
             // 编码目标与发送节拍共用交付预算；动态重配优先，重开仅作后备。
+            // 乙-3（2026-10-12）：锁档 = 用户点名要这一档画质，拥塞控制器就不许
+            // 为了追预算而重开编码器（Issue #19 现场：锁档 ultra + 3 分钟 30 次
+            // 流重建 + 编码重开 131）。口径单一来源是 `auto_enabled()`，每圈同步
+            // 一次 ⇒ 用户中途「切回自动」下一拍就恢复重开能力。
+            henc.set_bitrate_reopen_allowed(self.svc.auto_enabled());
             henc.apply_bitrate_budget(self.svc.media_budget_kbps(&self.my_id) * 1000);
             henc.resolution_limit = self.svc.media_resolution_limit(&self.my_id);
             // P0-2：对端解码断链 → 下一帧强制 IDR（设不中就等自然 GOP）
@@ -627,11 +705,16 @@ impl InboundVideo {
             // CPU 捕获（拖动实测 53–74ms/帧）——零拷贝是本地收益，与网络档位无关。
             // 判据集中在 `EncodeProfile::wants_zero_copy`（有单测）——写错不崩、
             // 只会静默跑 CPU 管线。
-            let want_gpu = henc.resolution_limit == 0 && opts.profile.wants_zero_copy(
-                opts.virtual_screen,
-                self.gpu_disabled,
-                crate::rc::gpu::encode_caps().h264_gpu,
-            );
+            // 甲-3：`uses_software_encoder()` 也是闸——零拷贝要的是绑 D3D 设备的
+            // **硬件** MFT（`open_gpu` 恒走硬件档），硬编已定罪时继续尝试就等于
+            // 每帧白付一次 `MFT_MESSAGE_SET_D3D_MANAGER` 失败 + 一次全链重开。
+            let want_gpu = henc.resolution_limit == 0
+                && !henc.uses_software_encoder()
+                && opts.profile.wants_zero_copy(
+                    opts.virtual_screen,
+                    self.gpu_disabled,
+                    crate::rc::gpu::encode_caps().h264_gpu,
+                );
             if want_gpu {
                 // P0-2 延迟分段：抓帧耗时单独记
                 let cap_t0 = std::time::Instant::now();
@@ -709,46 +792,51 @@ impl InboundVideo {
                     let enc_ms = enc_t0.elapsed().as_millis().min(u16::MAX as u128) as u16;
                     match encoded {
                         Ok(pkts) => {
-                            self.enc_fail_streak = 0;
+                            henc.note_encode_ok();
                             self.send_h264_pkts(pkts, ts, cap_ms, enc_ms).await
                         }
                         Err(e) => {
-                            // P2-9：连续失败熔断——每帧重开编码器的代价比「画质
-                            // 降级到 JPEG」高得多。
-                            // ⚠️ 2026-09-21 修正：过去熔断是**整场会话永久**的
-                            // （`h264 = None` 后再没机会回硬编）。但硬编失败常常是
-                            // **瞬态**的（分辨率切换 / 显示器热插拔 / 全屏切换），
-                            // 永久放弃等于把 7ms/帧 的硬编一路白丢到会话结束。
-                            // 现改为**带冷却的自动重试**：熔断时按老做法置
-                            // `h264 = None`（停止每帧重开编码器），记下冷却截止；
-                            // 冷却期内稳定走 JPEG，期满自动 `open_h264` 重试一次。
-                            // 退避 5s → 10s → 20s → 40s → 60s（上限），
-                            // 避免在坏环境里反复重开把 CPU 烧光。
-                            self.enc_fail_streak = self.enc_fail_streak.saturating_add(1);
-                            if self.enc_fail_streak >= 60 {
-                                if self.enc_retry_after.is_none() {
-                                    log::warn!(
-                                        "[RC] 硬编连续 {} 帧失败，暂停硬编走 JPEG；{}s 后自动重试：{e}",
-                                        self.enc_fail_streak,
-                                        self.enc_retry_backoff
-                                    );
-                                    self.enc_retry_after = Some(
-                                        std::time::Instant::now()
-                                            + std::time::Duration::from_secs(self.enc_retry_backoff),
-                                    );
-                                    // 真正的熔断动作：停掉每帧重开编码器
-                                    self.h264 = None;
-                                    // 探针：熔断次数（收尾行会带上）
-                                    crate::rc::perf::bump_u32(&crate::rc::perf::counters::ENC_FUSE);
+                            // P2-9：连败阶梯（甲-1/3/4，2026-10-12 重排）。
+                            // 每帧重开编码器的代价比「画质降级」高得多，所以阶梯
+                            // 的每一步都要么**换引擎**、要么**停手**：
+                            //   硬编连败 3 帧 → 本会话改用软编 H.264（换引擎不换协议）
+                            //   软编连败 3 帧 → 熔断：`h264 = None` 停止逐帧重开，
+                            //                            按退避（5s→…→60s）冷却重试
+                            // 过去这里数到 **60** 才熔断：1fps 的坏环境里整整一分钟
+                            // 每帧都在重开同一个坏编码器（Issue #19 的「编码重开 131」）。
+                            // 阈值与判决只有一份口径：`encode_fail_verdict`
+                            //（业界对照见 docs/硬编熔断降级-GitHub业界做法对照-2026-10-12.md）。
+                            match henc.note_encode_fail() {
+                                FailVerdict::RetrySameEngine => {
+                                    log::debug!("[RC] 视频编码失败，本帧回退 JPEG：{e}");
                                 }
-                                // 冷却是「暂停」不是「永久放弃」——但重开**不能在这里**：
-                                // 本分支每帧都会进，且开编码器要几百 ms，必须等
-                                // 冷却期满后再由下面的独立判断处理。
-                            } else {
-                                log::debug!(
-                                    "[RC] 视频编码失败（第 {} 帧），本帧回退 JPEG：{e}",
-                                    self.enc_fail_streak
-                                );
+                                FailVerdict::SwitchToSoftware => {
+                                    // 定罪记在 InboundVideo 上：熔断会丢掉编码器对象
+                                    self.enc_hw_broken = true;
+                                    log::warn!(
+                                        "[RC] 硬编连败 {ENC_FAIL_TO_SOFTWARE} 帧，本会话改用软编 H.264（下一帧重开选型只走软件 MFT）：{e}"
+                                    );
+                                    crate::rc::perf::bump_u32(&crate::rc::perf::counters::ENC_SW_FALLBACK);
+                                }
+                                FailVerdict::Fuse => {
+                                    if self.enc_retry_after.is_none() {
+                                        log::warn!(
+                                            "[RC] 软编也连败 {ENC_FAIL_FUSE} 帧，暂停硬编路径走 JPEG；{}s 后自动重试：{e}",
+                                            self.enc_retry_backoff
+                                        );
+                                        self.enc_retry_after = Some(
+                                            std::time::Instant::now()
+                                                + std::time::Duration::from_secs(self.enc_retry_backoff),
+                                        );
+                                        // 真正的熔断动作：停掉每帧重开编码器
+                                        self.h264 = None;
+                                        // 探针：熔断次数（收尾行会带上）
+                                        crate::rc::perf::bump_u32(&crate::rc::perf::counters::ENC_FUSE);
+                                    }
+                                    // 冷却是「暂停」不是「永久放弃」——但重开**不能在这里**：
+                                    // 本分支每帧都会进，且开编码器要几百 ms，必须等
+                                    // 冷却期满后再由上面的独立判断处理。
+                                }
                             }
                             Step::FallThrough
                         }
@@ -790,11 +878,14 @@ impl InboundVideo {
         // 探针：H.264 路径出了帧。发送耗时在最后统一算——
         // 关键帧走可靠流、P 帧走数据报，两条路的 send 都要计入。
         let send_t0 = std::time::Instant::now();
+        // 甲-②：紧跟着抓取读一次等待时长（这一圈之内 `dxgi` 没被再抓过，
+        // CPU / GPU 两条路共用这个收口点，所以只有这一处）。
         self.perf_last = crate::rc::perf::FrameTiming::produced(
             cap_ms as u64,
             enc_ms as u64,
             None, // 结尾补上真实发送耗时
-        );
+        )
+        .with_wait(self.dxgi.last_wait_ms());
         // Q3：编码标准取自编码器本体（回落时同帧起即换）。
         let codec = self
             .h264
@@ -948,7 +1039,7 @@ impl InboundVideo {
                 .dgram
                 .send_frame(
                     &self.conn, sq, &p.data, p.key, ts, cap_ms, enc_ms, p.width, p.height,
-                    frame_codec, self.peer_fec_rs, loss,
+                    frame_codec, self.peer_fec_rs, loss, self.probe.frag(),
                 )
                 .await
             {

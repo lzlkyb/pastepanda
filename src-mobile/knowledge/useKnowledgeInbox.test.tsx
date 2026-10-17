@@ -18,7 +18,22 @@ const pick = vi.mocked(mobileKnowledgeSharePickImages);
 const item = { id: "incoming", title: "收集", text: "内容", images: ["pp-asset:photo.png"], status: "ready" as const, message: "待确认", created_at: 10 };
 const snapshot = (items: MobileKnowledgeIncoming[] = [item], processing = false): MobileKnowledgeInbox => ({ items, processing, notice: "" });
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; };
-const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+// 必须在任何一个 vi.useFakeTimers() 之前捕获真实计时器：注入档（PASTEPANDA_SLOW_MOCK=1）
+// 把 mock 取数推迟到**真实宏任务**，flush 只有让出真实宏任务才能等到它落地；
+// 假计时器装好后 setTimeout 已被替换，拿不到真引用就永远等不到（见 test-setup.slow-mock.ts 头注）。
+const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+const flush = () => act(async () => {
+  await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+  await Promise.resolve();
+});
+// 收尾链路专用的多拍等待：注入档经 deferResult 会给 mock 返回值叠真实宏任务拍，
+// resolve → 登记微任务 → 宏任务落地 → 后续微任务，固定两拍才稳定越过。
+const settleReal = async () => {
+  for (let i = 0; i < 2; i++) {
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+    await Promise.resolve();
+  }
+};
 let hidden = false;
 let changed: () => void;
 let unregister = vi.fn(async () => {});
@@ -86,7 +101,9 @@ it("isolates StrictMode's obsolete read from the current lifecycle and unregiste
     oldRead.resolve(snapshot([{ ...item, id: "obsolete" }]));
     oldListener.resolve(nativeListener(obsoleteUnregister));
   });
-  expect(result.current.items).toEqual([item]); expect(obsoleteUnregister).toHaveBeenCalledOnce();
+  expect(result.current.items).toEqual([item]);
+  // 慢取数注入档会推迟生命周期清理链里的一环，收尾断言用「真状态变化」等，不数微任务拍。
+  await waitFor(() => expect(obsoleteUnregister).toHaveBeenCalledOnce());
 });
 
 it("does not turn picker cancellation, rejected reads or invalid images into collection success", async () => {
@@ -153,5 +170,6 @@ it("unmount clears the processing timer and unregisters even a listener that res
   const { unmount } = renderHook(() => useKnowledgeInbox()); await flush(); unmount();
   const reads = list.mock.calls.length;
   await act(async () => { late.resolve(nativeListener()); await vi.advanceTimersByTimeAsync(30_000); });
+  await settleReal();
   expect(unregister).toHaveBeenCalledOnce(); expect(list).toHaveBeenCalledTimes(reads);
 });

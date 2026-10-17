@@ -37,7 +37,7 @@ import { RcRecentGroup } from "../rcGroups/RcRecentGroup";
 
 interface RcSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   /** 设置页搜索关键词：非空 ⇒ 四组强制全展开（判据收在 `lib/rcPrefs` 的 rcGroupShouldOpen）。 */
   filter: string;
 }
@@ -119,7 +119,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
           </>
         }
         onChange={async (v) => {
-          await updateAndSave({ rc_enabled: v });
+          if (!await updateAndSave({ rc_enabled: v })) return;
           try {
             await rcSetEnabled(v);
             toast(v ? "已允许被远程协助" : "已关闭远程协助", "success");

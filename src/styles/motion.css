@@ -1,0 +1,28 @@
+/* Application preference complements the OS media query in globals.css. */
+:root[data-interface-motion="off"],
+:root[data-interface-motion="reduced"] {
+  --control-press-scale: 1;
+}
+:root[data-interface-motion="off"] *,
+:root[data-interface-motion="off"] *::before,
+:root[data-interface-motion="off"] *::after {
+  animation: none !important;
+  transition-duration: 0ms !important;
+  scroll-behavior: auto !important;
+}
+:root[data-interface-motion="hidden"] *,
+:root[data-interface-motion="hidden"] *::before,
+:root[data-interface-motion="hidden"] *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0ms !important;
+}
+:root[data-interface-motion="reduced"] *,
+:root[data-interface-motion="reduced"] *::before,
+:root[data-interface-motion="reduced"] *::after {
+  animation: none !important;
+  transition-duration: 0ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --control-press-scale: 1; }
+}

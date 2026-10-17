@@ -8,7 +8,7 @@
  *
  * 🔴 红线：这一层**全走本机 SQLite，一步不出网**。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "@/stores/appStore";
 import { useNoteDialogClosed } from "@/hooks/useNoteDialogClosed";
 import { dailyFilterDate, isDailyFilter } from "@/components/notes/DailySection";
@@ -55,6 +55,8 @@ export function useNoteQuery() {
   const [groupCounts, setGroupCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const queryGeneration = useRef(0);
+  const morePending = useRef(false);
   /**
    * 上一次查询**没查成**（`noteList` / `noteSearch` 返回 null）。
    *
@@ -128,6 +130,9 @@ export function useNoteQuery() {
    */
   const reloadNotes = useCallback(
     async (kw: string, ff: FolderFilter, v: NoteViewOpts, tids: string[]) => {
+      const generation = ++queryGeneration.current;
+      morePending.current = false;
+      setLoadingMore(false);
       // ❗ 回收站不走笔记列表那套查询，必须在这里截住。
       //   `FolderFilter` 是 `"all" | "unfiled" | string`，末尾那个 `string`
       //   让整个类型坍缩成 `string`——**tsc 不会拦住 `"trash"` 流到后端**。
@@ -151,11 +156,13 @@ export function useNoteQuery() {
         noteCountFiltered({ folderFilter: ff, tagIds: tids, view: v }),
         noteGroupCounts({ folderFilter: ff, tagIds: tids, view: v }),
       ]);
+      if (generation !== queryGeneration.current) return;
       // null = 这次没查成（api 层已弹过 toast）。清列表并挂错误态，
       // 由 NoteListEmpty 说人话 + 给重试。**不保留旧结果**：旧结果配着新关键词
       // 更像是「搜出来的就是这些」，比空着还误导。
       if (rows === null) {
         setNotes([]);
+        setTotal(0);
         setGroupCounts(new Map());
         setLoadError(true);
         setLoading(false);
@@ -183,7 +190,9 @@ export function useNoteQuery() {
   const loadMore = useCallback(async () => {
     // 同上：回收站没有分页。正常路径下 LoadMoreSentinel 根本不会渲染（中栏换成了
     // TrashPanel），这句是规则 #11.1 的兜底：folderFilter 的每个消费点都要拦。
-    if (folderFilter === "trash" || loadingMore || loading) return;
+    if (folderFilter === "trash" || morePending.current || loading) return;
+    morePending.current = true;
+    const generation = queryGeneration.current;
     setLoadingMore(true);
     const kwTrim = keyword.trim();
     const rows = kwTrim
@@ -204,17 +213,22 @@ export function useNoteQuery() {
         });
     // 加载更多失败：已加载的那些还在屏幕上，别把它们清掉——
     // 这一步的失败范围只是「下一页」，api 层的 toast 已经说了。
+    if (generation !== queryGeneration.current) return;
     if (rows !== null) setNotes((cur) => (kwTrim ? rows : [...cur, ...rows]));
+    morePending.current = false;
     setLoadingMore(false);
-  }, [folderFilter, keyword, loading, loadingMore, notes.length, view, tagIds]);
+  }, [folderFilter, keyword, loading, notes.length, view, tagIds]);
 
   // 首次 + 关键词/筛选/视图变化（防抖 200ms：每个字一次 FTS 查询没必要）
   useEffect(() => {
+    const generation = queryGeneration;
+    // Invalidate before debounce, so an old response cannot masquerade as a new query.
+    setLoading(true);
     const t = window.setTimeout(
       () => void reloadNotes(keyword, folderFilter, view, tagIds),
       keyword ? 200 : 0,
     );
-    return () => window.clearTimeout(t);
+    return () => { window.clearTimeout(t); generation.current++; };
   }, [keyword, folderFilter, view, tagIds, reloadNotes]);
 
   useEffect(() => {

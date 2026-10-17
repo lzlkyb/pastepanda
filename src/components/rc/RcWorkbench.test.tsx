@@ -307,9 +307,11 @@ describe("RcWorkbench 接线：自动确认与通道前置", () => {
     h.targets = [OFFLINE_TARGET];
     render(<RcWorkbench />);
 
-    await act(async () => { await Promise.resolve(); });
-
-    expect(screen.getByRole("button", { name: /选择设备“工作电脑”/ }).textContent).toContain("状态无法获取 · 通道未启动");
+    // 🔴 就绪判据 = 设备行真的渲染出来了（它要等 refreshTargets 落地），不是「我冲了一轮微任务」。
+    // 紧随其后的「没发探测」是条负断言：数据没到就断言，等于在探测还没来得及发生时就宣判。
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /选择设备“工作电脑”/ }).textContent).toContain("状态无法获取 · 通道未启动"),
+    );
     expect(h.probeTargets).not.toHaveBeenCalled();
   });
 
@@ -341,6 +343,10 @@ describe("RcWorkbench 自动确认设备", () => {
   it("隐藏工作台不会自动探测设备", async () => {
     h.visible = false;
     render(<RcWorkbench />);
+    // useRcAutoCheck 在 !enabled/!visible 时 effect 第一句就 return（src/hooks/useRcAutoCheck.ts:30），
+    // 连 refreshTargets 都不发 ⇒ 这条没有任何异步数据可等，flush 只是让 mount 的 effect 跑完，
+    // 负断言量的是「那一刻之后到没到探测分支」；同 describe 里可见那条已证「会探测」，两半合起来才成立。
+    // waitguard:allow: 本用例零取数，微任务 flush 不是就绪信号
     await act(async () => { await Promise.resolve(); });
     expect(h.probeTargets).not.toHaveBeenCalled();
   });

@@ -8,7 +8,7 @@ import {ClotheslineRows} from "./ClotheslineRows";
 
 interface ScreenshotRowsProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   chains: SettingsData["chains"];
 }
 

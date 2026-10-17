@@ -12,6 +12,7 @@ import { extractArrayFromJson, type ExtractedArrayInfo } from "@/lib/jsonToolbox
 import { parseColumnList, parseDelimitedValues, type ColumnListInfo } from "./detectors";
 import { looksLikePdfText } from "@/lib/docPipeline/pdfRepair";
 import { detectColor, type ParsedColor } from "@/lib/color";
+import { decodeBase64Text, sqlListRelevance } from "@/lib/utils";
 
 // ============ 特征类型 ============
 
@@ -83,6 +84,7 @@ export interface DateFeatures {
 
 /** 分隔值分析结果 */
 export interface DelimitedFeatures {
+  relevance?: ReturnType<typeof sqlListRelevance>;
   /** 是否命中分隔值模式 */
   ok: boolean;
   /** 值列表 */
@@ -192,28 +194,6 @@ const LOG_LEVEL_RE = /\b(DEBUG|INFO|WARN|ERROR|FATAL)\b/m;
 /** 配置 key=value / key: value */
 const CONFIG_KV_RE = /^[^#\s][^=:]*[=:]/;
 
-function decodeB64(s: string): string | null {
-  try {
-    const cleaned = s.replace(/\s/g, "");
-    const binary = atob(cleaned);
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
-function decodeB64Url(s: string): string | null {
-  try {
-    const padded = s.replace(/-/g, "+").replace(/_/g, "/");
-    const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return null;
-  }
-}
-
 /** 快速判断文本是否可能是 JSON（廉价首字符检测） */
 function maybeJson(text: string, contentType: string): boolean {
   if (contentType === "json") return true;
@@ -275,14 +255,9 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
     // 补齐 padding
     const padLen = (4 - (std.length % 4)) % 4;
     const padded = std + "=".repeat(padLen);
-    const valid = padded.length % 4 === 0 && std.length >= 8;
-    if (valid) {
-      const decoded = decodeB64(padded);
-      const decodedIsJson = decoded != null && maybeJson(decoded, "");
-      features.base64 = { valid: true, decoded: decoded ?? undefined, decodedIsJson };
-    } else {
-      features.base64 = { valid: false };
-    }
+    const decoded = decodeBase64Text(padded);
+    features.base64 = { valid: decoded !== null, decoded: decoded ?? undefined,
+      decodedIsJson: decoded != null && maybeJson(decoded, "") };
   }
 
   // === URL 编码 ===
@@ -299,10 +274,15 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
   // === JWT ===
   if (JWT_RE.test(trimmed)) {
     const parts = trimmed.split(".");
-    const header = decodeB64Url(parts[0]);
-    const payload = parts.length > 1 ? decodeB64Url(parts[1]) : null;
+    const header = decodeBase64Text(parts[0]);
+    const payload = parts.length > 1 ? decodeBase64Text(parts[1]) : null;
     if (header && payload) {
-      features.jwt = { valid: true, header, payload };
+      try {
+        const h = JSON.parse(header), p = JSON.parse(payload);
+        const valid = h !== null && typeof h === "object" && !Array.isArray(h) && typeof h.alg === "string"
+          && p !== null && typeof p === "object" && !Array.isArray(p);
+        features.jwt = { valid, header, payload };
+      } catch { features.jwt = { valid: false }; }
     } else {
       features.jwt = { valid: false };
     }
@@ -347,7 +327,7 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
   {
     const colInfo = parseColumnList(text);
     if (colInfo.ok) {
-      features.columnList = colInfo;
+      features.columnList = { ...colInfo, relevance: sqlListRelevance(colInfo.values) };
     }
   }
 
@@ -356,7 +336,7 @@ export function analyzeContent(text: string, contentType: string): ContentFeatur
   // 不在这里留第二份副本；外层 gate 仅作廉价早退，避开对大文本的无谓调用。
   if (!stats.isMultiline || stats.lines <= 3) {
     const delimInfo = parseDelimitedValues(text);
-    if (delimInfo.ok) features.delimited = delimInfo;
+    if (delimInfo.ok) features.delimited = { ...delimInfo, relevance: sqlListRelevance(delimInfo.values) };
   }
 
   // === 颜色 ===

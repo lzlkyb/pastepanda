@@ -11,14 +11,16 @@
  * （加表要动 Rust，超出本组件范围），所以换机器 / 清缓存 / 换 WebView 数据目录会忘。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Sparkles, X, Plus, Pencil } from "lucide-react";
 import { sequenceSuggest, type SequenceSuggestion } from "@/lib/api/sequence";
 import { chainList, chainSave, type ChainDef } from "@/lib/api/chains";
-import { PRESET_CHAINS, invalidateUserChains, riskOf } from "@/lib/chains/registry";
+import { PRESET_CHAINS, invalidateUserChains, riskOf, chainStepTransforms } from "@/lib/chains/registry";
 import { getTransform } from "@/lib/transforms";
 import { useToast } from "@/components/Toast";
 import { MAX_CHAIN_NAME_CHARS } from "@/components/ChainEditor";
+import { useDialogStore } from "@/stores/dialogStore";
+import { getAiAvailability, subscribeAiAvailability } from "@/lib/aiAvailability";
 import styles from "./SequenceDiscover.module.css";
 
 /** 忽略过的 pattern 存哪：值是 \0 连接的 action id 列表，不含任何内容文本 */
@@ -97,6 +99,7 @@ function defaultChainName(actions: string[]): string {
 }
 
 export function SequenceDiscover({ open }: { open: boolean }) {
+  useSyncExternalStore(subscribeAiAvailability, getAiAvailability, getAiAvailability);
   const { toast } = useToast();
   const [items, setItems] = useState<SequenceSuggestion[]>([]);
   const [ignored, setIgnored] = useState<Set<string>>(loadIgnored);
@@ -128,10 +131,11 @@ export function SequenceDiscover({ open }: { open: boolean }) {
         //   只排除 paste 哨兵，不校验 id 还在不在），存成链后一跑就停在「变换不存在」；
         // - 执行类（kind === "action"）：有副作用且不产出文本，不该进文本流水线
         //   （与 ChainEditor 下拉的过滤同一层防护，目前埋点还够不到，但别指望上游巧合）。
+        const allowed = new Set(chainStepTransforms().map(t => t.id));
         const usable = fresh.filter((p) =>
           p.actions.every((id) => {
             const t = getTransform(id);
-            return !!t && t.kind !== "action";
+            return !!t && allowed.has(id);
           }),
         );
         setItems(usable.slice(0, 2));
@@ -154,6 +158,8 @@ export function SequenceDiscover({ open }: { open: boolean }) {
   const saveAsChain = async (s: SequenceSuggestion, name: string) => {
     const key = s.actions.join(SEP);
     if (saving) return;
+    const allowed = new Set(chainStepTransforms().map(t => t.id));
+    if (s.actions.some(id => !allowed.has(id))) { toast("流程含已不可用的步骤，请重新选择。", "warning"); return; }
     setSaving(key);
     try {
       const chain: ChainDef = {
@@ -167,8 +173,9 @@ export function SequenceDiscover({ open }: { open: boolean }) {
           risk: riskOf(getTransform(transformId)),
         })),
       };
-      await chainSave(chain);
+      const id = await chainSave(chain);
       invalidateUserChains();
+      useDialogStore.getState().finishChainEdit({ saved: { ...chain, id } });
       setItems((cur) => cur.filter((x) => x.actions.join(SEP) !== key));
       setRenaming(null);
       toast(`已存成动作链「${chain.name}」`, "success");
@@ -181,7 +188,8 @@ export function SequenceDiscover({ open }: { open: boolean }) {
 
   // 早返回必须看「可见条数」：忽略只在渲染里跳过、不从 items 移除，
   // 按 items.length 判断会在全部忽略后留下一个只有标题的空描边框。
-  const visible = items.filter((s) => !ignored.has(s.actions.join(SEP)));
+  const allowed = new Set(chainStepTransforms().map(t => t.id));
+  const visible = items.filter((s) => !ignored.has(s.actions.join(SEP)) && s.actions.every(id => allowed.has(id)));
   if (visible.length === 0) return null;
 
   return (

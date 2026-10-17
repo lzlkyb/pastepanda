@@ -5,6 +5,7 @@ import type { UseRc } from "@/hooks/useRc";
 import type { ToastFn } from "@/components/Toast";
 
 import { RcMoreConnections } from "@/components/settings/RcMoreConnections";
+import { RcNetDiagCard } from "./RcNetDiagCard";
 import connect from "@/components/settings/RcConnect.module.css";
 import styles from "./RemoteComputerA2.module.css";
 
@@ -57,6 +58,7 @@ export function RcA2SelfCard({
       </div>
       <button type="button" className={connect.moreButton} onClick={() => setMoreOpen(true)}>更多连接方式<ChevronRight size={13} aria-hidden="true" /></button>
       {moreOpen && <RcMoreConnections rc={rc} toast={toast} onClose={() => setMoreOpen(false)} onHelp={onHelp} onUno={onUnoGenerate} onLegacy={() => onPair("pairLegacy")} />}
+      <RcNetDiagCard />
 
     </div>
   );

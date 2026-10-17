@@ -1,6 +1,7 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { InterfaceMotion } from "./components/InterfaceMotion";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { MotionConfig } from "framer-motion";
 import { QuickPastePanel } from "./components/QuickPastePanel";
 // 快捷面板是**独立窗口、独立 React root**，它有自己一份 zustand 实例。
 // 不把守卫弹窗挂进来，面板里调 pasteTextGuarded 会设上 pasteGuard 状态却无人渲染，
@@ -30,8 +31,9 @@ window.addEventListener("unhandledrejection", (event) => {
 // 独立窗口不与主窗口共享 store，必须在此显式同步。
 applyTheme(DEFAULT_THEME);
 useAppStore.getState().updateConfig({ theme: DEFAULT_THEME });
-invoke<{ theme?: string }>("get_config")
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
+    setMotionPreference(cfg?.window_animation !== false);
     const themeKey = (cfg.theme as ThemeKey) || DEFAULT_THEME;
     applyTheme(themeKey);
     useAppStore.getState().updateConfig({ theme: themeKey });
@@ -48,18 +50,18 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary
-      componentName="快捷粘贴面板"
-      fallback={
-        <div style={{ padding: 12, fontSize: 12, textAlign: "center", color: "var(--text-muted)" }}>
-          ⚠️ 面板渲染异常，请重新打开
-        </div>
-      }
-    >
-      <MotionConfig reducedMotion="user">
+    <InterfaceMotion>
+      <ErrorBoundary
+        componentName="快捷粘贴面板"
+        fallback={
+          <div style={{ padding: 12, fontSize: 12, textAlign: "center", color: "var(--text-muted)" }}>
+            ⚠️ 面板渲染异常，请重新打开
+          </div>
+        }
+      >
         <QuickPastePanel />
         <PasteGuardDialog />
-      </MotionConfig>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </InterfaceMotion>
   </React.StrictMode>,
 );

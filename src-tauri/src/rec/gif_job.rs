@@ -28,7 +28,7 @@ static GIF_JOB: Mutex<Option<Arc<GifJob>>> = Mutex::new(None);
 pub fn status(src: &std::path::Path) -> GifStatus {
     let job = GIF_JOB.lock().unwrap_or_else(|p| p.into_inner()).clone();
     match job {
-        Some(j) if j.running.load(Ordering::Relaxed) || j.src == src => {
+        Some(j) if j.src == src => {
             if j.running.load(Ordering::Relaxed) {
                 GifStatus {
                     running: true,
@@ -79,7 +79,8 @@ pub fn start(
         .spawn({
             let job = job.clone();
             move || {
-                let outcome = export(&job.src, &job.cancel, &job.percent);
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| export(&job.src, &job.cancel, &job.percent)))
+                    .unwrap_or_else(|_|Err("GIF 导出异常，原有产物未修改".into()));
                 let mut result = job.result.lock().unwrap_or_else(|p| p.into_inner());
                 *result = match outcome {
                     Ok(dst) => GifStatus {
@@ -142,6 +143,7 @@ mod tests {
         let src = PathBuf::from("test-gif-job.mp4");
         start(src.clone(), waiting_export).unwrap();
         assert!(start(PathBuf::from("other.mp4"), waiting_export).is_err());
+        assert!(!status(std::path::Path::new("other.mp4")).running,"an unrelated recording must not display this export's progress");
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         while status(&src).percent != 42 && std::time::Instant::now() < deadline {
             std::thread::sleep(std::time::Duration::from_millis(1));
@@ -157,5 +159,11 @@ mod tests {
         assert!(status(std::path::Path::new("unrelated.mp4"))
             .error
             .is_none());
+        fn panicking_export(_: &std::path::Path, _: &AtomicBool, _: &Mutex<u8>) -> Result<PathBuf,String> {panic!("injected GIF worker panic");}
+        start(src.clone(),panicking_export).unwrap();
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(1);
+        while status(&src).running && std::time::Instant::now()<deadline {std::thread::sleep(std::time::Duration::from_millis(1));}
+        assert!(!status(&src).running,"a panicked export must release its job slot");
+        assert!(status(&src).error.is_some());
     }
 }

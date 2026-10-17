@@ -104,6 +104,8 @@ export interface RcState {
    */
   setDeviceAutoAccept: (id: string, on: boolean) => Promise<boolean>;
   createInvite: (name: string) => Promise<RcInviteCreated>;
+  /** 主动作废当前邀请窗口（码已发出但还没人配成时提前关门）。 */
+  revokeInvite: () => Promise<boolean>;
   previewInvite: (code: string) => Promise<RcInvite>;
   pair: (code: string) => Promise<boolean>;
   forget: (id: string) => Promise<boolean>;

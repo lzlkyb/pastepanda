@@ -7,7 +7,7 @@
  * 展开区再列 Gitee 镜像（国内快）与项目主页。
  *
  * ❗ 为什么不指 `pastepanda.pages.dev/#android`：那是**独立部署的落地页，不在本仓**，
- * 当前只有 Windows 下载区，手机扫过去会落到「下载 Windows」的死胡同。落地页补 Android 区
+ * 且其根路径 2026-10-14 实测 404（整站只有 /manual/ 在线）。落地页补 Android 区
  * 需在其自己的站点仓做，不属于本次改动能覆盖的范围；这里改用真实可下到 APK 的发布页兜住。
  *
  * 反馈口径（规则 15.1）：复制成功直接在按钮上常驻显示「已复制 ✓」，不靠 toast——
@@ -27,15 +27,15 @@ const DOWNLOAD_URL = "https://github.com/lzlkyb/pastepanda/releases/latest";
 
 /**
  * 真正给得出安卓安装包的两条源。❗ 项目主页 pastepanda.pages.dev **不在此列**：
- * 它是独立部署、当前只有 Windows 下载区，放进来会被误当安卓下载点（点开下到的是电脑包）。
- * 所以它降级成下面 `HOME_URL` 那条「了解产品」灰链，与下载源分开。
+ * 它是独立部署、根路径实测 404，只有 /manual/ 在线。HOME_URL 因此直指手册站，
+ * 与下载源分开，不再指向会 404 的根路径。
  */
 const DOWNLOAD_SOURCES = [
   { label: "github.com/lzlkyb/pastepanda/releases/latest", url: DOWNLOAD_URL, tag: "GitHub · 含更新说明" },
   { label: "gitee.com/lzul/pastepanda/releases", url: "https://gitee.com/lzul/pastepanda/releases", tag: "Gitee 镜像 · 国内快" },
 ];
-const HOME_URL = "https://pastepanda.pages.dev/";
-const HOME_LABEL = "pastepanda.pages.dev";
+const HOME_URL = "https://pastepanda.pages.dev/manual/";
+const HOME_LABEL = "pastepanda.pages.dev/manual";
 
 /** URL 一律走后端 open_url（协议白名单 http/https），不直接调 plugin-opener。 */
 async function openExternal(url: string) {

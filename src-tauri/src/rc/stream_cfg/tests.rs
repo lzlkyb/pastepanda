@@ -619,3 +619,111 @@ fn 自动档看超额延迟_中继传播不踩档() {
     }
     assert_eq!(legacy.auto_tier_name(), "smooth", "无安静样本时按绝对延迟照降");
 }
+
+// ===== 内网直连的码率上限（2026-10-11 乙-2）=====
+//
+// 16_000 那把尺定标在公网直连/中继上（见 `media_ceiling_kbps` 注释），它剪掉的是
+// **档位意图**：1080p120 按 `bitrate_for` 要 20.8Mbps，被剪成 16M 之后即使线路够、
+// 生产者也跟得上，编码器每帧仍少拿 23% 的字节。内网直连按档位意图给上限，
+// 线路宽不宽仍交给闭环（`capacity` 的 1.25×漂移帽会钳住实际预算）。
+
+#[test]
+fn lan_ceiling_follows_profile_intent_instead_of_the_public_clip() {
+    let s = c();
+    // 钉 100 倍率：本测试只管「档位意图上限」，不掺默认 200（那是另一条用例的事）。
+    s.set_user_bitrate_pct(100).expect("合法");
+    s.set_quality("fps120").expect("合法");
+    assert_eq!(
+        s.media_ceiling_kbps(false),
+        8_000,
+        "非 LAN 维持原阶梯（1281..=1920 ⇒ 8_000 × 100%）"
+    );
+    assert_eq!(
+        s.media_ceiling_kbps(true),
+        20_800,
+        "LAN 按 1080p120 的真实需求（bitrate_for(1920,120)=20.8Mbps）"
+    );
+}
+
+#[test]
+fn lan_ceiling_still_clips_at_40mbps() {
+    // 反例：把 LAN 写成「不设限」必须被这条打死——用户倍率 200% 时 1080p120 的意图
+    // 是 41.6Mbps，而 Wi-Fi 同网段照样能窄；上限留着，剩下的交给闭环。
+    let s = c();
+    s.set_user_bitrate_pct(200).expect("合法");
+    s.set_quality("fps120").expect("合法");
+    assert_eq!(s.media_ceiling_kbps(true), 40_000);
+}
+
+#[test]
+fn lan_ceiling_uses_the_documented_ladder_per_profile() {
+    // LAN 一侧的数逐档核对：上限 = `bitrate_for(max_w, 提帧上限 fps) × 倍率`，
+    // 不复算一张新表（`fps` 走 `want_fps_for`，拖动时的真实帧率就是它）。
+    let s = c();
+    s.set_user_bitrate_pct(100).expect("合法");
+    for (quality, lan_want) in [
+        ("smooth", 2_400u32),  // 960 宽 × 60fps 提帧上限
+        ("sharp", 12_800),     // 1080p × 60
+        ("ultra", 22_400),     // 2.5K × 60
+        ("fps120", 20_800),    // 1080p × 120
+        ("fps165", 26_800),    // 1080p × 165
+    ] {
+        s.set_quality(quality).expect("合法");
+        assert_eq!(s.media_ceiling_kbps(true), lan_want, "{quality} 的 LAN 上限");
+    }
+    // 非 LAN 一侧逐值仍是旧阶梯（≤1280 ⇒ 4_000，1281..=1920 ⇒ 8_000，更宽 ⇒ 12_000），
+    // 200% 倍率照旧被 16_000 帽钳住——1754b1f / 6bb442c7 的落地口径不在这次改动里。
+    for (quality, want) in [("smooth", 4_000u32), ("sharp", 8_000), ("ultra", 12_000)] {
+        s.set_quality(quality).expect("合法");
+        assert_eq!(s.media_ceiling_kbps(false), want, "{quality} 的非 LAN 上限");
+    }
+    s.set_quality("ultra").expect("合法");
+    s.set_user_bitrate_pct(200).expect("合法");
+    assert_eq!(s.media_ceiling_kbps(false), 16_000, "非 LAN 的 16M 帽仍在");
+}
+#[test]
+fn rtt_ema_起播首样不许定罪() {
+    // 2026-10-11 真机「连上就糊」的复现点：会话头一拍恰好落在被控端起播负载上
+    // （开编码器 + 首帧 IDR + 建流），pong 实测 4655ms。旧口径拿它当 EMA 起点
+    // ⇒ 档位 1 ⇒ 被控端码率缩到 25%，1080p 只剩 ~2Mbps。
+    let (ema, warm_min, warm_seen) = next_rtt_ema(-1, -1, 0, 4_655);
+    assert_eq!(ema, -1, "宽限期内的样本不许建 EMA");
+    assert_eq!(warm_min, 4_655);
+    assert_eq!(warm_seen, 1);
+    assert_eq!(rtt_hint_tier(0, ema), (0, false), "EMA 未建立时不许发 NetHint");
+}
+
+#[test]
+fn rtt_ema_宽限期后用最小样本建初值() {
+    let mut ema = -1;
+    let mut warm_min = -1;
+    let mut warm_seen = 0u32;
+    for sample in [4_655, 12, 9, 14] {
+        (ema, warm_min, warm_seen) = next_rtt_ema(ema, warm_min, warm_seen, sample);
+    }
+    assert_eq!(warm_seen, 4);
+    assert_eq!(warm_min, 9, "宽限期取最小值 = 线路本底");
+    assert_eq!(ema, 9, "起播尖刺不许进 EMA");
+    assert_eq!(rtt_hint_tier(0, ema), (0, false), "内网本底不该升档");
+}
+
+#[test]
+fn rtt_ema_真拥塞照样定罪() {
+    // 反例（规则 23）：宽限期不能变成「无视拥塞」。整场 RTT 都在 800ms 量级时，
+    // 建出来的 EMA 必须仍把档位推到 1，被控端据此缩码率。
+    let mut ema = -1;
+    let mut warm_min = -1;
+    let mut warm_seen = 0u32;
+    for sample in [800, 820, 790, 810] {
+        (ema, warm_min, warm_seen) = next_rtt_ema(ema, warm_min, warm_seen, sample);
+    }
+    assert_eq!(ema, 790);
+    assert_eq!(rtt_hint_tier(0, ema), (1, true), "持续 800ms 必须升档");
+}
+
+#[test]
+fn rtt_ema_建立后仍走原_alpha() {
+    // 宽限只改「起点」，不改之后的平滑：(9*7+4655)/8 = 589，α=1/8 逐值不变。
+    let (ema, _, _) = next_rtt_ema(9, 9, 4, 4_655);
+    assert_eq!(ema, 589, "建立后的尖刺照原口径被平滑吸收");
+}

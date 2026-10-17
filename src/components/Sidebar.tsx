@@ -235,7 +235,7 @@ export function Sidebar({ open, activeGroupId, groups, onSelectGroup, onClose, o
   };
 
   return (
-    <aside className={`${styles.sidebar}${open ? ` ${styles.open}` : ""}`}>
+    <aside className={`${styles.sidebar}${open ? ` ${styles.open}` : ""}`} inert={!open}>
       <div className={styles.list} key={listKey}>
         {/* 内置分组 */}
         {builtinGroups.map(renderGroupItem)}

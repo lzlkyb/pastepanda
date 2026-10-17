@@ -1,3 +1,5 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
+import { useInterfaceMotion } from "@/components/MotionPolicy";
 import { useState, useCallback, useMemo, useRef, useEffect, createContext, useContext, ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, RotateCcw, Copy, Check } from "lucide-react";
@@ -58,7 +60,13 @@ export const UNDO_WINDOW_MS = 6000;
 type ToastTimer = { t: number; left: number; startedAt: number };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const mode = useInterfaceMotion();
+  const background = useRef(false);
+  background.current = mode === "hidden";
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const currentToasts = useRef<ToastItem[]>([]);
+  const held = useRef(new Set<number>());
+  const commit = useCallback((next: ToastItem[]) => { currentToasts.current = next; setToasts(next); }, []);
   const MAX_TOASTS = 5; // 最多同时显示 5 个 toast
 
   /**
@@ -77,10 +85,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       if (e.t) window.clearTimeout(e.t);
       timers.current.delete(id);
     }
-    setToasts((prev) => prev.filter((x) => x.id !== id));
-  }, []);
+    held.current.delete(id);
+    commit(currentToasts.current.filter((x) => x.id !== id));
+  }, [commit]);
 
   const arm = useCallback((id: number, ms: number) => {
+    if (ms <= 0) return;
+    if (document.hidden || background.current) { timers.current.set(id, { t: 0, left: ms, startedAt: 0 }); return; }
     const t = window.setTimeout(() => dismiss(id), ms);
     timers.current.set(id, { t, left: ms, startedAt: Date.now() });
   }, [dismiss]);
@@ -96,9 +107,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   /** 鼠标离开：按**剩下的**时间续上，不是重新计满。 */
   const resume = useCallback((id: number) => {
     const e = timers.current.get(id);
-    if (!e || e.t) return;
+    if (!e || e.t || held.current.has(id) || document.hidden || background.current) return;
     arm(id, e.left);
   }, [arm]);
+
+  useEffect(() => {
+    const sync = () => timers.current.forEach((_, id) => document.hidden || background.current ? pause(id) : resume(id));
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, [pause, resume, mode]);
 
   // 卸载时把还没到点的都清掉，否则是对已卸载组件 setState。
   useEffect(() => {
@@ -107,18 +125,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string, onAction?: () => void) => {
-    const d = duration ?? (type === "error" ? 5000 : 4000);
+    const d = duration ?? (type === "error" ? 0 : 4000);
+    // Recovery/undo actions belong to their own operation and must never merge.
+    if (!onRetry && !onAction && !action && currentToasts.current.some(t =>
+      t.type === type && t.message === message && t.copyText === copyText && !t.onRetry && !t.onAction && !t.action)) return;
     const id = ++toastId;
-    setToasts((prev) => {
-      const next = [...prev, { id, type, message, duration: d, onRetry, actionLabel, copyText, action, onAction }];
-      // 超出限制时移除最早的 toast
-      if (next.length > MAX_TOASTS) {
-        return next.slice(next.length - MAX_TOASTS);
-      }
-      return next;
-    });
+    const next = [...currentToasts.current, { id, type, message, duration: d, onRetry, actionLabel, copyText, action, onAction }];
+    const removed = next.splice(0, Math.max(0, next.length - MAX_TOASTS));
+    removed.forEach(t => { const timer = timers.current.get(t.id); if (timer?.t) window.clearTimeout(timer.t); timers.current.delete(t.id); held.current.delete(t.id); });
+    commit(next);
     arm(id, d);
-  }, [arm]);
+  }, [arm, commit]);
 
   // 复制反馈状态：记录当前处于「已复制」态的 toast id（1.5s 后复原，不弹额外 toast）
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -157,7 +174,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={ctxValue}>
       {children}
       {/* Toast container — popLayout：退场 toast 立即脱离文档流（framer 固定其尺寸/位置），
-          其余 toast 由 layout 弹簧平滑补位，消除原先卸载瞬间的跳变 */}
+          其余 toast 只做有界补位，不让文字参与回弹 */}
       <div className={styles.toastContainer}>
         <AnimatePresence mode="popLayout">
           {toasts.map((t) => {
@@ -165,16 +182,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             return (
               <motion.div
                 key={t.id}
-                layout
-                initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                layout="position"
+                initial={{ opacity: 0, y: -5 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95, x: 10 }}
-                transition={{ duration: 0.2, layout: { type: "spring", stiffness: 550, damping: 38 } }}
+                exit={{ opacity: 0, y: -3 }}
+                transition={CONTENT_TRANSITION}
                 className={`${styles.toastItem} ${styles[t.type]}`}
+                role={t.type === "error" ? "alert" : "status"}
+                data-timed={t.duration > 0}
                 // U4.2：悬停暂停倒计时。底部那条进度条由 CSS 的
                 // `animation-play-state: paused` 同步停住，两边看到的是同一件事。
-                onMouseEnter={() => pause(t.id)}
-                onMouseLeave={() => resume(t.id)}
+                onMouseEnter={() => { held.current.add(t.id); pause(t.id); }}
+                onMouseLeave={(e) => { if (!e.currentTarget.contains(document.activeElement)) { held.current.delete(t.id); resume(t.id); } }}
+                onFocusCapture={() => { held.current.add(t.id); pause(t.id); }}
+                onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget) && !e.currentTarget.matches(":hover")) { held.current.delete(t.id); resume(t.id); } }}
                 style={{
                   pointerEvents: "auto",
                   "--toast-duration": `${t.duration}ms`,
@@ -228,7 +249,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     )}
                   </button>
                 )}
-                <button onClick={() => dismiss(t.id)} className={styles.toastClose}>
+                <button onClick={() => dismiss(t.id)} className={styles.toastClose} aria-label="关闭提示">
                   <X size={14} />
                 </button>
               </motion.div>

@@ -4,7 +4,7 @@
  * 覆盖：
  * - THEMES 常量完整性（6 个主题，每个有 key/displayName/dark）
  * - DEFAULT_THEME 默认值
- * - applyTheme() 设置 data-theme 属性 + 过渡样式 + 定时器清理
+ * - applyTheme() 一次提交配色、抑制逐元素过渡、处理快速切换与广播回声
  * - getCurrentTheme() 读取当前主题
  * - 边界：无 data-theme 属性时返回默认值
  */
@@ -70,12 +70,12 @@ describe("applyTheme", () => {
     // 清理 document.documentElement 状态
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.style.transition = "";
-    // 清理 applyTheme 上的定时器引用
-    (applyTheme as any)._clearTimer?.();
     vi.useFakeTimers();
+    delete document.documentElement.dataset.themeChanging;
   });
 
   afterEach(() => {
+    vi.advanceTimersByTime(350);
     vi.useRealTimers();
   });
 
@@ -92,32 +92,49 @@ describe("applyTheme", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dawn");
   });
 
-  it("应用主题时设置过渡样式", () => {
-    applyTheme("forest");
-    expect(document.documentElement.style.transition).toContain("background-color");
-    expect(document.documentElement.style.transition).toContain("color");
-    expect(document.documentElement.style.transition).toContain("border-color");
-    expect(document.documentElement.style.transition).toContain("box-shadow");
+  it("30 次连续主题切换只保留一个收尾任务和最后一次选择", () => {
+    for (let i = 0; i < 30; i++) applyTheme(THEMES[i % THEMES.length].key);
+    expect(getCurrentTheme()).toBe("dawn");
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(350);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(document.documentElement.dataset.themeChanging).toBeUndefined();
   });
 
-  it("350ms 后清除过渡样式", () => {
+  it("350ms 后恢复普通控件的过渡", () => {
     applyTheme("blossom");
-    expect(document.documentElement.style.transition).not.toBe("");
+    expect(document.documentElement.dataset.themeChanging).toBe("true");
 
     vi.advanceTimersByTime(350);
-    expect(document.documentElement.style.transition).toBe("");
+    expect(document.documentElement.dataset.themeChanging).toBeUndefined();
   });
 
   it("快速连续切换主题时旧定时器被清除", () => {
     applyTheme("ocean");
+    vi.advanceTimersByTime(200);
     applyTheme("midnight");
-
-    // 350ms 后只有一次清除
-    vi.advanceTimersByTime(350);
-    expect(document.documentElement.style.transition).toBe("");
+    vi.advanceTimersByTime(150);
+    expect(document.documentElement.dataset.themeChanging).toBe("true");
+    vi.advanceTimersByTime(200);
+    expect(document.documentElement.dataset.themeChanging).toBeUndefined();
 
     // 确认最后一次生效
     expect(document.documentElement.getAttribute("data-theme")).toBe("midnight");
+  });
+
+  it("theme swap suppresses descendant transitions during the palette commit", () => {
+    applyTheme("forest");
+    expect(document.documentElement.dataset.themeChanging).toBe("true");
+    expect(document.documentElement.style.transition).toBe("");
+  });
+
+  it("same theme echoes do not restart the palette transaction", () => {
+    applyTheme("forest");
+    vi.advanceTimersByTime(300);
+    applyTheme("forest");
+    vi.advanceTimersByTime(50);
+    expect(document.documentElement.style.transition).toBe("");
+    expect(document.documentElement.dataset.themeChanging).toBeUndefined();
   });
 });
 

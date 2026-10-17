@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * screenshot-main — 截图标注窗口独立入口（透明全屏覆盖层）。
  *
@@ -35,8 +37,8 @@ window.addEventListener("unhandledrejection", (event) => {
 // 浅色主题下工具栏等浮层走浅玻璃 + 深字，靠 --shot-bar-border 描边 + 阴影保底辨识
 // （浅色玻璃压在浅色截图内容上的对比度问题由令牌族统一补偿）。
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => { /* 读取失败时保持默认主题 */ });
 
 listen<{ theme?: string }>("theme-changed", (e) => {
@@ -148,14 +150,19 @@ function CrashPanel({ error }: { error: Error | null }) {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary componentName="截图窗口" fallback={(err) => <CrashPanel error={err} />}>
-      <ScreenshotOverlay />
-      {/* 🔴 必须挂：`confirmDialog()` 只是把请求放进一个模块级槽位，
+    <MotionPolicy>
+      <ErrorBoundary
+        componentName="截图窗口"
+        fallback={(err) => <CrashPanel error={err} />}
+      >
+        <ScreenshotOverlay />
+        {/* 🔴 必须挂：`confirmDialog()` 只是把请求放进一个模块级槽位，
           真正画出来的是这个宿主。截图窗是**独立的 React root**，
           不共享 App.tsx 里那个——不挂的话，调用方那句 `await confirmDialog(...)`
           会**永远不返回**：没有任何东西能去 resolve 它。
           表现就是点「AI 处理」没反应、也不报错。 */}
-      <ConfirmDialogHost />
-    </ErrorBoundary>
+        <ConfirmDialogHost />
+      </ErrorBoundary>
+    </MotionPolicy>
   </React.StrictMode>,
 );

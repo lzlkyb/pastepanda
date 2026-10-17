@@ -11,7 +11,7 @@
  *    设置页 / 胶囊 / 变换门控看到的还是旧结论。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, waitFor } from "@testing-library/react";
 import type { AiConfig } from "@/lib/api";
 import type { QuotaInfo } from "@/lib/api/quota";
 
@@ -89,7 +89,7 @@ beforeEach(() => {
   useDialogStore.setState({ quotaOpen: true });
 });
 
-/** 冲刷弹窗打开时的两次 async 加载（额度 + 当前服务商） */
+/** 冲刷弹窗打开时的两次 async 加载（额度 + 当前服务商）；按钮可见性由 findByText 兜底 */
 const settle = () => act(async () => {});
 
 async function clickEnable() {
@@ -97,7 +97,14 @@ async function clickEnable() {
   await settle();
   const btn = await screen.findByText("一键启用内置免费");
   fireEvent.click(btn);
-  await settle();
+  // 🔴 等「本条链路的终点」而不是空转 act：落盘链路是
+  // aiGetProviderConfig → aiSetConfig → notifyAiConfigWritten → 终局 toast，
+  // 每步都是异步边界；`act(async () => {})` 只排微任务，终点没到也绿（快机器碰巧）。
+  // 判据用终局 toast 的**文案内容**（成功/失败都算到达终点）：
+  // 它也保证本用例的链在自己体内跑干净，不把迟到的调用漏给下一条。
+  await waitFor(() =>
+    expect(toast.mock.calls.some(([msg]) => /现在就能用了|启用失败/.test(String(msg)))).toBe(true),
+  );
 }
 
 describe("QuotaDialog 一键启用内置免费", () => {

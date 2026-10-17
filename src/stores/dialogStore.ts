@@ -38,12 +38,16 @@ export interface DialogState {
    * 失败定位、AI 步骤确认与粘贴——重建一份等于重写三百行。
    */
   chainAdHoc: Chain | null;
-  openChain: (text: string, chainId?: string, adHoc?: Chain | null) => void;
+  chainMode: "local" | "ai";
+  chainSession: number;
+  chainChange: { saved: ChainDef } | { deletedId: string } | null;
+  openChain: (text: string, chainId?: string, adHoc?: Chain | null, mode?: "local" | "ai") => void;
   closeChain: () => void;
   /** 动作链编辑器（X1 B2）：非 null 时 ChainEditor 打开；传 null 表示新建（见 openChainEditor 实现注释） */
   chainEdit: ChainDef | null;
   openChainEditor: (chain: ChainDef | null) => void;
   closeChainEditor: () => void;
+  finishChainEdit: (change: { saved: ChainDef } | { deletedId: string }) => void;
   /** 「系统学到了什么」（v6.1 红线②：学习日志可见可删） */
   learningsOpen: boolean;
   openLearnings: () => void;
@@ -119,7 +123,7 @@ export function anyDialogOpen(s: DialogState): boolean {
   return Boolean(
     s.editorItem ||
       s.hubItem ||
-      s.chainText ||
+      s.chainText !== null ||
       s.chainEdit ||
       s.learningsOpen ||
       s.profileOpen ||
@@ -156,10 +160,13 @@ export const useDialogStore = create<DialogState>((set) => ({
   chainText: null,
   chainIdHint: null,
   chainAdHoc: null,
-  openChain: (text, chainId, adHoc) =>
-    set({ chainText: text, chainIdHint: chainId ?? null, chainAdHoc: adHoc ?? null }),
+  chainMode: "local",
+  chainSession: 0,
+  chainChange: null,
+  openChain: (text, chainId, adHoc, mode = "local") =>
+    set(s => ({ chainText: text, chainIdHint: chainId ?? null, chainAdHoc: adHoc ?? null, chainMode: mode, chainSession: s.chainSession + 1, chainChange: null })),
   // 关闭时必须清 chainAdHoc：不清的话下一次普通开链会把上次 AI 编的链带出来
-  closeChain: () => set({ chainText: null, chainIdHint: null, chainAdHoc: null }),
+  closeChain: () => set({ chainText: null, chainIdHint: null, chainAdHoc: null, chainMode: "local", chainChange: null }),
   chainEdit: null,
   // null = 新建。⚠️ 不能直接存 null：ChainEditor 用 `editing !== null` 判断显示，
   // 直接存 null 会让编辑器打不开（历史 bug：ChainRunnerDialog「新建」/ 设置页「创建」
@@ -167,6 +174,7 @@ export const useDialogStore = create<DialogState>((set) => ({
   openChainEditor: (chain) =>
     set({ chainEdit: chain ?? { id: "", name: "", description: "", steps: [] } }),
   closeChainEditor: () => set({ chainEdit: null }),
+  finishChainEdit: (change) => set({ chainEdit: null, chainChange: change }),
   learningsOpen: false,
   openLearnings: () => set({ learningsOpen: true }),
   closeLearnings: () => set({ learningsOpen: false }),

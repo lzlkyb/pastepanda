@@ -6,12 +6,7 @@
   background: var(--danger, #DC2626);
   box-shadow: 0 0 4px var(--danger, #DC2626);
   flex-shrink: 0;
-  animation: dotPulse 2s ease-in-out infinite;
-}
 
-@keyframes dotPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 /* ❗ 这里**故意不写** outline: none。
@@ -45,12 +40,12 @@
   background: var(--accent-solid);
   color: #fff;
   border: none;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
 }
 
 .btnPrimary:active {
-  transform: scale(0.97);
+  transform: scale(var(--control-press-scale));
 }
 
 .btnDanger {
@@ -66,14 +61,14 @@
   background: var(--danger, #DC2626);
   color: #fff;
   border: none;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
 }
 .btnDanger:hover {
   background: var(--danger-hover, #B91C1C);
 }
 .btnDanger:active {
-  transform: scale(0.97);
+  transform: scale(var(--control-press-scale));
 }
 
 .btnSecondary {
@@ -89,7 +84,7 @@
   background: var(--card-bg);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
   white-space: nowrap;
   flex-shrink: 0;
@@ -137,29 +132,8 @@
   pointer-events: none;
 }
 
-/* #16 设置分区错峰入场 — 标签页面板每次挂载（AnimatePresence mode="wait" 按 key 重挂载）
-   时子块按序淡入上浮；搜索过滤切换 display 时新显现的块也会重播一次，强化命中反馈。
-
-   🔴 延迟必须封顶，且命中行自己不参与动画：`animation … backwards` 在延迟期间就把
-   opacity 定在 0，旧版排到第 16 项 = 0.45s，而**搜索会滚到第一条命中**——那行往往排在
-   几十位之后，于是「滚到了、内容还没出现」，用户看到半秒空白（`animation-delay` 按
-   nth-child 数的是全部子节点，隐藏的也算）。现在：可见的最多排到 0.15s（U2 四档里的那一档），
-   滚到的那一行直接不播。 */
-.settingsSections > * {
-  animation: settingsSectionIn 0.3s ease backwards;
-}
-.settingsSections > .settingsHit {
-  animation: none;
-}
-@keyframes settingsSectionIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: none; }
-}
-.settingsSections > *:nth-child(1)  { animation-delay: 0s; }
-.settingsSections > *:nth-child(2)  { animation-delay: 0.03s; }
-.settingsSections > *:nth-child(3)  { animation-delay: 0.06s; }
-.settingsSections > *:nth-child(4)  { animation-delay: 0.09s; }
-.settingsSections > *:nth-child(n+5) { animation-delay: 0.15s; }
+/* B: settings remain readable immediately; search and scroll do not replay row entrances. */
+.settingsSections > * { animation: none; }
 
 .settingsSearchIcon {
   display: flex;
@@ -180,7 +154,7 @@
   border-radius: 8px;
   border: 1px solid var(--search-border);
   background: var(--search-bg);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:border-color var(--motion-base), box-shadow var(--motion-base);
 }
 .settingsSearchBox:focus-within {
   border-color: var(--accent);
@@ -223,7 +197,7 @@
 .settingsHit {
   background: color-mix(in srgb, var(--accent) 8%, var(--card-bg));
   position: relative;
-  transition: background 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard);
 }
 .settingsHit::before {
   content: "";
@@ -342,7 +316,7 @@
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -391,7 +365,7 @@
   cursor: pointer;
   text-align: left;
   border-left: 3px solid transparent;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .settingsNavItem:hover { background: var(--hover); }
 .settingsNavItem:focus-visible {
@@ -472,7 +446,7 @@
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .settingsNoResultBtn:hover {
   border-color: var(--accent);
@@ -504,7 +478,7 @@
   /* 与 sSection 左右边对齐，拼成一张卡 */
   border-left: 1px solid var(--border-color);
   border-right: 1px solid var(--border-color);
-  transition: background 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard);
 }
 .sRow:hover {
   background: color-mix(in srgb, var(--accent) 4%, var(--card-bg));
@@ -670,7 +644,7 @@
   cursor: pointer;
   position: relative;
   flex-shrink: 0;
-  transition: background 0.25s;
+  transition:background var(--motion-base);
   padding: 0;
   vertical-align: middle;
 }
@@ -688,7 +662,7 @@
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition:transform var(--motion-base) var(--ease-standard);
 }
 .sToggle.off .sToggleThumb { transform: translateX(2px); }
 .sToggle.on  .sToggleThumb { transform: translateX(20px); }
@@ -737,7 +711,7 @@
   cursor: pointer;
   min-width: 100px;
   text-align: center;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   white-space: nowrap;
 }
 .sKbd:hover {
@@ -765,7 +739,7 @@
   border-radius: 6px;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
   border: none;
 }
@@ -783,7 +757,7 @@
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
   white-space: nowrap;
 }
@@ -854,7 +828,7 @@
   font-family: inherit;
   background: var(--card-bg);
   color: var(--text-muted);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .sCleanupOpt.active {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -888,7 +862,7 @@
   color: var(--text-muted);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -913,7 +887,7 @@
   color: var(--text-muted);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -949,7 +923,7 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition:opacity var(--motion-fast);
   z-index: 10;
 }
 .sSegOpt:hover::after {
@@ -990,7 +964,7 @@
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 2px 8px var(--accent-shadow);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   font-family: inherit;
   display: flex;
   align-items: center;
@@ -1020,16 +994,11 @@
   border-bottom: 1px dashed var(--border-color);
   cursor: pointer;
   padding: 0 0 1px;
-  transition: color 0.12s ease, border-color 0.12s ease;
+  transition:color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 .sResetBtn:hover {
   color: var(--danger);
   border-bottom-color: color-mix(in srgb, var(--danger) 50%, transparent);
-}
-
-.sAutoSaveHint {
-  font-size: 10.5px;
-  color: var(--text-muted);
 }
 
 .sRowRecommend {
@@ -1102,11 +1071,6 @@
   width: 10px; height: 10px; border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 6px color-mix(in srgb, var(--green) 40%, transparent);
-  animation: lan-pulse 2s infinite;
-}
-@keyframes lan-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 .lanDot.off { background: var(--text-muted); box-shadow: none; animation: none; }
 .lanStatusText {
@@ -1131,7 +1095,7 @@
   margin-top: 10px; width: 100%; padding: 6px 0; border-radius: 8px;
   border: 1px solid var(--border-color); background: var(--card-bg);
   color: var(--accent); font-size: 12px; font-weight: 600; cursor: pointer;
-  font-family: inherit; transition: all 0.15s;
+  font-family: inherit; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 .lanTestBtn:hover { background: var(--hover); border-color: var(--accent); }
 
@@ -1256,7 +1220,7 @@
 /* kbPairPulse.done 已迁到 Lan.module.css（与基础类同文件） */
 @keyframes kbPairBreathe {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.08); opacity: .75; }
+  50% { transform: none; opacity: .75; }
 }
 
 .kbPairNote { font-size: 11px; color: var(--text-muted); line-height: 1.7; margin: 0; }

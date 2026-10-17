@@ -34,6 +34,7 @@ export function RcAdhocCodePane({
   error,
   toast,
   onGenerate,
+  onRevoke,
   onBack,
 }: {
   /** 已生成的帮助码；null = 还没生成或生成失败。 */
@@ -45,6 +46,8 @@ export function RcAdhocCodePane({
   error: string;
   toast: ToastFn;
   onGenerate: () => void;
+  /** 主动作废（差距 2，2026-10-16）：码发出去但还没人连时提前关门，不用干等 TTL。 */
+  onRevoke: () => void;
   onBack: () => void;
 }) {
   return (
@@ -71,21 +74,25 @@ export function RcAdhocCodePane({
               onFocus={(e) => e.currentTarget.select()}
               aria-label="一次性帮助码"
             />
-            <button
-              type="button"
-              className={styles.miniBtn}
-              style={{ alignSelf: "flex-start", marginTop: 6 }}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(code);
-                  toast("帮助码已复制，发给帮你的人", "success");
-                } catch {
-                  toast("复制失败，请手动选中上方文本复制", "error");
-                }
-              }}
-            >
-              复制并发送给对方
-            </button>
+            <span style={{ display: "flex", gap: 8, marginTop: 6, alignSelf: "flex-start" }}>
+              <button
+                type="button"
+                className={styles.miniBtn}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(code);
+                    toast("帮助码已复制，发给帮你的人", "success");
+                  } catch {
+                    toast("复制失败，请手动选中上方文本复制", "error");
+                  }
+                }}
+              >
+                复制并发送给对方
+              </button>
+              <button type="button" className={styles.miniBtn} onClick={onRevoke}>
+                作废
+              </button>
+            </span>
           </div>
           <div className={styles.foot}>
             对方同意后你会在<b>主窗口横幅</b>上看到「正在被 … 远程」；任何时候点「立即结束」。

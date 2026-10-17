@@ -24,7 +24,7 @@ import styles from "../../Settings.module.css";
 
 interface SyncSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   /** 搜索关键词：透传给「远程电脑」的四个折叠组——搜索期间强制全展开。 */
   filter: string;
 }

@@ -19,8 +19,8 @@
  */
 
 /** 统一确认框在场。它是唯一设计成盖在别的弹框之上的层。 */
-export function isConfirmLayerPresent(): boolean {
-  return document.querySelector(".z-confirm") !== null;
+export function isConfirmLayerPresent(except?: Element | null): boolean {
+  return Array.from(document.querySelectorAll(".z-confirm")).some(layer => layer !== except);
 }
 
 /**

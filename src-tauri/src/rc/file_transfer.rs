@@ -26,7 +26,7 @@ use super::file_state::{AskKind, AskOutcome, AskReply, TaskDir, TaskState};
 use super::protocol::FILE_ALPN;
 use super::service::{now_ms, RcService};
 use crate::sync::transport::{read_frame, write_frame};
-use iroh::endpoint::{Connection, RecvStream, SendStream};
+use iroh::endpoint::{Connection, ConnectionError, RecvStream, SendStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,6 +40,11 @@ const OPEN_STREAM_SECS: u64 = 10;
 const ACK_WAIT_SECS: u64 = 75;
 /// 传输中「没有进展」的判定。大文件慢慢传正常，卡住不动不正常。
 const STALL_SECS: u64 = 30;
+/// 等对端「已把这条流收完并落盘」的收尾信号（见 [`wait_peer_stream_end`]）。
+///
+/// 起点是**我方已经写完最后一个字节**，剩下的只是对方读完缓冲 + 刷盘 + 改名，
+/// 15s 对慢盘 / 杀软扫描足够。超时不判失败，只是不再等（见该函数的口径）。
+const RECEIPT_WAIT_SECS: u64 = 15;
 
 /// 一次字节搬运的结局。
 ///
@@ -555,6 +560,76 @@ fn known_downloads_dir() -> Option<PathBuf> {
 }
 
 // ── 小工具 ──────────────────────────────────────────────────────────────
+
+/// 读尽对端那一半 bi-stream 直到 FIN —— 这是「对方已经拿到全部字节」的**应用层**凭据。
+///
+/// 🔴 为什么非要有它：`SendStream::finish()` 只把「流结束」排进发送队列，不等任何
+/// 确认；`Connection::close()` 走的是 RFC 9000 §10.2 的**立即关闭**——连接进了
+/// closed 状态后只再发一个 CONNECTION_CLOSE 帧，**发送队列里还没发出去的 STREAM
+/// 帧连同整条重传队列一起作废**。对端能读到的只是已经落地的那几个包，之后就是
+/// `connection lost`。于是「发完就 close(0, "done")」等于把文件尾巴扔进黑洞：
+/// 2026-10-11 真机日志里一批两个文件，第 1 个（3.5 MB）`已接收`、第 2 个（45 KB）
+/// 报 `接收 rc.log.1 未完成：读流出错：connection lost（closed by peer: done (code 0)）`。
+/// 第 1 个之所以活下来，推测正是因为它后面还跟着「开第 2 条流 + 等对方回确认」两个
+/// 往返，那些 RTT 恰好够它的尾巴送达；第 2 个后面什么都没有，写完就关。
+/// noq 没有 `SendStream::closed()` 这类传输层 flush 可等（只有 `stopped()`，语义是
+/// 「对方要求我别发了」，不是「对方收到了」），所以只能靠应用层信号。
+///
+/// 信号本身不需要新加协议字段：两条方向的**读方**都会 `finish()` 自己的半流
+/// （推送侧见 `serve_push` 收尾，取回侧见 `run_pull_inner` 收尾），写方等到 FIN
+/// 才允许关连接。对端是旧版、不发这个 FIN 时它也不会干等——旧版一 close 连接，
+/// 这里的 `read` 立刻报错返回 `false`。
+///
+/// 返回 `true` = 看到对端 FIN（对方确认收完）；`false` = 超时或连接已断。
+/// **`false` 不是失败判据**：调用方照常收尾，只是不能再声称对方已收全（打 warn）。
+/// 把成功打成失败会让旧版对端每次传输都「报错但其实成功」。
+async fn wait_peer_stream_end(recv: &mut RecvStream) -> bool {
+    // 对端半流上只有确认帧，且已被 read_frame 精确取走；这里读到的是收尾 FIN。
+    // 万一将来对端在这半流上追加字节，读掉即可——不能因为多读了就判失败。
+    let mut buf = [0u8; 64];
+    let drained = async {
+        loop {
+            match recv.read(&mut buf).await {
+                Ok(Some(0)) | Ok(None) => return true,
+                Ok(Some(_)) => continue,
+                Err(_) => return false,
+            }
+        }
+    };
+    match tokio::time::timeout(Duration::from_secs(RECEIPT_WAIT_SECS), drained).await {
+        Ok(done) => done,
+        Err(_) => false,
+    }
+}
+
+/// 对端是不是用「批次收尾」的理由（code 0 / `done`）主动关掉了连接。
+///
+/// 这正是 [`wait_peer_stream_end`] 文档里那个旧版发送端 bug 的现场指纹：
+/// 旧版发完 `finish()` 就立刻 `close(0, "done")`，收方读流必然截断且关连接
+/// 理由是 `done`。网络故障、对端崩溃、被门禁拒（`bad_head`）等走的是别的
+/// 理由 / 错误码，不会落进这个档。
+fn peer_closed_batch_end(conn: &Connection) -> bool {
+    match conn.close_reason() {
+        Some(ConnectionError::ApplicationClosed(c)) => {
+            c.error_code == 0u32.into() && &c.reason[..] == b"done"
+        }
+        _ => false,
+    }
+}
+
+/// 收方读流失败时的人话收口（`serve_push` / `run_pull` 两处收尾共用）。
+///
+/// 截断 + 对端用批次收尾理由主动关连接 = 旧版发送端「发完即关」的已知问题
+/// （或对方取消了发送），不是网络故障。照抄 [`crate::rc::service::explain`]
+/// 的「读流出错：connection lost（closed by peer: done (code 0)）」会把用户
+/// 引去查网络、查路由器；人话档必须给出可执行的出路。
+fn explain_recv_err(conn: &Connection, e: String) -> String {
+    if peer_closed_batch_end(conn) {
+        return "对方在文件传完之前主动断开了连接，文件不完整——通常是对方版本较旧（发完即断的已知问题）或对方取消了发送；断点已保留，对方重发可自动续传"
+            .into();
+    }
+    crate::rc::service::explain(conn, e)
+}
 
 /// 抢一个确认帧 / 魔数，带超时（`read_frame` 内部有自己的 stall 判据，
 /// 这个用于固定长度的裸读）。

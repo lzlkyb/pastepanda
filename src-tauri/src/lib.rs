@@ -1144,6 +1144,7 @@ pub fn run() {
             commands::toggle_kb_sync,
             // 远程电脑（R0 门禁 + R1 壳）
             commands::rc_status,
+            commands::rc_net_diag,
             commands::rc_identity,
             commands::rc_targets,
             commands::rc_probe_targets,
@@ -1158,6 +1159,7 @@ pub fn run() {
             commands::rc_pin_pair_begin,
             commands::rc_exchange_check,
             commands::rc_invite_preview,
+            commands::rc_invite_revoke,
             commands::rc_pair,
             commands::rc_forget,
             commands::rc_device_rename,
@@ -1312,11 +1314,17 @@ pub fn run() {
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_start,
             #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_prewarm,
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_stop,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_pause,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_status,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_audio_check,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::rec_control_resize,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_virtual_screen,
             #[cfg(any(windows, target_os = "macos"))]
@@ -1341,6 +1349,10 @@ pub fn run() {
             rec::commands::rec_keyframes,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_trim,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_trim_status,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_trim_cancel,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_open_preview,
             #[cfg(any(windows, target_os = "macos"))]

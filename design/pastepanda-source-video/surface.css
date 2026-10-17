@@ -1,0 +1,3 @@
+.previewShell { height: 100vh; width: 100%; }
+/* Match the real virtual list: the Card wrapper already supplies the row gap. */
+.sourceRows { gap: 0; }

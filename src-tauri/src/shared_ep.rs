@@ -30,9 +30,8 @@ use crate::rc::protocol::{ALPN as RC_ALPN, FILE_ALPN as RC_FILE_ALPN};
 use crate::sync::identity::NodeIdentity;
 use crate::sync::transport::ALPN as SYNC_ALPN;
 
-mod diagnostics;
-pub mod network;
-#[cfg(target_os = "android")]
+pub mod diagnostics;
+pub mod network;#[cfg(target_os = "android")]
 mod android_dns;
 
 /// 一个业务对入站连接的处理：拿到已握手连接，自己 spawn 去跑。

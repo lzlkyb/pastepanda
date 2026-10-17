@@ -211,6 +211,9 @@ impl RcService {
             // 丙-③：画面暂停位也随会话收口作废（暂停不是跨会话的隐私意愿，与
             // `audio_local_mute` 相反）；发起端那份「对方已暂停」同理不能留着。
             self.video_pause_reset();
+            // 丙（2026-10-12，Issue #19）：发起端存的「对方编码档位」同理作废——
+            // 留着它，下一场连上另一台机器时会先挂一条上一场的降级说明。
+            self.video_pipe_reset();
             crate::rc::local_input::stop_watching();
             // Q6：收口顺手清自动重连状态。异常断流路径的顺序是 force_end（清）→
             // begin（重建），这里清掉不碍触发；它兜的是「用户主动结束」要清掉
@@ -325,13 +328,18 @@ impl RcService {
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
             Some(s) if s.phase == SessionPhase::InboundActive => {
-                crate::rc::link::peer_bg_watchdog(
+                let reason = crate::rc::link::peer_bg_watchdog(
                     s.bg_since_mono,
                     s.started_mono,
                     evidence,
                     crate::rc::mono::mono_ms(),
                     timeout,
-                )
+                );
+                // 🔴 P1：被控端同样喂调度状态机（两端各自的 LinkState 各自维护相位）。
+                if reason.is_some() {
+                    self.link.note_evidence_lost();
+                }
+                reason
             }
             _ => None,
         }
@@ -396,12 +404,21 @@ impl RcService {
         let timeout = self.heartbeat_timeout_ms();
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         match inner.session.as_ref() {
-            Some(s) if s.phase == SessionPhase::OutboundActive => crate::rc::link::link_stale_kick(
-                s.started_mono,
-                evidence,
-                crate::rc::mono::mono_ms(),
-                timeout,
-            ),
+            Some(s) if s.phase == SessionPhase::OutboundActive => {
+                let stale = crate::rc::link::link_stale_kick(
+                    s.started_mono,
+                    evidence,
+                    crate::rc::mono::mono_ms(),
+                    timeout,
+                );
+                // 🔴 P1（2026-10-15）：真判了断供才喂调度状态机（幂等，同拍
+                // 重复喂是 Duplicate）。事件喂入是 link 内部自己的锁，
+                // 此处不持 inner——锁序不变。
+                if stale {
+                    self.link.note_evidence_lost();
+                }
+                stale
+            }
             _ => false,
         }
     }

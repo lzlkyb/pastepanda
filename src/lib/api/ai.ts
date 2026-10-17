@@ -410,8 +410,9 @@ export async function aiPlanChain(
   text: string,
   actions: { id: string; label: string; description: string }[],
   force?: boolean,
+  goal?: string,
 ): Promise<AiRunResponse> {
-  return invoke<AiRunResponse>("ai_plan_chain", { text, actions, force });
+  return invoke<AiRunResponse>("ai_plan_chain", { text, actions, force, goal });
 }
 
 export async function aiRun(

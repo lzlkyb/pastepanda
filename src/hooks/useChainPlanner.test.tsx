@@ -1,0 +1,35 @@
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { useChainPlanner } from "./useChainPlanner";
+import { requestPlannedChain, type PlanOutcome } from "@/lib/chains/planRequest";
+import { setAiAvailable } from "@/lib/transforms/aiTransforms";
+vi.mock("@/lib/chains/planRequest", () => ({ requestPlannedChain: vi.fn() }));
+vi.mock("@/lib/sessionContext", () => ({ getSession: () => ({ texts: ["one", "two"] }), mergeSessionTexts: () => "extra session text" }));
+const outcome: PlanOutcome = { status: "ok", chain: { id: "ai-planned", name: "清理", description: "", steps: [{ transformId: "strip", risk: "local" }] }, dropped: [], truncated: false };
+afterEach(() => { cleanup(); setAiAvailable(false); vi.clearAllMocks(); });
+it("opening and writing a goal does not request; current input is the default scope", async () => {
+  setAiAvailable(true);
+  vi.mocked(requestPlannedChain).mockResolvedValue(outcome);
+  const onPlan = vi.fn();
+  const h = renderHook(() => useChainPlanner("current text", onPlan));
+  act(() => h.result.current.setGoal("只清理空白"));
+  expect(requestPlannedChain).not.toHaveBeenCalled();
+  await act(async () => { await h.result.current.generate(); });
+  expect(requestPlannedChain).toHaveBeenCalledWith("current text", false, "只清理空白");
+  expect(onPlan).toHaveBeenCalledWith(outcome.chain, []);
+});
+it("stopping waiting ignores a late plan without losing the goal", async () => {
+  setAiAvailable(true);
+  let finish!: (r: PlanOutcome) => void;
+  vi.mocked(requestPlannedChain).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  const onPlan = vi.fn();
+  const h = renderHook(() => useChainPlanner("current text", onPlan));
+  act(() => h.result.current.setGoal("保留这个目标"));
+  let pending!: Promise<void>;
+  act(() => { pending = h.result.current.generate(); });
+  act(() => h.result.current.stop());
+  await act(async () => { finish(outcome); await pending; });
+  expect(onPlan).not.toHaveBeenCalled();
+  expect(h.result.current.loading).toBe(false);
+  expect(h.result.current.goal).toBe("保留这个目标");
+});

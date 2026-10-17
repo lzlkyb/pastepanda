@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * todoisland-main —— 待办灵动岛（Todo Island）的独立入口。
  *
@@ -49,8 +51,9 @@ function applyIslandDock(raw?: unknown) {
 applyIslandTheme();
 applyIslandGlass();
 applyIslandDock();
-invoke<{ theme?: string; todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
+invoke<{ theme?: string; window_animation?: boolean; todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
   .then((cfg) => {
+    setMotionPreference(cfg?.window_animation !== false);
     applyIslandTheme(cfg?.theme);
     applyIslandGlass(cfg?.todo_island_glass);
     applyIslandDock(cfg?.todo_island_anchor);
@@ -61,8 +64,9 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 }).catch(() => { /* 监听注册失败时退化为仅打开时读取一次 */ });
 // 设置页保存「灵动岛」分区后广播（Rust 侧同一个事件做开关门控与重摆位）；遮盖度/朝向变了就重读。
 listen("todo-island-config-changed", () => {
-  invoke<{ todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
+  invoke<{ window_animation?: boolean; todo_island_glass?: unknown; todo_island_anchor?: unknown }>("get_config")
     .then((cfg) => {
+      setMotionPreference(cfg?.window_animation !== false);
       applyIslandGlass(cfg?.todo_island_glass);
       applyIslandDock(cfg?.todo_island_anchor);
     })
@@ -84,7 +88,9 @@ window.addEventListener("unhandledrejection", (event) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <TodoIsland />
+    <MotionPolicy>
+      <TodoIsland />
+    </MotionPolicy>
   </React.StrictMode>,
 );
 

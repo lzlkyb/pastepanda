@@ -1,0 +1,24 @@
+# 本地 embedding 探针 A1（fastembed-ort）。**独立工程，不进主仓库构建**。
+# 判据先写死在 README.md；本 crate 只回答「A1 的数字是什么」。
+[package]
+name = "embed-probe"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastembed = "=7.1.1"   # pin：该 crate 版本漂移快（10-14 记录 6.0.3，10-15 已 7.1.1）
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }  # FTS5 对照组；bundled 与真实库 SQLite 3.53 同代
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+] }
+
+# 与 pastePanda 的 [profile.release] 对齐（opt-level 除外——探针要的是可复现的运行时不极致瘦身），
+# 否则量出来的数不可比。实际上探针用 debug 信息辅助定位，release 保证优化后吞吐接近真实集成形态。
+[profile.release]
+codegen-units = 1
+lto = "fat"
+strip = "symbols"

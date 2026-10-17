@@ -121,6 +121,7 @@ it("opening an existing note holds its task identity until share acknowledgment 
   const hook=renderHook(()=>useKnowledgeArticle(true,source,vi.fn()));
   await act(async()=>{await hook.result.current.begin("https://example.com/a");});
   let operation!:Promise<void>;
+  // waitguard:allow: flush 只让 existing() 的挂起态上屏，数据断言在 await operation 之后
   await act(async()=>{operation=hook.result.current.existing();await Promise.resolve();});
   await act(async()=>{await hook.result.current.close();await hook.result.current.begin("https://example.com/b");});
   const before=hook.result.current.task?.id;

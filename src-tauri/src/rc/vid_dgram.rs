@@ -37,6 +37,19 @@ use super::video::FrameCodec;
 pub const DGRAM_TAG: u8 = 0xD1;
 /// 单片承载上限（+34B 头 = 1034B，低于 QUIC datagram 的 ~1200B 安全线）。
 pub const FRAG: usize = 1000;
+/// 🔴 P3（2026-10-15，对标 p2wlan DPLPMTUD）：**大分片档**。`FLAG_FRAG_BIG`
+/// 置位的帧按 1400B 分片（数据报总长 1434B）——以太网 1500 MTU 下每帧
+/// 包数比 1000B 少 ~30%，同码率丢包敏感度直接下降。**启用前提是
+/// `pmtud.rs` 探测确认对端真收得下这个尺寸**（链路 MTU 是路径属性，
+/// PPPoE/VPN/隧道路径会低于 1500）；探测不过永远保持 [`FRAG`]，
+/// 与今天行为完全一致。
+///
+/// 兼容性：老接收端不认识 FLAG_FRAG_BIG 位（按 1000B 推数据片数 → 重组失败），
+/// 但它也绝不会在 Request 里带 `vd_frag`，发送端因此永远不给它发大分片——
+/// 门在发送端，格式位只是随帧自描述（接收端**无状态**，不用跨帧记协商值）。
+pub const FRAG_BIG: usize = 1400;
+/// flags 位 0x20：本帧按 [`FRAG_BIG`] 分片。0x40/0x80 预留更多档位。
+pub const FLAG_FRAG_BIG: u8 = 32;
 /// FEC 组大小：每 ≤4 片 1 片奇偶。
 const GROUP: usize = 4;
 /// 头长度：tag1 + seq4 + flags1 + frag_idx2 + frag_count2 + frame_len4
@@ -69,15 +82,16 @@ const MAX_REASM_BYTES: usize = 16 * 1024 * 1024;
 /// 三条一起判的原因：
 /// 1. `frame_len == 0`：空帧声明没有意义，且会让完整性判据退化；
 /// 2. `> MAX_REASM_BYTES`：挡住 `with_capacity` 被线上 u32 放大；
-/// 3. `> frag_count * FRAG`：分片槽位的物理上界装不下声明长度 = 脏包
+/// 3. `> frag_count * frag`：分片槽位的物理上界装不下声明长度 = 脏包
 ///    （即便前两条侥幸通过，`drain_ready` 也会因字节数不符报废整帧，
 ///    但那已经分配过一次了——必须在入口拦）。
-fn frame_len_ok(frame_len: u32, frag_count: u16) -> bool {
+/// `frag` 是本帧的片宽（FLAG_FRAG_BIG 决定，见模块头）。
+fn frame_len_ok(frame_len: u32, frag_count: u16, frag: usize) -> bool {
     let fl = frame_len as usize;
     if frame_len == 0 || fl > MAX_REASM_BYTES {
         return false;
     }
-    fl <= frag_count as usize * FRAG
+    fl <= frag_count as usize * frag
 }
 
 /// flags 位。
@@ -170,17 +184,19 @@ impl VidDgramSender {
         codec: super::video::FrameCodec,
         fec_rs: bool,
         loss_permille: i64,
+        frag: usize,
     ) -> Result<(), SendErr> {
         const PACE_EVERY: usize = 16;
         let m = rs_m_for_loss(loss_permille);
+        // 调用方从本会话 ProbeState 取片宽，不能读取跨会话的全局探测结果。
         let dgs = if fec_rs {
-            frame_dgrams_rs(seq, data, key, at_ms, cap_ms, enc_ms, w, h, codec, m)
+            frame_dgrams_rs(seq, data, key, at_ms, cap_ms, enc_ms, w, h, codec, m, frag)
         } else {
-            frame_dgrams(seq, data, key, at_ms, cap_ms, enc_ms, w, h, codec)
+            frame_dgrams(seq, data, key, at_ms, cap_ms, enc_ms, w, h, codec, frag)
         };
         // 缓冲空间校验按**实际片数**（RS 下总片数含校验）
         let total = dgs.len();
-        let need = total * (HEADER + FRAG);
+        let need = total * (HEADER + frag);
         if conn.datagram_send_buffer_space() < need {
             return Err(SendErr::Busy);
         }
@@ -196,6 +212,8 @@ impl VidDgramSender {
 }
 
 /// 把一帧拆成数据报（数据片 + 奇偶片）。纯函数——重组器测试用同一份逻辑。
+/// `frag` = 片宽（P3：探测确认后 1400，否则 1000；!= [`FRAG`] 时置
+/// [`FLAG_FRAG_BIG`]，接收端按位自描述、无需跨帧状态）。
 #[allow(clippy::too_many_arguments)]
 fn frame_dgrams(
     seq: u32,
@@ -207,10 +225,11 @@ fn frame_dgrams(
     w: u32,
     h: u32,
     codec: super::video::FrameCodec,
+    frag: usize,
 ) -> Vec<Vec<u8>> {
-    let frag_count = data.len().div_ceil(FRAG).max(1) as u16;
+    let frag_count = data.len().div_ceil(frag).max(1) as u16;
     let n_groups = frag_count.div_ceil(GROUP as u16) as usize;
-    let flags = codec_flags(key, codec);
+    let flags = codec_flags(key, codec) | frag_flag_of(frag);
     let build = |frag_idx: u16, flags: u8, payload: &[u8]| -> Vec<u8> {
         let mut dg = Vec::with_capacity(HEADER + payload.len());
         dg.push(DGRAM_TAG);
@@ -229,8 +248,8 @@ fn frame_dgrams(
     };
     let mut out = Vec::with_capacity(frag_count as usize + n_groups);
     for i in 0..frag_count {
-        let off = i as usize * FRAG;
-        let end = (off + FRAG).min(data.len());
+        let off = i as usize * frag;
+        let end = (off + frag).min(data.len());
         out.push(build(i as u16, flags, &data[off..end]));
     }
     // 奇偶分片：XOR 组内各片（补零对齐）
@@ -238,13 +257,13 @@ fn frame_dgrams(
         let start = g * GROUP;
         let end = (((start + GROUP) as u16).min(frag_count)) as usize;
         let plen = (start..end)
-            .map(|i| (data.len() - i * FRAG).min(FRAG))
+            .map(|i| (data.len() - i * frag).min(frag))
             .max()
             .unwrap_or(0);
         let mut parity = vec![0u8; plen];
         for i in start..end {
-            let off = i * FRAG;
-            let f = &data[off..(off + FRAG).min(data.len())];
+            let off = i * frag;
+            let f = &data[off..(off + frag).min(data.len())];
             for (b, s) in parity.iter_mut().zip(f.iter()) {
                 *b ^= s;
             }
@@ -252,6 +271,19 @@ fn frame_dgrams(
         out.push(build(frag_count + g as u16, flags | FLAG_PARITY, &parity));
     }
     out
+}
+
+/// 片宽 → flags 位（P3）：非默认片宽必须随帧自描述。
+fn frag_flag_of(frag: usize) -> u8 {
+    if frag == FRAG_BIG {
+        FLAG_FRAG_BIG
+    } else if frag == FRAG {
+        0
+    } else {
+        // ❗ 只允许两档：新档位必须同时改 receiver 的解析（match），
+        // 否则这里 panic 掉发送任务比静默发错格式好。
+        panic!("未知片宽 {frag}：只支持 FRAG/FRAG_BIG（见 FLAG_FRAG_BIG 注释）")
+    }
 }
 
 /// flags 位组装（P2.3：编码标准从 bool 升为三态）。
@@ -291,11 +323,12 @@ fn frame_dgrams_rs(
     h: u32,
     codec: super::video::FrameCodec,
     m: usize,
+    frag: usize,
 ) -> Vec<Vec<u8>> {
-    let n = data.len().div_ceil(FRAG).max(1);
+    let n = data.len().div_ceil(frag).max(1);
     let groups = n.div_ceil(RS_K);
     let total = n + groups * m;
-    let flags = codec_flags(key, codec) | FLAG_RS;
+    let flags = codec_flags(key, codec) | FLAG_RS | frag_flag_of(frag);
     let build = |frag_idx: u16, f: u8, payload: &[u8]| -> Vec<u8> {
         let mut dg = Vec::with_capacity(HEADER + payload.len());
         dg.push(DGRAM_TAG);
@@ -315,8 +348,8 @@ fn frame_dgrams_rs(
     let mut out = Vec::with_capacity(total);
     // 数据片（与旧格式同布局：槽位 0..n，末片截短）
     for i in 0..n {
-        let off = i * FRAG;
-        let end = (off + FRAG).min(data.len());
+        let off = i * frag;
+        let end = (off + frag).min(data.len());
         out.push(build(i as u16, flags, &data[off..end]));
     }
     // 校验片：每组 k 片（末组补零对齐）进 RS 编码
@@ -325,10 +358,10 @@ fn frame_dgrams_rs(
         let end = ((start + RS_K).min(n)) as usize;
         let group: Vec<Vec<u8>> = (start..end)
             .map(|i| {
-                let off = i * FRAG;
-                let end2 = (off + FRAG).min(data.len());
+                let off = i * frag;
+                let end2 = (off + frag).min(data.len());
                 let mut s = data[off..end2].to_vec();
-                s.resize(FRAG, 0); // 末片补零对齐（RS 要求等长）
+                s.resize(frag, 0); // 末片补零对齐（RS 要求等长）
                 s
             })
             .collect();
@@ -478,14 +511,22 @@ impl VidReassembler {
         let width = u32::from_le_bytes(dg[26..30].try_into().ok()?);
         let height = u32::from_le_bytes(dg[30..34].try_into().ok()?);
         let payload = &dg[HEADER..];
-        // M6 脏包防御：单片载荷不可能超过承载上限（正常分片 ≤1000B）
-        if payload.len() > FRAG {
+        // 🔴 P3：片宽随帧自描述（FLAG_FRAG_BIG）。接收端**无状态**——不用跨帧
+        // 记协商值，同一会话里 1000/1400 混排也能解（pmtud 探测成功瞬间起，
+        // 改写只影响后续帧，已缓存帧的片宽各自带在帧里）。
+        let frag = if flags & FLAG_FRAG_BIG != 0 {
+            FRAG_BIG
+        } else {
+            FRAG
+        };
+        // M6 脏包防御：单片载荷不可能超过承载上限（正常分片 ≤片宽）
+        if payload.len() > frag {
             return None;
         }
         // 🔴 脏包防御 ③（P0-1）：`frame_len` 夹上限。必须在**任何分配与
         // 状态推进之前**——`drain_ready` 会 `Vec::with_capacity(frame_len)`，
         // 线上 u32 不夹就是远程 OOM。与下面的 `MAX_FRAG_COUNT` 同一类问题。
-        if !frame_len_ok(frame_len, frag_count) {
+        if !frame_len_ok(frame_len, frag_count, frag) {
             return None;
         }
         let parity = flags & FLAG_PARITY != 0;
@@ -553,7 +594,7 @@ impl VidReassembler {
         // 自描述，发送端逐帧调冗余无需信令。旧格式 frag_count = 数据片数、
         // GROUP=4 每组 1 片 XOR 奇偶。
         let (n_data, fec_m, total) = if rs {
-            let n = (frame_len as usize).div_ceil(FRAG).max(1);
+            let n = (frame_len as usize).div_ceil(frag).max(1);
             let groups = n.div_ceil(RS_K);
             let field = frag_count as usize;
             if field < n + groups || n > MAX_FRAG_COUNT as usize {
@@ -629,9 +670,9 @@ impl VidReassembler {
         // 校验片到 → 尝试恢复组内缺失
         if !complete(&self.map) && parity {
             if fec_m > 0 {
-                self.try_recover_rs(seq, slot);
+                self.try_recover_rs(seq, slot, frag);
             } else {
-                self.try_recover(seq, n_data as u16, slot);
+                self.try_recover(seq, n_data as u16, slot, frag);
             }
         }
         // 交付条件：恰是游标帧、已完整、引用链有效（corrupt 中只放关键帧）、
@@ -692,8 +733,8 @@ impl VidReassembler {
         out
     }
 
-    /// 用奇偶片恢复组内恰好缺 1 片的情况。
-    fn try_recover(&mut self, seq: u32, frag_count: u16, parity_slot: usize) {
+    /// 用奇偶片恢复组内恰好缺 1 片的情况。`frag` = 本帧片宽（P3）。
+    fn try_recover(&mut self, seq: u32, frag_count: u16, parity_slot: usize, frag: usize) {
         let Some(reasm) = self.map.get_mut(&seq) else {
             return;
         };
@@ -729,8 +770,8 @@ impl VidReassembler {
         // 恢复出的是补零对齐的内容；截到该片真实长度（按 frame_len 与片序推出）
         let mi = missing[0];
         let flen = (reasm.frame_len as usize)
-            .saturating_sub(mi * FRAG)
-            .min(FRAG);
+            .saturating_sub(mi * frag)
+            .min(frag);
         rec.truncate(flen);
         reasm.frags.insert(mi, rec);
         reasm.recovered = true;
@@ -739,7 +780,8 @@ impl VidReassembler {
     /// 用柯西校验片恢复 RS 组内缺失（P3.1）。组定位：校验槽 `(slot−n)/m`，
     /// 数据槽 `slot/k`；组内数据片 + 该组 m 片校验凑齐 k 片即解方程恢复。
     /// 恢复出的是补零对齐的整片，末片按 frame_len 截回真实长度。
-    fn try_recover_rs(&mut self, seq: u32, slot: usize) {
+    /// `frag` = 本帧片宽（P3，编码时的等长补零宽度必须与解码一致）。
+    fn try_recover_rs(&mut self, seq: u32, slot: usize, frag: usize) {
         let Some(reasm) = self.map.get_mut(&seq) else {
             return;
         };
@@ -769,7 +811,14 @@ impl VidReassembler {
         }
         for j in 0..m {
             if let Some(s) = reasm.frags.get(&(pstart + j)) {
-                present.push((RS_K + j, s.clone()));
+                // 🔴 既有 bug 修正（2026-10-15，P3 大分片测试暴露）：校验片的
+                // 相对下标必须是 `本组数据片数 + j`，不是 `RS_K + j`。
+                // decode_group 的 k 参数 = dend − dstart（**本组实际片数**，
+                // 末组可以 < RS_K），它把 idx ≥ k 解释为第 (idx−k) 行柯西校验。
+                // 原写法在满组（k=16）时恰好对齐所以从没暴露；n=15 这类
+                // 不满组里校验片被当成越界行 → 恢复值全错（静默，只表现为
+                // 丢帧率虚高）。FRAG=1000 同样受益于此修复。
+                present.push((dend - dstart + j, s.clone()));
             }
         }
         if present.len() < dend - dstart {
@@ -778,7 +827,7 @@ impl VidReassembler {
         let refs: Vec<(usize, &[u8])> =
             present.iter().map(|(i, s)| (*i, s.as_slice())).collect();
         let Some(out) =
-            super::rs_fec::decode_group(&refs, dend - dstart, m, FRAG)
+            super::rs_fec::decode_group(&refs, dend - dstart, m, frag)
         else {
             return;
         };
@@ -789,7 +838,7 @@ impl VidReassembler {
                 continue; // 先到先得：已有的不覆盖
             }
             let mut b = bytes.clone();
-            let real = frame_len.saturating_sub(abs * FRAG).min(FRAG);
+            let real = frame_len.saturating_sub(abs * frag).min(frag);
             b.truncate(real);
             reasm.frags.insert(abs, b);
             reasm.recovered = true;

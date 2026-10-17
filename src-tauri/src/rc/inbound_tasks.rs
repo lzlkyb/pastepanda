@@ -74,6 +74,7 @@ impl InboundVideo {
     /// 视频大帧把可靠流堵住时，鼠标依然每一拍都进得来。
     pub(super) fn spawn_datagram_reader(&self) {
         let svc = self.svc.clone();
+        let probe = self.probe.clone();
         let peer = self.peer.clone();
         // 🔴 再审计 P3-8（2026-09-25）：退出判据从 peer 换成会话 id——LAN 快速
         // 重连时新旧会话 peer 相同，旧任务会因「peer 相同」误判自己仍存活；
@@ -97,6 +98,14 @@ impl InboundVideo {
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => continue,
                 };
+                // 🔴 P3（2026-10-15）：pmtud 探针回显（0xD2）——登记确认后丢弃。
+                // 只可能来自新版发起端对探针的回发；旧对端永远不会发这个 tag。
+                if bytes.first() == Some(&super::pmtud::PROBE_TAG) {
+                    if let Some((nonce, _)) = super::pmtud::parse_probe(&bytes) {
+                        probe.note_ack(nonce);
+                    }
+                    continue;
+                }
                 if let Ok(ev) = serde_json::from_slice::<InputEvent>(&bytes) {
                     svc.touch_activity();
                     // 数据报只承载鼠标移动；提帧与可靠流同款语义（见

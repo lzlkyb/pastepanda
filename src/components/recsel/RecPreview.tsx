@@ -1,293 +1,282 @@
-/**
- * RecPreview — 录屏预览裁剪窗（四期 1.4；§18 轻预览范式）。
- *
- * 预览即默认播放整段；拖青色起/终点手柄选保留段（切点关键帧对齐 ±1s，无损零转码）；
- * 「保存裁剪」落新文件（原名 + _剪），原文件不动；Esc 两级取消：先重置选区、再按关窗；
- * 空格播放/暂停（与播放器一致，不另造心智）。吸附规则镜像后端 rec/trim.rs（见 trimSnap.ts）。
- */
+/** 预览、关键帧对齐裁剪；原录像保留，后台任务由后端拥有。 */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Pause, Play, X } from "lucide-react";
 import {
   recKeyframes,
   recOpenFile,
+  recOpenPreview,
   recReveal,
-  recTrim,
   type RecKeyframeIndex,
   type RecPreviewData,
-  type RecTrimResult,
 } from "@/lib/api/rec";
-import { snapTrimRange, type TrimRange } from "./trimSnap";
+import { formatBytes, formatRecordingTime } from "@/lib/utils";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
+import { useRecTrimTask } from "@/hooks/useRecTrimTask";
+import { TrimFields } from "./RecTrimFields";
+import { Timeline } from "./RecTimeline";
+import { HelpHint } from "./RecHelpHint";
+import { trimClock } from "./trimClock";
+import type { TrimRange } from "./trimSnap";
 
-function fmtTime(ms: number): string {
-  if (ms > 0 && ms < 1000) return `${(ms / 1000).toFixed(2)} 秒`;
-  const s = Math.max(0, Math.round(ms / 1000));
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
-
-function fmtMB(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** 时间轴手柄拖拽侧。 */
-type Side = "in" | "out";
-
+/**
+ * 预览窗（`rec-preview.html` 的根组件）。
+ *
+ * 2026-10-16 苹果风重做（方案 §5 / 设计稿 §05）：
+ * ① 三条原生滑杆 → 一条自绘轨道：保留段 + 两侧斜纹 + 关键帧刻度 + 播放头共存，
+ *    一眼看出「保留哪一段」（拆到 RecTimeline）；
+ * ② 起止点做成读数芯片、键盘与读屏交给视觉隐藏的原生 range（拆到 RecTrimFields）；
+ * ③ 播放入口从左下角一枚文字按钮改成画面正中 52px 玻璃按钮，播放中**淡出**而不是消失
+ *    （鼠标移上去回来），空格仍是加速器；
+ * ④ 键位说明从底部一整行 `<kbd>` 收进条右端的 `?`（L4 就地解释）；
+ * ⑤ 文案只留事实：`实际保留 0:03.200 – 0:14.900（0:11.700）` → `共 00:11.7`，
+ *    `正在另存 · 42%` → `正在另存 42%`（分隔靠间距，不靠 `·`）。
+ */
 export function RecPreview({ data }: { data: RecPreviewData }) {
   const [kf, setKf] = useState<RecKeyframeIndex | null>(null);
   const [kfErr, setKfErr] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [sel, setSel] = useState<TrimRange | null>(null);
-  const [draft, setDraft] = useState<TrimRange | null>(null); // 拖动中的未吸附值
-  const [dragSide, setDragSide] = useState<Side | null>(null);
-  const [aligned, setAligned] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [currentMs, setCurrentMs] = useState(0);
-  const [metaDur, setMetaDur] = useState(0); // <video> 元数据时长（关键帧扫描的兜底）
-  const [saving, setSaving] = useState(false);
+  const [metaDur, setMetaDur] = useState(0);
   const [videoErr, setVideoErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState<RecTrimResult | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [actErr, setActErr] = useState<string | null>(null);
+  const [closeHint, setCloseHint] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-
+  const task = useRecTrimTask(data.path);
   const duration = kf?.durationMs || metaDur;
-  const shown = draft ?? sel;
   const canTrim = !!kf && kf.keyframesMs.length >= 2;
-  const pct = (ms: number) => (duration > 0 ? `${Math.min(100, Math.max(0, (ms / duration) * 100))}%` : "0%");
-
-  // 关键帧索引（吸附刻度 + 裁剪可用性）
   useEffect(() => {
-    let dead = false;
+    let alive = true;
     setKfErr(null);
     recKeyframes(data.path)
-      .then((v) => !dead && setKf(v))
-      .catch((e: unknown) => !dead && setKfErr(e instanceof Error ? e.message : String(e)));
+      .then((index) => {
+        if (alive) setKf(index);
+      })
+      .catch((e: unknown) => {
+        if (alive) setKfErr(e instanceof Error ? e.message : String(e));
+      });
     return () => {
-      dead = true;
+      alive = false;
     };
-  }, [data.path]);
-
-  // 播放头：rAF 只在播放时跑（规则 8），暂停/卸载即停
-  useEffect(() => {
-    if (!playing) return;
-    let raf = 0;
-    const tick = () => {
-      const v = videoRef.current;
-      if (v) setCurrentMs(v.currentTime * 1000);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [playing]);
-
-  // 「✓ 已对齐」闪示 1.6s
-  useEffect(() => {
-    if (!aligned) return;
-    const t = setTimeout(() => setAligned(false), 1600);
-    return () => clearTimeout(t);
-  }, [aligned]);
-
-  const togglePlay = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) void v.play().catch(() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。"));
-    else v.pause();
+  }, [data.path, reload]);
+  const seek = useCallback((ms: number) => {
+    if (videoRef.current) videoRef.current.currentTime = ms / 1000;
+    setCurrentMs(ms);
   }, []);
-
-  // 键盘：空格播放/暂停（焦点在按钮上时交给按钮自身，避免双触发）；Esc 两级取消
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused)
+      void video
+        .play()
+        .catch(() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。"));
+    else video.pause();
+  }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === " ") {
-        if (e.target instanceof HTMLButtonElement || e.target instanceof HTMLInputElement) return;
-        e.preventDefault();
-        togglePlay();
-      } else if (e.key === "Escape") {
-        if (sel || saved) {
-          setSel(null);
-          setSaved(null);
-          setErr(null);
-        } else {
-          void getCurrentWindow().close();
-        }
-      }
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== " " || (event.target as HTMLElement)?.closest?.("button,input,select,textarea")) return;
+      event.preventDefault();
+      togglePlay();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sel, saved, togglePlay]);
-
-  const trackMs = useCallback(
-    (clientX: number): number => {
-      const el = trackRef.current;
-      if (!el || duration <= 0) return 0;
-      const r = el.getBoundingClientRect();
-      const ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
-      return Math.round(ratio * duration);
-    },
-    [duration],
-  );
-
-  const startDrag = (side: Side) => (e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const ms = trackMs(e.clientX);
-    setSaved(null);
-    setDraft(side === "in" ? { inMs: ms, outMs: sel?.outMs ?? duration } : { inMs: sel?.inMs ?? 0, outMs: ms });
-    setDragSide(side);
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [togglePlay]);
+  useDialogEscape(() => {
+    if (task.saving) {
+      setCloseHint(true);
+      return;
+    }
+    if (sel || task.saved) {
+      setSel(null);
+      task.clearSaved();
+      setActErr(null);
+    } else void getCurrentWindow().close();
+  });
+  const run = (action: () => Promise<void>) => {
+    setActErr(null);
+    void action().catch((e: unknown) => setActErr(e instanceof Error ? e.message : String(e)));
   };
-
-  // 拖动中：手柄跟原始位置；松手：吸附落定（宁多勿少），退化选段=放弃
-  useEffect(() => {
-    if (!dragSide || !draft) return;
-    const side = dragSide;
-    const move = (e: PointerEvent) => {
-      const ms = trackMs(e.clientX);
-      setDraft((d) => (d ? { ...d, [side === "in" ? "inMs" : "outMs"]: ms } : d));
-    };
-    const up = () => {
-      const snapped = snapTrimRange(kf?.keyframesMs ?? [], duration, draft.inMs, draft.outMs);
-      setDragSide(null);
-      setDraft(null);
-      if (snapped.outMs > snapped.inMs) {
-        setSel(snapped);
-        setAligned(true);
-      } else {
-        setSel(null);
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-  }, [dragSide, draft, kf, duration, trackMs]);
-
-  const save = () => {
-    if (!sel || !canTrim || saving) return;
-    setSaving(true);
-    setErr(null);
-    recTrim(data.path, sel.inMs, sel.outMs)
-      .then(setSaved)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))
-      .finally(() => setSaving(false));
-  };
-
-  const inPct = pct(shown?.inMs ?? 0);
-  const outPct = pct(shown?.outMs ?? duration);
-  const ticks = kf && kf.keyframesMs.length <= 300 ? kf.keyframesMs : [];
-
+  const range = task.saved ?? sel;
+  const error = [task.error, actErr, kfErr, videoErr, kf?.warning].filter(Boolean).join("；");
+  /** 轨道与芯片要的是**具体**区间：没选过就是整段；「没选过」这件事本身由按钮的 disabled 表达。 */
+  const shown: TrimRange = range ?? { inMs: 0, outMs: duration };
+  /** 右侧那格只说一件事：保留多久；不能裁的时候说清为什么（这也正是那两枚芯片不可用的原因）。 */
+  const keepInfo = canTrim
+    ? `共 ${trimClock(shown.outMs - shown.inMs)}`
+    : kfErr
+      ? "无法读取裁剪时间轴"
+      : kf
+        ? "录制太短（无可对齐关键帧）"
+        : "正在读取裁剪时间轴…";
+  /** 保存中关闭 = 任务留在后台，这件事必须写在按钮自己身上（hover 一下就知道，而不是点了才知道）。 */
+  const closeLabel = task.saving ? "关闭，后台继续保存" : "关闭预览";
   return (
     <div className="rec-pv-root">
       <div className="rec-pv-head" data-tauri-drag-region>
         <span className="rec-pv-title" data-tauri-drag-region>
-          🎬 {data.name}
-          <em>{fmtMB(data.bytes)}</em>
+          {data.name}
+          <em>{formatBytes(data.bytes)}</em>
         </span>
-        <button type="button" className="rec-pv-x" onClick={() => void getCurrentWindow().close()} title="关闭">
-          ✕
+        <button
+          type="button"
+          className="rec-icon-btn"
+          onClick={() => void getCurrentWindow().close()}
+          title={closeLabel}
+          aria-label={closeLabel}
+        >
+          <X size={13} aria-hidden="true" />
         </button>
       </div>
-
-      <video
-        ref={videoRef}
-        className="rec-pv-video"
-        src={convertFileSrc(data.path)}
-        onClick={togglePlay}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        onTimeUpdate={(e) => setCurrentMs(e.currentTarget.currentTime * 1000)}
-        onError={() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。") }
-        onLoadedMetadata={(e) => setMetaDur(e.currentTarget.duration * 1000)}
-      />
-
-      <div className="rec-pv-timerow">
-        <span className="rec-pv-time">{fmtTime(currentMs)}</span>
-        <div
-          ref={trackRef}
-          className={`rec-pv-track${sel || shown ? " has-sel" : ""}`}
-          onClick={(e) => {
-            const v = videoRef.current;
-            if (v) v.currentTime = trackMs(e.clientX) / 1000;
-          }}
+      {/* 播放态只把大按钮**淡出**（`:hover` / `:focus-visible` 把它带回来），不卸载：
+          卸载后画面正中就没有「暂停」这个出口了，而视频本身只有 1px 高的边缘可点。 */}
+      <div className="rec-pv-stage" data-playing={playing || undefined}>
+        <video
+          ref={videoRef}
+          className="rec-pv-video"
+          src={convertFileSrc(data.path)}
+          preload="metadata"
+          onClick={togglePlay}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onEnded={() => setPlaying(false)}
+          onTimeUpdate={(event) => setCurrentMs(event.currentTarget.currentTime * 1000)}
+          onError={() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。")}
+          onLoadedMetadata={(event) =>
+            setMetaDur(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)
+          }
+        />
+        <span className="rec-pv-badge">
+          {formatRecordingTime(currentMs)} / {formatRecordingTime(duration)}
+        </span>
+        <button
+          type="button"
+          className="rec-pv-play"
+          onClick={togglePlay}
+          aria-label={playing ? "暂停" : "播放"}
+          title={playing ? "暂停（空格）" : "播放（空格）"}
         >
-          <span className="rec-pv-base" />
-          {ticks.map((k) => (
-            <i key={k} className="rec-pv-kf" style={{ left: pct(k) }} />
-          ))}
-          {shown ? (
-            <>
-              <span className="rec-pv-cut" style={{ left: 0, width: inPct }} />
-              <span className="rec-pv-cut" style={{ left: outPct, right: 0 }} />
-              <span className="rec-pv-sel" style={{ left: inPct, width: `calc(${outPct} - ${inPct})` }} />
-            </>
-          ) : null}
-          <span className="rec-pv-playhead" style={{ left: pct(currentMs) }} />
-          <button
-            type="button"
-            className="rec-pv-handle in"
-            style={{ left: inPct }}
-            onPointerDown={startDrag("in")}
-            aria-label="起点手柄"
-          />
-          <button
-            type="button"
-            className="rec-pv-handle out"
-            style={{ left: outPct }}
-            onPointerDown={startDrag("out")}
-            aria-label="终点手柄"
-          />
-          {dragSide && shown ? (
-            <span className="rec-pv-bubble" style={{ left: dragSide === "in" ? inPct : outPct }}>
-              {fmtTime(dragSide === "in" ? shown.inMs : shown.outMs)}
-            </span>
-          ) : null}
-        </div>
-        <span className="rec-pv-time">{fmtTime(duration)}</span>
+          {playing ? <Pause size={20} aria-hidden="true" /> : <Play size={20} aria-hidden="true" />}
+        </button>
       </div>
-
+      <Timeline
+        duration={duration}
+        keyframes={kf?.keyframesMs ?? []}
+        range={shown}
+        currentMs={currentMs}
+        disabled={!canTrim || task.saving || !!task.saved}
+        onSeek={seek}
+        onChange={(next) => {
+          task.clearSaved();
+          setSel(next);
+        }}
+      />
+      <TrimFields
+        duration={duration}
+        keyframes={kf?.keyframesMs ?? []}
+        value={shown}
+        disabled={!canTrim || task.saving || !!task.saved}
+        keepInfo={keepInfo}
+        onChange={(next) => {
+          task.clearSaved();
+          setSel(next);
+        }}
+      />
+      {task.saving && (
+        <div className="rec-pv-progress" role="status">
+          <span>正在另存 {task.percent}%</span>
+          <progress className="rec-pv-bar" value={task.percent} max={100} aria-label="裁剪保存进度" />
+          <button type="button" className="rec-pv-btn" onClick={() => void task.cancel()}>
+            取消裁剪
+          </button>
+        </div>
+      )}
+      {closeHint && task.saving && (
+        <p className="rec-pv-note">Esc 不会取消保存。请点击「取消裁剪」，或关闭窗口让任务在后台继续。</p>
+      )}
+      {task.saved && (
+        <p className="rec-pv-ok" role="status">
+          已另存为新文件：{task.saved.path.split(/[/\\]/).pop()}；原录像保留。
+        </p>
+      )}
       <div className="rec-pv-actions">
-        {saved ? (
+        {task.saved ? (
           <>
-            <span className="rec-pv-ok">✓ 已保存为新文件 {saved.path.split(/[/\\]/).pop()}</span>
-            <button type="button" className="rec-pv-btn" onClick={() => recReveal(saved.path).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))}>
-              📁 打开文件夹
+            <button
+              type="button"
+              className="rec-pv-btn primary"
+              onClick={() => run(() => recOpenPreview(task.saved!.path))}
+            >
+              预览裁剪文件
             </button>
-            <button type="button" className="rec-pv-btn primary" onClick={() => void getCurrentWindow().close()}>
-              完成
+            <button type="button" className="rec-pv-btn" onClick={() => run(() => recReveal(task.saved!.path))}>
+              打开文件夹
+            </button>
+            <button
+              type="button"
+              className="rec-pv-btn"
+              onClick={() => {
+                task.clearSaved();
+                setSel(null);
+              }}
+            >
+              继续裁剪原录像
             </button>
           </>
         ) : (
           <>
-            <span className="rec-pv-range">
-              {sel
-                ? `保留 ${fmtTime(sel.inMs)} – ${fmtTime(sel.outMs)}（${fmtTime(sel.outMs - sel.inMs)}）${aligned ? " · ✓ 已对齐" : ""}`
-                : canTrim
-                  ? "拖动手柄选保留段"
-                  : kfErr ? "无法读取裁剪时间轴" : kf ? "录制太短（无可对齐关键帧）" : "正在读取裁剪时间轴…"}
-            </span>
-            <button type="button" className="rec-pv-btn" disabled={!sel} onClick={() => setSel(null)}>
-              重置
+            <button
+              type="button"
+              className="rec-pv-btn primary"
+              disabled={!sel || !canTrim || task.saving}
+              onClick={() => {
+                if (sel) void task.save(sel);
+              }}
+            >
+              {task.saving ? "保存中…" : "另存裁剪"}
             </button>
-            <button type="button" className="rec-pv-btn primary" disabled={!sel || !canTrim || saving} onClick={save}>
-              {saving ? "保存中…" : "✂ 保存裁剪"}
+            <button type="button" className="rec-pv-btn" disabled={!sel || task.saving} onClick={() => setSel(null)}>
+              重置
             </button>
           </>
         )}
+        <span className="rec-pv-sp" />
+        {/* 键位说明按需展开：原来底部常驻一整行 <kbd>（§5.1） */}
+        <HelpHint open={helpOpen} onToggle={() => setHelpOpen((v) => !v)}>
+          <kbd>空格</kbd> 播放 / 暂停 <kbd>Esc</kbd> 重置范围 / 关闭预览
+          <br />
+          拖轨道两端选保留段，切点自动对齐关键帧；原录像不会被改动。
+        </HelpHint>
       </div>
-
-      {videoErr ? <button type="button" className="rec-pv-btn" onClick={() => recOpenFile(data.path).catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)))}>用系统播放器打开</button> : null}
-
-      {err || kfErr || videoErr || kf?.warning ? (
-        <div className="rec-pv-err" role="alert">
-          {[err, kfErr, videoErr, kf?.warning].filter(Boolean).join("；")}
+      {videoErr && (
+        <div className="rec-pv-errorRow">
+          <button type="button" className="rec-pv-btn" onClick={() => run(() => recOpenFile(data.path))}>
+            用系统播放器打开
+          </button>
         </div>
-      ) : null}
-
-      <div className="rec-pv-hints">
-        <span><kbd>空格</kbd> 播放/暂停</span>
-        <span><kbd>Esc</kbd> 重置选区 / 关窗</span>
-        <span>切点对齐关键帧（±1s · 无损零转码）</span>
-      </div>
+      )}
+      {kfErr && (
+        <div className="rec-pv-errorRow">
+          <button type="button" className="rec-pv-btn" onClick={() => setReload((value) => value + 1)}>
+            重试时间轴
+          </button>
+        </div>
+      )}
+      {task.queryFailed && (
+        <div className="rec-pv-errorRow">
+          <button type="button" className="rec-pv-btn" onClick={() => void task.query()}>
+            重新查询裁剪
+          </button>
+        </div>
+      )}
+      {error && (
+        <div className="rec-pv-err" role="alert">
+          {error}
+        </div>
+      )}
     </div>
   );
 }

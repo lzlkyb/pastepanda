@@ -4,9 +4,11 @@ import type { useRcFrames } from "@/hooks/useRcFrames";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import { RcHud } from "./RcHud";
 
-export function RcSessionDetails({ session, rc, frames, link, quality, scope, pointerLocked }: {
+export function RcSessionDetails({ session, rc, frames, link, quality, scope, pointerLocked, linkSched = "" }: {
   session: RcSession; rc: UseRc; frames: ReturnType<typeof useRcFrames>; link: RcLinkSnapshot;
   quality: string; scope: string; pointerLocked: boolean;
+  /** 链路调度相位（P1）：rc-direct-fps-tuning 分支的链路调度状态机产出，空串 = 不显示。 */
+  linkSched?: string;
 }) {
   return (
           <RcHud
@@ -31,6 +33,7 @@ export function RcSessionDetails({ session, rc, frames, link, quality, scope, po
             scope={scope}
             linkState={link.state}
             pathKind={rc.status?.path_kind ?? ""}
+            linkSched={linkSched}
             pointerLocked={pointerLocked}
             frameSize={frames.size}
           />

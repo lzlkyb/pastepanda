@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   confirmDialog: vi.fn(),
   noteDelete: vi.fn(),
   noteRestoreDeleted: vi.fn(),
+  noteSetFolder: vi.fn(),
   /**
    * 敲定的不是「6000」而是「用的是撤销窗口那个常量」。
    * 写死 6000 的话，哪天把真实窗口调成 8 秒，这条会在行为没错的情况下红。
@@ -32,7 +33,7 @@ vi.mock("@/lib/confirm", () => ({ confirmDialog: h.confirmDialog }));
 vi.mock("@/lib/api", () => ({
   noteDelete: h.noteDelete,
   noteRestoreDeleted: h.noteRestoreDeleted,
-  noteSetFolder: vi.fn(async () => true),
+  noteSetFolder: h.noteSetFolder,
   noteTogglePin: vi.fn(async () => true),
 }));
 
@@ -86,9 +87,30 @@ beforeEach(() => {
   h.confirmDialog.mockReset().mockResolvedValue(true);
   h.noteDelete.mockReset().mockResolvedValue(true);
   h.noteRestoreDeleted.mockReset().mockResolvedValue(true);
+  h.noteSetFolder.mockReset().mockResolvedValue(true);
 });
 
 describe("删笔记：不弹确认，给撤销", () => {
+  it.each(["batch", "drop"])("%s 移动全部失败时保留选中，且不显示成功落点", async (mode) => {
+    h.noteSetFolder.mockResolvedValue(false);
+    const { result } = setup();
+    act(() => { result.current.handleRowSelect(0, "toggle"); result.current.handleRowSelect(1, "toggle"); });
+    await act(async () => {
+      if (mode === "batch") await result.current.handleBatchMove("folder");
+      else await result.current.handleDropNotes("folder", ["n1", "n2"]);
+    });
+    expect([...result.current.selectedIds]).toEqual(["n1", "n2"]);
+    expect(result.current.landedFolder).toBeNull();
+  });
+  it("批量删除失败的当前笔记保留草稿和选中状态，允许直接重试", async () => {
+    h.noteDelete.mockImplementation(async (id: string) => id !== "n2");
+    const clearActive = vi.fn();
+    const { result } = setup({ activeNote: n2, isActiveDirty: () => true, clearActive });
+    act(() => { result.current.handleRowSelect(0, "toggle"); result.current.handleRowSelect(1, "toggle"); });
+    await act(async () => { await result.current.handleBatchDelete(); });
+    expect(clearActive).not.toHaveBeenCalled();
+    expect([...result.current.selectedIds]).toEqual(["n2"]);
+  });
   it("删一条**不**弹确认框——它可撤销（U4.1）", async () => {
     const { result } = setup();
     await act(async () => {

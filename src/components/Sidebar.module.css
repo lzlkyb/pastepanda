@@ -12,9 +12,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              min-width 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.35s ease;
+  transition:width var(--motion-base) var(--ease-standard),
+              min-width var(--motion-base) var(--ease-standard),
+              border-color var(--motion-base) var(--ease-standard);
 }
 
 .sidebar.open {
@@ -39,7 +39,7 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-color) transparent;
   opacity: 0;
-  transition: opacity 0.2s ease 0.2s;
+  transition: opacity var(--motion-fast) var(--ease-standard);
 }
 
 .sidebar.open .list {
@@ -79,7 +79,7 @@
   font-family: inherit;
   font-size: 13px;
   color: var(--text-primary);
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   text-align: left;
   width: 100%;
   position: relative;
@@ -87,7 +87,7 @@
 
 .item:hover {
   background: var(--hover);
-  transform: translateX(2px);
+  transform: none;
 }
 
 .item.active {
@@ -156,7 +156,7 @@
   border-radius: 8px;
   padding: 1px 7px;
   line-height: 1.4;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .item.active .count {
@@ -200,7 +200,7 @@
   padding: 0;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition:opacity var(--motion-fast);
 }
 
 /* 点击靶区撑到 24×24（SC 2.5.8），不改视觉尺寸。 */
@@ -278,7 +278,7 @@
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -332,7 +332,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
   flex-shrink: 0;
   line-height: 1;
 }
@@ -397,7 +397,7 @@
   justify-content: center;
   flex-shrink: 0;
   padding: 0;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .createConfirm:hover {
@@ -434,7 +434,7 @@
   text-align: left;
   font-family: inherit;
   border-radius: 6px;
-  transition: background 0.1s;
+  transition:background var(--motion-fast);
 }
 
 .contextMenuItem:hover {
@@ -471,7 +471,7 @@
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .contextMenuColorDot:hover {
@@ -502,7 +502,7 @@
   border-top: 1px solid var(--border-color);
   flex-shrink: 0;
   opacity: 0;
-  transition: opacity 0.2s ease 0.25s;
+  transition:opacity var(--motion-base) var(--ease-standard) var(--motion-base);
 }
 
 .sidebar.open .footer {
@@ -551,7 +551,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .collapseBtn:hover {

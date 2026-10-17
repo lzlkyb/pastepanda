@@ -1,6 +1,5 @@
 import type { AppConfig } from "@/stores/appStore";
-import { emit } from "@tauri-apps/api/event";
-import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
+import { THEMES } from "@/lib/theme";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { SettingTile, ToggleRow } from "../ToggleRow"
 import shared from "../../Settings.module.css";
@@ -17,7 +16,7 @@ const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string;
 
 interface AppearanceSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   tabStyle: string;
   handleSwitchTabStyle: (style: "segmented" | "circle") => void;
 }
@@ -60,10 +59,6 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
               <button key={t.key || `theme-${idx}`}
                 onClick={() => {
                   updateAndSave({ theme: t.key });
-                  applyTheme(t.key as ThemeKey);
-                  // 广播到所有独立窗口（快捷粘贴/托盘弹窗/编辑器），使其切主题实时跟随。
-                  // emit 广播是幂等的：主窗口自身也会收到，但 applyTheme 重复执行无副作用。
-                  emit("theme-changed", { theme: t.key }).catch(() => { /* 广播失败不影响本窗口已生效 */ });
                 }}
                 className={`${styles.themeCard}${isActive ? ` ${styles.themeCardOn}` : ""}`}
                 title={t.displayName}
@@ -201,14 +196,14 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           <p>💡 适合记录较多时使用，帮助快速浏览</p>
         </>}
         onChange={(v) => updateAndSave({ timeline_enabled: v })} />
-      <ToggleRow icon="✨" hue="system" label="窗口动画" desc="弹框与全屏窗口打开/关闭时的过渡动画" value={config.window_animation}
-        tooltip="玻璃浮升效果；关闭后弹框与全屏编辑器即时显隐"
-        detailTitle="窗口动画"
+      <ToggleRow icon="✨" hue="system" label="界面动效" desc="页面、菜单和弹窗自然衔接；跟随系统减少动态效果设置" value={config.window_animation}
+        tooltip="动效可随时打断；关闭后即时显示，操作反馈仍保留"
+        detailTitle="界面动效"
         detail={<>
-          <p>控制弹框与全屏编辑器打开/关闭时的过渡动画（玻璃浮升效果）。</p>
-          <p>📌 <b>开启</b>：弹框浮升进入、背景模糊渐显，关闭时平滑退场</p>
-          <p>📌 <b>关闭</b>：即时显示/隐藏，无任何过渡</p>
-          <p>💡 默认开启；追求极速响应可关闭</p>
+          <p>统一页面、控件和弹层的过渡节奏，高频操作立即响应。</p>
+          <p>开启时，新内容短距离进入，菜单从触发位置出现。</p>
+          <p>关闭时即时显示；文字、选中、保存与错误提示仍保留。</p>
+          <p>系统启用减少动态效果时，自动减少位移与缩放。</p>
         </>}
         onChange={(v) => updateAndSave({ window_animation: v })} />
     </>

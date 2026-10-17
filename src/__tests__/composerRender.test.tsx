@@ -129,11 +129,24 @@ describe("变换中心指令条（提案 2）", () => {
     const onResult = vi.fn();
     const { container } = render(<NlCommandBar onResult={onResult} />);
     const input = container.querySelector("input") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "翻译成英文" } });
+    // 用本地动作验清空：2026-10-17 起 AI 动作在 AI 未启用时保留输入（见下一条），
+    // 拿「翻译成英文」这类 AI 动作验清空会撞 aiDisabled 分支，清空不会发生。
+    fireEvent.change(input, { target: { value: "Base64 解码" } });
     fireEvent.keyDown(input, { key: "Enter" });
     // 这条必须真命中，否则整段退化成下面那条的副本（空守卫）
     expect(onResult.mock.calls[0][0].actionId).toBeTruthy();
     expect(input.value).toBe("");
+  });
+
+  it("AI 未启用时命中 AI 动作：保留输入让用户改，不清空", () => {
+    const onResult = vi.fn();
+    const { container } = render(<NlCommandBar onResult={onResult} />);
+    const input = container.querySelector("input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "翻译成英文" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onResult.mock.calls[0][0].actionId).toBeTruthy();
+    expect(onResult.mock.calls[0][0].aiDisabled).toBe(true);
+    expect(input.value).toBe("翻译成英文");
   });
 
   it("未命中时把原文选中，让用户改两个词而不是从头再打", () => {

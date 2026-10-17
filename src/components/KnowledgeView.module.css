@@ -102,7 +102,7 @@
   background: var(--hover);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast);
 }
 .searchClear:hover {
   background: var(--border-color);
@@ -126,7 +126,7 @@
   font-size: var(--kb-fs-body);
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s, background 0.15s;
+  transition:opacity var(--motion-fast), background var(--motion-fast);
 }
 .askBtn:hover:not(:disabled) {
   background: var(--accent-strong, var(--accent));
@@ -171,7 +171,7 @@
   width: 1px;
   height: 100%;
   background: var(--border-color);
-  transition: background 0.15s, width 0.15s;
+  transition:background var(--motion-fast), width var(--motion-fast);
 }
 .vgrip:hover::after,
 .vgripOn::after {
@@ -179,7 +179,7 @@
   background: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
-  .vgrip::after { transition: none; }
+  .vgrip::after { transition:none; }
 }
 
 /* ===== 面包屑 ===== */
@@ -245,7 +245,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--kb-hit);
+  min-width: var(--kb-hit);
+  padding: 0 8px;
+  gap: 4px;
   height: var(--kb-hit);
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
@@ -254,7 +256,7 @@
   box-shadow: var(--control-elev, none);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 
 .newBtn:hover {
@@ -297,7 +299,7 @@
   font-family: inherit;
   font-size: var(--kb-fs-badge);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 
 .wideBtn:hover {
@@ -338,7 +340,7 @@
   /* ui-rule-ok: 11px 只给 meta——窄屏小按钮，内容是「宽屏」二字的状态标签 */
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast), border-color var(--motion-fast);
 }
 
 .wideBtn:hover {
@@ -400,7 +402,7 @@
   border-radius: 8px;
   background: var(--control-glass, var(--search-bg));
   box-shadow: var(--control-elev, 0 1px 4px rgba(0, 0, 0, 0.03));
-  transition: all 0.2s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 /* 聚焦光环。用 `:focus-within` 而不是像记录模式那样拉 React state 推一个
@@ -447,7 +449,7 @@
   font-size: var(--kb-fs-body);
   line-height: 1;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .modeBtn:hover {
@@ -553,15 +555,14 @@
 
 /* ── 空态图标（设计稿 §6）──
    原来是一个 34px 的 emoji。记录模式那边是
-   96px 容器 + 旋转虚线环 + 64px 圆角图标底（`.emptyIconWrap` / `.emptyRing` / `.emptyIcon`）。
+   96px 容器 + 静态虚线环 + 64px 圆角图标底（`.emptyIconWrap` / `.emptyRing` / `.emptyIcon`）。
 
    ❗ 设计稿说「直接复用 `Illustration` 组件」——行不通：
      那个组件是给发版说明/教练卡画 OCR/马赛克/橡皮擦功能示意的 Canvas 渲染器
      （固定 240×130 画布，kind 只有 ocr/mosaic/eraser/default），
      拿它当笔记空态会画出图像编辑的图形。
      `MelodyEmpty` 也不行：它在非 blossom 主题下 `return null`。
-     所以这里复用的是记录模式的**做法**（纯 CSS + 一个 lucide 图标），
-     关键帧走已搬到 `surface.css` 的 `pp-ring-spin`。 */
+     所以这里复用的是记录模式的做法（纯 CSS + 一个 lucide 图标），空态保持静止。 */
 .emptyWrap {
   position: relative;
   width: 96px;
@@ -578,7 +579,7 @@
   border-radius: 50%;
   border: 2px dashed var(--accent);
   opacity: 0.25;
-  animation: pp-ring-spin 14s linear infinite;
+
 }
 
 /* 降级：系统要求减少动画时环不转（仍然画出来，只是不动）。
@@ -624,7 +625,7 @@
   font-family: inherit;
   font-size: var(--kb-fs-body);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:background var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
 }
 
 .emptyBtn:hover {
@@ -719,10 +720,8 @@
     var(--hover) 75%
   );
   background-size: 200% 100%;
-  /* 与卡片列表共用同一份关键帧（styles/surface.css）。
-     它故意不走 `--card-shimmer-anim`：那个变量是给**装饰性**光泽的开关，
-     而「正在加载」是信息，不能跟着主题把它关掉。 */
-  animation: pp-skeleton-shimmer 1.5s infinite;
+  /* 静态骨架保留加载后的布局，忙碌语义由 aria-busy 表达。 */
+
 }
 
 .skelTitle { width: 62%; }
@@ -765,7 +764,7 @@
   box-shadow: var(--shadow-sm);
   /* 🔴 故意不写 backdrop-filter。记录模式为它付过 GPU 代价并在 v5.5.2 删掉了
      （CardList.module.css 里那段长注释就是尸检报告）。不重蹈同一个坑。 */
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  transition:border-color var(--motion-fast), box-shadow var(--motion-fast), background var(--motion-fast);
 }
 
 /* 顶部静态微光——玻璃感的主要来源，成本是零（纯渐变）。
@@ -781,7 +780,7 @@
   z-index: 0;
 }
 
-/* hover 只增加层次；位移由 NoteList 的 motion.li 驱动。 */
+/* 扫读时保持原位，悬停只确认边框与背景。 */
 .row:hover {
   border-color: var(--glass-card-hover-border);
   box-shadow: var(--shadow-md);
@@ -879,7 +878,7 @@
   border: 1.5px solid var(--border-color);
   border-radius: 4px;
   background: var(--card-bg);
-  transition: background 0.15s, border-color 0.15s;
+  transition:background var(--motion-fast), border-color var(--motion-fast);
 }
 .rowCheckOn {
   border-color: var(--accent);
@@ -927,7 +926,7 @@
   font-family: inherit;
   font-size: var(--kb-fs-body);
   cursor: pointer;
-  transition: background 0.15s;
+  transition:background var(--motion-fast);
 }
 .batchBtn:hover {
   background: rgba(255, 255, 255, 0.3);
@@ -944,7 +943,7 @@
   background: transparent;
   color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast);
 }
 .batchClear:hover {
   background: rgba(255, 255, 255, 0.2);
@@ -1040,7 +1039,7 @@
     var(--glass-icon-border)
   );
   box-shadow: var(--glass-icon-shadow);
-  transition: all 0.3s ease;
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 /* 图标槽装缩略图时叠上这一层（照记录模式 `.cardImgThumb` 的手法）。
@@ -1196,7 +1195,7 @@
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  transition:border-color var(--motion-fast), box-shadow var(--motion-fast), background var(--motion-fast);
 }
 
 /* 静态微光。走 `--card-shimmer-display`：浅色主题（包括默认的 ocean）
@@ -1338,7 +1337,7 @@
   border: 1px solid var(--float-card-border, var(--border-color));
   box-shadow: var(--float-card-shadow, 0 2px 8px rgba(0, 0, 0, 0.1));
   opacity: 0;
-  transition: opacity 0.15s;
+  transition:opacity var(--motion-fast);
   /* 🔴 隐着的时候必须不接鼠标。它是绝对定位浮层，
      `opacity: 0` 的浮层**照样拦点击**——不写这一句，
      点标题右半边会没反应（原来那个删除按钮是 flex 兄弟、不是浮层，没这个问题）。 */
@@ -1366,7 +1365,7 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:background var(--motion-fast), color var(--motion-fast);
 }
 
 /* 🔴 hover 要报出**这个按钮是干什么的**，而不是统一变深一点的灰。
@@ -1503,7 +1502,7 @@
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--section-bg);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 .trashRow:hover {

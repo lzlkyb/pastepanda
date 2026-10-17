@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLenisRef } from "@/contexts/ScrollContext";
@@ -81,7 +82,7 @@ export function BackToTop({ threshold = 150, className }: BackToTopProps) {
           initial={{ opacity: 0, scale: 0.8, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.8, y: 10 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          transition={CONTENT_TRANSITION}
           className={`${styles.btn}${className ? ` ${className}` : ""}`}
           onClick={scrollToTop}
           title="回到顶部"

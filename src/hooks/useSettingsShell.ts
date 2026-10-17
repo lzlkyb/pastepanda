@@ -1,5 +1,6 @@
+import { useSettingsSave } from "@/hooks/useSettingsSave";
 import { primaryShortcutLabel } from "@/lib/utils";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { useUpdate } from "@/contexts/UpdateContext";
@@ -44,55 +45,30 @@ export function useSettingsShell() {
     return lastSeen ? hasUnseenEntries(CHANGELOG, lastSeen) : CHANGELOG.length > 0;
   }, [updateStatus]);
 
-  const loadStats = () => {
+  const statsGeneration = useRef(0);
+  const loadStats = useCallback(() => {
+    const generation = ++statsGeneration.current;
+    setStats(null);
     setStatsError(false);
     getStatsDetail(config.current_workspace)
       .then((s) => {
+        if (generation !== statsGeneration.current) return;
         setStats(s);
-        setStatsError(false);
+        setStatsError(s == null);
       })
-      .catch(() => setStatsError(true));
-  };
+      .catch(() => { if (generation === statsGeneration.current) setStatsError(true); });
+  }, [config.current_workspace]);
 
   useEffect(() => {
+    const generation = statsGeneration;
     // 审查：stats 失败不再静默——置错误标记，界面给重试
     loadStats();
     getAppVersion().then(setAppVersion);
     getAppName().then(setAppName).catch(() => setAppName("PastePanda"));
-    // loadStats 每次渲染都是新函数，列进依赖会变成每渲染都重拉一次统计
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.current_workspace]);
+    return () => { generation.current++; };
+  }, [loadStats]);
 
-  // 串行化配置写入：后一次保存必须在前一次之后执行，且读取最新 store 快照，
-  // 避免快速连续切换时闭包过期 config 相互覆盖导致设置丢失（M20）
-  const saveChainRef = useRef(Promise.resolve() as Promise<unknown>);
-
-  const updateAndSave = async (partial: Record<string, unknown>) => {
-    // 乐观更新前先拍下本次涉及键的旧值，供失败回滚用。
-    // ❗ 只拍 partial 里的那几个键而不是整份 config：保存是串行的，整份回滚会把
-    //   排在本次之后、已经成功落盘的其它改动也一并抹掉。
-    const before = useAppStore.getState().config as unknown as Record<string, unknown>;
-    const rollback = Object.fromEntries(Object.keys(partial).map((k) => [k, before[k]]));
-    updateConfig(partial);
-    const task = saveChainRef.current.then(async () => {
-      const { invoke } = await import("@tauri-apps/api/core");
-      // Zustand set 同步生效，此时 getState 已包含 partial
-      const newConfig = useAppStore.getState().config;
-      await invoke("save_config", { config: newConfig });
-    });
-    saveChainRef.current = task.catch(() => {});
-    try {
-      await task;
-    } catch (e) {
-      logger.warn("即时保存失败", e);
-      // 修复：以前只报错不还原。toast 消失后开关停在「开」而库里是旧值，
-      // 下次启动它自己变回去，用户会当成「设置存不住的怪 bug」。
-      // 同仓 useAiSettings.persist 遇到同样情况是 reload() 回填真实落盘值，这里对齐该行为：
-      // 回滚到上一次成功落盘的值（= 库里真实值），屏上与库里重新一致。
-      updateConfig(rollback);
-      toast("设置保存失败，该项已还原（请检查数据库权限）", "error");
-    }
-  };
+  const { updateAndSave, saveState, retrySave } = useSettingsSave();
 
   // 修复 U27：恢复默认设置（保留工作区等用户数据，仅重置行为/外观/热键配置）
   const handleResetDefaults = async () => {
@@ -104,12 +80,14 @@ export function useSettingsShell() {
       current_workspace: current.current_workspace,
       workspaces: current.workspaces,
     };
-    await updateAndSave(reset);
+    if (!await updateAndSave(reset)) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("reregister_hotkeys");
     } catch (e) {
       logger.warn("恢复默认后重注册热键失败", e);
+      toast("默认设置已保存，但快捷键未能更新，请重试设置快捷键。", "warning");
+      return;
     }
     toast("已恢复默认设置", "success");
   };
@@ -205,16 +183,20 @@ export function useSettingsShell() {
         if (valid.length === 0) { toast(`文件中没有有效记录（共 ${items.length} 条，全部格式不符）`, "error"); return; }
         const { invoke } = await import("@tauri-apps/api/core");
         const count = await invoke<number>("import_history", { items: valid });
-        const store = useAppStore.getState();
-        const fresh = await invoke<HistoryItem[]>("get_history", { workspace: store.config.current_workspace, filter: "all", search: "", offset: 0, limit: 200 });
-        store.setHistory(fresh);
+        // The import has committed. A failed refresh must not invite a duplicate import.
         invalidateCountsCache();
-        const imported = count || valid.length;
-        if (dropped > 0) {
-          toast(`导入 ${imported} 条；${dropped} 条格式不符已跳过`, "warning");
-        } else {
-          toast(`导入成功：${imported} 条记录`, "success");
+        try {
+          const store = useAppStore.getState();
+          const fresh = await invoke<HistoryItem[]>("get_history", { workspace: store.config.current_workspace, filter: "all", search: "", offset: 0, limit: 200 });
+          store.setHistory(fresh);
+        } catch (e) {
+          logger.warn("导入后刷新失败", e);
+          toast(`已导入 ${count} 条，但列表刷新失败。请切换页面刷新，无需再次导入。`, "warning");
+          return;
         }
+        const existing = valid.length - count;
+        const details = [existing > 0 && `${existing} 条已存在`, dropped > 0 && `${dropped} 条格式不符已跳过`].filter(Boolean);
+        toast(`导入完成：新增 ${count} 条${details.length ? `；${details.join("；")}` : ""}`, dropped > 0 ? "warning" : count === 0 ? "info" : "success");
       }
     } catch (e) {
       logger.warn("导入失败", e);
@@ -266,7 +248,7 @@ export function useSettingsShell() {
   };
 
   return {
-    config, updateConfig, updateAndSave,
+    config, updateConfig, updateAndSave, saveState, retrySave,
     stats, statsError, retryStats: loadStats,
     appName, appVersion, hasAboutDot,
     tabStyle, handleSwitchTabStyle,

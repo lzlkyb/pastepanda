@@ -8,7 +8,6 @@
  * 🔴 红线：无 AI。
  */
 import { Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { FolderInput, Pin, PinOff, MoreHorizontal } from "lucide-react";
 import { CtxMenuCtx, type MenuItem } from "@/components/ContextMenu";
 import type { Note, NoteFolder } from "@/lib/api";
@@ -363,18 +362,11 @@ function NoteRow({
 }) {
   // 字数条已随标题/摘要/元信息一起进了 `NoteItemBody`，那里自己算。
   return (
-    // 知识库需要连续扫读；悬停只轻抬一像素，避免逐行放大干扰视线。
-    <motion.li
+    // 连续扫读时整行保持稳定，反馈由边框、背景与选中态表达。
+    <li
       className={`${styles.row} ${active ? styles.rowActive : ""} ${
         selected ? styles.rowSelected : ""
       }`}
-      /* 轻入场：只 opacity/transform（200ms），与记录卡/浮层同一档（U2）。
-         不做 FLIP 搬家——笔记列表靠滚动加载，大位移会和分页抢注意力。 */
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-      whileHover={{ y: -1, transition: { duration: 0.15, ease: "easeOut" } }}
-      whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
       onContextMenu={(e) => {
         if (!ctxTrigger) return;
         e.preventDefault();
@@ -399,7 +391,7 @@ function NoteRow({
         style={{ ["--kb-row-tint" as string]: noteIconColor(note) }}
         /* roving：全列表只有一个 0。 */
         tabIndex={focused ? 0 : -1}
-        /* A3 拖拽源。❗ 挂在这个普通 `<button>` 上而不是外层 `motion.li`：
+        /* A3 拖拽源。❗ 挂在这个普通 `<button>` 上而不是外层 `<li>`：
            framer-motion 把 `onDragStart` 当成它自己的手势事件（回调拿到的是
            MouseEvent/PointerEvent，没有 `dataTransfer`），两套拖拽机制同名冲突。
 
@@ -497,6 +489,6 @@ function NoteRow({
           <MoreHorizontal size={14} />
         </button>
       </span>
-    </motion.li>
+    </li>
   );
 }

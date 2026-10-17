@@ -102,6 +102,10 @@ export interface Transform {
   group: TransformGroup;
   /** 返回 0~1 的匹配度；0 表示不适用。多个变换可同时命中，按分数排序 */
   detect(ctx: TransformContext): number;
+  /** Verifiable evidence from the same analysis, not a probability claim. */
+  matchReason?(ctx: TransformContext): string | undefined;
+  /** A follow-on editor, offered only beside a relevant operation or manual lookup. */
+  workbench?: "codec";
   /**
    * 执行变换。`text` 类返回可复制产物；`action` 类返回 ok 表示已执行，
    * `output` 为空（UI 不展示产物）。

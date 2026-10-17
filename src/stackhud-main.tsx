@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * stackhud-main —— 剪贴板栈浮标（Stack HUD）的独立入口。
  *
@@ -32,8 +34,8 @@ window.addEventListener("unhandledrejection", (event) => {
 // 与长截图状态窗同一套主题跟随：它也是叠在任意屏幕内容上的浮层，
 // 令牌化后浅色主题走浅玻璃 + 深字，深色主题保持深玻璃观感。
 applyTheme(DEFAULT_THEME);
-invoke<{ theme?: string }>("get_config")
-  .then((cfg) => applyTheme(normalizeTheme(cfg?.theme)))
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
+  .then((cfg) => { setMotionPreference(cfg?.window_animation !== false); applyTheme(normalizeTheme(cfg?.theme)); })
   .catch(() => { /* 读取失败时保持默认主题 */ });
 
 listen<{ theme?: string }>("theme-changed", (e) => {
@@ -42,6 +44,8 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <StackHud />
+    <MotionPolicy>
+      <StackHud />
+    </MotionPolicy>
   </React.StrictMode>,
 );

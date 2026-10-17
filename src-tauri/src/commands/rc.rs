@@ -473,6 +473,23 @@ pub fn rc_invite_preview(code: String) -> Result<Invite, String> {
     invite::decode(&code, now, invite::RC_TTL_SECS)
 }
 
+/// 主动作废当前邀请窗口（2026-10-16 对标 p2wlan 差距 2）。
+///
+/// 「配对成功即关门」早已实现（`approve_join` → `join::close_door`）；这里补的
+/// 是另一半：码发出去但**还没人配成**时，用户可以提前关门，不用干等 TTL。
+/// `close_door` 写配置键、天然幂等——门本来没开也返回 Ok，作废一枚已过期的码
+/// 不该报错（对用户来说结果一样：这枚码已经没用了）。
+#[tauri::command]
+pub fn rc_invite_revoke(
+    app: AppHandle,
+    store: State<'_, DataStore>,
+    svc: State<'_, Arc<RcService>>,
+) -> Result<(), String> {
+    join::close_door(&store)?;
+    emit_changed(&app, &svc);
+    Ok(())
+}
+
 /// 首页互换码：记录本机选择的对端，尚不建立信任。
 #[tauri::command]
 pub async fn rc_exchange_begin(
@@ -807,6 +824,16 @@ pub async fn rc_set_device_allowed(
     node_id: String,
     allowed: bool,
 ) -> Result<(), String> {
+    // 🔴 拉黑 = 撤销信任，正在跑的会话必须当场收（2026-10-16 对标 p2wlan 差距 1）。
+    // `rc_forget` 早在 09-23（P1-1 审计）就是这么做的；当时只补了「忘记设备」
+    // 这一个入口，拉黑这条漏了——已建立的会话会一直活到对端自己断开。
+    // 顺序与 rc_forget 同款：先收会话（End 帧要发给对方、历史要落），再写表。
+    if !allowed {
+        if let Some(id) = svc.session_id_for_peer(&node_id) {
+            log::info!("[RC] 拉黑设备，当场结束与它的会话：{node_id}");
+            svc.force_end_if_session(&id, "设备已被禁止连接").await;
+        }
+    }
     let mut config = store.get_config()?;
     let obj = config.as_object_mut().ok_or("配置文件不是一个对象")?;
     let mut deny: serde_json::Map<String, serde_json::Value> = obj

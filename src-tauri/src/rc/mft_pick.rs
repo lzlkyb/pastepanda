@@ -208,6 +208,36 @@ pub(super) fn adapter_luid_of(device: &ID3D11Device) -> Option<u64> {
     }
 }
 
+/// 一次选型要枚举哪几档 MFT（纯函数，规则 11.1：判据只许一份 + 必须可单测）。
+///
+/// 🔴 MF 的枚举旗标里**没有 `SOFTWARE`**（`windows-0.58` 只有
+/// SYNCMFT(1) / ASYNCMFT(2) / HARDWARE(4) / FIELDOFUSE(8) / LOCALMFT(16) /
+/// SORTANDFILTER(64) / ALL(63)）。软件 MFT 的口径是**不带 HARDWARE 位**：
+/// 那时 `MFTEnumEx` 走注册表枚举，拿到的就是系统注册的软件 MFT
+/// （含 Microsoft H.264 Encoder MFT `{6CA50344-051A-4DED-9779-A43305165E35}`）。
+///
+/// 硬件档为什么是三级瀑布：硬编 MFT 全是 async，`HARDWARE|SYNCMFT` 那档
+/// 只在个别驱动上才有货，而 `MFT_ENUM_FLAG_ALL` 里含 HARDWARE——循环在
+/// **第一个有候选的档位就 break**，所以 `skip_hw` 那一档绝不能混进 HARDWARE
+/// 旗标，否则定罪之后枚举到的还是同一批坏硬件 MFT（甲-3 要修的正是这个）。
+/// 旗标必须写成 `const`：windows-0.58 的 `BitOr` 不是 const fn，`A | B` 直接放进
+/// 返回 `&'static [_]` 的数组里会撞 E0515（返回临时值的引用）——所以按位或在这里
+/// 手工展开成 `MFT_ENUM_FLAG(x.0 | y.0)`，编译器能在 const 求值里算完。
+const HW_TIERS: [MFT_ENUM_FLAG; 3] = [
+    MFT_ENUM_FLAG(MFT_ENUM_FLAG_HARDWARE.0),
+    MFT_ENUM_FLAG(MFT_ENUM_FLAG_HARDWARE.0 | MFT_ENUM_FLAG_SYNCMFT.0),
+    MFT_ENUM_FLAG_ALL,
+];
+const SW_TIERS: [MFT_ENUM_FLAG; 1] = [MFT_ENUM_FLAG(MFT_ENUM_FLAG_SYNCMFT.0 | MFT_ENUM_FLAG_ASYNCMFT.0)];
+
+fn enum_tiers(skip_hw: bool) -> &'static [MFT_ENUM_FLAG] {
+    if skip_hw {
+        &SW_TIERS
+    } else {
+        &HW_TIERS
+    }
+}
+
 /// 挑一台可用的硬编 MFT 并 ActivateObject 返回。
 ///
 /// ⚠️ 2026-09-21 三处修正（探针 `probe/rc-mft-type` 实测，逐条有数据）：
@@ -218,7 +248,24 @@ pub(super) fn adapter_luid_of(device: &ID3D11Device) -> Option<u64> {
 ///    `[0] Intel QSV H.264（✗ 首帧挂死）`、`[1] NVIDIA NVENC H.264（✓ 7ms/帧）`——
 ///    盲取第一个必失败。改为**按序试编**：每台真喂几帧，第一台能出包的就用。
 /// ③ 试编成本只在**开编码器时**付一次（约几十 ms），不是每帧，可以接受。
-pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCodec) -> Result<IMFTransform, String> {
+///
+/// `skip_hw`（甲-3，2026-10-12）：**只枚举软件 MFT 档**。
+///
+/// 为什么要单独一档：上面的候选瀑布在**硬件 MFT 枚举得到东西时就 break**，
+/// 于是「Microsoft H.264 Encoder MFT」这类软编永远进不了候选池——哪怕本机
+/// 的 QSV 已经证实每帧编不出包。硬编档被定罪后（`H264SessionEncoder::hw_broken`）
+/// 需要的正是「换引擎不换协议」：还是 H.264，还是同一套 MF 协商与喂帧代码，
+/// 只是换成 CPU 上那台 MFT（业界同形：WebRTC 的 software fallback wrapper、
+/// FreeRDP 的 MF→OpenH264→libavcodec、Sunshine 把 libx264 放优先级表末位）。
+///
+/// ⚠️ 软件档**不能**用在零拷贝路径上：软编 MFT 不吃 D3D11 纹理，
+/// `MFT_MESSAGE_SET_D3D_MANAGER` 会直接失败。调用方（`open_inner`）只在
+/// CPU 输入时传 `skip_hw=true`，GPU 路径恒走硬件档。
+pub(super) unsafe fn create_h264_mft(
+    prefer_adapter: Option<u64>,
+    codec: VideoCodec,
+    skip_hw: bool,
+) -> Result<IMFTransform, String> {
     let pick_t0 = std::time::Instant::now();
     let out_info = MFT_REGISTER_TYPE_INFO {
         guidMajorType: MFMediaType_Video,
@@ -227,16 +274,15 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
     let mut count = 0u32;
     let mut acts: *mut Option<IMFActivate> = std::ptr::null_mut();
     // 硬件 MFT 多为 async：不能只用 HARDWARE|SYNCMFT（会枚举 0 个掉进软编）
-    for flags in [
-        MFT_ENUM_FLAG_HARDWARE,
-        MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SYNCMFT,
-        MFT_ENUM_FLAG_ALL,
-    ] {
+    // 档位选择（含「软件档 = 不带 HARDWARE 位」这条 MF 口径）在 [`enum_tiers`]。
+    let tiers = enum_tiers(skip_hw);
+    let tier_name = if skip_hw { "软编" } else { "硬编" };
+    for flags in tiers {
         count = 0;
         acts = std::ptr::null_mut();
         let _ = MFTEnumEx(
             MFT_CATEGORY_VIDEO_ENCODER,
-            flags,
+            *flags,
             None, // ← 不带输入约束（见上方 ①）
             Some(&out_info),
             &mut acts,
@@ -247,7 +293,7 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
         }
     }
     if count == 0 || acts.is_null() {
-        return Err(format!("无 {} MFT", codec.as_str()));
+        return Err(format!("无 {} {} MFT", codec.as_str(), tier_name));
     }
     let slice = std::slice::from_raw_parts(acts, count as usize);
 
@@ -363,9 +409,13 @@ pub(super) unsafe fn create_h264_mft(prefer_adapter: Option<u64>, codec: VideoCo
     log::warn!("{}", super::perf::render_pick(&report));
     // 全败 ⇒ 取证：本线程公寓 + 原地重测（瞬态/持久）+ 干净线程对照（线程局部/进程全局）。
     // 「探针 ✓ / 真机 ✗」这类差异靠猜是猜不出来的，只能把现场量出来。
-    super::mft_diag::dump_pick_failure(codec);
+    // 只在硬件档做：`dump_pick_failure` 枚举的是 HARDWARE 候选，软编档失败时打它
+    // 等于伪造现场（读数指向一台本档根本没试过的 MFT）。
+    if !skip_hw {
+        super::mft_diag::dump_pick_failure(codec);
+    }
     Err(format!(
-        "{} 的 {tried} 台硬编 MFT 全部试编失败",
+        "{} 的 {tried} 台{tier_name} MFT 全部试编失败",
         codec.as_str()
     ))
 }
@@ -782,5 +832,39 @@ mod timeout_tests {
         };
         // 收包上限：一帧出一个包是常态，64 是保险值而不是产量限制
         const { assert!(MAX_DRAIN_PER_FRAME >= 8, "收包上限过小会误判正常的多包帧") };
+    }
+}
+
+#[cfg(test)]
+mod tier_tests {
+    use super::{enum_tiers, MFT_ENUM_FLAG_ASYNCMFT, MFT_ENUM_FLAG_HARDWARE, MFT_ENUM_FLAG_SYNCMFT};
+
+    /// 守卫：甲-3 的「软编档」必须**真的**不带 HARDWARE 位（`&&` 反向也一样钉）。
+    ///
+    /// 为什么静态钉旗标而不是跑真枚举：`MFTEnumEx` 要真机器上的 MFT 注册表，
+    /// 单测造不出来（同 `timeout_tests` 的取舍）。而这一条失效的形状恰好是
+    /// 「代码还在、日志也说换了软编、枚举出来的却还是那三台硬编」——
+    /// 只有位运算能被静态证明。windows-0.58 里**没有** `MFT_ENUM_FLAG_SOFTWARE`，
+    /// 软编只能靠「不加 HARDWARE 位」表达，所以最容易被人"顺手补一个 ALL"改坏。
+    #[test]
+    fn 软编档旗标不得含硬件位() {
+        let sw = enum_tiers(true);
+        assert_eq!(sw.len(), 1, "软编档只许枚举一次，不许再退回硬编");
+        for f in sw {
+            assert_eq!(
+                f.0 & MFT_ENUM_FLAG_HARDWARE.0,
+                0,
+                "软编档混进 HARDWARE 位 ⇒ 甲-3 白做，定罪后仍反复重探坏引擎"
+            );
+        }
+        // 软编档必须仍允许同步与异步两类（MS H.264 Encoder MFT 是 sync，
+        // 只留 ASYNC 会把它挡在外面 = 回到「无候选」）
+        let bits = sw.iter().fold(0i32, |acc, f| acc | f.0);
+        assert_ne!(bits & MFT_ENUM_FLAG_SYNCMFT.0, 0, "软编档必须含 SYNCMFT（MS H.264 是同步 MFT）");
+        assert_ne!(bits & MFT_ENUM_FLAG_ASYNCMFT.0, 0, "软编档必须含 ASYNCMFT");
+        // 反方向：硬编级联的每一档都必须带 HARDWARE，否则等于偷偷改了默认档
+        for f in enum_tiers(false) {
+            assert_ne!(f.0 & MFT_ENUM_FLAG_HARDWARE.0, 0, "硬编级联的档必须带 HARDWARE 位");
+        }
     }
 }

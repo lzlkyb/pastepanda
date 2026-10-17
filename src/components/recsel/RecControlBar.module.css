@@ -1,0 +1,319 @@
+/* 录屏控制条（rec-control.html）——2026-10-16 苹果风重做。
+ *
+ * 🔴 尺寸的唯一来源：`.surface` 的自然尺寸（内容驱动）。
+ * 旧实现把 260/288/80/104 × 28/36/192/280 六个数字写在 RecControlBar.tsx 里，
+ * 每加一个元素就要把公式再算一遍，而且「窗口尺寸 ≠ 浮条尺寸」时会在桌面上留一块
+ * 看不见却吃点击的透明区。现在由 ResizeObserver 量 `.surface` 后上报，
+ * 窗口恰好等于看得见的那块。 */
+.root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  color: var(--shot-bar-text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: default;
+}
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: max-content;
+  max-width: 100vw;
+  max-height: 100vh;
+}
+
+/* 条与面板共用材料底（半透明底 + 细线；窗口本身透明，所以这里不再叠投影） */
+.row,
+.panel {
+  background: var(--shot-bar-bg);
+}
+
+.row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+/* 条上的按钮：与面板里的动作按钮同一档（30px / 8px 圆角），层级由实色与否区分 */
+.root button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: color-mix(in srgb, var(--shot-bar-text) 8%, transparent);
+  font: inherit;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1), transform 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.root button:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 16%, transparent);
+}
+
+.root button:active {
+  transform: scale(0.97);
+}
+
+.root button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* 全条唯一实色（V3）：一屏只有一个强调色 */
+.root .stop {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+}
+
+.root .stop:hover {
+  background: var(--accent-solid);
+  filter: brightness(1.08);
+}
+
+/* 抓手：拖动整条（Tauri drag region 挂在元素上，图标本身不吃事件） */
+.grip {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 30px;
+  flex: none;
+  color: var(--shot-bar-muted);
+  border-radius: 8px;
+  cursor: grab;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.grip:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  color: var(--shot-bar-text);
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+.grip svg {
+  pointer-events: none;
+}
+
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  flex: none;
+}
+
+.clock {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
+.state {
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+/* 静态状态点；时间与录制状态不靠周期运动表达。 */
+.dot,
+.paused,
+.unknown {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.paused {
+  background: var(--warning);
+}
+
+.unknown {
+  background: var(--shot-bar-muted);
+}
+
+.tinyProblem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warning);
+}
+
+.root .more {
+  background: transparent;
+}
+
+.root .more:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+}
+
+.root .problem {
+  color: var(--warning);
+}
+
+/* 收起态：整枚就是「展开」按钮，宽度由内容决定（不再靠 TS 里的 80/104 两个常量）。
+ * min-width 兜住原生窗口的下限（control_layout::resize 要求 logical.w ≥ 80），
+ * 否则计时还在 `--:--` 时这一帧的尺寸会被后端判为无效。 */
+.root .tiny {
+  width: max-content;
+  min-width: 96px;
+  gap: 8px;
+  border-radius: 8px;
+  background: var(--shot-bar-bg);
+}
+
+/* 更多面板：「标签 + 值」的信息卡，动作区与信息区分开。
+ * 2026-10-16 前它是三行 <p> + 四个同款按钮堆叠，且每行左侧还各配一枚图标
+ * （标签已经是该行的名字，图标让名字在一行出现两次，§5.2 已删）。 */
+.panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 248px;
+  padding: 12px;
+  border-radius: 12px;
+  white-space: normal;
+  transform-origin: bottom right;
+  animation: recPanelIn var(--motion-slow) var(--ease-enter) both;
+}
+
+@keyframes recPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.mrow .k {
+  flex: none;
+  width: 52px;
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+.mrow .v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 面板里的音源态：文字只留名字，「开 / 关」交给点的实心与空心（§5.1） */
+.sndv {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 空心圆用 border 表达（V2：box-shadow 只说高度，不说轮廓；
+ * 这里既不是高度也没有层次，写成阴影是把两种语言混在一起） */
+.sndv i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.45;
+}
+
+.sndv i.on {
+  background: var(--accent);
+  border-color: transparent;
+  opacity: 1;
+}
+
+/* 请求了但拿不到设备：与「关着」必须可分——一个点一下就开，一个点了也没声 */
+.sndv i.warn {
+  background: var(--warning);
+  border-color: transparent;
+  opacity: 1;
+}
+
+.dash {
+  height: 1px;
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+}
+
+.acts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.acts button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+/* 丢弃要先「上膛」再确认：确认态用描边红（原版是 danger 实底，与「停止」的 accent 实底同屏） */
+.arm {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 70%, transparent);
+  color: var(--danger);
+}
+
+.arm:hover {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+/* 异常：与触发它的那条同域（规则 15.1），只说事实，收起是一枚 ✕ */
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--warning);
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.error span {
+  flex: 1;
+  min-width: 0;
+}
+
+.error button {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+}

@@ -7,6 +7,22 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(async () => {}),
 }));
 
+/**
+ * 模块顶层（用例装假计时器之前）抓真实 setTimeout：慢取数注入把 listen 的返回值
+ * 推迟一个**真实宏任务**落地；四路串行注册 = 四层边界，`advanceTimersByTimeAsync`
+ * 只保证假计时器被触发，不保证链尾已跑到第 4 路——必须逐拍等内容条件成立。
+ */
+const realSetTimeout = globalThis.setTimeout;
+
+async function untilContent(label: string, pred: () => boolean) {
+  for (let tick = 0; ; tick++) {
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+    await vi.advanceTimersByTimeAsync(0);
+    if (pred()) return;
+    if (tick >= 199) throw new Error(`${label}：200 拍真实宏任务内未落地`);
+  }
+}
+
 function fakeGet(): () => RcState {
   return () =>
     ({
@@ -113,9 +129,14 @@ describe("ensureListener", () => {
       i = 0;
       listenMock.mockImplementation(async () => offs[i++]);
       await vi.advanceTimersByTimeAsync(2_000);
+      // 四路是「await listen → 再 await listen」的串行链：注入下每路结果都要过一拍
+      // 真实宏任务才落地，假计时器推进只保证「重试起跑」，不保证链尾跑到第 4 路。
+      // 逐拍等内容条件（7 次调用 = 首装 3 次 + 重试 4 次）成立，超时即抛。
+      await untilContent("2s 自动重试把四路监听装齐", () => listenMock.mock.calls.length >= 3 + 4);
       expect(listenMock).toHaveBeenCalledTimes(3 + 4);
       // 成功后不再排队重试
       await vi.advanceTimersByTimeAsync(10_000);
+      await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
       expect(listenMock).toHaveBeenCalledTimes(3 + 4);
     } finally {
       warn.mockRestore();

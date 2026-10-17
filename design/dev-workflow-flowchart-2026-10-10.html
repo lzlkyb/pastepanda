@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PastePanda 多人开发业务流程图 · 2026-10-10</title>
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --ink: #e6ebf5;
+    --ink-dim: #9aa7bd;
+    --ink-faint: #6b7893;
+    --line: rgba(255, 255, 255, .09);
+    --line-2: rgba(255, 255, 255, .18);
+    --indigo: #818cf8;
+    --cyan: #22d3ee;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --green: #34d399;
+    --violet: #a78bfa;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 44px 26px 80px;
+    background:
+      radial-gradient(1000px 560px at 10% -6%, rgba(99, 102, 241, .18), transparent 60%),
+      radial-gradient(820px 480px at 95% 2%, rgba(34, 211, 238, .11), transparent 60%),
+      linear-gradient(180deg, #0b0f1a 0%, #101725 100%);
+    color: var(--ink);
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: .01em; }
+  .sub { margin: 0 0 20px; color: var(--ink-dim); font-size: 13.5px; }
+  .sub b { color: var(--ink); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 34px; padding: 12px 16px;
+    border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.03); font-size: 12.5px; color: var(--ink-dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .g { width: 26px; height: 14px; flex: none; border: 1.6px solid var(--ink-faint); }
+  .g.term { border-radius: 999px; border-color: var(--cyan); }
+  .g.proc { border-color: var(--indigo); }
+  .g.dec  { border-color: var(--amber); background: rgba(251, 191, 36, .16); clip-path: polygon(16% 0, 84% 0, 100% 50%, 84% 100%, 16% 100%, 0 50%); }
+  .g.hard { border-color: var(--rose); background: rgba(251,113,133,.14); }
+  .g.wf   { width: 30px; height: 0; border-top: 2px solid var(--ink-dim); }
+  .g.wb   { width: 30px; height: 0; border-top: 2px dashed var(--rose); }
+
+  h2 { margin: 46px 0 4px; font-size: 19px; display: flex; align-items: baseline; gap: 10px; }
+  h2 .idx { font: 600 11.5px/1 var(--mono); color: var(--ink-faint); letter-spacing: .16em; }
+  .lede { margin: 0 0 20px; color: var(--ink-dim); font-size: 13px; }
+
+  .canvas { position: relative; }
+  .heads { display: grid; gap: 26px; margin-bottom: 12px; }
+  .head { padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line-2);
+    background: rgba(255,255,255,.05); font: 600 12.5px/1.4 var(--mono); text-align: center; letter-spacing: .02em; }
+  .head small { display: block; font: 400 11px/1.5 "Segoe UI", sans-serif; color: var(--ink-faint); letter-spacing: 0; }
+  .head.l0 { color: #c7d2fe; border-color: rgba(129,140,248,.34); }
+  .head.l1 { color: #fde68a; border-color: rgba(251,191,36,.32); }
+  .head.l2 { color: #a5f3fc; border-color: rgba(34,211,238,.32); }
+  .head.l3 { color: #d8b4fe; border-color: rgba(167,139,250,.32); }
+
+  .grid { position: relative; display: grid; gap: 16px 26px; }
+  .lanebg { grid-row: 1 / -1; border-radius: 12px; background: rgba(255,255,255,.022);
+    border-left: 1px solid var(--line); border-right: 1px solid var(--line); z-index: 0; }
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; overflow: visible; }
+
+  .node { position: relative; z-index: 2; padding: 10px 12px; border-radius: 10px;
+    border: 1.6px solid var(--indigo); background: linear-gradient(180deg, rgba(129,140,248,.16), rgba(129,140,248,.05)); }
+  .node h4 { margin: 0; font-size: 13.5px; font-weight: 650; line-height: 1.45; }
+  .node p { margin: 4px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--ink-dim); }
+  .node code { font: 500 11px/1.5 var(--mono); padding: 1px 5px; border-radius: 5px;
+    border: 1px solid var(--line); background: rgba(0,0,0,.35); color: #dbe4f5; white-space: nowrap; }
+  .node .tag { display: inline-block; margin-top: 6px; font: 600 10.5px/1.6 var(--mono);
+    padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-dim); }
+  .node .tag.cost { color: var(--amber); border-color: rgba(251,191,36,.34); background: rgba(251,191,36,.08); }
+  .node .tag.no { color: var(--rose); border-color: rgba(251,113,133,.34); background: rgba(251,113,133,.08); }
+  .node .tag.yes { color: var(--green); border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.08); }
+
+  .node.term { border-color: var(--cyan); background: linear-gradient(180deg, rgba(34,211,238,.18), rgba(34,211,238,.05)); border-radius: 999px; text-align: center; }
+  .node.gate { border-color: var(--amber); background: linear-gradient(180deg, rgba(251,191,36,.15), rgba(251,191,36,.04)); }
+  .node.hard { border-color: var(--rose); background: linear-gradient(180deg, rgba(251,113,133,.15), rgba(251,113,133,.04)); }
+  .node.good { border-color: var(--green); background: linear-gradient(180deg, rgba(52,211,153,.14), rgba(52,211,153,.04)); }
+  .node.diamond { border: none; background: none; padding: 14px 26px; }
+  .node.banner { border-color: var(--rose); border-style: dashed; background: rgba(251, 113, 133, .07); grid-column: 2 / -1 !important; }
+  .diamond-shape { fill: none; stroke: var(--amber); stroke-width: 1.6; opacity: .85; }
+  .diamond-shape.d2 { stroke: var(--cyan); }
+  .diamond-shape.d3 { stroke: var(--rose); }
+
+  footer { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 11.5px; }
+  footer code { font: 500 11px/1.7 var(--mono); color: #c3cee3; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PastePanda 多人开发业务流程图</h1>
+  <p class="sub">泳道 = <b>谁执行</b>；方框 = 动作；六边形 = 判定；<b>黄色闸</b>不绿就不许往下走；<b>红色虚线</b>是返工回路</p>
+
+  <div class="legend">
+    <span><i class="g term"></i>起止</span>
+    <span><i class="g proc"></i>动作（方框）</span>
+    <span><i class="g dec"></i>判定（六边形）</span>
+    <span><i class="g hard"></i>人工介入 / 红处理</span>
+    <span><i class="g wf"></i>主流程</span>
+    <span><i class="g wb"></i>返工回路</span>
+  </div>
+
+  <h2><span class="idx">FLOW 1</span>一次改动：从领需求到进 master</h2>
+  <p class="lede">四条泳道。前两条在你这台机器上，后两条在 GitHub——绕不过去，管理员也一样（<code>enforce_admins=true</code>）。</p>
+  <div class="canvas" id="c1"></div>
+
+  <h2><span class="idx">FLOW 2</span>并行冲突判定：汇合点上只有三个出口</h2>
+  <p class="lede">FLOW 1 第 18 步判「没追平」时会走到这里。出口决定你要不要动手解冲突、以及动多大的手。</p>
+  <div class="canvas" id="c2"></div>
+
+  <footer>
+    判据（全部回读过）：<code>.husky/pre-commit</code> · <code>scripts/prePushTier.mjs</code> · <code>.github/workflows/test.yml</code> ·
+    <code>gh api repos/lzlkyb/pastepanda/branches/master/protection</code> · <code>gh api repos/lzlkyb/pastepanda --jq .delete_branch_on_merge</code> ·
+    <code>CONTRIBUTING.md §2.7 / §3.1 / §3.5 / §3.7 / §3.8 / §3.9 / §3.11</code>。耗时为本机与 CI 实测值。
+  </footer>
+</div>
+
+<script>
+const FLOW1 = {
+  lanes: [
+    { name: "开发者 · 本机", sub: "维护者 / 协助者同一套", cls: "l0" },
+    { name: "本机自动闸", sub: ".husky 钩子", cls: "l1" },
+    { name: "GitHub 远端闸", sub: "Actions + protection", cls: "l2" },
+    { name: "维护者决策 / 善后", sub: "人工点的那一下", cls: "l3" },
+  ],
+  nodes: [
+    { id: "s", lane: 0, row: 1, type: "term", h: "开始：领需求 / 报 bug" },
+    { id: "n2", lane: 0, row: 2, h: "读规则 + 收口检查", p: "动手前 <code>git grep</code> 同名函数与同职责实现（AGENTS 11.1）；UI 改动先出 HTML 稿（规则 4）" },
+    { id: "d3", lane: 0, row: 3, type: "diamond", h: "要改共享函数的签名或语义？" },
+    { id: "n3y", lane: 0, row: 4, type: "hard", h: "先在主干单独提一小笔", p: "冲突从「整段实现」缩成「一行签名」——2026-10-09 add/add 事故的防线", tag: "是 → 先做这步" },
+    { id: "n5", lane: 0, row: 5, h: "拉分支", p: "<code>git switch -c fix/xxx origin/master</code>", tag: "起点必须是 origin/master" },
+    { id: "n6", lane: 0, row: 6, h: "本地改代码", p: "bug 修复必须先有<b>改前为红</b>的用例（规则 23），不许「重跑到绿」当验收" },
+    { id: "n7", lane: 0, row: 7, h: "提交", p: "<code>git add &lt;只自己的文件&gt;</code> → <code>git commit</code>；禁止 <code>-A</code> / <code>-a</code>（共享工作树）" },
+    { id: "dA", lane: 1, row: 8, type: "diamond", h: "闸 A · pre-commit 绿？", p: "lint-staged(eslint) + CSS 类名 + UI 规则" },
+    { id: "rA", lane: 0, row: 8, type: "hard", h: "红 → 回「本地改代码」", p: "<code>lint-staged</code> 会 stash 整棵树：别人在写时别提交" },
+    { id: "n10", lane: 0, row: 9, h: "推特性分支", p: "<code>git push -u origin fix/xxx</code>" },
+    { id: "dB", lane: 1, row: 10, type: "diamond", h: "闸 B · 覆盖守卫：这次 push 会不会抹掉别人的提交？" },
+    { id: "rB", lane: 0, row: 11, type: "hard", h: "exit=9 → 停", p: "先 <code>git fetch --prune</code>、核对 <code>git log old..new</code>。<b>不是测试失败</b>，别用 <code>--no-verify</code>" },
+    { id: "dC", lane: 1, row: 12, type: "diamond", h: "闸 B · 密钥守卫 + tsc 绿？", p: "轻档实测 30–58s；<b>不跑</b> vitest / cargo" },
+    { id: "rC", lane: 0, row: 12, type: "hard", h: "红 → 查是不是别人的在途文件", p: "守卫与 <code>tsc</code> 判整棵树（AGENTS 22）" },
+    { id: "n15", lane: 2, row: 13, h: "开 PR", p: "<code>gh pr create --base master</code>；<code>pull_request: branches:[master]</code> ⇒ 任何前缀都跑 CI" },
+    { id: "dD", lane: 2, row: 14, type: "diamond", h: "闸 C · CI 绿？", p: "Rust Tests(windows) + Frontend Tests(ubuntu) · 2m25s–3m11s" },
+    { id: "rD", lane: 2, row: 15, type: "hard", h: "红 → 先分真伪", p: "<code>gh run view --log-failed</code>；超时 / 5xx / fetch failed 只能重跑，不许记成「不存在」" },
+    { id: "dE", lane: 3, row: 16, type: "diamond", h: "闸 D · 分支追平 master？", p: "<code>strict=true</code>：落后就红着不判" },
+    { id: "n19", lane: 0, row: 17, h: "本地追平 + 解冲突", p: "<code>git merge origin/master</code> → 判出口见 FLOW 2 → 回闸 C" },
+    { id: "n20", lane: 3, row: 18, h: "维护者点合并", p: "本仓惯例 rebase ⇒ <b>commit sha 会被重写</b>；<code>approvals=0</code> 是故意的（只有 1 维护者 + 1 协助者）" },
+    { id: "n21", lane: 2, row: 19, h: "自动删头分支", p: "<code>delete_branch_on_merge=true</code>；本地靠 <code>fetch.prune=true</code> 让它消失" },
+    { id: "e", lane: 3, row: 20, type: "term", h: "结束：master 前进", p: "合入<b>之后</b>才打 tag（规则 5 / 发版流程）；版本号不自动递增（规则 2）" },
+  ],
+  edges: [
+    { f: "s", t: "n2" },
+    { f: "n2", t: "d3" },
+    { f: "d3", t: "n3y", kind: "yes", label: "是" },
+    { f: "n3y", t: "n5", kind: "main" },
+    { f: "d3", t: "n5", kind: "detour", label: "否" },
+    { f: "n5", t: "n6" },
+    { f: "n6", t: "n7" },
+    { f: "n7", t: "dA" },
+    { f: "dA", t: "rA", kind: "no", label: "否" },
+    { f: "rA", t: "n6", kind: "back", ch: 0 },
+    { f: "dA", t: "n10", kind: "yes", label: "是" },
+    { f: "n10", t: "dB" },
+    { f: "dB", t: "rB", kind: "no", label: "会抹掉" },
+    { f: "rB", t: "n10", kind: "back", ch: 1 },
+    { f: "dB", t: "dC", kind: "yes", label: "不会" },
+    { f: "dC", t: "rC", kind: "no", label: "否" },
+    { f: "rC", t: "n6", kind: "back", ch: 2 },
+    { f: "dC", t: "n15", kind: "yes", label: "是" },
+    { f: "n15", t: "dD" },
+    { f: "dD", t: "rD", kind: "no", label: "否" },
+    { f: "rD", t: "dD", kind: "back", ch: 3, label: "假信号 → 重跑" },
+    { f: "dD", t: "dE", kind: "bypass", label: "是" },
+    { f: "dE", t: "n19", kind: "no", label: "没追平" },
+    { f: "n19", t: "dD", kind: "back", ch: 4 },
+    { f: "dE", t: "n20", kind: "yes", label: "追平且全绿" },
+    { f: "n20", t: "n21" },
+    { f: "n21", t: "e" },
+  ],
+};
+
+const FLOW2 = {
+  lanes: [
+    { name: "汇合点（闸 D 触发）", sub: "git 自动比对两侧改动", cls: "l2" },
+    { name: "判定", sub: "三种出口", cls: "l1" },
+    { name: "你要动多大的手", sub: "处置", cls: "l0" },
+  ],
+  nodes: [
+    { id: "m", lane: 0, row: 1, type: "term", h: "两条分支在 strict=true 处相遇" },
+    { id: "q1", lane: 1, row: 2, type: "diamond", h: "两人改到了同一行吗？" },
+    { id: "o2", lane: 2, row: 2, type: "gate", h: "出口①：content conflict", p: "<code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; / ======= / &gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> 三段按语义取舍，<b>标记必须删干净</b>；解完回闸 C 重跑 CI" },
+    { id: "q2", lane: 1, row: 3, type: "diamond", h: "两人都新建了同名 helper？" },
+    { id: "o1", lane: 2, row: 3, type: "good", h: "出口②：git 自动合并", p: "不同文件 / 同文件不同区段 ⇒ <b>无冲突</b>。绝大多数并行改动走这条路，你什么都不用做。", tag: "占多数" },
+    { id: "o3", lane: 2, row: 4, type: "hard", h: "出口③：add/add（最坏）", p: "git 只能报 content conflict，语义上＝两人不知道对方存在。真事故：两侧各写私有 <code>fn local_refs()</code>，返回类型两套。", tag: "处置：共享签名先在主干单独提一小笔" },
+    { id: "x", lane: 0, row: 5, type: "banner", h: "横切三个出口的干扰源：行尾", p: "不属于①②③却一直在造假冲突。<code>.gitattributes</code>（2026-10-09 入库）把 <code>*.rs/*.ts/*.tsx/*.md</code> 钉 <code>eol=lf</code>；例外 <code>recommend.test.ts</code> 标 <code>-text</code>（fixture 有裸 NUL），别顺手统一" },
+  ],
+  edges: [
+    { f: "m", t: "q1" },
+    { f: "q1", t: "o2", kind: "yes", label: "是" },
+    { f: "q1", t: "q2", kind: "no", label: "否" },
+    { f: "q2", t: "o1", kind: "no", label: "否" },
+    { f: "q2", t: "o3", kind: "yes", label: "是" },
+  ],
+};
+
+function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+
+function render(flow, host) {
+  const cols = GUTTER + "px " + "repeat(" + flow.lanes.length + ", minmax(0,1fr))";
+  const heads = el("div", "heads");
+  heads.style.gridTemplateColumns = cols;
+  heads.appendChild(el("div", "head", "")).style.visibility = "hidden";
+  flow.lanes.forEach(l => {
+    const h = el("div", "head " + l.cls, l.name + "<small>" + l.sub + "</small>");
+    heads.appendChild(h);
+  });
+  host.appendChild(heads);
+
+  const grid = el("div", "grid");
+  grid.style.gridTemplateColumns = cols;
+  const maxRow = flow.nodes.reduce((a, n) => Math.max(a, n.row), 0);
+  grid.style.gridTemplateRows = "repeat(" + maxRow + ", auto)";
+  flow.lanes.forEach((l, i) => {
+    const b = el("div", "lanebg");
+    b.style.gridColumn = (i + 2) + " / span 1";
+    grid.appendChild(b);
+  });
+  const wires = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  wires.setAttribute("class", "wires");
+  grid.appendChild(wires);
+
+  flow.nodes.forEach(n => {
+    const cls = ["node"];
+    if (n.type === "term") cls.push("term");
+    if (n.type === "diamond") cls.push("gate", "diamond");
+    if (n.type === "hard") cls.push("hard");
+    if (n.type === "gate") cls.push("gate");
+    if (n.type === "good") cls.push("good");
+    const e = el("div", cls.join(" "), "<h4>" + n.h + "</h4>" + (n.p ? "<p>" + n.p + "</p>" : "") + (n.tag ? '<span class="tag ' + (n.type === "good" ? "yes" : n.type === "hard" ? "no" : "cost") + '">' + n.tag + "</span>" : ""));
+    e.id = flow.host + "-" + n.id;
+    e.style.gridColumn = (n.lane + 2) + "";
+    e.style.gridRow = n.row + "";
+    if (n.type === "diamond") e.style.margin = "18px 10px";
+    if (n.type === "banner") e.style.gridColumn = "2 / -1";
+    grid.appendChild(e);
+  });
+  host.appendChild(grid);
+  flow.grid = grid;
+  flow.wires = wires;
+  flow.byId = id => document.getElementById(flow.host + "-" + id);
+}
+
+const GUTTER = 96;
+
+function rounded(pts, r) {
+  let d = "M " + pts[0][0] + " " + pts[0][1];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i], a = pts[i - 1], b = pts[i + 1];
+    const l1 = Math.hypot(p[0] - a[0], p[1] - a[1]) || 1, l2 = Math.hypot(b[0] - p[0], b[1] - p[1]) || 1;
+    const k = Math.min(r, l1 / 2, l2 / 2);
+    d += " L " + (p[0] - (p[0] - a[0]) / l1 * k) + " " + (p[1] - (p[1] - a[1]) / l1 * k)
+       + " Q " + p[0] + " " + p[1] + " " + (p[0] + (b[0] - p[0]) / l2 * k) + " " + (p[1] + (b[1] - p[1]) / l2 * k);
+  }
+  return d + " L " + pts[pts.length - 1][0] + " " + pts[pts.length - 1][1];
+}
+
+function draw(flow) {
+  const base = flow.grid.getBoundingClientRect();
+  flow.wires.setAttribute("viewBox", "0 0 " + base.width + " " + base.height);
+  const NS = "http://www.w3.org/2000/svg";
+  const defs = document.createElementNS(NS, "defs");
+  [["m", "#8fa0bd"], ["y", "#34d399"], ["n", "#fb7185"]].forEach(([id, col]) => {
+    const mk = document.createElementNS(NS, "marker");
+    mk.setAttribute("id", flow.host + "a" + id);
+    mk.setAttribute("viewBox", "0 0 10 10"); mk.setAttribute("refX", "9"); mk.setAttribute("refY", "5");
+    mk.setAttribute("markerWidth", "7"); mk.setAttribute("markerHeight", "7"); mk.setAttribute("orient", "auto-start-reverse");
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", "M0 0 L10 5 L0 10 z"); p.setAttribute("fill", col);
+    mk.appendChild(p); defs.appendChild(mk);
+  });
+  flow.wires.appendChild(defs);
+
+  // 菱形外框（画在 HTML 节点底下）
+  flow.nodes.filter(n => n.type === "diamond").forEach(n => {
+    const b = flow.byId(n.id).getBoundingClientRect();
+    const x = b.x - base.x, y = b.y - base.y;
+    const pad = 11;
+    const L = x - pad, R = x + b.width + pad, T = y - pad, B = y + b.height + pad, M = (T + B) / 2;
+    const ch = (R - L) * 0.15;
+    const pts = [[L + ch, T], [R - ch, T], [R, M], [R - ch, B], [L + ch, B], [L, M]];
+    const poly = document.createElementNS(NS, "polygon");
+    poly.setAttribute("class", "diamond-shape");
+    poly.setAttribute("points", pts.map(p => p.join(",")).join(" "));
+    flow.wires.appendChild(poly);
+  });
+
+  flow.edges.forEach(ed => {
+    const A = flow.byId(ed.f).getBoundingClientRect();
+    const C = flow.byId(ed.t).getBoundingClientRect();
+    const kind = ed.kind || "main";
+    const a = { x: A.x - base.x, y: A.y - base.y, w: A.width, h: A.height };
+    const c = { x: C.x - base.x, y: C.y - base.y, w: C.width, h: C.height };
+    let pts, marker = "m", dash = null, stroke = "#8fa0bd", wide = 2, labelAt = null;
+
+    const sameRowBand = Math.abs(a.y - c.y) < 26;
+    const above = c.y + c.h < a.y + 6;
+
+    if (kind === "back" || above) {
+      // 返工回路：源底部 → 行间隙 → 左侧通道 → 上行 → 目标左侧进入
+      const ch = ed.ch || 0;
+      const cx = Math.max(8, GUTTER - 10 - ch * 15);
+      const sy = [a.x + a.w / 2, a.y + a.h];
+      const gapY = Math.max(a.y + a.h + 7, Math.min(sy[1] + 7, c.y + c.h + 12));
+      pts = [sy, [sy[0], gapY], [cx, gapY], [cx, c.y + c.h / 2], [c.x, c.y + c.h / 2]];
+      marker = "n"; dash = "6 5"; stroke = "#fb7185"; wide = 1.5;
+      labelAt = [cx, (gapY + c.y + c.h / 2) / 2];
+    } else if (kind === "detour") {
+      // 跳过被占用的同列节点：从右侧绕行
+      const dx = a.x + a.w + 15;
+      pts = [[a.x + a.w, a.y + a.h / 2], [dx, a.y + a.h / 2], [dx, c.y + c.h / 2], [c.x + c.w, c.y + c.h / 2]];
+      marker = "n"; stroke = "#fb7185"; labelAt = [dx, (a.y + a.h / 2 + c.y + c.h / 2) / 2];
+    } else if (kind === "bypass") {
+      const dx = a.x + a.w + 15;
+      const ty = c.y - 14;
+      pts = [[a.x + a.w, a.y + a.h / 2], [dx, a.y + a.h / 2], [dx, ty], [c.x + c.w / 2, ty], [c.x + c.w / 2, c.y]];
+      marker = "y"; stroke = "#34d399"; labelAt = [dx, (a.y + a.h / 2 + ty) / 2];
+    } else if (sameRowBand) {
+      // 同泳道行的横向判定：侧边对侧边
+      const goLeft = c.x < a.x;
+      const sx = goLeft ? a.x : a.x + a.w, tx = goLeft ? c.x + c.w : c.x;
+      const my = (a.y + a.h / 2 + c.y + c.h / 2) / 2;
+      pts = [[sx, a.y + a.h / 2], [(sx + tx) / 2, my], [tx, c.y + c.h / 2]];
+      marker = kind === "yes" ? "y" : kind === "no" ? "n" : "m";
+      stroke = kind === "yes" ? "#34d399" : kind === "no" ? "#fb7185" : "#8fa0bd";
+      labelAt = [(sx + tx) / 2, my];
+    } else {
+      const s = [a.x + a.w / 2, a.y + a.h], t = [c.x + c.w / 2, c.y];
+      pts = Math.abs(s[0] - t[0]) < 2 ? [s, t] : [s, [s[0], (s[1] + t[1]) / 2], [t[0], (s[1] + t[1]) / 2], t];
+      marker = kind === "yes" ? "y" : kind === "no" ? "n" : "m";
+      stroke = kind === "yes" ? "#34d399" : kind === "no" ? "#fb7185" : "#8fa0bd";
+      labelAt = pts.length > 2 ? pts[1] : [(s[0] + t[0]) / 2, (s[1] + t[1]) / 2];
+    }
+
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", rounded(pts, 10));
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", stroke);
+    p.setAttribute("stroke-width", wide);
+    if (dash) p.setAttribute("stroke-dasharray", dash);
+    p.setAttribute("marker-end", "url(#" + flow.host + "a" + marker + ")");
+    p.setAttribute("opacity", ".92");
+    flow.wires.appendChild(p);
+
+    if (ed.label) {
+      const tx = document.createElementNS(NS, "text");
+      tx.setAttribute("x", labelAt[0] + 7); tx.setAttribute("y", labelAt[1] - 5);
+      tx.setAttribute("fill", stroke); tx.setAttribute("font-size", "11");
+      tx.setAttribute("font-family", "ui-monospace, Consolas, monospace");
+      tx.textContent = ed.label;
+      const bg = document.createElementNS(NS, "rect");
+      bg.setAttribute("fill", "#0b0f1a"); bg.setAttribute("opacity", ".9"); bg.setAttribute("rx", "3");
+      flow.wires.appendChild(bg); flow.wires.appendChild(tx);
+      const tb = tx.getBBox();
+      bg.setAttribute("x", tb.x - 3); bg.setAttribute("y", tb.y - 1);
+      bg.setAttribute("width", tb.width + 6); bg.setAttribute("height", tb.height + 2);
+    }
+  });
+}
+
+[[FLOW1, "c1"], [FLOW2, "c2"]].forEach(([f, host]) => { f.host = host; render(f, document.getElementById(host)); });
+requestAnimationFrame(() => { requestAnimationFrame(() => { draw(FLOW1); draw(FLOW2); }); });
+</script>
+</body>
+</html>

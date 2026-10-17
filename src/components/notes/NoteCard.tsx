@@ -6,7 +6,6 @@
  * 🔴 红线：无 AI。
  */
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { FolderInput, MoreHorizontal, Pin, PinOff } from "lucide-react";
 import type { MenuItem } from "@/components/ContextMenu";
 import type { Note } from "@/lib/api";
@@ -69,26 +68,11 @@ export function NoteCard({
   const showCover = cover !== null && cover !== failedSrc;
 
   return (
-    // ❗ 故意不挂 framer 的 `layout`，理由有三条，任一条都够：
-    // ① 它做不出列表↔网格的切换动画。切换时同一个 key 上的组件类型从
-    //    `NoteRow` 变成 `NoteCard`，React 是卸载重挂，projection 节点没有
-    //    「上一次的测量」可比，framer 直接以新位置出现。
-    // ② `layout` 与这里的 `whileHover` scale 互相打架：投影层要为父级 scale
-    //    反向补偿子元素，悬停时标题/摘要会轻微变形。`NoteRow` 同样有这个
-    //    whileHover，也同样没挂 layout —— 两者保持一致。
-    // ③ 挂上就是每次提交都要对全部卡片做一次测量（强制同步布局），
-    //    而它唯一真正能出动画的场景只有列数变化，不值这个价。
-    // 减少动态效果的降级不需要在这里写：`main.tsx` 已挂 <MotionConfig
-    // reducedMotion="user">，位移/缩放整条通道由它统一关掉。
-    <motion.li
+    // 不做逐卡入场或 layout 测量；列表/网格共用稳定的原位反馈。
+    <li
       className={`${styles.card}${active ? ` ${styles.rowActive}` : ""}${
         selected ? ` ${styles.rowSelected}` : ""
       }`}
-      /* 抬升 / 按压参数直接用行那一套（也就是卡片那一套），不另定一套。
-         ❗ `whileTap` 一开始漏了，只抄了 `whileHover`——结果是点行有按压反馈、
-           点卡片没有，正是上面这句注释声称避开的那种不统一。（2026-09-07 补） */
-      whileHover={{ y: -2, scale: 1.01, transition: { type: "spring", stiffness: 500, damping: 30 } }}
-      whileTap={{ scale: 0.985, transition: { duration: 0.08, ease: "easeOut" } }}
       onContextMenu={(e) => {
         if (!ctxTrigger) return;
         e.preventDefault();
@@ -218,6 +202,6 @@ export function NoteCard({
           />
         </span>
       </button>
-    </motion.li>
+    </li>
   );
 }

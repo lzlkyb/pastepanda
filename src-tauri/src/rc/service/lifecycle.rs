@@ -70,6 +70,9 @@ impl RcService {
         } else {
             quality.clone()
         };
+        // 丙（2026-10-12）：一次取回对端编码档位（一把锁读两位，别在字面量里
+        // 连续调两次投影函数——那是两份时刻，档位与原文可能对不上）。
+        let (peer_pipe, peer_pipe_label) = self.peer_video_pipe();
         RcStatus {
             enabled: self.enabled(),
             capability: self.max_capability().as_str().to_string(),
@@ -95,6 +98,10 @@ impl RcService {
                 .remote_loss_permille
                 .load(std::sync::atomic::Ordering::Relaxed),
             path_kind: self.link.path_kind_str(),
+            // 🔴 P1（2026-10-15）：链路调度相位（stable/degraded/recovering/空）。
+            // 诊断卡显示「链路质量」语义用；同时这里顺带消费 Recovering 观察窗
+            // （sched_snapshot 内部 poll）。
+            link_sched: self.link.sched_state_str(),
             clock_skew_ms: self.clock_skew_ms(),
             peer_fps120: self.peer_fps120(),
             peer_hevc: self.peer_hevc(),
@@ -165,6 +172,9 @@ impl RcService {
             // 丙-③：画面暂停。两位分开投影——被控端读自己的闸位，发起端读对端帧。
             video_paused: self.video_paused(),
             peer_video_paused: self.peer_video_paused(),
+            // 丙（2026-10-12）：对端报来的编码档位（档名 + 原文，见 `video_pipe.rs`）。
+            peer_video_pipe: peer_pipe,
+            peer_video_pipe_label: peer_pipe_label,
         }
     }
 

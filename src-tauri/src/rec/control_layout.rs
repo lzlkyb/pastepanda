@@ -22,8 +22,8 @@ pub(super) fn place(
         i64::from(region.2),
         i64::from(region.3),
     );
-    let w = ((496.0 * scale).round() as i64).min(sw);
-    let h = ((48.0 * scale).round() as i64).min(sh);
+    let w = ((260.0 * scale).round() as i64).min(sw);
+    let h = ((36.0 * scale).round() as i64).min(sh);
     let gap = (12.0 * scale).round() as i64;
     let x = (rx + (rw - w) / 2).clamp(sx, sx + sw - w);
     let top = ry - h - gap;
@@ -35,9 +35,42 @@ pub(super) fn place(
         h: h as u32,
     })
 }
+/// Keep the bottom/center anchor when a menu expands, without reserving an invisible hit area.
+pub(super) fn resize(screen: (i32, i32, i32, i32), current: (i32, i32, u32, u32), logical: (u32, u32), scale: f64) -> Result<Layout, String> {
+    if !(80..=480).contains(&logical.0) || !(28..=600).contains(&logical.1) {
+        return Err("控制条尺寸无效".into());
+    }
+    // Reuse the same geometry validation as initial placement.
+    place(screen, current, scale)?;
+    let (sx, sy, sw, sh) = (i64::from(screen.0), i64::from(screen.1), i64::from(screen.2), i64::from(screen.3));
+    let w = ((f64::from(logical.0) * scale).round() as i64).min(sw);
+    let h = ((f64::from(logical.1) * scale).round() as i64).min(sh);
+    let x = (i64::from(current.0) + (i64::from(current.2) - w) / 2).clamp(sx, sx + sw - w);
+    let y = (i64::from(current.1) + i64::from(current.3) - h).clamp(sy, sy + sh - h);
+    Ok(Layout {
+        x: i32::try_from(x).map_err(|_| "控制条横坐标超出范围")?,
+        y: i32::try_from(y).map_err(|_| "控制条纵坐标超出范围")?,
+        w: w as u32, h: h as u32,
+    })
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn normal_hit_area_matches_the_compact_bar() {
+        let layout = place((0, 0, 1920, 1080), (200, 200, 800, 600), 1.0).unwrap();
+        assert_eq!((layout.w, layout.h), (260, 36));
+    }
+    #[test]
+    fn collapse_resize_and_menu_stay_inside_the_monitor() {
+        let screen = (-1920, 0, 1920, 1080);
+        let compact = resize(screen, (-1000, 900, 260, 36), (80, 28), 1.0).unwrap();
+        assert_eq!((compact.w, compact.h, compact.y), (80, 28, 908));
+        let menu = resize(screen, (-90, 0, 80, 28), (260, 280), 1.5).unwrap();
+        assert_eq!((menu.w, menu.h), (390, 420));
+        assert!(menu.x >= -1920 && menu.x + menu.w as i32 <= 0 && menu.y >= 0);
+        assert!(resize(screen, (-100, 0, 80, 28), (0, 28), 1.0).is_err());
+    }
     #[test]
     fn zero_screen_and_invalid_scale_return_errors_without_panicking() {
         for screen in [(0, 0, 0, 0), (0, 0, -1, 1080), (0, 0, 1920, 0)] {
@@ -51,10 +84,10 @@ mod tests {
         assert_eq!(
             layout,
             Layout {
-                x: 0,
+                x: 212,
                 y: 684,
-                w: 992,
-                h: 96
+                w: 520,
+                h: 72
             }
         );
     }
@@ -64,9 +97,9 @@ mod tests {
             place((-300, -200, 300, 200), (-300, -200, 300, 200), 2.0).unwrap(),
             Layout {
                 x: -300,
-                y: -96,
+                y: -72,
                 w: 300,
-                h: 96
+                h: 72
             }
         );
         assert!(place((i32::MAX, 0, 100, 100), (i32::MAX, 0, 100, 100), 1.0).is_ok());

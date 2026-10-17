@@ -398,6 +398,8 @@ git config --global fetch.prune true   # 常驻：每次 fetch 顺手抹掉远�
 git fetch origin --prune               # 一次性：被拒之后先跑这个再推
 ```
 
+`fetch --prune` 只清理远端跟踪引用，不会删除本地功能分支。Codex 执行 PR 合并后，按 AGENTS §22.1 自动删除本会话已合入的本地分支，并归档其专用工作树、清理分支缓存；交付安装包先移出工作树并校验。其他会话的在途改动、分支和共享缓存保留，不因远端分支消失就批量删除。
+
 真删错了想找回：合并后的 PR 页面上有 **Restore branch**，本地那条分支还在的话直接 `git push -u origin <branch>` 重推也等价。
 
 ---

@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { memo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -117,19 +118,19 @@ export const TagBadgeMore = memo(function TagBadgeMore({ count }: { count: numbe
 /**
  * #10 标签增删动画包裹层 — TagBadge 的唯一动画入口。
  * 必须放在 <AnimatePresence initial={false}> 内使用：
- *  - 新增标签：缩放淡入落位，兄弟芯片由 layout 弹簧让位
- *  - 移除标签：快速缩放淡出（0.12s），不阻塞列表
+ *  - 新增标签：淡入确认，兄弟芯片只做位置衔接
+ *  - 移除标签：150ms 淡出，不让标签文字参与缩放
  *  - initial={false}（由调用方提供）保证虚拟列表滚动复用行挂载时不逐个弹跳
  */
 export const AnimatedTagBadge = memo(function AnimatedTagBadge(props: TagBadgeProps) {
   return (
     <motion.span
-      layout
+      layout="position"
       className={styles.tagAnim}
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.12, ease: "easeIn" } }}
-      transition={{ type: "spring", stiffness: 520, damping: 32 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.15, ease: [0.2, 0, 0, 1] } }}
+      transition={CONTENT_TRANSITION}
     >
       <TagBadge {...props} />
     </motion.span>

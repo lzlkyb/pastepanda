@@ -77,6 +77,9 @@ impl RcService {
         // 丙-③：画面暂停同样从「正常推流」起步——上一场按的暂停不能漏进这一场，
         // 否则新对端一连进来就看见一张冻住的旧画面，还以为是链路坏了。
         self.video_pause_begin();
+        // 丙（2026-10-12）：对端档位同理——上一场那台机器的「已熔断」不能挂到
+        // 这一场新对端身上（它此刻可能跑得好好的）。
+        self.video_pipe_begin();
         crate::rc::local_input::start_watching();
         Ok(s)
     }
@@ -201,10 +204,12 @@ pub(in crate::rc) async fn spawn_inbound_video(
     peer_video_plane: bool,
     peer_media_plane: bool,
     peer_media_feedback: bool,
+    peer_vd_frag: usize,
 ) {
     let Some(svc) = global() else {
         return;
     };
+    let probe_conn = conn.clone();
     // G3：对端申请了系统声音 → 音频 worker 由 InboundVideo::run 启动
     // （音频状态是 Windows 宿主专属字段，mobile 无可置/可清，跳过）
     #[cfg(any(target_os="windows",target_os="macos"))]
@@ -226,5 +231,14 @@ pub(in crate::rc) async fn spawn_inbound_video(
         log::warn!("[RC] 被控推流启动前会话已结束，放弃推流");
         return;
     };
-    video.run(recv).await;
+    if peer_dgram && peer_vd_frag > crate::rc::vid_dgram::FRAG {
+        // 不 spawn 游离任务：推流结束直接丢弃探测 future，连同十分钟的重探等待。
+        let probe = video.probe.clone();
+        crate::rc::pmtud::run_during(
+            crate::rc::pmtud::run(probe_conn, peer_vd_frag, probe),
+            video.run(recv),
+        ).await;
+    } else {
+        video.run(recv).await;
+    }
 }

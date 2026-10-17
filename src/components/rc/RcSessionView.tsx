@@ -275,7 +275,8 @@ export function RcSessionView({
         stageRef={screenRef}
         detail={
           <RcSessionDetails session={session} rc={rc} frames={frames} link={link}
-            quality={prefs.qPick} scope={prefs.scopePick} pointerLocked={input.pointerLocked} />
+            quality={prefs.qPick} scope={prefs.scopePick} pointerLocked={input.pointerLocked}
+            linkSched={rc.status?.link_sched ?? ""} />
         }
       />
     </div>

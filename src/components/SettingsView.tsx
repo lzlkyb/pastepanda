@@ -1,3 +1,4 @@
+import { SettingsSaveStatus } from "@/components/settings/SettingsSaveStatus";
 import { primarySearchShortcut } from "@/lib/utils";
 import { Fragment, useEffect } from "react";
 import { ArrowLeft, Settings as SettingsIcon, Search as SearchIcon, X } from "lucide-react";
@@ -234,7 +235,7 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
           <button onClick={onClose} className={styles.sSaveBtn}>完成</button>
         </div>
         <div className={styles.sFooterMeta}>
-          <span className={styles.sAutoSaveHint}>所有设置修改后自动保存</span>
+          <SettingsSaveStatus state={sh.saveState} onRetry={sh.retrySave} />
         </div>
       </div>
 

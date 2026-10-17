@@ -10,3 +10,12 @@
 #    目录，只匹配 `probe/target/`——而真正要拦的是更深一层的
 #    `probe/rc-encode/target/`、`probe/rc-mft-type/target/`（以后还会加）。
 target/
+
+# 探针语料（embed/data/、mnn-bert/data/）：从真实 clipboard.db 导出的
+# notes/history JSON 与 fastembed 模型缓存——**含用户真实剪贴板内容**，红线②
+# （内容数据不自动外泄）。只读快照导出、本地测量用；禁止提交、禁止外发。
+# 2026-10-15 实测纠错：本文件的带斜杠模式锚定在 probe/ 目录，
+# 必须写相对路径 `embed/data/`——写成 `probe/embed/data/` 会变成
+# probe/probe/embed/data/，一条都拦不住（check-ignore 验证过）。
+embed/data/
+mnn-bert/data/

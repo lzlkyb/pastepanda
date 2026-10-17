@@ -78,7 +78,8 @@ export function useRecSelectMouse(
     if (Math.abs(p.x - dragStart.current.x) + Math.abs(p.y - dragStart.current.y) > 3) {
       dragMoved.current = true;
     }
-    setSnapRect(pickSnapCandidate(winRectsRef.current, p));
+    // 拖拽已经表达了自选意图；窗口吸附只服务悬停/单击，不能覆盖用户画出的区域。
+    setSnapRect(null);
     setRect({
       x: Math.min(dragStart.current.x, p.x),
       y: Math.min(dragStart.current.y, p.y),
@@ -90,14 +91,6 @@ export function useRecSelectMouse(
   const onMouseUp = () => {
     if (phase !== "dragging") return;
     dragStart.current = null;
-    // 拖拽中吸附到了窗口：松手即采纳窗口矩形（静态区域，窗口移动不跟随——提示条已写明）
-    if (dragMoved.current && snapRect) {
-      setSnapRect(null);
-      setRectFromWindow(true);
-      setRect(normalizeEven(snapRect));
-      setPhase("confirm");
-      return;
-    }
     setSnapRect(null);
     if (!dragMoved.current) {
       // 方案 A：单击 = 录按下瞬间悬停高亮的窗口；悬停在桌面空白 = 录整屏（§18 P2 一步到位）
@@ -109,11 +102,11 @@ export function useRecSelectMouse(
       return;
     }
     if (!rect || rect.w < 16 || rect.h < 16) {
-      // 太小的框 = 采纳整屏
-      setRect(null);
-      setPhase("confirm");
+      // 小框不能悄悄变成整屏：回预览让用户重新表达范围。
+      backToPreview();
       return;
     }
+    setRectFromWindow(false);
     setRect(normalizeEven(rect));
     setPhase("confirm");
   };

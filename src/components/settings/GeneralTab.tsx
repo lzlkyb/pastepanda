@@ -20,7 +20,7 @@ import styles from "../Settings.module.css";
 interface GeneralTabProps {
   config: AppConfig;
   updateConfig: (partial: Record<string, unknown>) => void;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   stats: StatsDetail | null;
   /** 审查：统计加载失败标记 + 重试（不再永久 spinner） */
   statsError?: boolean;
@@ -66,7 +66,7 @@ export function GeneralTab({
     showWeekReport, setShowWeekReport,
     srcOpen, setSrcOpen,
     loadedAt, chains, dash,
-    mdAssoc, mdAssocBusy, handleMdAssocToggle,
+    mdAssoc, mdAssocBusy, handleMdAssocToggle, refreshMdAssoc,
   } = useSettingsData({ config, updateAndSave, stats });
 
   return (
@@ -83,7 +83,7 @@ export function GeneralTab({
         <CopyPasteSection config={config} updateAndSave={updateAndSave} />
         <WindowEditorSection
           config={config} updateAndSave={updateAndSave}
-          mdAssoc={mdAssoc} mdAssocBusy={mdAssocBusy} handleMdAssocToggle={handleMdAssocToggle}
+          mdAssoc={mdAssoc} mdAssocBusy={mdAssocBusy} handleMdAssocToggle={handleMdAssocToggle} refreshMdAssoc={refreshMdAssoc}
         />
         <HotkeySection config={config} updateAndSave={updateAndSave} />
         <CaptureSection config={config} updateAndSave={updateAndSave} chains={chains} />

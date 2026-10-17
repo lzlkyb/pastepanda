@@ -1,3 +1,4 @@
+import { CONTENT_TRANSITION } from "@/lib/motion";
 import { primaryModifierHeld, primarySearchShortcut } from "@/lib/utils";
 import { blocksPageShortcuts, isConfirmLayerPresent } from "@/lib/modalLayers";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -5,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAppStore } from "@/stores/appStore";
 import { parseSearchQuery } from "@/lib/searchQuery";
 import { semanticSearch } from "@/lib/api/semantic";
+import { isAiAvailable } from "@/lib/transforms/aiTransforms";
 import { X } from "lucide-react";
 import styles from "./TopBar.module.css";
 import { useClickOutside } from "@/hooks/useClickOutside";
@@ -35,6 +37,29 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
 
   const clearBtnRef = useRef<HTMLButtonElement>(null);
   const debounceTimerRef = useRef<number | null>(null);
+  const searchGeneration = useRef(0);
+  const applyingSearch = useRef(false);
+  useEffect(() => () => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    searchGeneration.current++;
+  }, []);
+
+  // Every input invalidates the old request, including the debounce window and clear.
+  const applySearch = useCallback((value: string, generation: number) => {
+    const parsed = parseSearchQuery(value);
+    if (parsed.timeFilter !== "all") useAppStore.getState().setTimeFilter(parsed.timeFilter);
+    applyingSearch.current = true;
+    setSearchKeyword(parsed.keyword);
+    applyingSearch.current = false;
+    useAppStore.getState().setSemanticHits([]);
+    const kw = parsed.keyword.trim();
+    if (!kw || !isAiAvailable()) return;
+    void semanticSearch(kw, 6).then(hits => {
+      if (generation === searchGeneration.current && isAiAvailable()) useAppStore.getState().setSemanticHits(hits);
+    }).catch(() => {
+      if (generation === searchGeneration.current) useAppStore.getState().setSemanticHits([]);
+    });
+  }, [setSearchKeyword]);
 
   // 更新清除按钮可见性（纯 DOM 操作，不触发 React 渲染）
   const updateClearBtn = useCallback(() => {
@@ -48,6 +73,11 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
   useEffect(() => {
     return useAppStore.subscribe(
       (state, prevState) => {
+        if (state.searchKeyword !== prevState.searchKeyword && !applyingSearch.current) {
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          searchGeneration.current++;
+          useAppStore.getState().setSemanticHits([]);
+        }
         if (
           state.searchKeyword !== prevState.searchKeyword &&
           inputRef.current &&
@@ -67,29 +97,14 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
   // 防抖写入 store
   const scheduleSearch = useCallback((value: string) => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    const generation = ++searchGeneration.current;
+    useAppStore.getState().setSemanticHits([]);
     if (!value) {
-      setSearchKeyword("");
-      useAppStore.getState().setSemanticHits([]);
+      applySearch("", generation);
       return;
     }
-    debounceTimerRef.current = window.setTimeout(() => {
-      // v6.4 NL 搜索：句首时间词（上周/今天/本月…）→ 顺带设置时间过滤，关键词原样保留
-      const parsed = parseSearchQuery(value);
-      if (parsed.timeFilter !== "all") {
-        useAppStore.getState().setTimeFilter(parsed.timeFilter);
-      }
-      setSearchKeyword(parsed.keyword);
-      // M5-2 语义搜索：失败（未开启/厂商不支持/预算）静默，自动退回关键词
-      const kw = parsed.keyword.trim();
-      if (kw) {
-        void semanticSearch(kw, 6)
-          .then((hits) => useAppStore.getState().setSemanticHits(hits))
-          .catch(() => useAppStore.getState().setSemanticHits([]));
-      } else {
-        useAppStore.getState().setSemanticHits([]);
-      }
-    }, 200);
-  }, [setSearchKeyword]);
+    debounceTimerRef.current = window.setTimeout(() => applySearch(value, generation), 200);
+  }, [applySearch]);
 
   const handleSearchSubmit = useCallback((kw: string) => {
     if (inputRef.current) {
@@ -98,26 +113,12 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
     updateClearBtn();
     // 回车搜索不需要防抖，立即生效
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-    // v6.4 NL 搜索：句首时间词解析（回车同样生效）
-    const parsed = parseSearchQuery(kw);
-    if (parsed.timeFilter !== "all") {
-      useAppStore.getState().setTimeFilter(parsed.timeFilter);
-    }
-    setSearchKeyword(parsed.keyword);
-    // M5-2 语义搜索（回车同路径）
-    const semKw = parsed.keyword.trim();
-    if (semKw) {
-      void semanticSearch(semKw, 6)
-        .then((hits) => useAppStore.getState().setSemanticHits(hits))
-        .catch(() => useAppStore.getState().setSemanticHits([]));
-    } else {
-      useAppStore.getState().setSemanticHits([]);
-    }
+    applySearch(kw, ++searchGeneration.current);
     if (kw) {
       addSearchHistory(kw);
     }
     setShowHistory(false);
-  }, [setSearchKeyword, addSearchHistory, updateClearBtn]);
+  }, [applySearch, addSearchHistory, updateClearBtn]);
 
   return (
     <div
@@ -136,8 +137,13 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
           updateClearBtn();
           // 审查：非空时收起历史下拉（此前只处理空值显示，输入关键词时下拉一直悬浮遮挡）
           setShowHistory(searchHistory.length > 0 && !v);
-          scheduleSearch(v);
+          if (!(e.nativeEvent as InputEvent).isComposing) scheduleSearch(v);
         }}
+        onCompositionStart={() => {
+          if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+          searchGeneration.current++;
+        }}
+        onCompositionEnd={(e) => scheduleSearch(e.currentTarget.value)}
         onFocus={() => {
           setFocused(true);
           const v = inputRef.current?.value || "";
@@ -145,7 +151,7 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
         }}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
             handleSearchSubmit((e.target as HTMLInputElement).value);
           }
         }}
@@ -161,21 +167,22 @@ export function SearchBox({ fill }: { fill?: boolean } = {}) {
           if (inputRef.current) inputRef.current.value = "";
           updateClearBtn();
           if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-          setSearchKeyword("");
-          useAppStore.getState().setSemanticHits([]);
+          applySearch("", ++searchGeneration.current);
           setShowHistory(searchHistory.length > 0);
+          inputRef.current?.focus();
         }}
         className={styles.searchClear}
+        aria-label="清空搜索"
       >
         <X size={12} />
       </button>
       <AnimatePresence>
         {showHistory && searchHistory.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            initial={{ opacity: 0, y: -3, scale: 0.99 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.96 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            exit={{ opacity: 0, y: -3, scale: 0.99 }}
+            transition={CONTENT_TRANSITION}
             className={styles.searchHistoryDropdown}
           >
             <div className={styles.searchHistoryHeader}>

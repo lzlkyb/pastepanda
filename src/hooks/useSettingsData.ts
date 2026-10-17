@@ -10,7 +10,7 @@ export type MdAssocStatus = "unregistered" | "registered" | "default" | "unsuppo
 
 interface UseSettingsDataParams {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   stats: StatsDetail | null;
 }
 
@@ -133,7 +133,7 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
   }, [stats]);
 
   // ── .md 文件关联：状态以系统注册表为准（实时查询，不存 AppConfig，避免设置与注册表脱节） ──
-  const [mdAssoc, setMdAssoc] = useState<MdAssocStatus | "loading">("loading");
+  const [mdAssoc, setMdAssoc] = useState<MdAssocStatus | "loading" | "error">("loading");
   const [mdAssocBusy, setMdAssocBusy] = useState(false);
 
   const refreshMdAssoc = useCallback(async () => {
@@ -141,8 +141,9 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
       const { invoke } = await import("@tauri-apps/api/core");
       const s = await invoke<string>("get_md_association_status");
       if (s === "default" || s === "registered" || s === "unregistered" || s === "unsupported" || s === "available") setMdAssoc(s);
+      else setMdAssoc("error");
     } catch {
-      /* 查询失败保持当前状态 */
+      setMdAssoc("error");
     }
   }, []);
 
@@ -177,7 +178,7 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
     showWeekReport, setShowWeekReport,
     srcOpen, setSrcOpen,
     loadedAt, chains, dash,
-    mdAssoc, mdAssocBusy, handleMdAssocToggle,
+    mdAssoc, mdAssocBusy, handleMdAssocToggle, refreshMdAssoc,
   };
 }
 

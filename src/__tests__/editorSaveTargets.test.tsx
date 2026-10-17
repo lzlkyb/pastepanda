@@ -73,6 +73,7 @@ describe("editor save destinations and close safety", () => {
       currentFilePath: "/tmp/panda-audit.json", text, fileWatch: watch, saveUntitled }),
     { initialProps: { text: "v1" } });
     const pending = result.current();
+    // waitguard:allow: 这条让的是测试自己捏着的 gate（gate.resolve() 才放行），flush 只走到 await 挂起点；没有 mock 异步返回可等
     await act(async () => { await Promise.resolve(); });
     rerender({ text: "v2" });
     gate.resolve();
@@ -128,6 +129,7 @@ describe("save-as identity and draft safety", () => {
     const opts = saveAsOptions();
     const { result } = renderHook(() => useDocumentSaveAs(opts));
     const pending = result.current();
+    // waitguard:allow: 这条让的是测试自己捏着的 gate（gate.resolve() 才放行），flush 只走到 await 挂起点；没有 mock 异步返回可等
     await act(async () => { await Promise.resolve(); });
     opts.latestText.current = "v2";
     gate.resolve();

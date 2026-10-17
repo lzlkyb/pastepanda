@@ -30,6 +30,7 @@ export function RcCapsuleIdentity({
   peerDgramInput,
   peerInput,
   peerVideoPaused,
+  peerVideoPipe,
   rttMs = 0,
   fps = 0,
   tab,
@@ -51,6 +52,8 @@ export function RcCapsuleIdentity({
   peerInput?: RcPeerInputState | null;
   /** 丙-③：对端暂停了向本机推送画面（警示胶囊用；缺失/否 = 不摆）。 */
   peerVideoPaused?: boolean;
+  /** 丙（2026-10-12）：对端报来的编码档位（警示胶囊用；缺失/空 = 不摆）。 */
+  peerVideoPipe?: string;
   /** 常驻质量读数（与 detail/RcHud 同一份数据）；无样本整枚不渲染。 */
   rttMs?: number;
   fps?: number;
@@ -108,6 +111,7 @@ export function RcCapsuleIdentity({
         link={link}
         peerInput={peerInput}
         peerVideoPaused={peerVideoPaused}
+        peerVideoPipe={peerVideoPipe}
         tab={tab}
         busy={busy}
         onReconnect={onReconnect}

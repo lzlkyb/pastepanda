@@ -103,6 +103,7 @@ it("详情或远控接管时取消横滑，外部业务导航直接对齐", () =
 });
 it.each(["mobileSheets", "mobileBack"])("%s 接管时终止在途分页", async key => {
   const h = setup(); h.start(); h.position(280);
+  // waitguard:allow: 零取数，flush 只让 dataset 置位后的 effect 跑完
   await act(async () => { document.body.dataset[key] = "true"; await Promise.resolve(); });
   h.release(); h.settle(); expect(h.select).not.toHaveBeenCalled(); expect(h.node.scrollLeft).toBe(0);
 });

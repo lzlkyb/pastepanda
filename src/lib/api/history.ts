@@ -87,12 +87,10 @@ export async function deleteHistory(ids: string[]) {
       ...(store.searchResults ?? []).filter((h) => idSet.has(h.id)),
     ];
     const count = await invoke<number>("delete_history", { ids });
+    if (count > 0) window.dispatchEvent(new CustomEvent("delete-anim", { detail: { ids } }));
     store.removeItems(ids, deletedSnapshot);
     invalidateCountsCache(); // 删除后清除缓存
     if (count > 0) {
-      // 删除动画：通知列表开启行 glide 过渡窗口（与 pin-anim 机制一致），
-      // 剩余行平滑让位，被删行由 AnimatePresence 播放退场
-      window.dispatchEvent(new CustomEvent("delete-anim", { detail: { ids } }));
       // action:"undo" 让 Toast 渲染可点击的「撤销」按钮（纯鼠标用户也能撤销，
       // 不再只依赖 Ctrl+Z）；键盘撤销与按钮撤销共用 restoreDeleted()
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录`, type: "info", action: "undo" } }));
@@ -191,10 +189,9 @@ export async function togglePin(id: string): Promise<boolean | null> {
     const pinned = await invoke<boolean>("toggle_pin", { id });
     const store = useAppStore.getState();
     // 使用后端返回的权威 pinned 值直接设置，而非盲目本地取反（本地/后端状态可能因局域网同步等原因已经漂移）
+    window.dispatchEvent(new CustomEvent("pin-anim", { detail: { id, pinned } }));
     store.setPinned(id, pinned);
     invalidateCountsCache(); // 置顶状态变化后清除缓存
-    // 方案 C 置顶动画：通知列表开启行 glide 过渡窗口（与 setPinned 的重排在同一帧渲染）
-    window.dispatchEvent(new CustomEvent("pin-anim", { detail: { id, pinned } }));
     await resyncWindow(); // 全局行序已变，重同步分页窗口防 offset 漂移
     return pinned;
   } catch (e) {

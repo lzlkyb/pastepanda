@@ -7,7 +7,7 @@ import { FpBox } from "./RcPairFpBox";
 import styles from "../rc/RemoteComputer.module.css";
 
 /** 「生成邀请码」一侧：展示本机指纹 + 设备名输入 + 复制。受控展示，状态在父组件。 */
-export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy, myFp, selfName, toast, onBack, revealed, onReveal }: {
+export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy, myFp, selfName, toast, onBack, revealed, onReveal, onRevoke }: {
   name: string;
   setName: (v: string) => void;
   created: string | null;
@@ -22,6 +22,9 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
   /** 凭证是否已亮出（设计稿 §2：默认遮罩，二维码与接入串都不留明文）。 */
   revealed: boolean;
   onReveal: () => void;
+  /** 主动作废（差距 2，2026-10-16）：码已发出但还没人配成时提前关门，不用干等 TTL。
+      作废不依赖亮出态——收着的码同样是有效凭证，一样该能作废。 */
+  onRevoke: () => void;
 }) {
   const remain = expiresAt > 0 ? Math.max(0, expiresAt - now) : 0;
 
@@ -96,22 +99,26 @@ export function RcPairCreatePane({ name, setName, created, expiresAt, now, busy,
                 aria-label="长期配对码"
                 tabIndex={revealed ? 0 : -1}
               />
-              <button
-                type="button"
-                className={styles.miniBtn}
-                style={{ alignSelf: "flex-start", marginTop: 6 }}
-                disabled={!revealed}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(created);
-                    toast("配对码已复制", "success");
-                  } catch {
-                    toast("复制失败，请手动选中上方文本复制", "error");
-                  }
-                }}
-              >
-                复制配对码
-              </button>
+              <span style={{ display: "flex", gap: 8, marginTop: 6, alignSelf: "flex-start" }}>
+                <button
+                  type="button"
+                  className={styles.miniBtn}
+                  disabled={!revealed}
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(created);
+                      toast("配对码已复制", "success");
+                    } catch {
+                      toast("复制失败，请手动选中上方文本复制", "error");
+                    }
+                  }}
+                >
+                  复制配对码
+                </button>
+                <button type="button" className={styles.miniBtn} onClick={onRevoke}>
+                  作废
+                </button>
+              </span>
               <div className={styles.pairQrWrap}>
                 {revealed ? (
                   <>

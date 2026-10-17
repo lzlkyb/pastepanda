@@ -125,10 +125,15 @@ beforeEach(() => {
   m.refreshAiAvailability.mockResolvedValue(undefined);
 });
 
-/** 挂载 + 等首次加载落地 */
+/**
+ * 挂载 + 等首次加载**真的落地**。
+ * 🔴 判据不能用 config.provider==="deepseek"：那是 DEFAULT_CONFIG 的初值，首帧即真
+ * （永真条件）。spec 派生自 providers，只在 reload 的 Promise.all 续体里才有值，
+ * 与 loadedRef=true 同帧——「别处写完的 toast 防呆」那条守卫也依赖这一刻之后。
+ */
 async function mount() {
   const r = renderHook(() => useAiSettings());
-  await waitFor(() => expect(r.result.current.config.provider).toBe("deepseek"));
+  await waitFor(() => expect(r.result.current.spec?.id).toBe("deepseek"));
   await waitFor(() => expect(handler).not.toBeNull());
   return r;
 }
@@ -140,16 +145,26 @@ describe("useAiSettings 跟随外部配置改动", () => {
 
     // 免费额度弹窗写完库并广播（它不带 source）
     m.aiGetConfig.mockResolvedValue(NEW);
-    await act(async () => handler?.({ payload: null }));
+    await act(async () => {
+      handler?.({ payload: null });
+    });
 
-    expect(r.result.current.config.enabled).toBe(true);
-    expect(r.result.current.config.provider).toBe("builtin-agnes");
+    // reload 要跨 aiGetConfig 的异步边界才写回 config——等内容判据成立
+    await waitFor(() => {
+      expect(r.result.current.config.enabled).toBe(true);
+      expect(r.result.current.config.provider).toBe("builtin-agnes");
+    });
   });
 
   it("自己写完发出的那条事件要跳过（否则 reload 会跟乐观更新抢，开关闪回旧值）", async () => {
     const r = await mount();
 
-    await act(async () => r.result.current.saveNow({ enabled: true }));
+    // saveNow 里 persist 是 fire-and-forget（`void persist(...)`），notify 的调用
+    // 参数（source）要跨 aiSetConfig 边界才出现——等参数落地再取。
+    await act(async () => {
+      r.result.current.saveNow({ enabled: true });
+    });
+    await waitFor(() => expect(typeof m.notifyAiConfigWritten.mock.calls[0]?.[0]).toBe("string"));
     const source = m.notifyAiConfigWritten.mock.calls[0][0] as string;
     expect(source).toBeTruthy();
 
@@ -174,12 +189,19 @@ describe("useAiSettings 跟随外部配置改动", () => {
 
   it("两个实例的 source 互不相同（否则会互相把对方的事件当成自己的丢掉）", async () => {
     const a = await mount();
-    await act(async () => a.result.current.saveNow({ enabled: true }));
+    await act(async () => {
+      a.result.current.saveNow({ enabled: true });
+    });
+    // persist 是 fire-and-forget：等每实例 notify 的调用参数落地后再取 source
+    await waitFor(() => expect(typeof m.notifyAiConfigWritten.mock.calls[0]?.[0]).toBe("string"));
     const sa = m.notifyAiConfigWritten.mock.calls[0][0] as string;
 
     m.notifyAiConfigWritten.mockClear();
     const b = await mount();
-    await act(async () => b.result.current.saveNow({ enabled: true }));
+    await act(async () => {
+      b.result.current.saveNow({ enabled: true });
+    });
+    await waitFor(() => expect(typeof m.notifyAiConfigWritten.mock.calls[0]?.[0]).toBe("string"));
     const sb = m.notifyAiConfigWritten.mock.calls[0][0] as string;
 
     expect(sa).not.toBe(sb);

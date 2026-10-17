@@ -1,3 +1,4 @@
+import { RecMainResult } from "./components/recsel/RecMainResult";
 import { primaryModifierHeld, primaryShortcutLabel, configuredShortcutLabel, activeConfiguredHotkey } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef, lazy, Suspense, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -155,7 +156,7 @@ function App() {
    */
   const targetView = showSettings ? "settings" : appMode;
   const { shown: shownView, phase: viewPhase } = useViewTransition(targetView);
-  const viewPhaseClass = viewPhase === "out" ? appStyles.viewOut : appStyles.viewIn;
+  const viewPhaseClass = viewPhase === "in" ? appStyles.viewIn : "";
 
   /**
    * A-61 ③：知识模式中栏的「⋯」菜单 → 直接跳到设置页指定 tab（如 MCP）。
@@ -712,36 +713,16 @@ function App() {
             new CustomEvent("app-toast", { detail: { message: msg, type: "error" } }),
           );
         });
-        // 录屏完成：主窗 toast（选区/控制条窗收到同一事件是自行关窗）。
+        // 录屏完成：持久结果卡；选区/控制条由后端收尾时统一销毁。
         // 失败同样必须由主窗承接：录制窗可能已在收尾中销毁（规则 15.3 不静默）。
-        // note = 中途故障落盘的部分保存（锁屏/分辨率变化），附注在 toast 里说清。
-        const fnRecDone = await listen<{ path: string; bytes: number; note?: string | null; hud?: boolean }>("rec-done", (e) => {
+        // note = 中途故障或音源异常；主窗与隐藏 HUD 使用同一结果组件。
+        const fnRecDone = await listen<{ path: string; bytes: number; durationMs?: number; quality?: string; note?: string | null; hud?: boolean }>("rec-done", (e) => {
           if (e.payload.hud) return; // 主窗隐藏：HUD 轻浮窗已承接（双通路互斥，设计稿二期 §1）
-          const mb = (e.payload.bytes / 1024 / 1024).toFixed(1);
-          const name = e.payload.path.split(/[/]/).pop() ?? e.payload.path;
-          const suffix = e.payload.note ? `（${e.payload.note}）` : "";
-          const path = e.payload.path;
-          window.dispatchEvent(
-            new CustomEvent("app-toast", {
-              detail: {
-                message: `🎬 录屏已保存 ${name} · ${mb} MB${suffix}`,
-                type: "success",
-                duration: 6000,
-                actionLabel: "打开文件夹",
-                onAction: () => {
-                  void invoke("rec_reveal", { path }).catch(() => { /* 定位失败不打断 */ });
-                },
-              },
-            }),
-          );
+          window.dispatchEvent(new CustomEvent("rec-result", { detail: { ...e.payload, ok: true } }));
         });
         const fnRecFail = await listen<{ message?: string; hud?: boolean }>("rec-failed", (ev) => {
           if (ev.payload?.hud) return; // 同上：主窗隐藏时由 HUD 承接
-          window.dispatchEvent(
-            new CustomEvent("app-toast", {
-              detail: { message: `录制失败：${ev.payload?.message ?? "未知原因"}`, type: "error" },
-            }),
-          );
+          window.dispatchEvent(new CustomEvent("rec-result", { detail: { ...ev.payload, ok: false } }));
         });
         const fnRecStartupFail = await listen("rec-startup-failed", () => {
           window.dispatchEvent(
@@ -1256,10 +1237,8 @@ function App() {
         {/* 建议条 / AI 快捷区只属于「记录」模式（D15）：两者都是对**当前剪贴板内容**的建议，
             在工具/知识模式下无指向，还白占一行高度 */}
         {/* 🔴 四个视图互斥，全看 `shownView` 一个值。它们都是**普通流内元素**，
-            同时在场会上下叠而不是盖住——这也是切换动画只能做成串行的原因，
-            见 `useViewTransition`。
-            ❗ 头上那一行（建议条 / AI 快捷区）也跟着 `shownView` 走：
-            不跟的话切走时它先硬消失、列表再慢慢淡出，看着像卡一下。 */}
+            同时在场会上下叠而不是盖住。B 方案即时切换，只有新内容轻量进入，
+            不重叠两个虚拟列表，也不等待旧页退场；建议条与内容同步更新。 */}
         {shownView === "record" && (aiStatus === "on" && aiAwareActive ? <AiQuickBar /> : <SuggestionBar />)}
         {/* 主体区按模式分发（D15 三模式框架）。
             三个分支里只有「记录」是零成本的——它就是原来的主体，只是被包起来了。 */}
@@ -1310,8 +1289,8 @@ function App() {
             做成平级模式就得额外记一份「上一个模式」。 */}
         {shownView === "settings" && (
           <div className={`${appStyles.contentArea} ${viewPhaseClass}`}>
-            <Suspense fallback={null}>
-              <ErrorBoundary fallback={null} componentName="设置页">
+            <Suspense fallback={<div className={appStyles.viewLoading} role="status">正在打开设置…</div>}>
+              <ErrorBoundary fallback={<div className={appStyles.viewLoading} role="alert">设置未能打开，请返回后重试。<button className="btn-secondary" onClick={closeSettings}>返回</button></div>} componentName="设置页">
                 <SettingsView
                   onClose={closeSettings}
                   initialTab={showSettingsTab}
@@ -1466,6 +1445,7 @@ function App() {
         />
         {/* 审查：统一确认弹窗宿主（替代散落的 window.confirm） */}
         <ConfirmDialogHost />
+        <RecMainResult />
         {/* 统一单行输入弹窗宿主（替代 window.prompt，如新建/重命名文件夹） */}
         <PromptDialogHost />
       </div>

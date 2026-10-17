@@ -628,52 +628,58 @@ describe("initBackend", () => {
   it("loads initial history, config, groups, tags on init", { timeout: 20_000 }, async () => {
     const { initBackend } = await import("@/lib/api");
 
-    // Mock invoke 依次返回不同的值（C13 修复后顺序：config → history → groups → tags）
-    vi.mocked(invoke)
-      // get_config（先加载配置）
-      .mockResolvedValueOnce({
-        theme: "midnight",
-        auto_cleanup_days: 7,
-        hotkey: "ctrl+shift+v",
-        current_workspace: "默认",
-        lan_sync_enabled: false,
-        always_on_top: false,
-        auto_startup: false,
-      })
-      // get_history
-      .mockResolvedValueOnce([
-        {
-          id: "1",
-          text: "Hello",
-          time: "2026-01-01 12:00:00",
-          type: "text",
-          content: "",
-          pinned: false,
-          source: "",
-          workspace: "默认",
-        },
-      ])
-      // get_groups
-      .mockResolvedValueOnce([
-        {
-          id: "g1",
-          name: "Work",
-          color: "#FF0000",
-          icon: "folder",
-          sort_order: 0,
-          created_at: "2026-01-01",
-        },
-      ])
-      // get_tags
-      .mockResolvedValueOnce([
-        {
-          id: "t1",
-          name: "important",
-          color: "#0000FF",
-          source: "manual",
-          created_at: "2026-01-01",
-        },
-      ]);
+    // 🔴 按**命令名**派发，而不是「按调用顺序吃第 N 个 once 值」：
+    // initBackend 除了这四路串行加载，还有不等返回值的旁路调用（hud 跟随、
+    // 角标集、影子收录…）；一旦有旁路在延迟落地下插进取数队列，once 队列整体
+    // 错位——get_tags 吃到默认值，本用例随机红（快机器碰巧对齐才绿）。
+    // 用例要钉的东西不变：四类首屏数据各按各的命令落进 store。
+    vi.mocked(invoke).mockImplementation((cmd: string) => {
+      if (cmd === "get_config")
+        return Promise.resolve({
+          theme: "midnight",
+          auto_cleanup_days: 7,
+          hotkey: "ctrl+shift+v",
+          current_workspace: "默认",
+          lan_sync_enabled: false,
+          always_on_top: false,
+          auto_startup: false,
+        });
+      if (cmd === "get_history")
+        return Promise.resolve([
+          {
+            id: "1",
+            text: "Hello",
+            time: "2026-01-01 12:00:00",
+            type: "text",
+            content: "",
+            pinned: false,
+            source: "",
+            workspace: "默认",
+          },
+        ]);
+      if (cmd === "get_groups")
+        return Promise.resolve([
+          {
+            id: "g1",
+            name: "Work",
+            color: "#FF0000",
+            icon: "folder",
+            sort_order: 0,
+            created_at: "2026-01-01",
+          },
+        ]);
+      if (cmd === "get_tags")
+        return Promise.resolve([
+          {
+            id: "t1",
+            name: "important",
+            color: "#0000FF",
+            source: "manual",
+            created_at: "2026-01-01",
+          },
+        ]);
+      return Promise.resolve({ success: true });
+    });
 
     const cleanup = await initBackend();
 

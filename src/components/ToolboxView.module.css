@@ -36,7 +36,7 @@
   font-size: 12.5px;
   font-family: inherit;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  transition:border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
 }
 
 .search::placeholder {
@@ -68,7 +68,7 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+  transition:border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 
 .chip:hover {
@@ -169,11 +169,10 @@
   text-align: left;
   font-family: inherit;
   overflow: hidden;
-  transition:
-    border-color 0.15s,
-    background 0.15s,
-    transform 0.15s,
-    box-shadow 0.15s;
+  transition:border-color var(--motion-fast),
+    background var(--motion-fast),
+    transform var(--motion-fast),
+    box-shadow var(--motion-fast);
 }
 
 /* 顶光：与知识库卡同一 token，深色主题由 theme.css 覆写 */
@@ -249,7 +248,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  transition: border-color 150ms ease, color 150ms ease, background 150ms ease, transform 150ms ease;
+  transition:border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 
 .recentChip:hover {
@@ -259,7 +258,7 @@
 }
 
 .recentChip:active {
-  transform: scale(0.97);
+  transform: scale(var(--control-press-scale));
 }
 
 .recentChip:disabled {
@@ -312,7 +311,7 @@
   background: color-mix(in srgb, var(--tile-hue) 14%, var(--card-bg));
   border: 1px solid color-mix(in srgb, var(--tile-hue) 28%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition:transform var(--motion-fast), box-shadow var(--motion-fast);
   z-index: 1;
 }
 
@@ -413,7 +412,7 @@
   line-height: 1;
   opacity: 0;
   transform: translateX(-2px);
-  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  transition:opacity var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
   z-index: 1;
 }
 
@@ -464,7 +463,7 @@
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  transition:border-color var(--motion-fast), color var(--motion-fast), background var(--motion-fast);
 }
 
 .clearBtn:hover {

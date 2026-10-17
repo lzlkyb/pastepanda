@@ -154,6 +154,9 @@ pub struct RcStatus {
     pub loss_permille: u32,
     /// 会话链路实际走的路：`lan` / `direct` / `relay`；空串 = 未测到（前端不显示这格）。
     pub path_kind: String,
+    /// 链路调度相位（P1，2026-10-15）：`stable` / `degraded` / `recovering`；
+    /// 空串 = 无会话（前端不显示）。degraded = 证据断供，recovering = 恢复观察窗内。
+    pub link_sched: String,
     /// 时钟偏差（被控端时钟 − 发起端时钟，ms，EMA）。发起端算「画面延迟」用：
     /// 帧龄 = 本地时刻 − (帧采集时刻 − 偏差)。0 = 尚未校准（两机时钟差未知）。
     pub clock_skew_ms: i64,
@@ -223,6 +226,13 @@ pub struct RcStatus {
     /// 「未授权 / 未生效」的三态，只有「此刻对方屏幕不推过来了」。旧对端不发这条
     /// 帧 ⇒ 恒 false ⇒ 前端不摆「对方已暂停画面」。
     pub peer_video_paused: bool,
+    /// 丙（2026-10-12，Issue #19）：**对端报来的编码管线档位**（档名）。
+    /// 空串 = 旧对端不发这条帧 / 本会话还没收到 ⇒ 前端不摆任何降级断言。
+    /// 档名表与前端映射见 `service/video_pipe.rs` 与 `src/lib/rcVideoPipe.ts`
+    /// （跨端契约，两端各有一份守卫测试钉住）。
+    pub peer_video_pipe: String,
+    /// 对端档位的原文标签（`pipeline_state()` 第二项），只进详情不参与判据。
+    pub peer_video_pipe_label: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -383,6 +393,11 @@ pub struct RcService {
     /// 状态、判据、跨端推送、收口同在 `video_pause.rs`。热路径（推流每圈一次）
     /// 只读原子量，不放锁。
     video_pause: video_pause::VideoPauseGate,
+    /// 丙（2026-10-12，Issue #19）：发起端存的**对端**编码管线档位。
+    ///
+    /// 状态、判据、跨端推送、收口同在 `video_pipe.rs`；不在帧热路径上
+    /// （每 5s 最多一次比较，变了才发一帧）。
+    video_pipe: video_pipe::VideoPipeState,
 }
 
 /// 发起端侧看到的「对端主机输入权状态」（乙-③，见 `RcService::peer_input_state`）。
@@ -669,6 +684,9 @@ impl RcService {
             peer_input_state: Mutex::new(None),
             // 丙-③：默认不暂停（正常推流）——暂停只在当场会话里成立。
             video_pause: video_pause::VideoPauseGate::default(),
+            // 丙（2026-10-12）：默认「没收到对端档位」——空串，不是某个具体档。
+            // 编造一个默认档等于给旧对端安一条它没做过的降级说明。
+            video_pipe: video_pipe::VideoPipeState::default(),
         }
     }
 
@@ -690,6 +708,9 @@ mod input_gate;
 // `pub(super)` 而非同批其余的私有 `mod`：推流主循环（`rc::inbound::video_run`）
 // 要读暂停轮询周期这一个常量，为它在 service 上再开一层转发方法不值。
 pub(super) mod video_pause;
+// 丙（2026-10-12）：与 `video_pause` 同一条控制流的对端状态；`pub(super)` 给
+// `inbound::video_run` 的推送点与守卫测试留可见性（模块头的档位表是跨端契约）。
+pub(super) mod video_pipe;
 
 /// `rc_enabled` 的缺省值：**开**。
 ///

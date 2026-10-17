@@ -1,34 +1,22 @@
 /**
- * RecSettingsCluster — 录屏选区的「画质 + 声音」⋯ 浮层（甲案 §2，规则 7 拆分）。
+ * 录前画质渐进展开；预览与确认条共用同一接线。
  *
- * 五期把四档画质与两个音源从主条收进 ⋯，但**结果必须留在条上当徽标**（规则 15.1：
- * 控件和它的反馈同一个可见性域）。预览条与确认条共用这一套：分支只在这里收口一次。
+ * 2026-10-16 拆分（规则 7）：音源按钮移出到 `RecAudioToggles`——它不再写「开 / 关」，
+ * 与画质这枚「设置名 + 当前值」是两种不同的控件语义，混在一个组件里只会让
+ * 「谁负责状态」变得含混。同时删掉死导出 `recSettingsBadge`（全仓零引用，
+ * 它复述的那句「电脑声音 开 · 麦克风 关」正是 §5.1 要删的第二载体）。
  */
 import { REC_QUALITIES, type RecQualityItem } from "@/lib/recQuality";
 
-/** ⋯ 的结果徽标：档名 + 已开音源图标，都没开就写「无声」。 */
-export function recSettingsBadge(qualityLabel: string, sysAudio: boolean, micAudio: boolean): string {
-  const icons = `${sysAudio ? "🔊" : ""}${micAudio ? "🎙" : ""}`;
-  return `${qualityLabel} · ${icons || "无声"}`;
-}
-
-/** 画质 / 音源浮层：作为玻璃条的子元素定位在条上方（条贴近屏顶时翻到下方）。 */
+/** 画质浮层：作为玻璃条的子元素定位在条上方（条贴近屏顶时翻到下方）。 */
 function SettingsPop({
   flipBelow,
   quality,
   onQuality,
-  sysAudio,
-  micAudio,
-  onSys,
-  onMic,
 }: {
   flipBelow: boolean;
   quality: RecQualityItem;
   onQuality: (q: RecQualityItem) => void;
-  sysAudio: boolean;
-  micAudio: boolean;
-  onSys: () => void;
-  onMic: () => void;
 }) {
   return (
     <div
@@ -58,44 +46,19 @@ function SettingsPop({
         </span>
       </div>
       <div className="rec-pop-row">
-        <span className="lbl">声音</span>
-        <button
-          type="button"
-          className={`rec-snd${sysAudio ? " on" : " off"}`}
-          onClick={onSys}
-          title="录进电脑正在播放的声音"
-          aria-pressed={sysAudio}
-        >
-          🔊 系统声音
-        </button>
-        <button
-          type="button"
-          className={`rec-snd${micAudio ? " on" : " off"}`}
-          onClick={onMic}
-          title="录进解说人声"
-          aria-pressed={micAudio}
-        >
-          🎙 麦克风
-        </button>
-      </div>
-      <div className="rec-pop-row">
-        <span className="muted">默认高清 · 录系统声音 · 不录麦克风；麦克风关乎别人听不听得见你</span>
+        <span className="muted">高清适合办公演示；标准和流畅优先减小文件。麦克风开启后才录入你的讲解。</span>
       </div>
     </div>
   );
 }
 
-/** ⋯ 按钮 + 徽标 + 浮层的成对包装（两处玻璃条都用它）。 */
+/** 画质选项按需展开（音源已挪到 RecAudioToggles，两枚都是常驻可达）。 */
 export function SettingsCluster(props: {
   open: boolean;
   onToggle: () => void;
   flipBelow: boolean;
   quality: RecQualityItem;
   onQuality: (q: RecQualityItem) => void;
-  sysAudio: boolean;
-  micAudio: boolean;
-  onSys: () => void;
-  onMic: () => void;
 }) {
   const { open } = props;
   return (
@@ -110,18 +73,13 @@ export function SettingsCluster(props: {
         aria-controls={open ? "rec-pop" : undefined}
         title="画质与声音"
       >
-        ⋯
+        画质 {props.quality.label}
       </button>
-      <span className="muted rec-badge">{recSettingsBadge(props.quality.label, props.sysAudio, props.micAudio)}</span>
       {open && (
         <SettingsPop
           flipBelow={props.flipBelow}
           quality={props.quality}
           onQuality={props.onQuality}
-          sysAudio={props.sysAudio}
-          micAudio={props.micAudio}
-          onSys={props.onSys}
-          onMic={props.onMic}
         />
       )}
     </>

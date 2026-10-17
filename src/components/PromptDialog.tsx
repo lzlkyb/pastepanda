@@ -2,13 +2,14 @@
  * PromptDialog —— 与 ConfirmDialog 同一视觉语言的单行输入弹窗。
  * 由 PromptDialogHost 渲染；用法见 lib/prompt.ts。
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { FocusTrap } from "@/components/FocusTrap";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { useDialogEscape } from "@/hooks/useDialogEscape";
+import { isConfirmLayerPresent } from "@/lib/modalLayers";
 
 interface PromptDialogProps {
   open: boolean;
@@ -37,6 +38,9 @@ export function PromptDialog({
   const anim = useDialogAnim();
   const [value, setValue] = useState(defaultValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  // This prompt shares the confirmation layer; only another layer can block its Escape.
+  const yieldToConfirmation = useCallback(() => isConfirmLayerPresent(backdropRef.current), []);
 
   // 打开时同步初值并聚焦。open 从 false→true 才重置，避免打字过程中被覆盖。
   useEffect(() => {
@@ -50,17 +54,18 @@ export function PromptDialog({
   // Esc = 取消：公共 hook（捕获期 + stopPropagation，不让底下的页面抢走）。
   // 之前这里手写第四份同款监听，缺 `isComposing`（输入法按 Esc 收候选窗会连着把弹窗关掉）
   // 和「嵌套确认框在场时让路」两条闸——判据见 `lib/modalLayers.ts`（规则 #11.1）。
-  useDialogEscape(onCancel, open);
+  useDialogEscape(onCancel, open, yieldToConfirmation);
 
   return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
+          ref={backdropRef}
           {...anim.backdrop}
           className="dialog-backdrop z-confirm"
           onClick={onCancel}
         >
-          <FocusTrap>
+          <FocusTrap initialFocus="input" ariaLabel={title}>
             <motion.div
               {...anim.panel}
               className="dialog-box w400"
@@ -72,7 +77,7 @@ export function PromptDialog({
             >
               <div className="dialog-header">
                 <h2 className="dialog-title">{title}</h2>
-                <button onClick={onCancel} className="dialog-close">
+                <button onClick={onCancel} className="dialog-close" aria-label="关闭输入框">
                   <X size={16} />
                 </button>
               </div>
@@ -99,9 +104,10 @@ export function PromptDialog({
                   className="prompt-input"
                   value={value}
                   placeholder={placeholder}
+                  aria-label={title}
                   onChange={(e) => setValue(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
                       e.preventDefault();
                       onConfirm(value);
                     }
@@ -120,7 +126,6 @@ export function PromptDialog({
                   <button
                     className="btn-primary"
                     onClick={() => onConfirm(value)}
-                    autoFocus
                   >
                     {confirmText}
                   </button>

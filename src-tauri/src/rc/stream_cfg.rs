@@ -222,6 +222,52 @@ pub(crate) fn rtt_hint_tier(prev: u8, ema_ms: i64) -> (u8, bool) {
     (next, next != prev)
 }
 
+/// 起播宽限所需的样本数：这么多拍 pong 里取**最小值**当 EMA 初值。
+/// 4 拍 = 会话头 4 秒（心跳 1s/拍，见 `outbound::HEARTBEAT_PING_MS`）。
+pub(crate) const RTT_WARM_SAMPLES: u32 = 4;
+
+/// pong 样本 → RTT EMA（NetHint 档位与 `set_peer_rtt` 的唯一输入源）。
+///
+/// 为什么要从 `outbound.rs` 的收包循环里收成函数（规则 11.1）：这段算式的
+/// 后果没法在原地被测试复现——它只有三行，而坑恰恰长在那三行上。
+///
+/// 🔴 病灶（2026-10-11 真机「连上就糊」，见 `rc::stream_cfg::tests` 那组用例）：
+/// 旧口径 `if ema < 0 { sample }` 拿**第一个样本**直接当 EMA 起点，而会话头一拍
+/// 恰好落在被控端最忙的时刻（开编码器 + 首帧 IDR + 建流），pong 必然被排队拖慢。
+/// 实测首样 4655ms ⇒ 档位 1 ⇒ 被控端 `bitrate_scale_for_rtt` 落 25% ⇒ 1080p 只有
+/// ~2Mbps ⇒ 方块/色阶；而 α=1/8 从 4655 掉回 140 以下要 ~26 拍 ≈ 26 秒，
+/// 那一场的 3 分钟里每个样本都在 3–10 秒，被判死的链路再没翻过身。
+/// 与 2026-09-27 那条「瞬时尖刺不跨档」同族，只是位置不同：抖动被 EMA+滞回治了，
+/// **冷启动没治**。
+///
+/// 本函数的口径（也是那组用例钉住的不变量）：前 [`RTT_WARM_SAMPLES`] 拍**不建
+/// EMA**（返回 -1 = 尚未建立，`rtt_hint_tier` 收到 -1 恒停在档位 0，档位这一路
+/// 一个 NetHint 都不发），第 K 拍用这 K 拍的**最小值**建初值；之后走原 α=1/8。
+/// 取最小而非平均：宽限期里的样本只可能因起播负载偏高，最低那个才最接近线路本底。
+///
+/// 返回值：`(ema_ms, warm_min_ms, warm_seen)`。`warm_seen` 只在 EMA 未建立时推进
+/// （建立后原样回传，不再参与判定）。
+pub(crate) fn next_rtt_ema(
+    ema_ms: i64,
+    warm_min_ms: i64,
+    warm_seen: u32,
+    sample_ms: i64,
+) -> (i64, i64, u32) {
+    let warm_min = if warm_min_ms < 0 || sample_ms < warm_min_ms {
+        sample_ms
+    } else {
+        warm_min_ms
+    };
+    if ema_ms >= 0 {
+        return ((ema_ms * 7 + sample_ms) / 8, warm_min, warm_seen);
+    }
+    let warm_seen = warm_seen.saturating_add(1);
+    if warm_seen < RTT_WARM_SAMPLES {
+        return (-1, warm_min, warm_seen);
+    }
+    (warm_min, warm_min, warm_seen)
+}
+
 /// P3.2：带宽估计（kbps）→ 码率缩放百分比。与 RTT/丢包缩取 min——
 /// 三条弱网信号（延迟高 / 丢包多 / 带宽窄）谁更糟听谁的。0 = 未采样不约束。
 /// 分档参考：1080p 基准码率 ~4Mbps，估计值低于它的 1.5 倍就该缩。
@@ -271,11 +317,26 @@ pub fn bitrate_scale_for_loss(permille: u64) -> u32 {
 use super::auto_quality::{auto_decide, auto_ladder, ladder_index_of, AutoTier, LinkSample, FRAME_WINDOW};
 
 impl StreamCfg {
-    pub(super) fn media_ceiling_kbps(&self) -> u32 {
+    /// 编码预算的**意图上限**（线路实际宽不宽仍由闭环决定：`Flow::feedback` 的
+    /// 1.25×漂移帽会把预算钳在已证明交付能力的四分之三以内）。
+    ///
+    /// 非 LAN 维持三步阶梯 + 16_000 帽（那把尺定标在公网直连/中继上）。
+    /// LAN 按档位真实需求给：`bitrate_for(max_w, 提帧上限 fps) × 用户倍率`——
+    /// 1080p120 的意图是 20.8Mbps，被 16M 剪掉后即使线路够、生产者也跟得上，
+    /// 编码器每帧仍少拿 23% 的字节。40_000 封顶：同网段的 Wi-Fi 照样能窄，
+    /// 而倍率 200% 会把 1080p165 的意图推到 53.6Mbps。
+    pub(super) fn media_ceiling_kbps(&self, lan: bool) -> u32 {
         // 保留画质档与用户倍率的上限意图，实际预算仍由交付闭环决定。
-        let width = self.opts.lock().unwrap_or_else(|p| p.into_inner()).profile.max_w;
-        let base = match width { 0..=1280 => 4_000, 1281..=1920 => 8_000, _ => 12_000 };
+        let profile = self.opts.lock().unwrap_or_else(|p| p.into_inner()).profile;
         let pct = self.user_bitrate_pct.load(Ordering::Relaxed).clamp(50, 200) as u32;
+        if lan {
+            // 帧率按**提帧上限**取（与编码器 PTS 同源，见 `want_fps_for`）：慢档位在
+            // 拖动时也是 60fps 的节拍，按档位名义间隔算会低估一截。
+            let fps = crate::rc::pace::want_fps_for(profile.interval_ms, false, false);
+            let want = crate::rc::video_params::bitrate_for(profile.max_w, fps) / 1_000;
+            return (want * pct / 100).min(40_000);
+        }
+        let base = match profile.max_w { 0..=1280 => 4_000, 1281..=1920 => 8_000, _ => 12_000 };
         (base * pct / 100).min(16_000)
     }
     pub(super) fn new() -> Self {

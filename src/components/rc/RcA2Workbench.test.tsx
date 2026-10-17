@@ -506,7 +506,11 @@ describe("RcA2DeviceDetail", () => {
     await act(async () => {
       settle(false);
     });
-    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    // setSaving(false) 发生在 onRename promise 的**续体**里（注入下比 act 的微任务
+    // 冲刷晚一拍）——等按钮真的解除禁用这个内容信号，而不是假绿的首帧。
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     expect(screen.getByRole("textbox", { name: "设备备注名" }), "失败要留在编辑态").toBeTruthy();
   });
 
@@ -522,11 +526,18 @@ describe("RcA2DeviceDetail", () => {
     // Await the completed failure, not just invocation; the latter races the disabled retry button.
     await act(async () => complete(false));
     expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("书房电脑");
-    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    // 解除 disabled 在 promise 续体里（异步落地），等内容出现再抢跑第二次点击
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false),
+    );
     fireEvent.click(screen.getByRole("button", { name: "保存名称" }));
     expect(onRename).toHaveBeenCalledTimes(2);
     await act(async () => complete(true));
-    expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull();
+    // 「退出编辑态」发生在成功续体里（跨异步边界）：首帧输入框还在是必然，
+    // 判据要等它真的消失——条件从假变真才算等到内容，不是首帧即真。
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull(),
+    );
   });
 
   it("改名保存中连续 Enter 不重复提交", async () => {
@@ -582,7 +593,10 @@ describe("RcA2DeviceDetail", () => {
     fireEvent.change(input, { target: { value: "后来输入的草稿" } });
     await act(async () => complete(true));
     expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("后来输入的草稿");
-    expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false);
+    // 成功续体里才解除保存态：等 disabled 落回 false 的内容信号
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(false),
+    );
   });
 
   it("旧设备完成回调不解除新设备的保存中状态", async () => {
@@ -601,7 +615,10 @@ describe("RcA2DeviceDetail", () => {
     expect((screen.getByRole("textbox", { name: "设备备注名" }) as HTMLInputElement).value).toBe("第二台");
     expect((screen.getByRole("button", { name: "保存名称" }) as HTMLButtonElement).disabled).toBe(true);
     await act(async () => completions[1](true));
-    expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull();
+    // 同上：当前设备的保存成功后退编辑态在异步续体里，等它真的落地
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "设备备注名" })).toBeNull(),
+    );
   });
 
   it.each([{ isComposing: true }, { keyCode: 229 }])("输入法选词 %j 的 Enter/Esc 不保存或取消改名", flags => {

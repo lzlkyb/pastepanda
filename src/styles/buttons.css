@@ -2,10 +2,8 @@
  * buttons.css — 按钮基础样式（跨组件共享）
  * 圆角统一 8px（浮层阶梯：控件 8 / 浮层 12 / 弹窗 16；原 7/6 已收口）。
  * 焦点环：:focus-visible 统一 accent（U7）；鼠标点击不出现环。
- * 过渡：不用 transition:all，只声明真正会变的属性（减合成层无效劳动）。
+ * 过渡：只声明发生变化的属性，与公共动效节奏一致。
  */
-
-/* ===== 按钮基础样式 ===== */
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -20,14 +18,14 @@
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: opacity 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition:opacity var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 .btn-primary:hover {
   opacity: 0.9;
   box-shadow: 0 2px 8px var(--accent-shadow);
 }
 .btn-primary:active {
-  transform: scale(0.97);
+  transform: scale(var(--control-press-scale));
 }
 .btn-primary:focus-visible {
   outline: 2px solid var(--accent);
@@ -52,7 +50,7 @@
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
 }
 .btn-secondary:hover {
   background: var(--section-bg);
@@ -79,14 +77,14 @@
   font-family: inherit;
   position: relative;
   overflow: hidden;
-  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 .btn-danger:hover {
   background: var(--danger-hover, #B91C1C);
   box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3);
 }
 .btn-danger:active {
-  transform: scale(0.97);
+  transform: scale(var(--control-press-scale));
 }
 .btn-danger:focus-visible {
   outline: 2px solid var(--danger, #DC2626);
@@ -106,7 +104,7 @@
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition:background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
 }
 
 .btn-ghost:hover {
@@ -204,7 +202,7 @@
   background: none;
   cursor: pointer;
   border-radius: 20px;
-  transition: opacity 0.15s, transform 0.15s;
+  transition:opacity var(--motion-fast), transform var(--motion-fast);
   -webkit-app-region: no-drag;
 }
 .version-badge-btn:hover {

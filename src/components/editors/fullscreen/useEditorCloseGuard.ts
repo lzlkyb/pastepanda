@@ -19,12 +19,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
 import { useLatest } from "@/hooks/useLatest";
+import { MOTION } from "@/lib/motion";
 import type { CloseTarget } from "./CloseAllDialog";
 import type { EditorTab } from "./useEditorTabs";
 import type { MutableRefObject } from "react";
 
 /** 退场动画时长（与 CSS 的 overlay-exit 对齐） */
-const EXIT_MS = 190;
+const EXIT_MS = MOTION.base * 1000;
 /**
  * 「关窗请求已发出但窗口还在」的判定窗（见 `doCloseWindow` 里的说明）。
  * 是防「静默否决」把窗口留成永久白屏的最后一道保险。
@@ -139,10 +140,10 @@ export function useEditorCloseGuard({
   /**
    * 取消正在进行的退场动画。
    *
-   * ❗ 光重置标记是不够的 —— 已排好的 `finish` 还在 190ms 后等着关窗。
+   * ❗ 光重置标记是不够的 —— 已排好的 `finish` 还在退场计时结束后等着关窗。
    * 真实触发场景：退场动画期间主窗打开了新文件 → Rust emit `md-editor-load`
    * → 前端调本函数 + 建新标签。若只重置标记，新文档会正常入场、退场动画类也撤了，
-   * 但 190ms 后窗口照样被关掉 —— 用户看到「新文档闪一下就没了」，而主窗那边
+   * 但计时结束后窗口照样被关掉 —— 用户看到「新文档闪一下就没了」，而主窗那边
    * `openInEditor` 的 promise 已经成功返回，两边认知不一致。
    *
    * 这里**不**去动 `forceCloseRef`：定时器被取消意味着 `finish` 没跑过，

@@ -6,6 +6,8 @@
  */
 
 import type { Transform, TransformContext, TransformResult } from "./types";
+import { analyzeContent } from "./analyzer";
+import { decodeBase64Text } from "@/lib/utils";
 
 const BASE = 0.2;
 
@@ -50,27 +52,13 @@ const base64Decode: Transform = {
   icon: "unlock",
   group: "web",
   detect: (ctx) => {
-    // 优先读预分析特征
-    if (ctx.features?.base64) {
-      return ctx.features.base64.valid ? 0.85 : 0;
-    }
-    const t = ctx.text.trim();
-    if (/^[A-Za-z0-9+/=_\-\s]+$/.test(t) && t.length >= 8) {
-      return 0.85;
-    }
-    return 0;
+    const feature = (ctx.features ?? analyzeContent(ctx.text, ctx.contentType)).base64;
+    return feature?.valid ? 0.85 : 0;
   },
   run: (t) => {
     try {
-      const cleaned = t.replace(/\s/g, "");
-      // Base64URL → 标准 Base64
-      const std = cleaned.replace(/-/g, "+").replace(/_/g, "/");
-      // 补齐 padding
-      const padLen = (4 - (std.length % 4)) % 4;
-      const padded = std + "=".repeat(padLen);
-      const binary = atob(padded);
-      const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-      return ok(new TextDecoder().decode(bytes));
+      const text = decodeBase64Text(t);
+      return text !== null ? ok(text) : fail("不是可解码为文本的 Base64 字符串");
     } catch {
       return fail("不是有效的 Base64 字符串");
     }
@@ -96,12 +84,9 @@ const urlDecode: Transform = {
   icon: "unlink",
   group: "web",
   detect: (ctx) => {
-    if (ctx.features?.urlEncoded) {
-      return ctx.features.urlEncoded.hasPattern ? 0.85 : 0;
-    }
-    if (/%[0-9A-Fa-f]{2}/.test(ctx.text)) return 0.85;
-    if (ctx.text.includes("+") && /\w\+\w/.test(ctx.text)) return 0.5;
-    return 0;
+    const feature = (ctx.features ?? analyzeContent(ctx.text, ctx.contentType)).urlEncoded;
+    if (feature) return feature.decoded !== undefined ? 0.85 : 0;
+    return ctx.text.includes("+") && /\w\+\w/.test(ctx.text) ? 0.45 : 0;
   },
   run: (t) => {
     try {
@@ -120,11 +105,8 @@ const unicodeEncode: Transform = {
   description: "将非 ASCII 字符转为 \\uXXXX 形式",
   icon: "code",
   group: "web",
-  detect: (ctx) => {
-    // 包含非 ASCII 字符时更相关（\x00 只是 ASCII 区间下界，不是要匹配控制字符）
-    // eslint-disable-next-line no-control-regex
-    return /[^\x00-\x7F]/.test(ctx.text) ? 0.6 : nonEmpty(ctx, BASE);
-  },
+  // Being Chinese is not evidence that the user wants Unicode escapes.
+  detect: (ctx) => nonEmpty(ctx, BASE),
   run: (t) => {
     // eslint-disable-next-line no-control-regex
     const encoded = t.replace(/[^\x00-\x7F]/g, (ch) => {
@@ -226,10 +208,8 @@ const jwtDecode: Transform = {
   icon: "key",
   group: "web",
   detect: (ctx) => {
-    if (ctx.features?.jwt) return ctx.features.jwt.valid ? 0.95 : 0;
-    const t = ctx.text.trim();
-    if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(t)) return 0.95;
-    return 0;
+    const feature = (ctx.features ?? analyzeContent(ctx.text, ctx.contentType)).jwt;
+    return feature?.valid ? 0.95 : 0;
   },
   run: (t) => {
     try {
@@ -337,4 +317,13 @@ export const codecTransforms: Transform[] = [
   htmlEncode, htmlDecode,
   jwtDecode,
   timestampToDate, dateToTimestamp,
-];
+].map(transform => ({ ...transform, workbench: "codec" as const,
+  matchReason: (ctx: TransformContext) => {
+    const f = ctx.features ?? analyzeContent(ctx.text, ctx.contentType);
+    if (transform.id === "base64_decode" && f.base64?.valid) return "Base64 格式与可读 UTF-8 解码结果均匹配";
+    if (transform.id === "url_decode" && f.urlEncoded?.decoded !== undefined) return "检测到可还原的 URL 编码";
+    if (transform.id === "jwt_decode" && f.jwt?.valid) return "Header 与 Payload 可解析为 JSON，未验证签名";
+    if (transform.id === "timestamp_to_date" && f.timestamp?.iso) return "数字符合 Unix 时间戳结构，请核对预览日期";
+    return undefined;
+  },
+}));

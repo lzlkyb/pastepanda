@@ -7,7 +7,7 @@ import styles from "../../Settings.module.css";
 
 interface LanSyncSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 // 🔴 必须返回片段，原因同 StatsSection。
@@ -32,7 +32,7 @@ export function LanSyncSection({ config, updateAndSave }: LanSyncSectionProps) {
           <p>💡 <b>适合</b>：多设备办公用户</p>
         </>}
         onChange={async (v) => {
-          await updateAndSave({ lan_sync_enabled: v });
+          if (!await updateAndSave({ lan_sync_enabled: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("toggle_lan_sync", { enable: v });

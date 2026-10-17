@@ -3,7 +3,7 @@
 use super::*;
 
 fn dgrams(seq: u32, data: &[u8], key: bool) -> Vec<Vec<u8>> {
-    frame_dgrams(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264)
+    frame_dgrams(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, super::FRAG)
 }
 
 /// 喂一批片，返回期间交付的全部帧。
@@ -277,21 +277,21 @@ fn 脏包_声明大帧_单片到达_存储不放大() {
 /// 🔴 P0-1：`frame_len` 纯函数边界——0 / u32::MAX / 超过 frag_count*FRAG 全拒。
 #[test]
 fn frame_len_ok_三条边界全拒() {
-    assert!(!frame_len_ok(0, 1), "frame_len=0 必须拒");
-    assert!(!frame_len_ok(u32::MAX, 1), "u32::MAX 必须拒（远程 OOM）");
+    assert!(!frame_len_ok(0, 1, super::FRAG), "frame_len=0 必须拒");
+    assert!(!frame_len_ok(u32::MAX, 1, super::FRAG), "u32::MAX 必须拒（远程 OOM）");
     assert!(
-        !frame_len_ok(16_384, 1),
+        !frame_len_ok(16_384, 1, super::FRAG),
         "超过 frag_count*FRAG（1*1000）必须拒"
     );
     assert!(
-        !frame_len_ok((MAX_REASM_BYTES as u32) + 1, MAX_FRAG_COUNT),
+        !frame_len_ok((MAX_REASM_BYTES as u32) + 1, MAX_FRAG_COUNT, super::FRAG),
         "超过 MAX_REASM_BYTES 必须拒"
     );
     // 合法边界：min(MAX_REASM_BYTES, frag_count*FRAG)
-    assert!(frame_len_ok(1, 1));
-    assert!(frame_len_ok(FRAG as u32, 1));
+    assert!(frame_len_ok(1, 1, super::FRAG));
+    assert!(frame_len_ok(FRAG as u32, 1, super::FRAG));
     assert!(
-        frame_len_ok((MAX_FRAG_COUNT as usize * FRAG) as u32, MAX_FRAG_COUNT),
+        frame_len_ok((MAX_FRAG_COUNT as usize * FRAG) as u32, MAX_FRAG_COUNT, super::FRAG),
         "frag_count 满配时的物理最大帧长应放行"
     );
 }
@@ -357,7 +357,7 @@ fn take_seq_回绕跳过0() {
 // ── P3.1 RS FEC ──
 
 fn dgrams_rs(seq: u32, data: &[u8], key: bool, m: usize) -> Vec<Vec<u8>> {
-    frame_dgrams_rs(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, m)
+    frame_dgrams_rs(seq, data, key, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, m, super::FRAG)
 }
 
 #[test]
@@ -458,5 +458,58 @@ fn 旧格式xor路径不受影响() {
     let mut r = VidReassembler::new();
     let got = feed_all(&mut r, &dgs);
     assert_eq!(got.len(), 1);
+    assert_eq!(got[0].data, data);
+}
+
+// 🔴 P3（2026-10-15）：大分片档（FRAG_BIG=1400）——发送端带 FLAG_FRAG_BIG
+// 打包、接收端按帧自描述片宽重组。守卫纪律：先跑，后做防假绿
+// （把 feed 的 FLAG_FRAG_BIG 解析突变掉，这两条必须精确变红）。
+#[test]
+fn 大分片往返_1400片宽_数据一致() {
+    let data: Vec<u8> = (0..5_000u32).map(|i| (i % 249) as u8).collect();
+    let dgs = frame_dgrams(9, &data, true, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, FRAG_BIG);
+    // 5000B 按 1400 分 = 4 片（1400+1400+1400+800）+1 奇偶；1000 片宽则要 5+1
+    assert_eq!(dgs.len(), 4 + 1, "1400 片宽下必须 4 数据片 + 1 奇偶");
+    assert!(dgs.iter().all(|dg| dg[0] == DGRAM_TAG));
+    // 全部数据报带 FLAG_FRAG_BIG 位（随帧自描述）
+    assert!(dgs.iter().all(|dg| dg[5] & FLAG_FRAG_BIG != 0), "每片都必须带大分片标记");
+    assert!(dgs.iter().all(|dg| dg.len() <= HEADER + FRAG_BIG), "任何一片不得超片宽+头");
+    let mut r = VidReassembler::new();
+    let got = feed_all(&mut r, &dgs);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].data, data, "1400 片宽重组必须与原始逐字节一致");
+}
+
+#[test]
+fn 大分片_1000混排_同重组器都能解() {
+    // pmtud 升档瞬间起，1000 旧帧与 1400 新帧可能共存于缓冲窗口
+    // ——片宽随帧自描述的设计必须让同一重组器两种都能解。
+    let d1000: Vec<u8> = (0..2_500u32).map(|i| (i % 251) as u8).collect();
+    let d1400: Vec<u8> = (0..5_000u32).map(|i| (i % 249) as u8).collect();
+    let mut r = VidReassembler::new();
+    let mut got = Vec::new();
+    got.extend(feed_all(&mut r, &dgrams(1, &d1000, true))); // 1000 片宽关键帧
+    got.extend(feed_all(&mut r, &frame_dgrams(2, &d1400, false, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, FRAG_BIG)));
+    assert_eq!(got.len(), 2, "混排两帧都必须交付");
+    assert_eq!(got[0].data, d1000);
+    assert_eq!(got[1].data, d1400);
+}
+
+#[test]
+fn 大分片_RS路径_恢复一致() {
+    // RS 版同样要支持大分片：encode/decode 的等长补零宽度必须同为片宽，
+    // 错一位就是静默解不出（降级为丢帧，比数据错更难查）。
+    let data: Vec<u8> = (0..20_000u32).map(|i| (i % 251) as u8).collect();
+    let dgs = frame_dgrams_rs(5, &data, true, 1_758_000_000_000, 3, 5, 1920, 1080, crate::rc::video::FrameCodec::H264, 2, FRAG_BIG);
+    let mut r = VidReassembler::new();
+    // 丢第 0 片（第 0 组），RS 校验恢复
+    let mut got = Vec::new();
+    for (i, dg) in dgs.iter().enumerate() {
+        if i == 0 {
+            continue;
+        }
+        got.extend(r.feed(dg));
+    }
+    assert_eq!(got.len(), 1, "RS + 1400 片宽丢 1 片必须恢复");
     assert_eq!(got[0].data, data);
 }

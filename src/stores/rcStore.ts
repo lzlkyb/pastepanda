@@ -40,6 +40,7 @@ import {
   rcIdentity,
   rcInviteCreate,
   rcInvitePreview,
+  rcInviteRevoke,
   rcJoinApprove,
   rcJoinDeny,
   rcPair,
@@ -279,6 +280,7 @@ export const useRcStore = create<RcState>((set, get) => {
   setDeviceAutoAccept: (id, on) => get().run(() => rcDeviceAutoAcceptSet(id, on)),
   // 以下两个不走 run：直接返回 Promise，调用方自己处理 loading / 错误
   createInvite: (name) => rcInviteCreate(name),
+  revokeInvite: () => get().run(() => rcInviteRevoke()),
   previewInvite: (code) => rcInvitePreview(code),
   pair: (code) => get().run(() => rcPair(code)),
   forget: (id) => get().run(() => rcForget(id)),

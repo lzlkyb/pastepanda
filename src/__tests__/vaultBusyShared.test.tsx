@@ -66,6 +66,17 @@ describe("导入导出的防重入", () => {
       expect(screen.getByTestId("busy-settings").textContent).toBe("export");
     });
     expect(screen.getByTestId("busy-menu").textContent).toBe("export");
+
+    // 让本用例自己的导出链收尾：受控 Promise 不落地，全局 busy 就一直挂 "export"
+    // 漏给下一条用例——下一条的 waitFor("export") 会被上一位的残值在首帧判真，
+    // 「等永真条件」正是这样被制造出来的（慢取数注入下必红）。
+    await act(async () => {
+      resolveExport?.(null);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("busy-menu").textContent).toBe("idle");
+      expect(screen.getByTestId("busy-settings").textContent).toBe("idle");
+    });
   });
 
   it("跑完后两边一起回到 idle（全局状态必须收尾）", async () => {
@@ -75,9 +86,19 @@ describe("导入导出的防重入", () => {
         <Entry name="settings" />
       </>,
     );
+    // 干净起点：上一条已把全局 busy 收摊，这里的 "export" 只可能由本条点击产生
+    expect(screen.getByTestId("busy-menu").textContent).toBe("idle");
+
     fireEvent.click(screen.getByText("导出-menu"));
     await waitFor(() => {
       expect(screen.getByTestId("busy-menu").textContent).toBe("export");
+    });
+
+    // 🔴 先确认「本用例自己的 noteExportDir 已被调用」再 resolve：
+    // resolveExport 归零后由 api mock 在调用瞬间重新赋值，
+    // 它是「链路真的走到受控那一步」的内容信号；不确认就 resolve 可能拍到空气。
+    await waitFor(() => {
+      expect(resolveExport).not.toBeNull();
     });
 
     // 让那个受控 Promise 完成（返 null 走 api 层已弹错那条路）

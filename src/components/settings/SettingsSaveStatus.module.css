@@ -1,0 +1,5 @@
+.status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); font-size: 11px; }
+.status > span { display: inline-flex; align-items: center; gap: 4px; }
+.status[data-error="true"] { color: var(--danger); }
+.status button { min-height: 24px; padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-bg); color: var(--text-primary); cursor: pointer; font: inherit; }
+.status button:hover { background: var(--hover); }

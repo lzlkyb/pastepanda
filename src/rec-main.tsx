@@ -1,3 +1,5 @@
+import { setMotionPreference } from "./lib/motionPreference";
+import { MotionPolicy } from "./components/MotionPolicy";
 /**
  * rec-main — 录屏选区窗独立入口（透明全屏覆盖层）。
  *
@@ -31,8 +33,9 @@ applyTheme(DEFAULT_THEME);
 // recReady 可能永远轮不到执行，选区窗会被后端存活探针误杀（2026-10-06 实录）。
 // React 崩溃仍有 ErrorBoundary/CrashPanel + 后端权威收尾兜底，探针语义不变。
 invoke("rec_ready").catch(() => {});
-invoke<{ theme?: string }>("get_config")
+invoke<{ theme?: string; window_animation?: boolean }>("get_config")
   .then((cfg) => {
+    setMotionPreference(cfg?.window_animation !== false);
     applyTheme(normalizeTheme(cfg?.theme));
     render(cfg ?? null);
   })
@@ -41,9 +44,14 @@ invoke<{ theme?: string }>("get_config")
 function render(config: Record<string, unknown> | null) {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ErrorBoundary componentName="录屏窗口" fallback={(err) => <CrashPanel error={err} />}>
-        <RecSelectOverlay config={config} />
-      </ErrorBoundary>
+      <MotionPolicy>
+        <ErrorBoundary
+          componentName="录屏窗口"
+          fallback={(err) => <CrashPanel error={err} />}
+        >
+          <RecSelectOverlay config={config} />
+        </ErrorBoundary>
+      </MotionPolicy>
     </React.StrictMode>,
   );
 }

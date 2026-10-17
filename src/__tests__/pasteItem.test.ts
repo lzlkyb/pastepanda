@@ -109,9 +109,14 @@ describe("pasteHistoryItem 按类型分派", () => {
 
   it("成功后回写粘贴信号，带 historyId 与列表下标", async () => {
     await pasteHistoryItem(makeItem({ id: "t2", text: "hello", content_type: "json" }), 4);
-    await vi.waitFor(() => expect(pasteEvents().length).toBe(1));
+    // 🔴 判据必须钉「本用例那一条回写」：回写在 logPasteEvent 里还要过
+    // pastePrecheck 的 IPC 才落 invoke（fire-and-forget），上一条用例的回写也可能
+    // 迟到落进本用例的计数里——只等「有 1 条 paste 事件」既永真又张冠李戴。
+    await vi.waitFor(() =>
+      expect(pasteEvents().filter((e) => e.historyId === "t2")).toHaveLength(1),
+    );
 
-    const ev = pasteEvents()[0];
+    const ev = pasteEvents().filter((e) => e.historyId === "t2")[0];
     expect(ev.historyId).toBe("t2");
     expect(ev.contentType).toBe("json");
     expect(ev.pasteIndex).toBe(4);
@@ -125,7 +130,15 @@ describe("pasteHistoryItem 按类型分派", () => {
     const r = await pasteHistoryItem(makeItem({ id: "t3", text: "hello" }));
 
     expect(r.ok).toBe(false);
-    await new Promise((res) => setTimeout(res, 20));
-    expect(pasteEvents()).toHaveLength(0);
+    // 确定性排空探针（代替 20ms 掐时长）：再走一次**成功**粘贴并等它的回写落地。
+    // 迟到链按真实宏任务 FIFO——若失败路径偷偷排过回写，它的 invoke 调用一定先于
+    // 探针事件出现；到探针事件时全队列已清空，此处的零断言才是稳的。
+    await pasteHistoryItem(
+      makeItem({ id: "drain", type: "image", text: "[图片]", content: "C:\\x.png" }),
+    );
+    await vi.waitFor(() =>
+      expect(pasteEvents().some((e) => e.historyId === "drain")).toBe(true),
+    );
+    expect(pasteEvents().filter((e) => e.historyId === "t3")).toHaveLength(0);
   });
 });

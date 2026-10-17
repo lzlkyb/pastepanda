@@ -16,6 +16,7 @@ import { linkStateHint, linkStateLabel } from "@/lib/rcSessionStats";
 import { rcReconnectPrimaryOf } from "@/lib/rcLinkMask";
 import { rcHostHoldPillOf } from "@/lib/rcInputGate";
 import { rcPeerPausedPillOf } from "@/lib/rcVideoPause";
+import { rcPeerPipePillOf } from "@/lib/rcVideoPipe";
 import type { RcPeerInputState } from "@/lib/api/rc";
 import type { RcLinkSnapshot } from "@/hooks/useRcLinkState";
 import styles from "./RemoteComputer.module.css";
@@ -24,6 +25,7 @@ export function RcCapsuleAlerts({
   link,
   peerInput,
   peerVideoPaused,
+  peerVideoPipe,
   tab,
   busy,
   onReconnect,
@@ -33,6 +35,11 @@ export function RcCapsuleAlerts({
   peerInput?: RcPeerInputState | null;
   /** 丙-③：对端暂停了向本机推送画面（缺失/否 = 不摆，旧对端没这条帧）。 */
   peerVideoPaused?: boolean;
+  /**
+   * 丙（2026-10-12，Issue #19）：对端报来的编码档位（`sw` / `enc_fuse` /
+   * `grab_fuse` 才摆；缺失或空串 = 旧对端没这条帧 ⇒ 什么都不说）。
+   */
+  peerVideoPipe?: string;
   /** 浮条隐藏期间的 tabIndex 锁。 */
   tab?: number;
   busy: boolean;
@@ -40,6 +47,10 @@ export function RcCapsuleAlerts({
 }) {
   const holdPill = rcHostHoldPillOf(peerInput);
   const pausedPill = rcPeerPausedPillOf(peerVideoPaused);
+  const pipePill = rcPeerPipePillOf(peerVideoPipe);
+  // 「操作后 Ns 无画面」只被**已经掉成幻灯片**的那两档压掉（软编还跑得动，不压）：
+  // 判据与色档同源，见 `rcVideoPipe.ts` 的档位表。
+  const pipeBad = pipePill?.tone === "bad";
   return (
     <>
       {/* 审计 Sam 红旗（2026-09-27）：警示胶囊原先 span+title，键盘/读屏用户
@@ -57,8 +68,11 @@ export function RcCapsuleAlerts({
       )}
       {/* 丙-③：对方主动暂停出帧时**不摆**「操作后 Ns 无画面」——那帧不来的原因是
           对方按了暂停，不是链路不稳。两条同摆会互相打脸（一条说「等等看」，
-          一条说「他在挡着」），而琥珀那条还会把人引向「去重连」。 */}
-      {link.unansweredSec > 0 && !pausedPill && (
+          一条说「他在挡着」），而琥珀那条还会把人引向「去重连」。
+          🔴 丙（2026-10-12，Issue #19）同理：对方编码已熔断/抓屏熔断时也不摆——
+          那时候画面真的在「操作后半天不变」，但原因在他那台机器的编码器，
+          摆一条链路警示等于把设备故障说成用户的网络不行，还会把人引去点「重连」。 */}
+      {link.unansweredSec > 0 && !pausedPill && !pipeBad && (
         <span
           className={styles.capPillWarn}
           title="操作已发往对方，但画面尚未变化"
@@ -88,6 +102,19 @@ export function RcCapsuleAlerts({
           tabIndex={tab ?? 0}
         >
           {pausedPill}
+        </span>
+      )}
+      {/* 🔴 丙（2026-10-12，Issue #19）：对方那台机器的编码档位——画面成幻灯片的
+          原因常在他机器上（硬编熔断 / 只剩软编 / 抓屏熔断），而症状看起来像「网不好」。
+          这条胶囊的全部价值就是替网络澄清，所以措辞必须指到「对方」而不是「链路」。
+          旧对端不发这条帧 ⇒ 恒 null ⇒ 不摆（没有证据不摆断言）。 */}
+      {pipePill && (
+        <span
+          className={pipePill.tone === "bad" ? styles.capPillBad : styles.capPillWarn}
+          title={pipePill.detail}
+          tabIndex={tab ?? 0}
+        >
+          {pipePill.label}
         </span>
       )}
       {peerInput?.err && (

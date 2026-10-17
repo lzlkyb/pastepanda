@@ -8,7 +8,7 @@ import styles from "../../Settings.module.css";
 
 interface HotkeySectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 // 🔴 必须返回片段，原因同 StatsSection。
@@ -28,16 +28,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.hotkey} allowClear taken={globalHotkeysTaken(config, "hotkey")} onChange={async (v) => {
           const oldVal = config.hotkey;
-          await updateAndSave({ hotkey: v });
+          if (!await updateAndSave({ hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ hotkey: oldVal });
+            const restored = await updateAndSave({ hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -49,16 +49,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.sequential_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "sequential_hotkey")} onChange={async (v) => {
           const oldVal = config.sequential_hotkey ?? "";
-          await updateAndSave({ sequential_hotkey: v });
+          if (!await updateAndSave({ sequential_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ sequential_hotkey: oldVal });
+            const restored = await updateAndSave({ sequential_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -70,16 +70,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.stack_toggle_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "stack_toggle_hotkey")} onChange={async (v) => {
           const oldVal = config.stack_toggle_hotkey ?? "";
-          await updateAndSave({ stack_toggle_hotkey: v });
+          if (!await updateAndSave({ stack_toggle_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ stack_toggle_hotkey: oldVal });
+            const restored = await updateAndSave({ stack_toggle_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -91,16 +91,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.stack_paste_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "stack_paste_hotkey")} onChange={async (v) => {
           const oldVal = config.stack_paste_hotkey ?? "";
-          await updateAndSave({ stack_paste_hotkey: v });
+          if (!await updateAndSave({ stack_paste_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ stack_paste_hotkey: oldVal });
+            const restored = await updateAndSave({ stack_paste_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -112,16 +112,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.quick_paste_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "quick_paste_hotkey")} onChange={async (v) => {
           const oldVal = config.quick_paste_hotkey ?? "";
-          await updateAndSave({ quick_paste_hotkey: v });
+          if (!await updateAndSave({ quick_paste_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ quick_paste_hotkey: oldVal });
+            const restored = await updateAndSave({ quick_paste_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -133,16 +133,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.screenshot_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "screenshot_hotkey")} onChange={async (v) => {
           const oldVal = config.screenshot_hotkey ?? "";
-          await updateAndSave({ screenshot_hotkey: v });
+          if (!await updateAndSave({ screenshot_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ screenshot_hotkey: oldVal });
+            const restored = await updateAndSave({ screenshot_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -154,16 +154,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.daily_note_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "daily_note_hotkey")} onChange={async (v) => {
           const oldVal = config.daily_note_hotkey ?? "";
-          await updateAndSave({ daily_note_hotkey: v });
+          if (!await updateAndSave({ daily_note_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ daily_note_hotkey: oldVal });
+            const restored = await updateAndSave({ daily_note_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>
@@ -175,16 +175,16 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
         </div>
         <HotkeyRecorder value={config.todo_island_hotkey ?? ""} allowClear taken={globalHotkeysTaken(config, "todo_island_hotkey")} onChange={async (v) => {
           const oldVal = config.todo_island_hotkey ?? "";
-          await updateAndSave({ todo_island_hotkey: v });
+          if (!await updateAndSave({ todo_island_hotkey: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("reregister_hotkeys");
             toast("快捷键已更新", "success");
           } catch (e) {
-            await updateAndSave({ todo_island_hotkey: oldVal });
+            const restored = await updateAndSave({ todo_island_hotkey: oldVal });
             const msg = e instanceof Error ? e.message : String(e);
             logger.warn("热键设置失败", e);
-            toast(`快捷键设置失败：${msg}。变更未生效，已恢复原值`, "error");
+            toast(`快捷键设置失败：${msg}。${restored ? "已恢复原值" : "原值未能保存，请重试"}`, "error");
           }
         }} />
       </div>

@@ -50,7 +50,7 @@ export function NoteListEmpty({
   // 骨架屏而不是一行「正在加载…」。两个理由：
   // ① 文字只有一行高，数据一到列表突然撑满，高度会跳一下；
   // ② 骨架把「一会儿会出现几条、每条长什么样」提前告诉你了。
-  // 扫光关键帧与卡片列表共用（styles/surface.css 的 pp-skeleton-shimmer）。
+  // 与记录列表一样使用静态骨架，加载状态由 aria-busy 表达。
   if (loading) {
     return (
       <div className={styles.skelList} aria-busy="true" aria-label="正在加载笔记">

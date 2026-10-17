@@ -1,0 +1,367 @@
+/* 录前条的骨架：三级分组在一行内排布（主动作 │ 目标 │ 设置 │ … │ 帮助 / 退出）。
+ * 2026-10-16：宽度上限 760 → 800，且不再换行——条内那行常驻教学已收进 `?`；
+ * 圆角对齐设计稿的 12px 外档。 */
+.scopeBar {
+  width: min(800px, calc(100vw - 24px));
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 12px;
+}
+
+/* 撑开中段，把 `?` 与 ✕ 推到条右端（设计稿 §1 的 .grow） */
+.barGrow {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* 就地帮助（条右端 `?`）：默认收起，不占常驻行（L4 就地解释 / V7 删元素测试）。
+ * 旧版是一整行 11px 灰字（flex-basis:100% 撑出第二行）——学过一次之后，每次开条都还得再读一遍。 */
+.helpWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.helpBox {
+  /* .rec-glass 是 flex 行；这里要的是多行文本（`<br>` 分段），必须改回 block */
+  display: block;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 280px;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--shot-bar-muted);
+  white-space: normal;
+  animation: recHelpPop 200ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+
+@keyframes recHelpPop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.audioError {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  box-shadow: var(--float-card-shadow);
+  z-index: 2;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.audioError p {
+  margin: 0 0 8px;
+}
+/* ===== 结果卡（设计稿 §4）=====
+ * 六段结构：状态头 / 三格指标 / 文件去向 / 异常 / 动作 / 尾注。
+ * 旧版是 5 个 <p> 平铺成的文档：标题行、文件名、`2:44 · 22.7 MB · 高清` 一行、路径、按钮组。 */
+.result {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--shot-bar-bg);
+  color: var(--shot-bar-text);
+  font-size: 12px;
+  cursor: default;
+  animation: recResultRise 300ms cubic-bezier(0.05, 0.7, 0.1, 1) both;
+}
+
+@keyframes recResultRise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .result {
+    animation: none;
+  }
+}
+
+.rhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rhead b {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* 成功 / 失败各一枚圆形图标：状态不能只靠颜色（U7） */
+.ic {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.icBad {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+
+/* 「关闭结果」从与主操作同款的实心按钮降级为标题行右端的图标按钮 */
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--shot-bar-muted);
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.iconBtn:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, transparent);
+  color: var(--shot-bar-text);
+}
+
+/* 三格指标：时长 / 体积 / 画质各占一格，不再挤在一行里用点号连起来 */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--shot-bar-text) 8%, transparent);
+}
+
+.m {
+  min-width: 0;
+}
+
+.mk {
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+.mv {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fn {
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+.fp span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 路径行内的就地动作（L5：不用先记住「保存到哪」再去别处找那个按钮）
+ * 上下留 4px（U5 档）而不是 2px：它是可点元素，压到 2px 只有 17px 高，
+ * 鼠标从路径文字移过来时很容易滑出行外。 */
+.fp button {
+  flex: none;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 70%, var(--shot-bar-text));
+  font: inherit;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fp button:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+}
+
+/* 异常只报事实：「怎么办」由紧邻的那枚按钮回答（图标承担语义，文字不再变色） */
+.warn {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--shot-bar-text);
+}
+
+.warn svg {
+  flex: none;
+  margin-top: 4px;
+  color: var(--warning);
+}
+
+.racts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rfoot {
+  font-size: 11px;
+  color: var(--shot-bar-muted);
+}
+
+.button,
+.primary,
+.textBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--shot-bar-text) 12%, var(--shot-bar-bg));
+  color: var(--shot-bar-text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), transform 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.primary {
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+}
+
+/* 文字级动作（「再录一次」）：与主操作拉开档次，一屏只有一个实色 */
+.textBtn {
+  background: transparent;
+  color: var(--shot-bar-muted);
+  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.textBtn:hover {
+  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  color: var(--shot-bar-text);
+}
+
+.button:hover,
+.primary:hover {
+  filter: brightness(1.08);
+}
+
+.button:active,
+.primary:active,
+.textBtn:active {
+  transform: scale(0.97);
+}
+
+.button:disabled,
+.primary:disabled,
+.textBtn:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.mainResult {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  z-index: 250;
+  box-shadow: var(--float-card-shadow);
+  border-radius: 12px;
+}
+.player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.player input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.trimFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.trimFields label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.trimFields input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
+}
+.trimFields output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.busy {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--shot-bar-muted);
+}
+.progress {
+  width: 100%;
+  accent-color: var(--accent);
+}

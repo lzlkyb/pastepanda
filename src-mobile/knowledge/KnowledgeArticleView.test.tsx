@@ -32,6 +32,7 @@ it("article discard requires explicit confirmation and safe keep is the first ac
   expect(keep.compareDocumentPosition(confirm)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();expect(dialog.contains(keep)).toBe(true);
   fireEvent.click(keep);expect(screen.queryByRole("dialog")).toBeNull();expect(discard).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button",{name:"放弃这次收集"}));fireEvent.click(screen.getByRole("button",{name:"确认放弃文章收集"}));
+  // waitguard:allow: 零取数，flush 只让点击后的 effect 跑完，discard 断言读的是同步 mock 调用
   await act(async()=>{await Promise.resolve();});expect(discard).toHaveBeenCalledWith("article-a");
 });
 it("saved article exit preserves the original note instead of offering deletion",()=>{

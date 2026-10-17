@@ -399,6 +399,10 @@ impl RcService {
             video_plane: Some(true),
             media_plane: Some(true),
             media_feedback: Some(true),
+            // 🔴 P3（2026-10-15）：本端重组器能解 1400B 大分片（FLAG_FRAG_BIG
+            // 随帧自描述，接收端无状态）。链路 MTU 由被控端 pmtud 探测把关——
+            // 这里只是「能解」，不是「要用」。
+            vd_frag: vid_dgram_capability().filter(|v| *v).map(|_| crate::rc::vid_dgram::FRAG_BIG as u16),
         };
         // ❗ 这一对读写的失败必须过 `explain`：对端要是以「未配对 / 忙 / 被禁」为由
         //   关掉连接，原始错误只会是 `读帧长度失败：connection lost`（见 `explain`）。

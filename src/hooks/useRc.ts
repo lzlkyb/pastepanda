@@ -78,6 +78,7 @@ export function useRc(enabled: boolean) {
     setDeviceTrust: a.setDeviceTrust,
     setDeviceAutoAccept: a.setDeviceAutoAccept,
     createInvite: a.createInvite,
+    revokeInvite: a.revokeInvite,
     previewInvite: a.previewInvite,
     pair: a.pair,
     forget: a.forget,

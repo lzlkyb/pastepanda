@@ -31,6 +31,15 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+#[path = "output.rs"]
+mod output;
+#[path = "trim_job.rs"]
+mod trim_job;
+pub use trim_job::{cancel as cancel_job, start as start_job, status as job_status, TrimJob};
+const MAX_MOOV_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_TRACK_SAMPLES: u32 = 1_000_000;
+const MAX_BOX_COUNT: usize = 100_000;
+
 // ── 对外接口 ────────────────────────────────────────────────────────────
 
 pub use super::trim_types::{snap, KeyframeIndex};
@@ -59,14 +68,20 @@ pub fn trim(src: &Path, in_ms: u64, out_ms: u64, dst: &Path) -> Result<(u64, u64
     if in_ms >= out_ms {
         return Err("选段为空（入点不早于出点）".into());
     }
+    trim_with_job(src, in_ms, out_ms, dst, None)
+}
+
+pub fn trim_with_job(src: &Path, in_ms: u64, out_ms: u64, dst: &Path, job: Option<&TrimJob>) -> Result<(u64,u64,u64),String> {
+    if in_ms >= out_ms {return Err("选段为空（入点不早于出点）".into());}
+    if let Some(job)=job {job.check_cancelled()?;}
+    let mut src_mp4 = SrcMp4::open(src)?;
     let kf = scan_keyframes(src)?;
     let (in_m, out_m) = snap(&kf.keyframes_ms, kf.duration_ms, in_ms, out_ms);
     if out_m <= in_m {
         return Err("选段为空（吸附后没有可保留的内容）".into());
     }
-    let mut src_mp4 = SrcMp4::open(src)?;
     // 实际入点以视频首保留关键帧为准（选段早于首个可见关键帧时被顶后），回传真实值
-    src_mp4.write_trimmed(dst, in_m, out_m)
+    src_mp4.write_trimmed(dst, in_m, out_m, job)
 }
 
 fn media_to_playback_ms(media_ts: u64, timescale: u32, elst_media_time: u64) -> u64 {
@@ -74,6 +89,17 @@ fn media_to_playback_ms(media_ts: u64, timescale: u32, elst_media_time: u64) -> 
         .saturating_sub(elst_media_time)
         .saturating_mul(1000)
         / u64::from(timescale.max(1))
+}
+
+
+fn ms_to_ticks_ceil(ms:u64, timescale:u64)->u64 {
+    ((u128::from(ms)*u128::from(timescale)+999)/1000).min(u128::from(u64::MAX)) as u64
+}
+fn table_entries(payload:&[u8], header:usize, entry_size:usize)->Result<usize,String> {
+    if payload.len()<header {return Err("样本表头不完整".into());}
+    let count=u32be(payload,4) as usize;
+    if count>MAX_TRACK_SAMPLES as usize || count>(payload.len()-header)/entry_size {return Err("样本表条目越界".into());}
+    Ok(count)
 }
 
 // ── 盒子遍历（纯内存，操作 moov 载荷）───────────────────────────────────
@@ -90,6 +116,7 @@ fn iter_boxes(buf: &[u8]) -> Result<Vec<BoxRef<'_>>, String> {
     let mut out = Vec::new();
     let mut off = 0usize;
     while off < buf.len() {
+        if out.len()>=MAX_BOX_COUNT {return Err("媒体盒子数量超过安全上限".into());}
         if buf.len() - off < 8 {
             return Err(format!("盒子头越界（@{off}，余 {} 字节）", buf.len() - off));
         }
@@ -193,6 +220,7 @@ impl SrcMp4 {
         let top = top_level_boxes(&mut f)?;
         let mut load = |b: &TopBox| -> Result<Vec<u8>, String> {
             f.seek(SeekFrom::Start(b.payload_off)).map_err(io_err)?;
+            if b.payload_len > MAX_MOOV_BYTES { return Err("媒体索引超过64MB，无法安全读取".into()); }
             let mut v = vec![0u8; b.payload_len as usize];
             f.read_exact(&mut v).map_err(io_err)?;
             Ok(v)
@@ -207,7 +235,11 @@ impl SrcMp4 {
         let mut tracks = Vec::new();
         for child in iter_boxes(&moov)? {
             if child.name == *b"trak" {
-                tracks.push(parse_trak(child.payload)?);
+                if tracks.len() >= 8 {return Err("轨道数量异常，无法安全读取".into());}
+                let track=parse_trak(child.payload)?;
+                let file_len=f.metadata().map_err(io_err)?.len();
+                if track.samples.iter().any(|sample| sample.file_offset.checked_add(u64::from(sample.size)).is_none_or(|end| end>file_len)) {return Err("样本数据越出文件边界".into());}
+                tracks.push(track);
             }
         }
         if tracks.is_empty() {
@@ -224,7 +256,7 @@ impl SrcMp4 {
     /// 重组并写出 `[in_ms, out_ms]`（播放域，调用方已吸附）。
     /// 返回 (文件字节数, 实际入点, 实际出点)——实际入点 = 视频首保留关键帧的播放
     /// 时刻，选段早于首个可见关键帧时会被顶后，与名义吸附值可能不同。
-    fn write_trimmed(&mut self, dst: &Path, in_ms: u64, out_ms: u64) -> Result<(u64, u64, u64), String> {
+    fn write_trimmed(&mut self, dst: &Path, in_ms: u64, out_ms: u64, job: Option<&TrimJob>) -> Result<(u64, u64, u64), String> {
         // 视频轨先解析：首保留样本必须直接落在**可见**关键帧样本上（吸附点=切开点）。
         // 不能用 in_ms 算术反推 media 切点：①播放域毫秒换算有舍入（ts=90000 时
         // 必现），切点会落回关键帧前一个样本；②elst 片头预留段（播放 <0）里的
@@ -253,7 +285,7 @@ impl SrcMp4 {
                 return Err("视频轨没有可见关键帧（无法按关键帧对齐剪切）".into());
             };
             eff_in = pb;
-            let end_ts = (out_ms * ts + ts - 1) / ts + t.elst_media_time;
+            let end_ts = ms_to_ticks_ceil(out_ms, ts) + t.elst_media_time;
             let n = t.samples.len() as u32;
             let end = (first..=n)
                 .find(|&i| t.samples[(i - 1) as usize].media_time >= end_ts)
@@ -274,8 +306,8 @@ impl SrcMp4 {
                 continue;
             }
             let ts = u64::from(t.timescale.max(1));
-            let start_ts = (eff_in * ts + ts - 1) / ts + t.elst_media_time;
-            let end_ts = (out_ms * ts + ts - 1) / ts + t.elst_media_time;
+            let start_ts = ms_to_ticks_ceil(eff_in, ts) + t.elst_media_time;
+            let end_ts = ms_to_ticks_ceil(out_ms, ts) + t.elst_media_time;
             let n = t.samples.len() as u32;
             let Some(first) = (1..=n).find(|&i| t.samples[(i - 1) as usize].media_time >= start_ts)
             else {
@@ -313,7 +345,9 @@ impl SrcMp4 {
 
         // ── 写出 ──
         use std::io::Write;
-        let mut out = std::fs::File::create(dst).map_err(|e| format!("创建文件失败：{e}"))?;
+        if let Some(job)=job { job.check_cancelled()?; }
+        let (pending, mut out) = output::PendingOutput::new(dst, false)?;
+        let mut copied=0u64;
         out.write_all(&wrap_box(b"ftyp", &self.ftyp)).map_err(io_err)?;
         let mut mdat_head = Vec::new();
         push_u32(&mut mdat_head, (mdat_header + mdat_payload) as u32);
@@ -325,7 +359,20 @@ impl SrcMp4 {
             for i in p.first..p.end {
                 let s = &t.samples[(i - 1) as usize];
                 src.seek(SeekFrom::Start(s.file_offset)).map_err(io_err)?;
-                let n = std::io::copy(&mut (&mut src).take(u64::from(s.size)), &mut out).map_err(io_err)?;
+                let mut remaining=u64::from(s.size);
+                let mut n=0;
+                let mut buffer=[0u8;64*1024];
+                while remaining>0 {
+                    if let Some(job)=job {job.check_cancelled()?;}
+                    let limit=remaining.min(buffer.len() as u64) as usize;
+                    let got=src.read(&mut buffer[..limit]).map_err(io_err)?;
+                    if got==0 {break;}
+                    out.write_all(&buffer[..got]).map_err(io_err)?;
+                    remaining-=got as u64;
+                    n+=got as u64;
+                    copied+=got as u64;
+                    if let Some(job)=job {job.progress(copied,mdat_payload);}
+                }
                 if n != u64::from(s.size) {
                     return Err(format!("样本 {i} 读取不完整（{n}/{}）", s.size));
                 }
@@ -334,6 +381,10 @@ impl SrcMp4 {
         let moov = self.build_moov(&plans, &chunk_offsets)?;
         out.write_all(&moov).map_err(io_err)?;
         out.flush().map_err(io_err)?;
+        out.sync_all().map_err(io_err)?;
+        drop(out);
+        if let Some(job)=job {job.check_cancelled()?;}
+        pending.commit()?;
         Ok((off + moov.len() as u64, eff_in, out_ms))
     }
 
@@ -352,7 +403,9 @@ impl SrcMp4 {
             let first = &t.samples[(p.first - 1) as usize];
             let last = &t.samples[(p.end - 2) as usize];
             let media_dur = last.media_time + u64::from(last.duration) - first.media_time;
-            durs.push((media_dur, media_dur * u64::from(movie_ts) / u64::from(t.timescale.max(1))));
+            let movie_dur=u64::try_from(u128::from(media_dur)*u128::from(movie_ts)/u128::from(t.timescale.max(1)))
+                .map_err(|_|"轨道时长超出支持范围")?;
+            durs.push((media_dur, movie_dur));
         }
         let movie_dur = durs.iter().map(|(_, m)| *m).max().unwrap_or(0);
 
@@ -397,10 +450,9 @@ fn top_level_boxes(f: &mut std::fs::File) -> Result<Vec<TopBox>, String> {
     let mut off = 0u64;
     let size = f.metadata().map_err(io_err)?.len();
     while off < size {
+        if out.len()>=MAX_BOX_COUNT {return Err("顶层盒子数量超过安全上限".into());}
         let mut head = [0u8; 8];
-        if f.read_exact(&mut head).is_err() {
-            break;
-        }
+        f.read_exact(&mut head).map_err(|_| "顶层盒子头不完整".to_string())?;
         let size32 = u32be(&head, 0);
         let name = [head[4], head[5], head[6], head[7]];
         let (header_len, payload_len) = if size32 == 1 {
@@ -414,8 +466,10 @@ fn top_level_boxes(f: &mut std::fs::File) -> Result<Vec<TopBox>, String> {
         } else if size32 == 0 {
             (8u64, size - off - 8)
         } else {
+            if size32 < 8 { return Err("顶层盒子尺寸非法".into()); }
             (8u64, u64::from(size32) - 8)
         };
+        if off.checked_add(header_len).and_then(|n|n.checked_add(payload_len)).is_none_or(|end|end>size) {return Err("顶层盒子越出文件边界".into());}
         out.push(TopBox { name, payload_off: off + header_len, payload_len });
         off += header_len + payload_len;
         f.seek(SeekFrom::Start(off)).map_err(io_err)?;
@@ -443,6 +497,9 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
                 for e in iter_boxes(child.payload)? {
                     if e.name == *b"elst" {
                         let p = e.payload;
+                        if p.len()<8 || !matches!(p[0],0|1) {return Err("elst 头不完整或版本不支持".into());}
+                        let required=if p[0]==1 {28}else{20};
+                        if p.len()<required || u32be(p,4)!=1 {return Err("elst 条目不完整或不是单段编辑".into());}
                         // ISO 14496-12 §8.6.6：entry 内 segment_duration 在前、media_time
                         // 在后——v0 media_time@12、v1 media_time@16（写成 @8 是读到了时长）
                         if p.len() >= 16 {
@@ -454,8 +511,8 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
                             } else {
                                 u64::from(u32be(p, 12))
                             };
-                            if mt == u64::MAX || mt == u64::from(u32::MAX) {
-                                return Err("elst 空编辑（media_time=-1）暂不支持剪切".into());
+                            if (p[0]==1 && mt>i64::MAX as u64) || (p[0]==0 && mt>i32::MAX as u64) {
+                                return Err("elst 负媒体起点暂不支持剪切".into());
                             }
                             let rate_off = if p[0] == 1 { 24 } else { 16 };
                             if p.len() >= rate_off + 4 && u32be(p, rate_off) != 0x0001_0000 {
@@ -472,6 +529,9 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
                     match &m.name {
                         b"mdhd" => {
                             let p = m.payload;
+                            if p.is_empty() {return Err("mdhd 缺少版本".into());}
+                            let required=if p[0]==1 {32} else {20};
+                            if p.len()<required {return Err("mdhd 不完整".into());}
                             if p[0] == 1 {
                                 timescale = u32be(p, 20);
                             } else {
@@ -504,11 +564,9 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
     if timescale == 0 {
         return Err("轨道 timescale 为 0".into());
     }
-    let count: u32 = if stsz_uniform != 0 {
-        stts.iter().map(|(c, _)| *c).sum()
-    } else {
-        stsz_sizes.len() as u32
-    };
+    let count = stsz_sizes.len() as u32;
+    let timing_count=stts.iter().try_fold(0u32, |sum,(count,_)|sum.checked_add(*count)).ok_or("样本数溢出")?;
+    if count>MAX_TRACK_SAMPLES || timing_count!=count || stsc.is_empty() || stts.is_empty() {return Err("样本表数量不一致或超过安全上限".into());}
     if count == 0 {
         return Err(format!(
             "轨道没有样本（handler={} stts={} stsz_uni={stsz_uniform} stsz_n={} stsc={} stco={})",
@@ -519,16 +577,15 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
         return Err("轨道没有 chunk 偏移（stco/co64 缺失）".into());
     }
     // chunk → (offset, 样本数)：stsc 的 first_chunk 单调，取「最后一个 first_chunk ≤ ci」的 entry
+    if stsc[0].0!=1 || stsc.iter().any(|entry|entry.1==0) || stsc.windows(2).any(|entries|entries[0].0>=entries[1].0) {
+        return Err("stsc 块索引必须递增且每块包含样本".into());
+    }
     let mut per_chunk: Vec<(u64, u32)> = Vec::with_capacity(chunk_offsets.len());
+    let mut entry=0;
     for ci in 1..=chunk_offsets.len() as u32 {
-        let mut active = stsc[0];
-        for e in &stsc {
-            if e.0 <= ci {
-                active = *e;
-            } else {
-                break;
-            }
-        }
+        // Both tables are sorted: walk each once even for a large hostile index.
+        while entry+1<stsc.len() && stsc[entry+1].0<=ci {entry+=1;}
+        let active = stsc[entry];
         if active.2 != 0 {
             desc_index = active.2;
         }
@@ -561,7 +618,7 @@ fn parse_trak(trak: &[u8]) -> Result<SrcTrack, String> {
                 is_sync: stss.is_empty() || stss.binary_search(&idx1).is_ok(), // 无 stss = 全部同步帧
             });
             t += u64::from(delta);
-            file_off += u64::from(size);
+            file_off = file_off.checked_add(u64::from(size)).ok_or("样本文件偏移溢出")?;
             si_left = si_left.saturating_sub(1);
             idx1 += 1;
         }
@@ -601,7 +658,7 @@ fn parse_minf(
                 b"stsd" => *stsd = s.payload.to_vec(),
                 b"stts" => {
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
+                    let n = table_entries(p, 8, 8)?;
                     for i in 0..n {
                         let o = 8 + i * 8;
                         stts.push((u32be(p, o), u32be(p, o + 4)));
@@ -609,14 +666,14 @@ fn parse_minf(
                 }
                 b"stss" => {
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
+                    let n = table_entries(p, 8, 4)?;
                     for i in 0..n {
                         stss.push(u32be(p, 8 + i * 4));
                     }
                 }
                 b"stsc" => {
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
+                    let n = table_entries(p, 8, 12)?;
                     for i in 0..n {
                         let o = 8 + i * 12;
                         stsc.push((u32be(p, o), u32be(p, o + 4), u32be(p, o + 8)));
@@ -624,22 +681,25 @@ fn parse_minf(
                 }
                 b"stsz" => {
                     let p = s.payload;
+                    if p.len()<12 {return Err("stsz 不完整".into());}
                     *stsz_uniform = u32be(p, 4);
-                    let n = u32be(p, 8) as usize;
-                    for i in 0..n {
-                        stsz_sizes.push(u32be(p, 12 + i * 4));
+                    let n=u32be(p,8) as usize;
+                    if n>MAX_TRACK_SAMPLES as usize {return Err("样本数超过安全上限".into());}
+                    if *stsz_uniform!=0 {stsz_sizes.resize(n,*stsz_uniform);} else {
+                        if n>(p.len()-12)/4 {return Err("stsz 样本表不完整".into());}
+                        for i in 0..n {stsz_sizes.push(u32be(p,12+i*4));}
                     }
                 }
                 b"stco" => {
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
+                    let n = table_entries(p, 8, 4)?;
                     for i in 0..n {
                         chunk_offsets.push(u64::from(u32be(p, 8 + i * 4)));
                     }
                 }
                 b"co64" => {
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
+                    let n = table_entries(p, 8, 8)?;
                     for i in 0..n {
                         chunk_offsets.push(u64be(p, 8 + i * 8));
                     }
@@ -649,11 +709,11 @@ fn parse_minf(
                     // 全 0 则重组后直接丢弃这张表；非 0 是别的来源文件，逐样本
                     // 偏移的裁剪语义未验证，拒绝不硬写。
                     let p = s.payload;
-                    let n = u32be(p, 4) as usize;
-                    let wide = p[0] == 1;
+                    let n = table_entries(p, 8, 8)?;
+
                     for i in 0..n {
-                        let o = 8 + i * if wide { 12 } else { 8 };
-                        let off = if wide { u64be(p, o + 4) } else { u64::from(u32be(p, o + 4)) };
+                        let o = 8 + i * 8;
+                        let off = u64::from(u32be(p, o + 4));
                         if off != 0 {
                             return Err("含 B 帧（ctts 偏移非 0）——裁剪暂不支持该文件".into());
                         }
@@ -833,6 +893,7 @@ fn rewrite_trak(
 /// tkhd/mvhd：按版本 patch duration 字段（时长单位 movie 域）。
 /// v0：tkhd duration@20、mvhd@16；v1 时间字段 8 字节 → tkhd@28、mvhd@24。
 fn patch_duration_box(name: [u8; 4], p: &[u8], duration_ts: u64) -> Result<Vec<u8>, String> {
+    if p.is_empty() {return Err("时长盒子缺少版本".into());}
     let mut p = p.to_vec();
     let mut dur_off = match &name {
         b"mvhd" => 16usize,
@@ -852,6 +913,7 @@ fn patch_duration_box(name: [u8; 4], p: &[u8], duration_ts: u64) -> Result<Vec<u
 
 /// mdhd：v0 timescale@12 duration@16；v1 timescale@20 duration@24。
 fn patch_mdhd(p: &[u8], duration_ts: u64) -> Result<Vec<u8>, String> {
+    if p.is_empty() {return Err("mdhd 缺少版本".into());}
     let mut p = p.to_vec();
     if p[0] == 1 {
         if p.len() >= 24 + 8 {
@@ -864,11 +926,7 @@ fn patch_mdhd(p: &[u8], duration_ts: u64) -> Result<Vec<u8>, String> {
 }
 
 fn mvhd_timescale(p: &[u8]) -> u32 {
-    if p[0] == 1 {
-        u32be(p, 20)
-    } else {
-        u32be(p, 12)
-    }
+    if p.first()==Some(&1) && p.len()>=24 {u32be(p,20)} else if p.len()>=16 {u32be(p,12)} else {1000}
 }
 
 // ── 测试：手造 MP4 夹具往返（无环境依赖，纯字节级）───────────────────────
@@ -1058,7 +1116,7 @@ fn mvhd_timescale(p: &[u8]) -> u32 {
         let dir = std::env::temp_dir().join("pastepanda_trim_tests");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join(name);
-        std::fs::write(&p, bytes).unwrap();
+        if bytes.is_empty() {let _=std::fs::remove_file(&p);} else {std::fs::write(&p, bytes).unwrap();}
         p
     }
 
@@ -1170,5 +1228,154 @@ fn mvhd_timescale(p: &[u8]) -> u32 {
         assert_eq!(v.samples.len(), 13, "media 99..528 的 13 个样本");
         assert!(!v.has_stss, "源没有 stss，输出也不写");
         assert_eq!(v.samples[0].media_time, 0, "输出 media 从 0 续排");
+    }
+    #[test]
+    fn audit_real_timescale_keeps_requested_duration() {
+        let mut data = fixture(false, 0, false, false);
+        for i in 4..data.len().saturating_sub(24) {
+            if &data[i..i+4] == b"mdhd" {
+                let old = u32be(&data, i+16);
+                push_u32_at(&mut data, i+16, old*30);
+                let dur = u32be(&data, i+20);
+                push_u32_at(&mut data, i+20, dur*30);
+            }
+            if &data[i..i+4] == b"stts" {
+                let n = u32be(&data, i+8) as usize;
+                for j in 0..n {
+                    let at = i+16+j*8;
+                    let delta = u32be(&data, at);
+                    push_u32_at(&mut data, at, delta*30);
+                }
+            }
+        }
+        let src = write_tmp("audit_ts30000_src.mp4", &data);
+        let dst = write_tmp("audit_ts30000_dst.mp4", &[]);
+        assert_eq!(scan_keyframes(&src).unwrap().duration_ms, 990);
+        let result = trim(&src,0,660,&dst).unwrap();
+        let output = std::fs::read(&dst).unwrap();
+        let at = output.windows(4).position(|w| w == b"mdhd").unwrap();
+        let real = u64::from(u32be(&output, at+20))*1000/u64::from(u32be(&output,at+16));
+        println!("requested 660 ms; reported {}..{} ms; actual {} ms",result.1,result.2,real);
+        assert_eq!(real,660,"trim output duration must equal snapped requested duration");
+    }    #[test]
+    fn audit_valid_uniform_stsz_must_not_panic() {
+        let mut p = vec![];
+        push_u32(&mut p,0);
+        push_u32(&mut p,100);
+        push_u32(&mut p,3);
+        let minf = wrap_box(b"stbl",&wrap_box(b"stsz",&p));
+        let parsed = std::panic::catch_unwind(|| {
+            parse_minf(&minf,&mut vec![],&mut vec![],&mut vec![],&mut vec![],&mut 0,&mut vec![],&mut vec![])
+        });
+        assert!(parsed.is_ok(),"a valid uniform stsz must not panic");
+    }
+    #[test]
+    fn existing_output_is_never_truncated() {
+        let source=write_tmp("no_overwrite_src.mp4", &fixture(false,0,false,false));
+        let destination=write_tmp("no_overwrite_dst.mp4", b"previous successful output");
+        assert!(trim(&source,0,660,&destination).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(),b"previous successful output");
+    }
+    #[test]
+    fn malformed_tables_are_errors_without_panics() {
+        for kind in [b"stts",b"stss",b"stsc",b"stsz",b"stco",b"co64",b"ctts"] {
+            let mut p=vec![0;12];
+            push_u32_at(&mut p,4,20);
+            if kind==b"stsz" {push_u32_at(&mut p,4,0);push_u32_at(&mut p,8,20);}
+            let bytes=wrap_box(b"stbl",&wrap_box(kind,&p));
+            let result=std::panic::catch_unwind(|| parse_minf(&bytes,&mut vec![],&mut vec![],&mut vec![],&mut vec![],&mut 0,&mut vec![],&mut vec![]));
+            assert!(result.is_ok(),"{kind:?} must not panic");
+            assert!(result.unwrap().is_err(),"{kind:?} must be rejected");
+        }
+    }
+
+    fn map_fixture_boxes(bytes:&[u8], replace:&mut impl FnMut([u8;4],&[u8])->Option<Vec<u8>>)->Vec<u8> {
+        let mut result=Vec::new();
+        for item in iter_boxes(bytes).unwrap() {
+            let replacement=replace(item.name,item.payload).unwrap_or_else(|| {
+                if matches!(&item.name,b"moov"|b"trak"|b"mdia"|b"minf"|b"stbl"|b"edts") {
+                    wrap_box(&item.name,&map_fixture_boxes(item.payload,replace))
+                } else {wrap_box(&item.name,item.payload)}
+            });
+            result.extend_from_slice(&replacement);
+        }
+        result
+    }
+
+    #[test]
+    fn hostile_co64_offsets_are_errors_without_panics() {
+        let bytes=map_fixture_boxes(&fixture(false,0,false,false),&mut |kind,payload| {
+            if &kind!=b"stco" {return None;}
+            let mut offsets=payload[..8].to_vec();
+            for _ in 0..u32be(payload,4) {push_u64(&mut offsets,u64::MAX);}
+            Some(wrap_box(b"co64",&offsets))
+        });
+        let source=write_tmp("hostile_co64.mp4",&bytes);
+        let parsed=std::panic::catch_unwind(||SrcMp4::open(&source));
+        assert!(parsed.is_ok(),"hostile sample offsets must not panic");
+        assert!(parsed.unwrap().is_err());
+    }
+
+    #[test]
+    fn truncated_edit_lists_are_rejected_before_timeline_or_rewrite() {
+        for length in [0,4,8,16] {
+            let bytes=map_fixture_boxes(&fixture(false,0,true,false),&mut |kind,_| {
+                (&kind==b"elst").then(||wrap_box(b"elst",&vec![0;length]))
+            });
+            let source=write_tmp(&format!("short_elst_{length}.mp4"),&bytes);
+            assert!(scan_keyframes(&source).is_err(),"elst length {length} must be rejected");
+        }
+    }
+
+    #[test]
+    fn uniform_sample_tables_roundtrip_and_retrim() {
+        let bytes=map_fixture_boxes(&fixture(false,0,false,false),&mut |kind,payload| {
+            if &kind!=b"stsz" {return None;}
+            let mut sizes=payload[..12].to_vec();
+            push_u32_at(&mut sizes,4,40);
+            Some(wrap_box(b"stsz",&sizes))
+        });
+        let source=write_tmp("uniform_roundtrip_src.mp4",&bytes);
+        let destination=write_tmp("uniform_roundtrip_out.mp4",&[]);
+        let repeated=write_tmp("uniform_roundtrip_again.mp4",&[]);
+        trim(&source,0,660,&destination).unwrap();
+        assert_eq!(scan_keyframes(&destination).unwrap().duration_ms,660);
+        trim(&destination,330,660,&repeated).unwrap();
+        assert_eq!(scan_keyframes(&repeated).unwrap().duration_ms,330);
+    }
+
+    #[test]
+    fn independent_video_90000_and_audio_48000_timescales_preserve_duration() {
+        let mut factor=90;
+        let bytes=map_fixture_boxes(&fixture(false,0,false,false),&mut |kind,payload| {
+            if &kind==b"mdhd" {
+                factor=if u32be(payload,16)==990 {90}else{48};
+                let mut data=payload.to_vec();
+                push_u32_at(&mut data,12,1000*factor);
+                push_u32_at(&mut data,16,u32be(payload,16)*factor);
+                Some(wrap_box(&kind,&data))
+            } else if &kind==b"stts" {
+                let mut data=payload.to_vec();
+                for index in 0..u32be(payload,4) as usize {
+                    let offset=12+index*8;
+                    push_u32_at(&mut data,offset,u32be(payload,offset)*factor);
+                }
+                Some(wrap_box(&kind,&data))
+            } else {None}
+        });
+        let source=write_tmp("independent_ts_src.mp4",&bytes);
+        let destination=write_tmp("independent_ts_out.mp4",&[]);
+        assert_eq!(trim(&source,0,660,&destination).unwrap().1,0);
+        let output=SrcMp4::open(&destination).unwrap();
+        assert_eq!(output.tracks[0].timescale,90000);
+        assert_eq!(output.tracks[1].timescale,48000);
+        assert_eq!(output.tracks[0].duration_ms(),660);
+        assert_eq!(output.tracks[1].duration_ms(),660);
+        let mut durations=Vec::new();
+        map_fixture_boxes(&std::fs::read(&destination).unwrap(),&mut |kind,payload| {
+            if &kind==b"mdhd" {durations.push((u32be(payload,12),u32be(payload,16)));}
+            None
+        });
+        assert_eq!(durations,vec![(90000,59400),(48000,31680)]);
     }
 }

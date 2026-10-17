@@ -17,6 +17,7 @@ pub struct RecOpts {
 }
 
 pub struct RecStatus {
+    pub starting: bool,
     pub recording: bool,
     pub finalizing: bool,
     /// true = 暂停中（不录内容、不计时）。
@@ -28,4 +29,9 @@ pub struct RecStatus {
     pub bytes: u64,
     /// 画质档 key（控制条展示用；无会话为 None）。
     pub quality: Option<String>,
+    pub warnings: Vec<String>,
+    pub sys_audio: bool,
+    pub mic_audio: bool,
+    pub sys_audio_active: Option<bool>,
+    pub mic_audio_active: Option<bool>,
 }

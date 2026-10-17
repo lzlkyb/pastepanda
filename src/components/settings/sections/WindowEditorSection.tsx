@@ -22,14 +22,15 @@ import styles from "../../Settings.module.css";
 
 interface WindowEditorSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   mdAssoc: SettingsData["mdAssoc"];
   mdAssocBusy: SettingsData["mdAssocBusy"];
   handleMdAssocToggle: SettingsData["handleMdAssocToggle"];
+  refreshMdAssoc: SettingsData["refreshMdAssoc"];
 }
 
 export function WindowEditorSection({
-  config, updateAndSave, mdAssoc, mdAssocBusy, handleMdAssocToggle,
+  config, updateAndSave, mdAssoc, mdAssocBusy, handleMdAssocToggle, refreshMdAssoc,
 }: WindowEditorSectionProps) {
   const { toast } = useToast();
 
@@ -46,7 +47,7 @@ export function WindowEditorSection({
         if (cancelled) return;
         const d = resolveAutoStartupDesync(config.auto_startup, real);
         if (d.action !== "sync-config") return;
-        await updateAndSave({ auto_startup: d.registryEnabled });
+        if (!await updateAndSave({ auto_startup: d.registryEnabled })) return;
         toast(d.message, d.registryEnabled ? "info" : "warning");
       } catch { /* 探测失败不打扰：启动对账是主路径，这里只是兜底 */ }
     })();
@@ -60,8 +61,12 @@ export function WindowEditorSection({
       <ToggleRow icon="📌" hue="system" label="窗口置顶" desc="始终显示在其他窗口之上" value={config.always_on_top}
         tooltip="适合频繁粘贴时使用，窗口始终可见"
         onChange={async (v) => {
-          await updateAndSave({ always_on_top: v });
-          try { const { getCurrentWindow } = await import("@tauri-apps/api/window"); await getCurrentWindow().setAlwaysOnTop(v); } catch { toast("窗口置顶设置失败", "error"); }
+          if (!await updateAndSave({ always_on_top: v })) return;
+          try { const { getCurrentWindow } = await import("@tauri-apps/api/window"); await getCurrentWindow().setAlwaysOnTop(v); }
+          catch {
+            const restored = await updateAndSave({ always_on_top: config.always_on_top });
+            toast(restored ? "窗口置顶设置失败，已恢复原设置" : "窗口置顶设置失败，原设置未能保存，请重试", "error");
+          }
         }} />
       <ToggleRow icon="👁️" hue="system" label="失焦自动隐藏" desc="窗口失去焦点时隐藏到托盘" value={config.hide_on_focus_out} onChange={(v) => updateAndSave({ hide_on_focus_out: v })}
         recommend
@@ -83,8 +88,12 @@ export function WindowEditorSection({
           <p>💡 <b>推荐开启</b>，不用担心忘记启动</p>
         </>}
         onChange={async (v) => {
-          await updateAndSave({ auto_startup: v });
-          try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); } catch { toast("开机自启设置失败", "error"); }
+          if (!await updateAndSave({ auto_startup: v })) return;
+          try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_startup", { enable: v }); }
+          catch {
+            const restored = await updateAndSave({ auto_startup: config.auto_startup });
+            toast(restored ? "开机自启设置失败，已恢复原设置" : "开机自启设置失败，原设置未能保存，请重试", "error");
+          }
         }} />
       {/* 托盘右键模式（2026-10-03 方案丁）：默认原生菜单，自绘弹窗保留为可选项 */}
       <div className={styles.sRow}>
@@ -161,6 +170,7 @@ export function WindowEditorSection({
               : mdAssoc === "registered" ? "已注册打开方式，尚未设为默认"
               : mdAssoc === "unsupported" ? "此平台暂未提供文件关联，请在应用内打开文件"
               : mdAssoc === "loading" ? "检测中…"
+              : mdAssoc === "error" ? "未能读取文件关联状态，请重试检测"
               : "双击 .md 文件直接用 PastePanda 编辑"}
           </div>
         </div>
@@ -169,9 +179,15 @@ export function WindowEditorSection({
             设为默认
           </button>
         )}
+        {mdAssoc === "error" && (
+          <button className={styles.sAction} onClick={() => void refreshMdAssoc()}>重新检测</button>
+        )}
         <button
           className={`${styles.sToggle} ${(mdAssoc === "default" || mdAssoc === "registered") ? styles.on : styles.off}`}
-          disabled={mdAssocBusy || mdAssoc === "loading" || mdAssoc === "unsupported"}
+          disabled={mdAssocBusy || mdAssoc === "loading" || mdAssoc === "error" || mdAssoc === "unsupported"}
+          aria-label="将 PastePanda 设为 Markdown 文件打开方式"
+          role="switch"
+          aria-checked={mdAssoc === "default" || mdAssoc === "registered"}
           onClick={() => void handleMdAssocToggle(mdAssoc === "unregistered" || mdAssoc === "available" || mdAssoc === "loading")}>
           <span className={styles.sToggleThumb} />
           <span className={styles.sToggleLabel}>{(mdAssoc === "default" || mdAssoc === "registered") ? "开" : "关"}</span>
