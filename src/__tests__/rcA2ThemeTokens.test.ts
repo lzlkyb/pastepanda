@@ -94,7 +94,9 @@ describe("远程电脑 A2 真实主题守卫", () => {
   });
 
   it("独立工作台从真实配置读取主题，并实时跟随主窗口", () => {
-    expect(entry).toContain('invoke<{ theme?: string }>("get_config")');
+    // B 方案把 window_animation 并进同一份 get_config 读取（工作台要跟随「界面动效」开关），
+    // 类型参数随之扩字段——守卫钉的是「读真实配置」这件事，不是某一个字面量签名。
+    expect(entry).toContain('invoke<{ theme?: string; window_animation?: boolean }>("get_config")');
     expect(entry).toContain('"theme-changed"');
     expect(entry).toContain("applyTheme(normalizeTheme");
     expect(entry).not.toMatch(/applyTheme\("(?:ocean|ocean-dark|blossom)"\)/);
