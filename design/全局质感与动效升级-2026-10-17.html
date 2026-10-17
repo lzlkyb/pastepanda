@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean" data-direction="b">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PastePanda · 全局质感与动效设计预览</title>
+  <link rel="icon" href="../public/icon.png">
+  <link rel="stylesheet" href="../src/styles/theme.css">
+  <link rel="stylesheet" href="./motion-upgrade-20261017/preview.css">
+  <script src="./motion-upgrade-20261017/preview.js" defer></script>
+</head>
+<body>
+  <header class="review-header">
+    <div><h1>PastePanda，交互与动效升级</h1><p>熟悉的工作流，更自然的响应。先试手感，再确认落地。</p></div>
+    <span class="draft-label">设计稿 · 2026.10.17 · 尚未改产品</span>
+  </header>
+  <section class="review-controls" aria-label="设计评审控制">
+    <div class="direction-picker" role="group" aria-label="方案强度">
+      <button data-direction="a" aria-pressed="false">A 原位精修</button>
+      <button data-direction="b" aria-pressed="true">B 克制流动 <small>推荐</small></button>
+      <button data-direction="c" aria-pressed="false">C 轻弹表达</button>
+    </div>
+    <div class="review-options">
+      <label>对照<select id="comparison"><option value="after">方案预览</option><option value="before">现状时序示意</option></select></label>
+      <label>主题<select id="theme"><option value="ocean">月白</option><option value="ocean-dark">深海</option><option value="midnight">午夜</option><option value="forest">森林</option><option value="blossom">美乐蒂</option><option value="dawn">晨曦</option></select></label>
+      <label class="check-label"><input id="reduced" type="checkbox">减少动态</label>
+      <label class="check-label"><input id="compact" type="checkbox">紧凑窗</label>
+    </div>
+  </section>
+  <main>
+    <div class="review-layout" id="reviewLayout">
+      <div class="specimen">
+        <div class="app-window" id="appWindow" aria-label="PastePanda 交互原型">
+          <header class="app-titlebar">
+            <button class="icon-button" id="sidebarToggle" aria-label="收起侧边栏" title="展开或收起侧边栏"></button>
+            <div class="brand"><img src="../public/icon.png" width="23" height="23" alt=""><strong>PastePanda</strong></div>
+            <div class="app-modes" role="tablist" aria-label="应用模式">
+              <span class="mode-indicator" aria-hidden="true"></span>
+              <button role="tab" aria-selected="true" data-view="record">记录</button>
+              <button role="tab" aria-selected="false" data-view="tools">工具</button>
+              <button role="tab" aria-selected="false" data-view="knowledge">知识</button>
+            </div>
+            <div class="window-actions"><button id="settingsButton" class="icon-button" aria-label="设置" title="设置"></button><span class="window-divider"></span><button class="icon-button demo-window-action" aria-label="最小化（示意）" title="最小化（示意）" data-icon="minus"></button><button class="icon-button demo-window-action" aria-label="隐藏到托盘（示意）" title="隐藏到托盘（示意）" data-icon="hide"></button></div>
+          </header>
+          <div class="workspace" id="workspace"></div>
+          <div class="app-status"><span><i class="status-dot"></i><span id="statusText">本地演示，数据不会保存</span></span><span id="statusHint">Tab 导航 · Esc 返回</span></div>
+          <div id="toastHost" class="toast-host" aria-live="polite"></div>
+          <div id="menuHost"></div>
+          <div id="dialogHost"></div>
+        </div>
+        <div class="exercise-bar"><span id="exerciseLabel">试一下</span><div id="exercises"></div><button id="replay" class="review-button">重放当前过渡</button></div>
+        <p class="prototype-note">可点击、搜索、切换、按压与撤销。内容、耗时和保存均为模拟；主题沿用真实色彩令牌，场景背景简化为静态材质。现状对照按源码复刻代表性时序，不是当前软件截图。</p>
+      </div>
+      <aside class="design-notes" aria-label="当前方案说明">
+        <div class="recommendation"><span id="directionTag">推荐方案 B</span><h2 id="directionTitle">克制，但有连续感</h2><p id="directionDescription">外壳保持稳定，动效只解释变化。列表不随悬停浮动，操作在原位得到回应。</p></div>
+        <div class="note-block"><h3>刚才发生了什么</h3><p id="interactionText" role="status">点击上方「工具」，感受模式滑块与内容同时响应。</p><div class="motion-readout"><span>过渡总预算</span><strong id="durationReadout">200 ms</strong></div></div>
+        <div class="note-block"><h3>有质感的三个细节</h3><ul id="designPoints"><li>页面立即响应，不串行等待退场。</li><li>成功在按钮原位确认，错误留在操作旁。</li><li>弹层从触发点出现，关闭沿原路收回。</li></ul></div>
+        <div class="note-block performance-note"><h3>性能是约束，不是降级档</h3><p>新方案闲置时无装饰循环；列表只处理可见变化；隐藏窗口停止观察与动画。原型不代表真实 WebView 性能，落地须在目标机实测。</p><a href="#performance">查看性能验收标准</a></div>
+      </aside>
+    </div>
+
+    <section class="spec-section" id="motionRules">
+      <div class="section-heading"><h2>一套节奏，贯穿整个软件</h2><p>以下是 PastePanda 的拟定参数，不是 Apple、Linear 或 Notion 的内部数值。</p></div>
+      <div class="rhythm-grid">
+        <div><strong>150 <small>ms</small></strong><h3>触感</h3><p>悬停、原位成功、菜单。按钮按下立即变色，只有小控件轻压至 0.98。</p><button class="review-button" data-lab="touch">试按一次</button></div>
+        <div><strong>200 <small>ms</small></strong><h3>连贯</h3><p>模式滑块、侧栏、局部补位。内容及时出现，连续操作随时改去向。</p><button class="review-button" data-lab="switch">连续切换</button></div>
+        <div><strong>300 <small>ms</small></strong><h3>层级</h3><p>对话框与详情。短距离进入，退出用 200ms；背板只改透明度。</p><button class="review-button" data-lab="dialog">查看弹窗</button></div>
+        <div><strong>400 <small>ms</small></strong><h3>边界</h3><p>只作为大范围变化的上限，不用于普通点按；全屏编辑不等动画完成再输入。</p><button class="review-button" data-lab="editor">查看编辑区</button></div>
+      </div>
+      <div class="curve-row"><div><h3>速度快落定，状态不断线</h3><p>常规：<code>cubic-bezier(0.2, 0, 0, 1)</code><br>进入：<code>cubic-bezier(0.05, 0.7, 0.1, 1)</code><br>C 档仅在小型位移上使用项目既有定参弹簧；文字、透明度、颜色不回弹。</p></div><svg viewBox="0 0 320 130" role="img" aria-label="进入动效的减速曲线示意"><path class="curve-axis" d="M24 14V108H304"/><path class="curve-guide" d="M24 108L304 14"/><path class="curve-path" d="M24 108C38 42 52 14 304 14"/><circle cx="24" cy="108" r="4"/><circle cx="304" cy="14" r="4"/><text x="24" y="126">响应</text><text x="277" y="126">落定</text></svg></div>
+    </section>
+
+    <section class="spec-section scope-section">
+      <div class="section-heading"><h2>全面升级，保留熟悉的工作流</h2><p>不是给每一屏加一轮入场；把共用控件、状态和窗口行为统一起来。</p></div>
+      <table><thead><tr><th>范围</th><th>拟改变</th><th>必须保留</th></tr></thead><tbody>
+        <tr><td>主窗 / 模式 / 侧栏</td><td>并行响应；去掉 140ms 退场等待；固定壳层，侧栏 200ms 收放</td><td>三模式入口、分组、各模式滚动位置与键盘路径</td></tr>
+        <tr><td>记录 / 知识 / 列表</td><td>停止整卡悬停放大与持续扫光；仅新内容提示和可见行补位</td><td>虚拟滚动、复制/粘贴原行为、搜索选择、焦点与撤销</td></tr>
+        <tr><td>按钮 / 开关 / 搜索</td><td>立即按压；图标与文字在原位确认；请求开始即有状态，慢请求才展开加载反馈</td><td>文字可读、禁用原因、点击目标和输入响应</td></tr>
+        <tr><td>菜单 / 对话框 / 通知</td><td>锚点进入、同向退出；错误常驻且能重试；通知不重复堆叠</td><td>焦点陷阱、Esc、危险动作确认、撤销 6 秒且悬停/聚焦停表</td></tr>
+        <tr><td>设置 / 主题</td><td>取消逐行排队入场；保存状态同域；六主题静态层级一致</td><td>现有设置项、自动保存、外观开关与系统减少动态偏好</td></tr>
+        <tr><td>录屏 / 截图 / 贴图</td><td>录屏仅展开/暂停等状态变化有过渡；数字不逐秒缩放，状态点不持续扩散</td><td>小浮条、鼠标全流程、选区移动即预览；真实捕获结果不由原型承诺</td></tr>
+        <tr><td>远程电脑 / 连接与传输</td><td>发现→连接中→已连接→失败保持同一信息位；只在任务活动时显示忙碌</td><td>权限、控制权、网络失败、取消/重试；远端画面和键鼠不加动效延时</td></tr>
+        <tr><td>编辑器 / 流程图 / 预览</td><td>工具栏和面板用同一层级节奏；保存/失败就地反馈</td><td>输入、光标、拖拽、缩放、滚动画布直接响应，不套弹簧或全屏遮罩</td></tr>
+      </tbody></table>
+    </section>
+
+    <section class="spec-section" id="performance">
+      <div class="section-heading"><h2>先证明流畅，再谈上线</h2><p>这是实施验收目标；本轮设计稿没有给出真实软件的 CPU、GPU 或帧率结论。</p></div>
+      <div class="acceptance-grid">
+        <div><h3>交互预算</h3><p>点击到首个视觉反馈目标 ≤50ms；动画活跃区间以 60Hz 的 16.7ms 帧预算检查，记录 p95 与掉帧，排查新增 &gt;50ms 主线程长任务。120Hz 单独记录 8.3ms 预算，不能用平均 FPS 掩盖卡顿。</p></div>
+        <div><h3>空闲与隐藏</h3><p>新增动效在静止时零循环；隐藏/最小化窗口停止新增 rAF、动画观察与装饰轮询。动态主题单独测量，不能把原有成本藏进新动效结论。</p></div>
+        <div><h3>最坏情况</h3><p>1,000 / 10,000 条记录走虚拟列表；不为全部记录建立 layout 测量或入场。连点模式、开关、反复开关弹层各 30 次，最新意图立即生效且焦点正确。</p></div>
+        <div><h3>交付门槛</h3><p>六主题、100% / 125% / 150% 缩放、紧凑窗及系统减少动态复核。CSS 与现有 Framer Motion 分工；不引入 GSAP 或新动效引擎，不做全局 transition: all。</p></div>
+      </div>
+    </section>
+
+    <section class="spec-section evidence-section">
+      <div><h2>设计依据</h2><p>Apple：短、准确、可取消的反馈；Linear：清晰的层级、密度和壳层；Notion：在上下文里解释状态，降低发现成本。借鉴原则，不复制平台皮肤或虚构其动效规范。</p><div class="source-links"><a href="https://developer.apple.com/design/human-interface-guidelines/motion" target="_blank" rel="noopener">Apple HIG · Motion</a><a href="https://developer.apple.com/design/human-interface-guidelines/feedback" target="_blank" rel="noopener">Apple HIG · Feedback</a><a href="https://linear.app/now/how-we-redesigned-the-linear-ui" target="_blank" rel="noopener">Linear · UI redesign</a><a href="https://www.notion.com/blog/designing-synced-blocks" target="_blank" rel="noopener">Notion · Synced Blocks</a></div></div>
+      <div><h2>本次确认范围</h2><p>建议采用 B：全局统一节奏与状态反馈，小幅整理边框、阴影、文字与控件层级。A 改动最少；C 更有表现力，但须额外验证弹簧尾部和原生小窗边界。确认后分批改产品，每批验证再扩展。</p><a class="document-link" href="../docs/全局质感与动效升级-方案与验收-2026-10-17.md">源码审查、实施顺序与完整验收说明</a></div>
+    </section>
+  </main>
+</body>
+</html>
