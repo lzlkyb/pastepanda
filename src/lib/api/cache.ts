@@ -58,7 +58,7 @@ export interface StatsDetail {
   db_size_kb: number;
 }
 
-/** 获取详细统计（数据仪表盘）；失败返回 null，调用方保持加载态 */
+/** 获取详细统计；null 表示查询失败，调用方须展示错误与重试。 */
 export async function getStatsDetail(workspace: string): Promise<StatsDetail | null> {
   try {
     return await invoke<StatsDetail>("get_stats_detail", { workspace });

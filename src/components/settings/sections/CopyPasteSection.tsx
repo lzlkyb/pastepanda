@@ -15,7 +15,7 @@ import styles from "../../Settings.module.css";
 
 interface CopyPasteSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function CopyPasteSection({ config, updateAndSave }: CopyPasteSectionProps) {

@@ -13,7 +13,7 @@
  *
  * 🔴 红线：无 AI。标题与正文只进本机 SQLite。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
@@ -21,38 +21,6 @@ import { confirmDialog } from "@/lib/confirm";
 import { copyToClipboard } from "@/lib/utils";
 import { isDarkTheme } from "@/lib/theme";
 import { noteCreate, noteUpdate, noteSetFolder, noteMarkdown, fetchNoteHistoryIds, noteGet } from "@/lib/api";
-
-/**
- * 换笔记时才拦的阈值：正文改动少于这么多字就**不拦**，直接丢。
- *
- * 为何不全量拦：第三栏存在的全部理由是「扫着读」（见 `NoteDetailPane` 文件头），
- * 换笔记是这个界面里最高频的动作。每换一条都弹一次确认会直接毁掉这个场景，
- * 而误碰键盘、多敲一两个字本来也不是用户想保的东西。
- *
- * ❗ 代价写清楚：**最多会静默丢掉 9 个字的正文改动**。标题不适用这个阈值
- *   （标题就那么短，改它都是有意的）。
- */
-const SWITCH_GUARD_CHARS = 10;
-
-/**
- * 两串之间的「改动量」：去掉公共前缀与公共后缀后，剩下两段的长度之和。
- *
- * 不用编辑距离：那是 O(nm)，而这个函数会在每次换笔记时对整篇正文跑一遍。
- * 不用长度差：把一段话改成等长的另一段话，长度差是 0，但那是真改动。
- *
- * 例：「今天开会记录」→「今天的会议记录」，公共前缀「今天」、公共后缀「记录」，
- * 改动量 = 2 + 3 = 5。
- */
-function changedChars(a: string, b: string): number {
-  if (a === b) return 0;
-  const min = Math.min(a.length, b.length);
-  let head = 0;
-  while (head < min && a[head] === b[head]) head++;
-  // 尾部不能跨过已匹配的头部，否则同一段字符会被两边重复数、算出负数。
-  let tail = 0;
-  while (tail < min - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
-  return a.length - head - tail + (b.length - head - tail);
-}
 
 /** 正在编辑的对象。与 `dialogStore.noteDraft` 同形，第三栏从 `Note` 拼一个即可。 */
 export interface NoteEditTarget {
@@ -87,6 +55,7 @@ export function useNoteEditorState({
   const [title, setTitle] = useState(target.title);
   const [content, setContent] = useState(target.content);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   /**
    * 脏数据的**基线**。一开始是打开时的值，但保存成功 / 恢复版本后要重新对齐。
@@ -118,52 +87,57 @@ export function useNoteEditorState({
   );
 
   const save = useCallback(async (): Promise<boolean> => {
+    if (savingRef.current) return false;
     const t = title.trim();
     if (!t) {
       toast("标题不能为空", "error");
       return false;
     }
     setSaving(true);
-    // 失败时**不弹回调**（规则 #15.3）：api 层已经弹过错了，
-    // 宿主若据此关窗就等于把用户刚写的正文丢掉。
-    let ok: boolean;
-    // O-9：改标题会让其它笔记里的 [[旧标题]] 全部失效，后端会自动重写。
-    // 重写了就必须告知：用户只改了一个标题，却有几篇别的笔记正文被动了。
-    let relinked = 0;
-    if (target.noteId) {
-      const rep = await noteUpdate(target.noteId, t, content);
-      ok = rep !== null;
-      relinked = rep?.relinked ?? 0;
-    } else {
-      const created = await noteCreate(target.historyId, t, content);
-      ok = created !== null;
-      // 新建时归档。`note_create` 不收 folder_id（见 note.rs 里那条注释），
-      // 所以多发一次 IPC。归档失败不算保存失败：笔记已经落盘了，
-      // 只是停在「未分类」，api 层已弹过错（规则 #15.3）。
-      if (created && target.folderId) await noteSetFolder(created.id, target.folderId);
+    savingRef.current = true;
+    try {
+      // 失败时**不弹回调**（规则 #15.3）：api 层已经弹过错了，
+      // 宿主若据此关窗就等于把用户刚写的正文丢掉。
+      let ok: boolean;
+      // O-9：改标题会让其它笔记里的 [[旧标题]] 全部失效，后端会自动重写。
+      // 重写了就必须告知：用户只改了一个标题，却有几篇别的笔记正文被动了。
+      let relinked = 0;
+      if (target.noteId) {
+        const rep = await noteUpdate(target.noteId, t, content);
+        ok = rep !== null;
+        relinked = rep?.relinked ?? 0;
+      } else {
+        const created = await noteCreate(target.historyId, t, content);
+        ok = created !== null;
+        // 新建时归档。`note_create` 不收 folder_id（见 note.rs 里那条注释），
+        // 所以多发一次 IPC。归档失败不算保存失败：笔记已经落盘了，
+        // 只是停在「未分类」，api 层已弹过错（规则 #15.3）。
+        if (created && target.folderId) await noteSetFolder(created.id, target.folderId);
+      }
+      if (!ok) return false;
+      // 基线对齐到刚存下去的内容：第三栏保存后不关闭，不对齐就一直显示「未保存」。
+      setBaseTitle(t);
+      setBaseContent(content);
+      // 并进同一条 toast 而不另弹一个：两条叠在一起反而让人漏看后一条。
+      const saved = target.noteId ? "已保存" : target.historyId ? "已转为笔记" : "已创建笔记";
+      toast(
+        relinked > 0 ? `${saved}，并更新了 ${relinked} 篇笔记里的 [[引用]]` : saved,
+        "success",
+        relinked > 0 ? 5000 : undefined,
+      );
+      onSaved?.();
+      return true;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-    setSaving(false);
-    if (!ok) return false;
-    // 基线对齐到刚存下去的内容：第三栏保存后不关闭，不对齐就一直显示「未保存」。
-    setBaseTitle(t);
-    setBaseContent(content);
-    // 并进同一条 toast 而不另弹一个：两条叠在一起反而让人漏看后一条。
-    const saved = target.noteId ? "已保存" : target.historyId ? "已转为笔记" : "已创建笔记";
-    toast(
-      relinked > 0 ? `${saved}，并更新了 ${relinked} 篇笔记里的 [[引用]]` : saved,
-      "success",
-      relinked > 0 ? 5000 : undefined,
-    );
-    onSaved?.();
-    return true;
   }, [title, content, target.noteId, target.historyId, target.folderId, toast, onSaved]);
 
   /**
    * 切换到另一条笔记（或让出第三栏）前的守卫。返回 `true` = 可以继续。
    *
-   * ❗ 为何不直接用 `requestClose`：那个只要**一个字符**不同就拦，而换笔记是
-   *   扫读时最高频的动作——那会变成每点一条弹一次。这里只拦两种情况：
-   *   标题被改过，或正文改动 ≥ [`SWITCH_GUARD_CHARS`]。
+   * 与关闭使用相同的脏数据判定：金额、日期只改一个字符也可能很重要，
+   * 不能按字数猜测用户是否想保留。改回原文则直接放行。
    *
    * ❗ 这个函数存在的原因：改之前只有点✕ 那一个入口有守卫，而实际上有**五个**
    *   入口会把第三栏换掉（点另一条 / 删当前这条 / 点「问」/ 点参考笔记 / 窗口缩小），
@@ -171,18 +145,16 @@ export function useNoteEditorState({
    *   草稿随组件一起没了。
    */
   const guardSwitch = useCallback(async (): Promise<boolean> => {
-    const titleChanged = title !== baseTitle;
-    if (!titleChanged && changedChars(content, baseContent) < SWITCH_GUARD_CHARS) return true;
+    if (!isDirty) return true;
     return await confirmDialog({
       title: "有未保存的修改",
       message: "离开这条笔记后，这些修改会被丢弃。",
       confirmText: "丢弃并继续",
       cancelText: "留在这条",
     });
-  }, [title, baseTitle, content, baseContent]);
+  }, [isDirty]);
 
-  /** 带脏数据守卫的关闭（点✕）。这里是**只要有一点不同就问**：
-   *  关闭是一个明确的「我完事了」动作，不像换笔记那样会连着做很多次。 */
+  /** 带脏数据守卫的关闭（点✕）；与切换笔记采用同一判定。 */
   const requestClose = useCallback(async () => {
     if (isDirty) {
       const ok = await confirmDialog({

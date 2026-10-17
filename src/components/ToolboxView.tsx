@@ -90,6 +90,7 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
   /** Ctrl+F / `/` 聚焦筛选（与设置页同一心智；组件只在工具模式挂载） */
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (blocksPageShortcuts() || isConfirmLayerPresent()) return;
       const t = e.target as HTMLElement | null;
       const inField =
@@ -169,7 +170,7 @@ export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
   };
 
   const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter") return;
+    if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
     e.preventDefault();
     if (firstHit && handlers[firstHit.key]) runTool(firstHit);
   };

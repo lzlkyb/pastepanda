@@ -245,7 +245,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: var(--kb-hit);
+  min-width: var(--kb-hit);
+  padding: 0 8px;
+  gap: 4px;
   height: var(--kb-hit);
   flex-shrink: 0;
   border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);

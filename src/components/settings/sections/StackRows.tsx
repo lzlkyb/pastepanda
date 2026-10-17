@@ -17,7 +17,7 @@ import styles from "../../Settings.module.css";
 
 interface StackRowsProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function StackRows({ config, updateAndSave }: StackRowsProps) {
@@ -74,7 +74,7 @@ export function StackRows({ config, updateAndSave }: StackRowsProps) {
         onChange={async (v) => {
           // 关掉的那一刻就收掉已显示的浮标，不等落盘（否则用户看不到变化）。
           if (!v) hudDismiss();
-          await updateAndSave({ stack_hud_enabled: v });
+          if (!await updateAndSave({ stack_hud_enabled: v })) return;
           // 反过来在一轮栈模式里重新打开：立刻补一次显示。不补的话得退出栈、
           // 再开一次栈才看得见 —— 开关的反馈和它的触发不在同一个可见性域（规则 15.1）。
           if (v && useAppStore.getState().stackMode) void hudStackModeEntered();

@@ -7,7 +7,7 @@ import styles from "../../Settings.module.css";
 
 interface KbSyncSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 // 🔴 必须返回片段，原因同 StatsSection。
@@ -35,7 +35,7 @@ export function KbSyncSection({ config, updateAndSave }: KbSyncSectionProps) {
           <p>⚠️ <b>首次要配对</b>：两台机器互相核对一串指纹，核对不上就不要确认</p>
         </>}
         onChange={async (v) => {
-          await updateAndSave({ kb_sync_enabled: v });
+          if (!await updateAndSave({ kb_sync_enabled: v })) return;
           try {
             const { invoke } = await import("@tauri-apps/api/core");
             await invoke("toggle_kb_sync", { enable: v });

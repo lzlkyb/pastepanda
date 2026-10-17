@@ -18,7 +18,7 @@ import styles from "../../Settings.module.css";
 
 interface RecRowsProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   chains: SettingsData["chains"];
 }
 
@@ -80,12 +80,12 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           onChange={(v) => {
             const oldVal = config.rec_hotkey;
             void (async () => {
-              await updateAndSave({ rec_hotkey: v });
+              if (!await updateAndSave({ rec_hotkey: v })) return;
               try {
                 await reregisterQuiet();
               } catch (e) {
-                await updateAndSave({ rec_hotkey: oldVal });
-                toastActionFailed("录屏快捷键设置（变更未生效，已恢复原值）", e);
+                const restored = await updateAndSave({ rec_hotkey: oldVal });
+                toastActionFailed(`录屏快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
               }
             })();
           }}
@@ -104,12 +104,12 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           onChange={(v) => {
             const oldVal = config.rec_pause_hotkey;
             void (async () => {
-              await updateAndSave({ rec_pause_hotkey: v });
+              if (!await updateAndSave({ rec_pause_hotkey: v })) return;
               try {
                 await reregisterQuiet();
               } catch (e) {
-                await updateAndSave({ rec_pause_hotkey: oldVal });
-                toastActionFailed("暂停快捷键设置（变更未生效，已恢复原值）", e);
+                const restored = await updateAndSave({ rec_pause_hotkey: oldVal });
+                toastActionFailed(`暂停快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
               }
             })();
           }}
@@ -128,12 +128,12 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           onChange={(v) => {
             const oldVal = config.rec_stop_hotkey;
             void (async () => {
-              await updateAndSave({ rec_stop_hotkey: v });
+              if (!await updateAndSave({ rec_stop_hotkey: v })) return;
               try {
                 await reregisterQuiet();
               } catch (e) {
-                await updateAndSave({ rec_stop_hotkey: oldVal });
-                toastActionFailed("停止快捷键设置（变更未生效，已恢复原值）", e);
+                const restored = await updateAndSave({ rec_stop_hotkey: oldVal });
+                toastActionFailed(`停止快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
               }
             })();
           }}
@@ -168,12 +168,12 @@ export function RecRows({ config, updateAndSave }: RecRowsProps) {
           onChange={(v) => {
             const oldVal = config.rec_mark_hotkey;
             void (async () => {
-              await updateAndSave({ rec_mark_hotkey: v });
+              if (!await updateAndSave({ rec_mark_hotkey: v })) return;
               try {
                 await reregisterQuiet();
               } catch (e) {
-                await updateAndSave({ rec_mark_hotkey: oldVal });
-                toastActionFailed("标记时刻快捷键设置（变更未生效，已恢复原值）", e);
+                const restored = await updateAndSave({ rec_mark_hotkey: oldVal });
+                toastActionFailed(`标记时刻快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
               }
             })();
           }}

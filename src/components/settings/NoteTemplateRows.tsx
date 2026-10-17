@@ -36,7 +36,7 @@ function templateSummary(tpl: string): string {
 
 interface Props {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }
 
 export function NoteTemplateRows({ config, updateAndSave }: Props) {

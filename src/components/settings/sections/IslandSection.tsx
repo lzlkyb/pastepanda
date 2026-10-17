@@ -35,8 +35,8 @@ const REMIND_MS_OPTIONS: { ms: number; label: string }[] = [
 
 /** 保存 + 广播。❗ 必须**等 updateAndSave 落盘后**再 emit：Rust/岛前端收到事件会现读配置，
  *  先发后写会让它们读到旧值（开关拨了没反应就是这么来的）。 */
-function saveAndNotify(updateAndSave: (p: Record<string, unknown>) => Promise<void>, patch: Record<string, unknown>) {
-  void updateAndSave(patch).then(() => emit("todo-island-config-changed"));
+function saveAndNotify(updateAndSave: (p: Record<string, unknown>) => Promise<boolean>, patch: Record<string, unknown>) {
+  void updateAndSave(patch).then(saved => { if (saved) return emit("todo-island-config-changed"); }).catch(() => {});
 }
 
 /** 玻璃透度行（布局 2：整行宽预览条 + 下方滑杆）。
@@ -44,7 +44,7 @@ function saveAndNotify(updateAndSave: (p: Record<string, unknown>) => Promise<vo
  *  丢掉草稿无副作用——岛都不在，预览也就无处可看。 */
 function GlassRow({ stored, updateAndSave }: {
   stored: AppConfig["todo_island_glass"];
-  updateAndSave: (p: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (p: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState<number | null>(null);
   const shown = draft ?? normalizeGlass(stored);
@@ -107,7 +107,7 @@ function GlassRow({ stored, updateAndSave }: {
  *  岛前端换 `html[data-island-dock]`（压平哪条边）。 */
 function AnchorRow({ stored, updateAndSave }: {
   stored: AppConfig["todo_island_anchor"];
-  updateAndSave: (p: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (p: Record<string, unknown>) => Promise<boolean>;
 }) {
   const shown = normalizeAnchor(stored);
   return (
@@ -146,7 +146,7 @@ export function IslandSection({
   updateAndSave,
 }: {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
 }) {
   return (
     <>

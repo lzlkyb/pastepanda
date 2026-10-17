@@ -4,8 +4,20 @@ import { emit } from "@tauri-apps/api/event";
 import { useAppStore } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { logger } from "@/lib/logger";
+import { applyTheme, type ThemeKey } from "@/lib/theme";
 
 export type SettingsSaveState = "idle" | "pending" | "saved" | "error";
+
+function notifyAppearance(partial: Record<string, unknown>) {
+  if ("theme" in partial) {
+    const theme = useAppStore.getState().config.theme;
+    applyTheme(theme as ThemeKey);
+    void emit("theme-changed", { theme }).catch(() => {});
+  }
+  if ("window_animation" in partial) {
+    void emit("interface-motion-changed", useAppStore.getState().config.window_animation).catch(() => {});
+  }
+}
 
 // Settings is conditionally mounted. IO ordering and key ownership belong to
 // the WebView, so closing/reopening the page cannot restart a competing queue.
@@ -36,9 +48,7 @@ export function useSettingsSave() {
     Object.keys(partial).forEach(key => keyVersions.set(key, epoch));
     useAppStore.getState().updateConfig(partial);
     report("pending");
-    if ("window_animation" in partial) {
-      void emit("interface-motion-changed", useAppStore.getState().config.window_animation).catch(() => {});
-    }
+    notifyAppearance(partial);
     const task = saveQueue.then(async () => {
       const config = useAppStore.getState().config;
       await invoke("save_config", { config });
@@ -51,6 +61,7 @@ export function useSettingsSave() {
         failed = null;
         report("saved");
       }
+      return true;
     } catch (error) {
       logger.warn("即时保存失败", error);
       // An old failure may revert only keys still owned by that request. Comparing
@@ -60,9 +71,7 @@ export function useSettingsSave() {
         .filter(key => keyVersions.get(key) === epoch && Object.is(current[key], partial[key]))
         .map(key => [key, persistedConfig[key]]));
       useAppStore.getState().updateConfig(rollback);
-      if ("window_animation" in rollback) {
-        void emit("interface-motion-changed", useAppStore.getState().config.window_animation).catch(() => {});
-      }
+      notifyAppearance(rollback);
       if (epoch === nextSaveId) {
         failed = partial;
         report("error");
@@ -70,6 +79,7 @@ export function useSettingsSave() {
       if (Object.keys(rollback).length) {
         toast("设置保存失败，失败项已还原。", "error", undefined, () => void save(partial), "重新应用并保存");
       }
+      return false;
     } finally {
       pendingSaves--;
     }

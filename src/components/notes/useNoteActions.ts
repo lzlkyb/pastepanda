@@ -292,8 +292,9 @@ export function useNoteActions(opts: NoteActionsOpts) {
     } finally {
       setBatchBusy(null);
     }
-    if (activeNote && selectedIds.has(activeNote.id)) clearActive();
-    clearSelection();
+    if (activeNote && done.some(note => note.id === activeNote.id)) clearActive();
+    const deletedIds = new Set(done.map(note => note.id));
+    setSelectedIds(current => new Set([...current].filter(id => !deletedIds.has(id))));
     refreshAll();
     // 不走 `reportBatch`：那个是给移动用的（移动靠高亮环回执、不需要撤销）。
     // 部分失败仍然要给撤销：已经删掉的那几条同样可能是误删（规则 #15.3）。
@@ -313,31 +314,38 @@ export function useNoteActions(opts: NoteActionsOpts) {
     activeNote,
     selectedIds,
     clearActive,
-    clearSelection,
     refreshAll,
   ]);
 
-  /** 批量移动。落定后复用现有的高亮环回执（A-56），不另做一套。 */
+  /** 失败项继续选中便于重试；全部失败时不能闪出成功落点。批量与拖拽共用回执。 */
+  const finishMove = useCallback((folderId: string | null, ids: string[], failedIds: string[]) => {
+    const affected = new Set(ids);
+    const failed = new Set(failedIds);
+    setSelectedIds(current => new Set([
+      ...[...current].filter(id => !affected.has(id)), ...failedIds,
+    ]));
+    refreshAll();
+    if (ids.length > failed.size) flashFolder(folderId ?? "unfiled");
+  }, [refreshAll, flashFolder]);
+
   const handleBatchMove = useCallback(
     async (folderId: string | null) => {
       const targets = selectedNotes;
       if (targets.length === 0 || batchBusy) return;
       setBatchBusy({ done: 0, total: targets.length, verb: "移动" });
-      let failed = 0;
+      const failedIds: string[] = [];
       try {
         for (const [i, n] of targets.entries()) {
-          if (!(await noteSetFolder(n.id, folderId))) failed++;
+          if (!(await noteSetFolder(n.id, folderId))) failedIds.push(n.id);
           setBatchBusy({ done: i + 1, total: targets.length, verb: "移动" });
         }
       } finally {
         setBatchBusy(null);
       }
-      reportBatch("移动", targets.length, failed);
-      clearSelection();
-      refreshAll();
-      flashFolder(folderId ?? "unfiled");
+      reportBatch("移动", targets.length, failedIds.length);
+      finishMove(folderId, targets.map(note => note.id), failedIds);
     },
-    [selectedNotes, batchBusy, reportBatch, clearSelection, refreshAll, flashFolder],
+    [selectedNotes, batchBusy, reportBatch, finishMove],
   );
 
   /**
@@ -348,18 +356,16 @@ export function useNoteActions(opts: NoteActionsOpts) {
    */
   const handleDropNotes = useCallback(
     async (folderId: string | null, ids: string[]) => {
-      let failed = 0;
+      const failedIds: string[] = [];
       for (const id of ids) {
-        if (!(await noteSetFolder(id, folderId))) failed++;
+        if (!(await noteSetFolder(id, folderId))) failedIds.push(id);
       }
       // 单条成功不弹 toast：高亮环已经把「去哪了」回答了，再弹一个是噪声。
       // 但**失败要说**，哪怕只有一条（规则 #15.3）。
-      if (failed > 0 || ids.length > 1) reportBatch("移动", ids.length, failed);
-      clearSelection();
-      refreshAll();
-      flashFolder(folderId ?? "unfiled");
+      if (failedIds.length > 0 || ids.length > 1) reportBatch("移动", ids.length, failedIds.length);
+      finishMove(folderId, ids, failedIds);
     },
-    [reportBatch, clearSelection, refreshAll, flashFolder],
+    [reportBatch, finishMove],
   );
 
   return {

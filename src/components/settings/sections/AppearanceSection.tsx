@@ -1,6 +1,5 @@
 import type { AppConfig } from "@/stores/appStore";
-import { emit } from "@tauri-apps/api/event";
-import { THEMES, applyTheme, ThemeKey } from "@/lib/theme";
+import { THEMES } from "@/lib/theme";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { SettingTile, ToggleRow } from "../ToggleRow"
 import shared from "../../Settings.module.css";
@@ -17,7 +16,7 @@ const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string;
 
 interface AppearanceSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   tabStyle: string;
   handleSwitchTabStyle: (style: "segmented" | "circle") => void;
 }
@@ -60,10 +59,6 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
               <button key={t.key || `theme-${idx}`}
                 onClick={() => {
                   updateAndSave({ theme: t.key });
-                  applyTheme(t.key as ThemeKey);
-                  // 广播到所有独立窗口（快捷粘贴/托盘弹窗/编辑器），使其切主题实时跟随。
-                  // emit 广播是幂等的：主窗口自身也会收到，但 applyTheme 重复执行无副作用。
-                  emit("theme-changed", { theme: t.key }).catch(() => { /* 广播失败不影响本窗口已生效 */ });
                 }}
                 className={`${styles.themeCard}${isActive ? ` ${styles.themeCardOn}` : ""}`}
                 title={t.displayName}

@@ -119,7 +119,8 @@ export function KnowledgeToolbar({
             title={newHint}
             aria-label="新建空白笔记"
           >
-            <Plus size={13} />
+            <Plus size={13} aria-hidden="true" />
+            <span>新建</span>
           </button>
 
           {/* 「⋯ 更多」曾在这里，已搬到顶栏（KbTopBarActions）。理由见文件头部。 */}

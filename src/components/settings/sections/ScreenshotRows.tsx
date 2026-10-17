@@ -7,7 +7,7 @@ import styles from "../../Settings.module.css";
 
 interface ScreenshotRowsProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   chains: SettingsData["chains"];
 }
 

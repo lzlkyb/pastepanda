@@ -41,7 +41,7 @@ describe("settings save continuity", () => {
     vi.mocked(invoke).mockImplementation(command => command === "save_config"
       ? new Promise((_, fail) => { reject = fail; }) : Promise.resolve(undefined));
     const old = renderHook(() => useSettingsShell());
-    let task!: Promise<void>;
+    let task!: Promise<boolean>;
     act(() => { task = old.result.current.updateAndSave({ theme: "midnight" }); });
     await act(async () => { await Promise.resolve(); });
     old.unmount();
@@ -59,7 +59,7 @@ describe("settings save continuity", () => {
       return Promise.resolve(undefined);
     });
     const { result } = renderHook(() => useSettingsShell());
-    let first!: Promise<void>, second!: Promise<void>;
+    let first!: Promise<boolean>, second!: Promise<boolean>;
     act(() => {
       first = result.current.updateAndSave({ theme: "dawn" });
       second = result.current.updateAndSave({ theme: "forest" });
@@ -78,12 +78,12 @@ describe("settings save continuity", () => {
       return Promise.resolve(undefined);
     });
     const old = renderHook(() => useSettingsShell());
-    let first!: Promise<void>;
+    let first!: Promise<boolean>;
     act(() => { first = old.result.current.updateAndSave({ theme: "dawn" }); });
     await act(async () => { await Promise.resolve(); });
     old.unmount();
     const fresh = renderHook(() => useSettingsShell());
-    let second!: Promise<void>, third!: Promise<void>;
+    let second!: Promise<boolean>, third!: Promise<boolean>;
     act(() => {
       second = fresh.result.current.updateAndSave({ theme: "forest" });
       third = fresh.result.current.updateAndSave({ theme: "dawn" });

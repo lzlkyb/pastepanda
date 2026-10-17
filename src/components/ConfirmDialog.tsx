@@ -54,8 +54,9 @@ export function ConfirmDialog({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;
       e.stopPropagation();
+      e.preventDefault();
       onCancel();
     };
     window.addEventListener("keydown", onKey, true);
@@ -70,7 +71,7 @@ export function ConfirmDialog({
           className="dialog-backdrop z-confirm"
           onClick={onCancel}
         >
-          <FocusTrap initialFocus="[data-autofocus]">
+          <FocusTrap initialFocus="[data-autofocus]" ariaLabel={title}>
           <motion.div
             {...anim.panel}
             className="dialog-box w400"
@@ -82,7 +83,7 @@ export function ConfirmDialog({
                 <AlertTriangle size={16} style={{ color: variant === "danger" ? "var(--danger, #EF4444)" : "var(--warning, #F59E0B)" }} />
                 <h2 className="dialog-title">{title}</h2>
               </div>
-              <button onClick={onCancel} className="dialog-close"><X size={16} /></button>
+              <button onClick={onCancel} className="dialog-close" aria-label="关闭确认框"><X size={16} /></button>
             </div>
 
             {/* Body */}

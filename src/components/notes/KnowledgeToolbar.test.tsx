@@ -28,6 +28,7 @@ describe("知识库工具栏", () => {
     );
 
     const search = screen.getByRole("textbox", { name: "搜笔记" });
+    expect(within(screen.getByRole("button", { name: "新建空白笔记" })).getByText("新建")).toBeTruthy();
     const views = screen.getByRole("group", { name: "笔记视图" });
     expect(views.contains(search)).toBe(false);
     fireEvent.change(search, { target: { value: "MCP" } });

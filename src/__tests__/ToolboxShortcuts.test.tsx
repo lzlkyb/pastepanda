@@ -7,6 +7,14 @@ vi.mock("@/stores/appStore", () => ({ useAppStore: (selector: (value: typeof sta
 vi.mock("@/components/recsel/RecRecentList", () => ({ RecRecentList: () => null }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); state.config.rec_hotkey = "cmd+alt+g"; });
 describe("configured toolbox shortcut hints", () => {
+  it("confirming a Chinese candidate never launches the matching tool", () => {
+    const record = vi.fn();
+    render(<ToolboxView handlers={{ screenrec: record }} />);
+    const input = screen.getByRole("searchbox");
+    fireEvent.change(input, { target: { value: "屏幕" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true, keyCode: 229 });
+    expect(record).not.toHaveBeenCalled();
+  });
   it("shows the configured Mac recording key and Command search hint", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     render(<ToolboxView handlers={{}} />);

@@ -1,6 +1,6 @@
 import { useSettingsSave } from "@/hooks/useSettingsSave";
 import { primaryShortcutLabel } from "@/lib/utils";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
 import { useToast } from "@/components/Toast";
 import { useUpdate } from "@/contexts/UpdateContext";
@@ -45,24 +45,28 @@ export function useSettingsShell() {
     return lastSeen ? hasUnseenEntries(CHANGELOG, lastSeen) : CHANGELOG.length > 0;
   }, [updateStatus]);
 
-  const loadStats = () => {
+  const statsGeneration = useRef(0);
+  const loadStats = useCallback(() => {
+    const generation = ++statsGeneration.current;
+    setStats(null);
     setStatsError(false);
     getStatsDetail(config.current_workspace)
       .then((s) => {
+        if (generation !== statsGeneration.current) return;
         setStats(s);
-        setStatsError(false);
+        setStatsError(s == null);
       })
-      .catch(() => setStatsError(true));
-  };
+      .catch(() => { if (generation === statsGeneration.current) setStatsError(true); });
+  }, [config.current_workspace]);
 
   useEffect(() => {
+    const generation = statsGeneration;
     // 审查：stats 失败不再静默——置错误标记，界面给重试
     loadStats();
     getAppVersion().then(setAppVersion);
     getAppName().then(setAppName).catch(() => setAppName("PastePanda"));
-    // loadStats 每次渲染都是新函数，列进依赖会变成每渲染都重拉一次统计
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.current_workspace]);
+    return () => { generation.current++; };
+  }, [loadStats]);
 
   const { updateAndSave, saveState, retrySave } = useSettingsSave();
 
@@ -76,12 +80,14 @@ export function useSettingsShell() {
       current_workspace: current.current_workspace,
       workspaces: current.workspaces,
     };
-    await updateAndSave(reset);
+    if (!await updateAndSave(reset)) return;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("reregister_hotkeys");
     } catch (e) {
       logger.warn("恢复默认后重注册热键失败", e);
+      toast("默认设置已保存，但快捷键未能更新，请重试设置快捷键。", "warning");
+      return;
     }
     toast("已恢复默认设置", "success");
   };
@@ -177,16 +183,20 @@ export function useSettingsShell() {
         if (valid.length === 0) { toast(`文件中没有有效记录（共 ${items.length} 条，全部格式不符）`, "error"); return; }
         const { invoke } = await import("@tauri-apps/api/core");
         const count = await invoke<number>("import_history", { items: valid });
-        const store = useAppStore.getState();
-        const fresh = await invoke<HistoryItem[]>("get_history", { workspace: store.config.current_workspace, filter: "all", search: "", offset: 0, limit: 200 });
-        store.setHistory(fresh);
+        // The import has committed. A failed refresh must not invite a duplicate import.
         invalidateCountsCache();
-        const imported = count || valid.length;
-        if (dropped > 0) {
-          toast(`导入 ${imported} 条；${dropped} 条格式不符已跳过`, "warning");
-        } else {
-          toast(`导入成功：${imported} 条记录`, "success");
+        try {
+          const store = useAppStore.getState();
+          const fresh = await invoke<HistoryItem[]>("get_history", { workspace: store.config.current_workspace, filter: "all", search: "", offset: 0, limit: 200 });
+          store.setHistory(fresh);
+        } catch (e) {
+          logger.warn("导入后刷新失败", e);
+          toast(`已导入 ${count} 条，但列表刷新失败。请切换页面刷新，无需再次导入。`, "warning");
+          return;
         }
+        const existing = valid.length - count;
+        const details = [existing > 0 && `${existing} 条已存在`, dropped > 0 && `${dropped} 条格式不符已跳过`].filter(Boolean);
+        toast(`导入完成：新增 ${count} 条${details.length ? `；${details.join("；")}` : ""}`, dropped > 0 ? "warning" : count === 0 ? "info" : "success");
       }
     } catch (e) {
       logger.warn("导入失败", e);

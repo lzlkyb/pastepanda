@@ -16,7 +16,7 @@ const CLEANUP_OPTIONS = [
 
 interface DataSectionProps {
   config: AppConfig;
-  updateAndSave: (partial: Record<string, unknown>) => Promise<void>;
+  updateAndSave: (partial: Record<string, unknown>) => Promise<boolean>;
   expiredCount: number;
   handleExport: () => Promise<void>;
   handleImport: () => Promise<void>;
