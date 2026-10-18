@@ -129,3 +129,25 @@ it("opening an existing note holds its task identity until share acknowledgment 
   expect(before).toBe("a");
   expect(mobileArticleAckSources).toHaveBeenCalledWith("a",["share-a"]);
 });
+
+// 500ms 防抖之外的兜底：切后台 / 卸载都不能把「刚输入的那一段」静默丢掉。
+// 姊妹钩子 useKnowledgeDraft / useKnowledgeEdit 早就有 visibilitychange + pagehide。
+it("flushes pending edits when the page is hidden", async () => {
+  const visible = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  try {
+    const hook = renderHook(()=>useKnowledgeArticle(true,undefined,vi.fn()));
+    await act(async()=>{ await hook.result.current.begin("https://example.com/a"); });
+    act(()=>hook.result.current.change("remarks","切后台前的备注"));
+    expect(mobileArticlePut).not.toHaveBeenCalled(); // 防抖计时器还没到
+    await act(async()=>{ document.dispatchEvent(new Event("visibilitychange")); });
+    expect(mobileArticlePut).toHaveBeenCalledWith("a",expect.objectContaining({ remarks:"切后台前的备注" }));
+  } finally { visible.mockRestore(); }
+});
+
+it("flushes pending edits when the article view unmounts", async () => {
+  const hook = renderHook(()=>useKnowledgeArticle(true,undefined,vi.fn()));
+  await act(async()=>{ await hook.result.current.begin("https://example.com/a"); });
+  act(()=>hook.result.current.change("remarks","切页前的备注"));
+  hook.unmount();
+  await waitFor(()=>expect(mobileArticlePut).toHaveBeenCalledWith("a",expect.objectContaining({ remarks:"切页前的备注" })));
+});

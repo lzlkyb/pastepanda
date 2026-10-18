@@ -246,7 +246,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
       )}
 
       {/* 启动失败提示（rec_start 同步报错；非阻断，重试/重画/Esc 全部可用） */}
-      {phase === "confirm" && startErr && <StartErrBar rect={activeRect} message={startErr} />}
+      {phase === "confirm" && startErr && <StartErrBar message={startErr} />}
       {audioCheck.audioError && <div className={`rec-glass ${styles.audioError}`} role="alert"><p>{audioCheck.audioError}</p><button type="button" className="rec-btn-ghost" disabled={audioCheck.checking} onClick={startFromCurrent}>重新检查</button></div>}
 
       {/* 读屏播报（审查 P2）：本窗存在期间**恒在**的 live 区域。

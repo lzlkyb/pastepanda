@@ -7,6 +7,8 @@ use crate::data_store::{DataStore, MobileArticle, MobileArticleFields, MobileArt
 use std::{collections::HashMap, io::Write, path::Path, sync::LazyLock, time::Duration};
 use tauri::{AppHandle, Manager, State};
 
+/// 手机网络抓取的并发闸（文章与图片**共用**：限的是这条窄带的并发，不是某一类对象）。
+/// 共用 ⇒ 占位者可能是另一类抓取，失败文案不能指名「文章」或「图片」。
 static FETCHES: LazyLock<tokio::sync::Semaphore> = LazyLock::new(|| tokio::sync::Semaphore::new(2));
 const ARTICLE_BYTES: usize = 60 * 1024 * 1024;
 const IMAGE_BYTES: usize = 10 * 1024 * 1024;
@@ -265,7 +267,7 @@ pub async fn mobile_article_fetch(
 ) -> Result<MobileArticle, String> {
     let _permit = FETCHES
         .try_acquire()
-        .map_err(|_| "已有文章正在读取，请稍后重试")?;
+        .map_err(|_| "已有内容正在读取，请稍后重试")?;
     let current = store.mobile_article_get(&id)?;
     if current.note_id.is_some() && !current.saved_link_only {
         return Ok(current);
@@ -293,7 +295,7 @@ pub async fn mobile_article_image_fetch(
 ) -> Result<MobileArticle, String> {
     let _permit = FETCHES
         .try_acquire()
-        .map_err(|_| "已有图片正在读取，请稍后重试")?;
+        .map_err(|_| "已有内容正在读取，请稍后重试")?;
     let task = store.mobile_article_get(&id)?;
     let image = task.images.get(index).ok_or("这张图片已经变化")?;
     let used: usize = task

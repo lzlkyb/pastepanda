@@ -244,8 +244,9 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
           </>
         )}
         <span className="rec-pv-sp" />
-        {/* 键位说明按需展开：原来底部常驻一整行 <kbd>（§5.1） */}
-        <HelpHint open={helpOpen} onToggle={() => setHelpOpen((v) => !v)}>
+        {/* 键位说明按需展开：原来底部常驻一整行 <kbd>（§5.1）。
+            预览条钉在屏下方，浮层恒朝上——不需翻转（对照确认条的 top < 150）。 */}
+        <HelpHint open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} flipBelow={false}>
           <kbd>空格</kbd> 播放 / 暂停 <kbd>Esc</kbd> 重置范围 / 关闭预览
           <br />
           拖轨道两端选保留段，切点自动对齐关键帧；原录像不会被改动。

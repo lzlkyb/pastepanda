@@ -28,7 +28,6 @@ export function useKnowledgeArticle(active: boolean, inbox: ReturnType<typeof us
     catch { setError("待收集文章暂时无法读取，请重试。"); }
   };
   useEffect(() => { if (active) void refresh(); }, [active]);
-  useEffect(() => () => { visible.current = false; ++epoch.current; clearTimeout(timer.current); }, []);
   const flush = async (): Promise<boolean> => {
     clearTimeout(timer.current);
     try {
@@ -45,6 +44,23 @@ export function useKnowledgeArticle(active: boolean, inbox: ReturnType<typeof us
       return true;
     } catch (cause) { writes.current = null; setError(`修改还没有保存：${knowledgeArticleErrorText(cause)}`); return false; }
   };
+  // ① 脏数据只有 500ms 防抖：切后台 / 页面被回收时不能再等定时器，必须立刻落盘。
+  //    与姊妹钩子 useKnowledgeDraft:63-68 / useKnowledgeEdit:63-68 同款。
+  // ② flush 每次渲染都是新闭包，用 ref 让监听器只注册一次且总调最新那份。
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => {
+    const hide = () => { void flushRef.current(); };
+    const preserve = () => { if (document.hidden) hide(); };
+    document.addEventListener("visibilitychange", preserve);
+    window.addEventListener("pagehide", hide);
+    return () => { document.removeEventListener("visibilitychange", preserve); window.removeEventListener("pagehide", hide); };
+  }, []);
+  useEffect(() => () => {
+    visible.current = false; ++epoch.current;
+    // 卸载同样要落盘（此前只 clearTimeout）：否则「输入 → 立刻切页/退出」丢最后一次编辑。
+    void flushRef.current();
+  }, []);
   const change = <K extends keyof MobileArticleFields>(key: K, value: MobileArticleFields[K]) => {
     if (!current.current || locked.current) return;
     accept({ ...current.current, [key]: value }); ++generation.current; dirty.current = true;

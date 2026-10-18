@@ -41,10 +41,11 @@ use std::time::Duration;
 pub const PROBE_TAG: u8 = 0xD2;
 /// 探针头：tag 1B + nonce 8B + 声明尺寸 2B = 11B；其余补零到目标总长。
 pub const PROBE_HEAD: usize = 11;
-/// 探测梯（数据报总长 = 片宽 + 头）。降序尝试，**首个成功即用**——
-/// 不做二分：两档制下梯子就这两级，1400 走不通试 1200（WiFi+隧道常见），
-/// 再不通回 1000。1300 的边际收益配不上多一轮探测延迟。
-const LADDER: [usize; 2] = [FRAG_BIG + HEADER, 1200 + HEADER];
+/// 探测梯（数据报总长 = 片宽 + 头）。**只有一档**：线上格式只有 1000 / 1400
+/// 两级（`FLAG_FRAG_BIG` 一位自描述，见 `vid_dgram`），所以 1000 与 1400 之间
+/// 的探测即便成功也没有可用的落点——`set_frag` 会把它按回 1000，等于白花
+/// 4 个探针 + 一次 3s 等回显。梯子只放线上真能表达的尺寸。
+const LADDER: [usize; 1] = [FRAG_BIG + HEADER];
 /// 每轮尺寸发多少个探针（丢 1 个不误判，全丢才算失败）。
 const PROBES_PER_SIZE: usize = 4;
 /// 探针间隔（把 4 个摊在 400ms 里，跨慢中继也不挤）。
@@ -70,7 +71,7 @@ impl ProbeState {
     }
 
     fn set_frag(&self, frag: usize) {
-        // 线上格式只有两档，1200 的探测结果仍只能安全落在 1000。
+        // 线上格式只有大小两档（见 `LADDER`）：中间尺寸只能按回保守档。
         self.frag.store(if frag >= FRAG_BIG { FRAG_BIG } else { FRAG }, Ordering::Relaxed);
     }
 
@@ -142,7 +143,14 @@ async fn probe_loop(conn: &Connection, max_frag: usize, state: &ProbeState) {
             if probe_once(conn, total, state).await {
                 current = frag;
                 state.set_frag(current);
-                log::info!("[PMTUD] 片宽升档 {} → {}（数据报 {}B）", FRAG, current, total);
+                // 日志报**实际生效**的片宽而不是探测尺寸：两者不等时（梯子出现
+                // 线上没有的档位）照着日志排障会查错方向。
+                let applied = state.frag();
+                if applied > FRAG {
+                    log::info!("[PMTUD] 片宽升档 {} → {}（数据报 {}B）", FRAG, applied, total);
+                } else {
+                    log::debug!("[PMTUD] 探针 {}B 通过，但线上格式没有对应档位，仍用 {}B 分片", total, applied);
+                }
                 break;
             }
         }
@@ -218,8 +226,14 @@ mod tests {
         // ——错一位就是 1433B 探针换来 1401B 片宽、线上帧超预算被全网丢弃。
         let total = LADDER[0];
         assert_eq!(total - HEADER, FRAG_BIG);
-        assert_eq!(LADDER[1] - HEADER, 1200);
-        assert!(total > 1200 + HEADER, "梯子必须降序");
+        // 每个梯级都必须落在线上真能表达的档位（`set_frag` 只认 FRAG / FRAG_BIG）。
+        // 2026-10-18：梯子里曾有 1200 一级，探测成功也只能按回 1000 ——
+        // 白跑 4 个探针 + 3s 等回显，还会让日志谎报「升档 1200」。
+        for &rung in LADDER.iter() {
+            let frag = rung - HEADER;
+            assert!(frag == FRAG || frag == FRAG_BIG, "梯级 {frag} 在线上格式里没有对应档位");
+        }
+        assert!(LADDER.windows(2).all(|w| w[0] > w[1]), "梯子必须降序");
     }
 
     #[test]

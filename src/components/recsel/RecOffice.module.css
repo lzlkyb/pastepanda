@@ -49,6 +49,26 @@
     transform: none;
   }
 }
+
+/* 承载条贴屏顶时翻到下方（与 `.rec-pop.below` 同一套两点定位）。
+ * 条顶距屏顶不足一盒高时，朝上展开的盒子会整块伸出屏幕上沿，被
+ * `recsel.css` 里 html/body/#root 的 overflow:hidden 裁掉。 */
+.helpBoxBelow {
+  top: calc(100% + 8px);
+  bottom: auto;
+  animation-name: recHelpPopDown;
+}
+
+@keyframes recHelpPopDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .audioError {
   position: fixed;
   left: 12px;
@@ -322,46 +342,4 @@
   z-index: 250;
   box-shadow: var(--float-card-shadow);
   border-radius: 12px;
-}
-.player {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-}
-.player input {
-  flex: 1;
-  min-width: 0;
-  accent-color: var(--accent);
-}
-.trimFields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 8px 12px;
-}
-.trimFields label {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.trimFields input {
-  grid-column: 1 / -1;
-  width: 100%;
-  accent-color: var(--accent);
-}
-.trimFields output {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.busy {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--shot-bar-muted);
-}
-.progress {
-  width: 100%;
-  accent-color: var(--accent);
 }

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChainRunnerDialog } from "./ChainRunnerDialog";
 import { ChainEditor } from "./ChainEditor";
@@ -57,7 +57,9 @@ it("a late old list cannot erase a newly saved flow", async () => {
   await createFlow();
   await act(async () => { finish([]); });
   expect(screen.getByRole("button", { name: "运行这 1 步" })).toBeTruthy();
-  expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  // 编辑层关掉后要走**退场动画**才卸载（M5 修复：自带 AnimatePresence），
+  // 因此存在一个双 dialog 的过渡帧；这里等它落定，而不是断言「同步消失」。
+  await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
 });
 it("returning from the editor retains the current draft", async () => {
   useDialogStore.getState().openChain(" text ", "web-to-text");

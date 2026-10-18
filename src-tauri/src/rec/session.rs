@@ -374,8 +374,12 @@ fn run_record(
     let mut pool = DxgiPool::new();
     let first = loop {
         if stop.load(Ordering::SeqCst) {
-            // 用户在首帧前就取消了：没写盘、没文件，按「已丢弃」收场——
-            // 必须清槽 + 发事件，否则覆盖层（穿透中）和控制条都会卡死
+            // 用户在首帧前就取消了：没写盘、没文件，按「已丢弃」收场。
+            // 🔴 清槽与关窗**都不靠这个事件**：会话线程收尾固定先 `close_windows`
+            // 再 `clear_active`（见 `start` 里的收尾注释），覆盖层与控制条必被销毁。
+            // 该事件现在没有前端消费者（1bb4b01c 起 `RecSelectOverlay` /
+            // `rec-control-main` 曾监听它，改成「后端权威收尾」后已移除），
+            // 保留只为排障时能抓到「这次没写文件」的信号。
             let _ = app.emit(
                 "rec-discarded",
                 serde_json::json!({ "path": path.display().to_string() }),
@@ -430,7 +434,12 @@ fn run_record(
     );
     let open_t = Instant::now();
     let prewarmed = super::prewarm::take(key, Duration::from_secs(4), &stop);
-    if stop.load(Ordering::SeqCst) {let _=app.emit("rec-discarded",());return;}
+    if stop.load(Ordering::SeqCst) {
+        // 载荷与另外三处 rec-discarded 一致（`{ path }`）：同一个事件不能有两种形状，
+        // 否则将来接监听方时要按来源分叉解析。
+        let _ = app.emit("rec-discarded", serde_json::json!({ "path": path.display().to_string() }));
+        return;
+    }
     let from_prewarm = prewarmed.is_some();
     let enc = prewarmed.unwrap_or_else(|| {
         H264SessionEncoder::try_open_for_file(key.codec, key.width, key.height, key.fps, key.bitrate)

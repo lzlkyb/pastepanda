@@ -79,3 +79,23 @@ it("failed authorization reads never claim sync is off or there are no computers
   await waitFor(() => expect((screen.getByRole("button", { name: "取得这张图片" }) as HTMLButtonElement).disabled).toBe(false));
   expect(screen.getByTestId("actions").contains(screen.getByRole("button", { name: "取得这张图片" }))).toBe(true);
 });
+
+// 主动停止是成功操作：Rust 侧 fetch 的 select! 对 cancel 明确以 Err(cancelled) 收场，
+// 前端若不清掉在途请求的身份，就会把「用户主动取消」翻成红色「图片未能取得」。
+it("stopping a download on purpose is not reported as a failed download", async () => {
+  let reject!: (reason: unknown) => void;
+  vi.mocked(assets.mobileKnowledgeAssetFetch).mockImplementation(() => new Promise((_, no) => { reject = no; }));
+  render(<KnowledgeAssetSheet target={target} active onClose={vi.fn()} onLoaded={vi.fn()} />);
+  await waitFor(() => expect((screen.getByRole("button", { name: "取得这张图片" }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "取得这张图片" }));
+  fireEvent.click(await screen.findByRole("button", { name: "停止本次下载" }));
+  await screen.findByText("已停止本次下载");
+  await act(async () => reject({ code: "cancelled", message: "cancelled" }));
+  expect(screen.queryByText("图片未能取得")).toBeNull();
+  // 取消后必须还能重试：action 标记没复位的话，按钮看着可点但 fetch 会被自己挡回
+  const retry = screen.getByRole("button", { name: "取得这张图片" }) as HTMLButtonElement;
+  expect(retry.disabled).toBe(false);
+  fireEvent.click(retry);
+  await waitFor(() => expect(assets.mobileKnowledgeAssetFetch).toHaveBeenCalledTimes(2));
+  expect(assets.mobileKnowledgeAssetFetch).toHaveBeenLastCalledWith(expect.any(String), "knowledge-peer", "note", target.src);
+});
