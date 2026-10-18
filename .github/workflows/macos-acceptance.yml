@@ -55,7 +55,10 @@ jobs:
           node-version: '20'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - run: npm ci
+      # macOS runner 到 npm registry 偶发整段 ECONNRESET（2026-10-18 实测连续 4 次在
+      # npm ci ~90s 处断，缓存未命中走全量下载）。默认 fetch-retries=2 太少，
+      # 放宽到 5 次、单次重试等待最长 120s，单个包的抖动不再拖垮整次安装。
+      - run: npm ci --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
       - name: Verify runner architecture
         env:
           EXPECTED_ARCH: ${{ matrix.architecture }}
