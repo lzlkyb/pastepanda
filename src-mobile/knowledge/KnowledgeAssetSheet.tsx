@@ -17,6 +17,7 @@ export function KnowledgeAssetSheet({ target, active, onClose, onLoaded }: {
   const [readFailed, setReadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [feedback, setFeedback] = useState<MobileFeedback | null>(null);
   const [retry, setRetry] = useState(0);
   const request = useRef<string | null>(null);
@@ -24,7 +25,7 @@ export function KnowledgeAssetSheet({ target, active, onClose, onLoaded }: {
   useEffect(() => {
     if (!target || !active) return;
     let alive = true;
-    setLoading(true); setReadFailed(false); setEnabled(null); setBusy(false); setFeedback(null); setDevices([]); setPeer("");
+    setLoading(true); setReadFailed(false); setEnabled(null); setBusy(false); setSaved(false); setFeedback(null); setDevices([]); setPeer("");
     void Promise.all([invoke<{ devices: KbDevice[] }>("kb_sync_devices"), invoke<boolean>("get_kb_sync_status")]).then(([snapshot, isEnabled]) => {
       if (!alive) return;
       setDevices(snapshot.devices); setEnabled(isEnabled);
@@ -46,6 +47,7 @@ export function KnowledgeAssetSheet({ target, active, onClose, onLoaded }: {
     try {
       await mobileKnowledgeAssetFetch(id, peer, target.noteId, target.src);
       if (request.current !== id) return;
+      setSaved(true);
       setFeedback({ tone: "success", title: "图片已保存到手机", detail: "内容校验完成，可以返回正文查看。" });
       onLoaded();
     } catch (cause) { if (request.current === id) setFeedback({ tone: "error", title: "图片未能取得", detail: knowledgeAssetErrorText(cause) }); }
@@ -55,11 +57,21 @@ export function KnowledgeAssetSheet({ target, active, onClose, onLoaded }: {
     const id = request.current;
     if (!id) return;
     setFeedback({ tone: "pending", title: "正在停止下载…" });
-    try { await mobileKnowledgeAssetCancel(id); }
+    try {
+      await mobileKnowledgeAssetCancel(id);
+      // 主动停止是**成功**操作：清掉在途请求的身份，让它的 reject 被静默吸收。
+      // Rust 侧 fetch 的 select! 对 cancel 明确以 Err(AssetError::cancelled) 收场
+      // （sync/service.rs），不清身份就会把「用户主动取消」翻成红色「图片未能取得」。
+      // action 也必须复位，否则「取得这张图片」按钮变死键（fetch 会被它挡回）。
+      if (request.current === id) {
+        request.current = null; action.current = false; setBusy(false); setSaved(false);
+        setFeedback({ tone: "info", title: "已停止本次下载", detail: "这张图片没有保存，可以随时重新取得。" });
+      }
+    }
     catch (cause) { if (request.current === id) setFeedback({ tone: "error", title: "停止结果尚未确认", detail: knowledgeAssetErrorText(cause) }); }
   };
-  return <MobileSheet open={!!target && active} title="取得缺少的图片" onClose={onClose} footer={feedback && <MobileNotice compact {...feedback} />} actions={<>
-    {busy ? <button className={ui.secondary} onClick={() => void cancel()}>停止本次下载</button> : readFailed ? <button className={ui.primary} onClick={() => setRetry(v => v + 1)}>重新读取电脑</button> : feedback?.tone === "success" ? <button className={ui.primary} onClick={onClose}>返回正文</button> : <button className={ui.primary} disabled={loading || !enabled || !peer || !devices.some(d => d.node_id === peer && !d.paused)} onClick={() => void fetch()}>取得这张图片</button>}
+  return <MobileSheet open={!!target && active} title="取得缺少的图片" onClose={onClose} footer={feedback && <MobileNotice compact {...feedback} onDismiss={() => setFeedback(null)} />} actions={<>
+    {busy ? <button className={ui.secondary} onClick={() => void cancel()}>停止本次下载</button> : readFailed ? <button className={ui.primary} onClick={() => setRetry(v => v + 1)}>重新读取电脑</button> : saved ? <button className={ui.primary} onClick={onClose}>返回正文</button> : <button className={ui.primary} disabled={loading || !enabled || !peer || !devices.some(d => d.node_id === peer && !d.paused)} onClick={() => void fetch()}>取得这张图片</button>}
   </>}>
     <p className={styles.meta}>只从已授权知识库的电脑取得当前图片，单张不超过10MB。不会因为打开正文而自动联网下载。</p>
     {loading && <MobileNotice tone="pending" title="正在读取已授权电脑…" />}

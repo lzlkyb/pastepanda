@@ -863,8 +863,10 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
           <SignFloat />
           <FreeQuotaOnboarding />
           {/* AnimatePresence 包裹条件挂载：关闭时子树保留到退场动画结束再卸载。
-              各弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
-              屏蔽外层退出信号），motion 元素直接参与本层 presence */}
+              本层里的弹框组件内部不再自带 AnimatePresence（会形成独立 presence 边界、
+              屏蔽外层退出信号），motion 元素直接参与本层 presence。
+              例外：常挂载、靠自己 open 条件渲染的弹框（TransformHubDialog /
+              ChainRunnerDialog / ChainEditor）不在本层子树里，必须自带边界。 */}
           <AnimatePresence>
             {qrItem && (
               <Suspense key="qr-dialog" fallback={null}>

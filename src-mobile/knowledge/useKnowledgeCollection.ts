@@ -119,6 +119,16 @@ export function useKnowledgeCollection({ active, editing, maintaining, draft, ed
   const receipt = incoming && appliedCollections.current.get(incoming.id);
   return { incoming, incomingId, collectionTarget, appliedIncomingId, appliedSaved: !!receipt?.noteId, savePending: !!receipt?.savePending, collecting, collectionError, collectionSuccess, dismissSuccess: () => setCollectionSuccess(""), pickImages, collect, chooseCollection, showCollection, noteSaved,
     close: () => { setIncomingId(null); setCollectionTarget(null); },
-    discard: async (id: string) => { if (inbox && await inbox.acknowledge(id)) { appliedCollections.current.delete(id); setAppliedIncomingId(null); setIncomingId(null); setCollectionTarget(null); } },
+    discard: async (id: string) => {
+      if (!inbox) return false;
+      if (await inbox.acknowledge(id)) {
+        appliedCollections.current.delete(id); setAppliedIncomingId(null); setIncomingId(null); setCollectionTarget(null);
+        return true;
+      }
+      // 清理失败必须喊话：此前这里什么都不做，用户点「确认放弃」后内容还在，界面零反馈，
+      // 连全局兜底都不会触发（acknowledge 返回 false 而不是 reject；同文件 collect 有提示）。
+      setCollectionError("这次收集还没能清理，内容仍保留在待收集列表，可以稍后重试。");
+      return false;
+    },
   };
 }

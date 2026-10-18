@@ -35,14 +35,21 @@ export function RcNetDiagCard() {
   const [open, setOpen] = useState(false);
   const [snapshot, setSnapshot] = useState<NetDiagSnapshot | null>(null);
   const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const diag = await rcNetDiag();
       setSnapshot(diag.snapshot);
       setReason(diag.unavailable_reason);
+    } catch (cause) {
+      // api 层契约是「失败由调用方 toast」（rcNetDiag.ts 文件头）：不接这一手，
+      // 失败只能落到全局 unhandledrejection 的泛化提示，卡片还停在旧快照/「报告还没生成」。
+      // 这里就地显形，并保留上一次成功的快照（本地排障面板，不制造空屏）。
+      setError(`网络诊断读取失败：${String(cause)}`);
     } finally {
       setLoading(false);
     }
@@ -111,9 +118,16 @@ export function RcNetDiagCard() {
               </p>
             </>
           ) : (
-            <p className={styles.netDiagNote}>
-              {reason ||
-                "报告还没生成：开启远程电脑或知识库同步后数秒自动出现，或点下方「重新探测」"}
+            !error && (
+              <p className={styles.netDiagNote}>
+                {reason ||
+                  "报告还没生成：开启远程电脑或知识库同步后数秒自动出现，或点下方「重新探测」"}
+              </p>
+            )
+          )}
+          {error && (
+            <p className={styles.netDiagError} role="alert">
+              {error}
             </p>
           )}
           <button

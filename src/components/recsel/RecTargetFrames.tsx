@@ -55,15 +55,17 @@ export function TargetFrames({
   snapRect: Rect | null;
   screenCss: { w: number; h: number };
 }) {
-  // The independent compact control owns recording feedback; leave no animated fullscreen surface.
+  // 录制中的反馈归独立小控制条，这一层整块不渲染——下面的分支因此没有
+  // `recording` 的特例（此前还留着 `!recording &&` 与 `" recording"` 两个
+  // 永远走不到的分支，2026-10-18 审查 L9）。
   if (recording) return null;
   const hovering = phase === "preview" && hoverRect !== null;
   // 悬停高亮（预览态）与拖拽吸附（拖拽态）互斥，共用同一枚 .rec-snap
   const highlight = hovering ? hoverRect : phase === "dragging" ? snapRect : null;
   return (
     <>
-      {/* 暗遮罩：预览/拖拽/确认态才有；录制中零遮挡（预览态 rect=整屏 ⇒ 四块零面积 = 不压暗） */}
-      {!recording && <Shades rect={rect} screenCss={screenCss} />}
+      {/* 暗遮罩：预览/拖拽/确认态才有（预览态 rect=整屏 ⇒ 四块零面积 = 不压暗） */}
+      <Shades rect={rect} screenCss={screenCss} />
       {/* 全屏预览态的四边暗带（同截图 .edge-band 的全屏辨识；几何是常量，收进 CSS） */}
       {phase === "preview" && (
         <>
@@ -76,7 +78,7 @@ export function TargetFrames({
       {/* 选区框：悬停/吸附高亮亮起时整屏框让位（两个框并存会打架，L5 不靠猜） */}
       {!hovering && (
         <div
-          className={`rec-rect${phase === "preview" ? " full" : ""}${recording ? " recording" : ""}`}
+          className={`rec-rect${phase === "preview" ? " full" : ""}`}
           style={{ left: rect.x - 1.5, top: rect.y - 1.5, width: rect.w, height: rect.h }} /* ui-rule-ok: 动态定位（跟随选区），同文件既有模式 */
         />
       )}

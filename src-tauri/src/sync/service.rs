@@ -1004,9 +1004,8 @@ pub async fn sleep_or_stop(stop: &tokio::sync::Notify, secs: u64) -> bool {
 /// 参数收 `&Notify` 而不是 `&SyncCtx`，同 [`sleep_or_stop`]：为了能单测。
 ///
 /// ❗ 两个窗口收 [`Duration`] 而不是秒数，也不直接读常量：
-/// 测试可以用毫秒级的值把整条行为跑完，不用真睡 3 秒，
-/// 也就不用为了 `tokio::time::pause()` 去开 tokio 的 `test-util`
-/// （`features = ["full"]` **不含**它）。
+/// 生产侧按语义取值，测试侧用毫秒级的值 + 虚拟时钟（`test-util` 的
+/// `start_paused`，见 `dev-dependencies`）把整条行为零耗时跑完。
 ///
 /// 返回 `false` = 开关关了，该退出。
 pub async fn coalesce_writes(

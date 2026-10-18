@@ -15,10 +15,14 @@ import styles from "./RecOffice.module.css";
 export function HelpHint({
   open,
   onToggle,
+  flipBelow = false,
   children,
 }: {
   open: boolean;
   onToggle: () => void;
+  /** 承载条贴屏顶时把浮层翻到下方（同 `SettingsCluster` 的 flipBelow；
+   *  不开这个开关，盒子会整块伸出屏幕上沿被 `recsel.css` 的 overflow:hidden 裁掉）。 */
+  flipBelow?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -35,7 +39,10 @@ export function HelpHint({
         <CircleHelp size={13} aria-hidden="true" />
       </button>
       {open && (
-        <span className={`rec-glass ${styles.helpBox}`} role="note">
+        <span
+          className={`rec-glass ${styles.helpBox}${flipBelow ? ` ${styles.helpBoxBelow}` : ""}`}
+          role="note"
+        >
           {children}
         </span>
       )}

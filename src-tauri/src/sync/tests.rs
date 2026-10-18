@@ -2348,9 +2348,9 @@ mod scratch_gc_tests {
 
 // ===== 写入合并窗口（W6 止血第三条，2026-09-07） =====
 //
-// ❗ 窗口长度从参数进，所以这里全用毫秒级的值：不用真睡 3 秒，
-// 也不用为了 `tokio::time::pause()` 去开 tokio 的 `test-util`
-// （`features = ["full"]` 不含它）。
+// ❗ 窗口长度从参数进，所以这里全用毫秒级的值：不用真睡 3 秒。
+// 纯时序用例用 `start_paused`（`test-util`，见 `dev-dependencies`）走虚拟时钟——
+// 真等法在同一台机器满载时飘过：实测 79.39ms，而下界是 90ms（单跑全绿）。
 
 mod coalesce_tests {
     use crate::sync::service::coalesce_writes;
@@ -2382,7 +2382,10 @@ mod coalesce_tests {
         assert!(t0.elapsed() >= QUIET, "没等满一个安静窗口就放行了");
     }
 
-    #[tokio::test]
+    // 虚拟时钟（`start_paused`）：四次写入与四个安静窗口按虚拟时间精确推进，
+    // 零真实耗时、不受机器负载影响。真等法在同一台机器满载时实测飘到 79.39ms
+    // （下界 90ms）而单跑全绿——那不是产品缺陷，但让用例成了招式。
+    #[tokio::test(start_paused = true)]
     async fn test_连续写入会把窗口顶回去() {
         // 这就是「连续编辑不该每次都叫醒全部对端」那一条。
         let stop = Arc::new(Notify::new());
@@ -2397,16 +2400,16 @@ mod coalesce_tests {
         });
         let t0 = tokio::time::Instant::now();
         assert!(coalesce_writes(&stop, &wrote, QUIET, Duration::from_secs(30)).await);
-        // 4×30ms（每一次都把窗口顶回去）+ 60ms（最后一个完整安静窗口）= 180ms，
-        // 那是不塌许可时的值。🔴 下界**不能**写 180ms：`notify_one()` 只存**一个**
-        // 许可，已存之后再 notify_one 是空操作（tokio 语义）。机器一忙、循环来不及
-        // 重新注册 `notified()`，后到的几击就塌成一击——实测掉到过 136.9ms。
+        // 4×30ms（每一次都把窗口顶回去）+ 60ms（最后一个完整安静窗口）= 180ms。
+        // 虚拟时钟下调度抖动为零，四次写入必然各被观察到一次（循环每次都在下一击
+        // 之前重新注册 `notified()`），实测恒为 180ms。因此这里把下界**写死 180ms**：
+        // 比原来「至少被顶回一次」的 90ms 更强——任何一次塌许可都会让数字变小并变红。
         //
-        // 确定的是「第一击一定被吃到」：循环在 t≈0 就注册好了 `notified()`，而第一击
-        // 在 30ms 之后才发生，必定唤醒它 → 至少多跑一整个安静窗口。
-        // 完全不顶的话只有 ~60ms，这条下界照样拦得住那个回归。
+        // ❗ 若哪天改回真等待（不 `start_paused`），这条会立刻飘：`notify_one()` 只存
+        // 一个许可，满载时后到的几击会塌成一击（实测 79.39ms / 136.9ms）。那时必须
+        // 退回 `QUIET + 30ms` 的下界，并在此处写明原因，不要直接删断言。
         assert!(
-            t0.elapsed() >= QUIET + Duration::from_millis(30),
+            t0.elapsed() >= QUIET + Duration::from_millis(120),
             "窗口没被新写入顶回去，只用了 {:?}",
             t0.elapsed()
         );

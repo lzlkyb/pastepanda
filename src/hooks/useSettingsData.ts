@@ -67,10 +67,18 @@ export function useSettingsData({ config, updateAndSave, stats }: UseSettingsDat
       await updateAndSave({ note_trash_days: next });
       return;
     }
-    const { noteCountExpired } = await import("@/lib/api/notes");
-    const n = await noteCountExpired(next);
-    // n === null 是统计失败：照弹确认，只是不报具体条数。
-    // 不能因为统计失败就静默改——那正好把安全网拆了。
+    // 统计失败（返回 null 或直接抛错）都要弹确认，只是不报具体条数——
+    // 不能因为统计失败就静默改，那正好把安全网拆了。
+    let n: number | null;
+    try {
+      const { noteCountExpired } = await import("@/lib/api/notes");
+      n = await noteCountExpired(next);
+    } catch (e) {
+      // 动态 import / IPC 抛错：此前没有这一手，异常直接从事件处理器冒出去，
+      // 二次确认不出现、设置也不生效（2026-10-18 审查 L8）。
+      logger.warn("统计回收站过期记录数失败", e);
+      n = null;
+    }
     if (n === 0) {
       await updateAndSave({ note_trash_days: next });
       return;

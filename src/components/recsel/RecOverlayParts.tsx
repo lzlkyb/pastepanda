@@ -123,7 +123,7 @@ export function ConfirmBar(props: {
         onMic={props.onMic}
       />
       <span className={styles.barGrow} />
-      <HelpHint open={helpOpen} onToggle={onToggleHelp}>
+      <HelpHint open={helpOpen} onToggle={onToggleHelp} flipBelow={top < 150}>
         拖拽可以自选区域；这里的读数就是真正送进编码器的尺寸。<br />
         按屏幕位置录制：窗口移开或被人挡住，录到的内容会跟着变。
       </HelpHint>
@@ -202,7 +202,7 @@ export function PreviewBar({
       />
       <AudioToggles sysAudio={sysAudio} micAudio={micAudio} onSys={onSys} onMic={onMic} />
       <span className={styles.barGrow} />
-      <HelpHint open={helpOpen} onToggle={onToggleHelp}>
+      <HelpHint open={helpOpen} onToggle={onToggleHelp} flipBelow={false}>
         移动鼠标预览窗口，单击采纳；也可以直接拖拽画自己的区域。<br />
         按屏幕位置录制：窗口移开或被人挡住，录到的内容会跟着变。
       </HelpHint>

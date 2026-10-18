@@ -217,8 +217,11 @@ it("从待处理继续草稿后返回，保留列表原滚动位置", async () =
   expect(onTaskChange).toHaveBeenLastCalledWith(true);
   fireEvent.click(screen.getByRole("button", { name: "返回并保留草稿" }));
   await screen.findByRole("button", { name: /待处理/ });
-  expect(scroll.scrollTop).toBe(221);
-  expect(onTaskChange).toHaveBeenLastCalledWith(false);
+  // 滚动恢复与 onTaskChange(false) 都在 passive effect 里：DOM 切回列表不代表
+  // effect 已跑完（满载下 React 调度可能晚一拍，CI run 39098226605 实测闪过）。
+  // 等落定再断言；语义不变——最终必须恢复 221 且回报 false。
+  await waitFor(() => expect(scroll.scrollTop).toBe(221));
+  await waitFor(() => expect(onTaskChange).toHaveBeenLastCalledWith(false));
 });
 
 it("待处理草稿可先取消放弃，再确认清除；原笔记与列表位置保留", async () => {

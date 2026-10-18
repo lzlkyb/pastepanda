@@ -15,7 +15,7 @@ export function KnowledgeCollectionSheet({ item, active, busy, error, hasCapture
   savePending?: boolean;
   items?: MobileKnowledgeIncoming[]; onChoose?: (id: string) => void;
   onUse: (item: MobileKnowledgeIncoming) => Promise<void>; onSave: (item: MobileKnowledgeIncoming) => Promise<void>;
-  onDiscard: (id: string) => Promise<void>; onContinue: () => void;
+  onDiscard: (id: string) => Promise<boolean>; onContinue: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");

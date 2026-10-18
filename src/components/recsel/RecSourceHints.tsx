@@ -49,8 +49,10 @@ export function SizeHintBar({
   );
 }
 
-/** 启动失败条（非阻断；重试 / 重画 / Esc 全部可用，规则 15.3 不静默）。 */
-export function StartErrBar({ message }: { rect: Rect; message: string }) {
+/** 启动失败条（非阻断；重试 / 重画 / Esc 全部可用，规则 15.3 不静默）。
+ *  它铺满整个覆盖层、不跟随选区（不同于上面两条），所以不收 `rect`——
+ *  声明了却不用的 prop 会让调用方误以为位置可调（2026-10-18 审查 L4）。 */
+export function StartErrBar({ message }: { message: string }) {
   return (
     <div
       className={`rec-glass ${styles.audioError}`}

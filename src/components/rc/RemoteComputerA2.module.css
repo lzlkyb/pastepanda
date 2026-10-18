@@ -2256,6 +2256,13 @@
   color: var(--text-muted);
 }
 
+/* 取数失败：同 .netDiagNote 的字号档，语义色走 --danger（U6 只认令牌） */
+.netDiagError {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .netDiagRefresh {
   align-self: flex-start;
   display: inline-flex;
