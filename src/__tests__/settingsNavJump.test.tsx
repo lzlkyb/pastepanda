@@ -103,11 +103,13 @@ function Harness({
       {/* 顺序必须与 `SETTINGS_SECTIONS` + `SETTINGS_PAGES` 一致；
           文字必须与 `meta.ts` 里的 label **逐字一致**（`findNavEl` 是全等匹配）。
           「剪贴板同步」「远程电脑」是**小节标题**：不入菜单，但锚点要落在它们上。 */}
-      <div className="sec">外观</div>
-      {showSyncHead && <div className="sec">同步与互联</div>}
+      <div className="sec">外观与窗口</div>
+      <div className="sec">笔记与编辑</div>
+      {showSyncHead && <div className="sec">设备与连接</div>}
       {showClipSub && <div className="sec">剪贴板同步</div>}
       {showRcSub && <div className="sec">远程电脑</div>}
-      {showMcp && <div className="sec">MCP</div>}
+      <div className="sec">AI 设置</div>
+      {showMcp && <div className="sec">工具接入</div>}
     </div>
     </>
   );
@@ -161,6 +163,18 @@ describe("设置页从外部跳转", () => {
     );
     expect(scrollWrites.length).toBeGreaterThan(0);
     expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("sync");
+  });
+
+  it("编辑器原 section=window 入口仍可定位到笔记与编辑", () => {
+    const { container } = render(<Harness initialSection="window" />);
+    expect(scrollWrites.length).toBeGreaterThan(0);
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("window");
+  });
+
+  it("AI 原 tab 入口在改名后仍可定位", () => {
+    const { container } = render(<Harness initialTab="ai" />);
+    expect(scrollWrites.length).toBeGreaterThan(0);
+    expect(container.querySelector("[data-nav]")?.getAttribute("data-nav")).toBe("ai");
   });
 
   /**

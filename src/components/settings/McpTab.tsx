@@ -62,7 +62,7 @@ export function McpTab() {
         icon="🧩"
         hue="sync"
         label="知识库 MCP 服务"
-        desc="让 Claude Code 等 AI 工具读写你的笔记（默认仅本机，可选局域网凭令牌接入）"
+        desc="通过 MCP，让 Claude Code 等外部 AI 工具读写知识库笔记；默认仅本机，可选局域网凭令牌接入"
         value={mcp.status.running}
         tooltip="在本机开一个 MCP 服务，AI 工具凭令牌搜索、读取与修改笔记；可选允许局域网机器凭令牌接入"
         detailTitle="知识库 MCP 服务"

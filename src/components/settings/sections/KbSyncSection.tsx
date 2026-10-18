@@ -24,7 +24,7 @@ export function KbSyncSection({ config, updateAndSave }: KbSyncSectionProps) {
           上面那个已改名为「剪贴板同步」，两个标题现在同轴（都按内容），
           名字自己就把区别说清了。要靠一句「与那个无关」消歧，
           本身就是命名错了的信号。 */}
-      <div className={styles.sSection}>知识库同步</div>
+      <div data-settings-parent="设备与连接" className={styles.sSection}>知识库同步</div>
       <ToggleRow icon="📚" hue="sync"
         label="知识库同步" desc="在你自己的设备之间同步笔记，局域网与跨网走同一条通道"
         value={config.kb_sync_enabled ?? false}

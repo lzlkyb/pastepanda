@@ -103,7 +103,7 @@ export function RcSection({ config, updateAndSave, filter }: RcSectionProps) {
 
   return (
     <>
-      <div className={shared.sSection}>远程电脑</div>
+      <div data-settings-parent="设备与连接" className={shared.sSection}>远程电脑</div>
       <ToggleRow
         icon="🖥️"
         hue="sync"

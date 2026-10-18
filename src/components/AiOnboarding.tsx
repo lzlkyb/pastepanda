@@ -39,7 +39,7 @@ const STEPS = [
   { icon: "⧉", title: "复制任意内容", desc: "网页、代码、长文、带敏感信息的文本……复制即捕获。" },
   { icon: "✦", title: "主窗口直接用 AI", desc: "复制后列表上方出现 ✦ AI 快捷区，点「翻译 / 总结 / 改写」直接出结果。" },
   { icon: "🎁", title: "变换面板还有更多", desc: "脱敏、链接摘要、回复草稿、自定义动作——复制后右键记录、选择「变换」即可使用。" },
-  { icon: "🔥", title: "免费额度 + 每日签到", desc: "内置 Agnes 送 10 万 token，每天签到越签越多——设置 → AI 可切换。" },
+  { icon: "🔥", title: "免费额度 + 每日签到", desc: "内置 Agnes 送 10 万 token，每天签到越签越多——设置 → AI 设置 可切换。" },
 ];
 
 export const AiOnboarding = memo(function AiOnboarding({
@@ -95,7 +95,7 @@ export const AiOnboarding = memo(function AiOnboarding({
                 <span>
                   带 ✦ 的动作会把这条内容发送给你配的 AI 服务商处理，按用量计费；
                   「粘贴脱敏」这类本地动作不出网、也不花钱。
-                  费用上限默认每天 ¥3，到额自动停——在「设置 → AI → 高级设置 → 每日费用上限」可改。
+                  费用上限默认每天 ¥3，到额自动停——在「设置 → AI 设置 → 高级设置 → 每日费用上限」可改。
                 </span>
               </div>
 

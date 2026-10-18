@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { globalHotkeysTaken } from "@/lib/globalHotkeys";
 import { SettingTile } from "../ToggleRow";
 import { HotkeyRecorder } from "../HotkeyRecorder";
+import { RecHotkeyRows } from "./RecHotkeyRows";
 import styles from "../../Settings.module.css";
 
 interface HotkeySectionProps {
@@ -12,8 +13,7 @@ interface HotkeySectionProps {
 }
 
 // 🔴 必须返回片段，原因同 StatsSection。
-// 2026-09-29 分区重排：这一节只留**热键本身**。原先混在下面的栈行为、截图行为、
-// 转笔记模板分别搬进了「截图与栈」和「系统与编辑」——它们配的是行为，不是按键。
+// 行为选项归各功能分类，本节统一管理全局快捷键。
 export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
   const { toast } = useToast();
   return (
@@ -188,6 +188,7 @@ export function HotkeySection({ config, updateAndSave }: HotkeySectionProps) {
           }
         }} />
       </div>
+      <RecHotkeyRows config={config} updateAndSave={updateAndSave} />
     </>
   );
 }

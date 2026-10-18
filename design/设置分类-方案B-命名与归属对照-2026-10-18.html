@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PastePanda · 设置分类方案 B</title>
+<style>
+/* Existing authority: Settings.module.css, theme.css, sections/meta.ts.
+   Values shown below are illustrative; this file never reads or writes app configuration. */
+:root{color-scheme:light;--card-bg:#fff;--text-primary:#0f172a;--text-secondary:#495565;--text-muted:#627083;--border-color:#e0e4eb;--accent:#0284c7;--accent-strong:#0273ad;--accent-light:#e0f2fe;--section-bg:#f0f4f8;--dialog-bg:#fff;--input-bg:#f1f5f9;--hover:#e8ecf2;--toggle-off:#94a3b8;--page-bg:#e9edf2;--on-accent:#fff;--ic-system:linear-gradient(135deg,#fbbf24,#f59e0b 45%,#ea580c);--ic-capture:linear-gradient(135deg,#38bdf8,#0ea5e9 45%,#0284c7);--ic-save:linear-gradient(135deg,#34d399,#10b981 45%,#059669);--ic-editor:linear-gradient(135deg,#a5b4fc,#6366f1 45%,#4f46e5);--ic-privacy:linear-gradient(135deg,#fb7185,#f43f5e 45%,#e11d48);--ic-sync:linear-gradient(135deg,#22d3ee,#06b6d4 45%,#0891b2);--ic-paste:linear-gradient(135deg,#c4b5fd,#8b5cf6 45%,#7c3aed);--ic-brand:linear-gradient(135deg,#93c5fd,#3b82f6 45%,#6366f1)}
+body.dark{color-scheme:dark;--card-bg:#18181b;--text-primary:#e4e4e7;--text-secondary:#afafb7;--text-muted:#a1a1aa;--border-color:#3f3f46;--accent:#818cf8;--accent-strong:#c7d2fe;--accent-light:#1e1b4b;--section-bg:#0f0f11;--dialog-bg:#18181b;--input-bg:#27272a;--hover:#27272a;--toggle-off:#71717a;--page-bg:#101014;--on-accent:#18181b}
+*{box-sizing:border-box}body{margin:0;background:var(--page-bg);color:var(--text-primary);font:14px/1.6 "Segoe UI","Microsoft YaHei",sans-serif}button,input{font:inherit}button{cursor:pointer;color:inherit}button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button:hover{background:var(--hover)}::selection{background:var(--accent-light);color:var(--accent-strong)}*{scrollbar-width:thin;scrollbar-color:var(--toggle-off) transparent}input{caret-color:var(--accent)}
+.page{max-width:1300px;margin:auto;padding:28px 24px 48px}.intro{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:20px}h1{font-size:25px;line-height:1.4;margin:0 0 7px;letter-spacing:-.02em}p{margin:0;color:var(--text-secondary)}.tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.tool{padding:7px 12px;border:1px solid var(--border-color);border-radius:7px;background:var(--card-bg);font-size:12px;white-space:nowrap}.tool[aria-pressed=true]{background:var(--accent-light);color:var(--accent-strong);border-color:var(--accent)}
+.workspace{display:flex;gap:20px;align-items:flex-start;justify-content:center}.baseline{width:218px;flex-shrink:0;padding-top:8px}.baseline h2{font-size:14px;margin:0 0 4px}.baseline>p{font-size:12px;margin-bottom:14px}.oldlist{background:var(--card-bg);border:1px solid var(--border-color);border-radius:10px;padding:6px 0}.old{display:flex;align-items:center;gap:8px;text-align:left;width:100%;padding:8px 12px;border:0;background:transparent;font-size:12.5px}.old[aria-pressed=true]{background:var(--accent-light);color:var(--accent-strong)}.old span:last-child{margin-left:auto;color:var(--text-muted);font-size:11px}.baseline .footnote{margin-top:14px}.footnote{font-size:12px;line-height:1.8;color:var(--text-secondary)}
+.frame{width:900px;max-width:100%;flex-shrink:1;min-width:0}.frame.compact{width:600px;flex-shrink:0}.frame-caption{display:flex;justify-content:space-between;gap:12px;margin:0 0 8px;font-size:12px;color:var(--text-secondary)}.app{border:1px solid var(--border-color);background:var(--dialog-bg);border-radius:12px;overflow:hidden;height:750px;display:flex;flex-direction:column}.apphead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border-color)}.back{font-size:12px;color:var(--text-secondary);white-space:nowrap}.apphead h2{font-size:14px;margin:0;font-weight:600;white-space:nowrap}.searchbox{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:1px solid var(--border-color);border-radius:8px;padding:5px 9px;color:var(--text-muted)}.searchbox input{border:0;outline:0;background:transparent;min-width:0;width:100%;color:var(--text-primary);font-size:12px}.searchbox input::placeholder{color:var(--text-muted)}.searchbox:focus-within{outline:2px solid var(--accent)}.appbody{display:flex;flex:1;min-height:0}.nav{flex:0 0 20%;min-width:128px;max-width:220px;background:var(--section-bg);border-right:1px solid var(--border-color);overflow-y:auto;padding:4px 0 12px}.navgroup{font-size:10px;font-weight:600;color:var(--text-secondary);padding:11px 14px 4px;margin:0}.navitem{width:100%;display:flex;align-items:center;gap:8px;padding:8px 11px;border:0;border-left:3px solid transparent;background:transparent;text-align:left;font-size:12.5px;white-space:nowrap}.navitem .emoji{font-size:14px;width:16px;flex-shrink:0}.navitem.active{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);color:var(--accent-strong);font-weight:600}.content{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;padding:4px 16px 24px;background:color-mix(in srgb,var(--section-bg) 35%,var(--dialog-bg));position:relative}.section{margin:12px auto 22px;max-width:800px;scroll-margin-top:8px}.sectiontitle{padding:10px 16px;border:1px solid var(--border-color);border-radius:12px 12px 0 0;background:var(--section-bg);font-size:12px;font-weight:700;margin:0}.annotation{padding:9px 16px;background:var(--accent-light);color:var(--accent-strong);font-size:11px;border-left:1px solid var(--border-color);border-right:1px solid var(--border-color)}body.hide-notes .annotation,body.hide-notes .moved{display:none}.subhead{font-size:11px;font-weight:600;color:var(--text-secondary);padding:12px 16px 7px;background:var(--card-bg);border-left:1px solid var(--border-color);border-right:1px solid var(--border-color)}.row{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card-bg);border:1px solid var(--border-color);border-top:0;min-height:68px}.row:last-child{border-radius:0 0 12px 12px}.tile{height:40px;width:40px;border-radius:10px;background:var(--ic-brand);display:flex;align-items:center;justify-content:center;flex-shrink:0}.tile>span{background:var(--card-bg);border-radius:50%;width:29px;height:29px;display:grid;place-items:center;font-size:17px}.tile.system{background:var(--ic-system)}.tile.capture{background:var(--ic-capture)}.tile.save{background:var(--ic-save)}.tile.editor{background:var(--ic-editor)}.tile.privacy{background:var(--ic-privacy)}.tile.sync{background:var(--ic-sync)}.tile.paste{background:var(--ic-paste)}.rowbody{flex:1;min-width:0}.label{font-size:12px;font-weight:600;line-height:1.6}.desc{font-size:11px;color:var(--text-secondary);margin-top:2px;overflow-wrap:anywhere}.moved{display:block;font-size:10px;font-weight:400;color:var(--accent-strong);margin-top:3px}.value{font-size:11px;max-width:110px;text-align:right;color:var(--text-secondary);flex-shrink:0}.switch{width:36px;height:21px;border:0;border-radius:12px;background:var(--toggle-off);padding:3px;display:flex;align-items:center;flex-shrink:0}.switch:after{content:"";width:15px;height:15px;border-radius:50%;background:var(--card-bg)}.switch[aria-checked=true]{background:var(--accent);justify-content:flex-end}.switch[aria-checked=true]:after{background:var(--on-accent)}.switch:hover{filter:brightness(.93)}.appfooter{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-secondary);gap:12px}.appfooter button{border:1px solid var(--border-color);background:var(--card-bg);padding:4px 15px;border-radius:6px;font-size:12px}.noresult{padding:32px 14px;font-size:12px;color:var(--text-secondary)}[hidden]{display:none!important}.below{margin-top:28px;max-width:1000px}.below h2{font-size:17px;margin:0 0 12px}.below p{font-size:13px;line-height:1.9}.mapping{width:100%;border-collapse:collapse;margin-top:16px;font-size:12px}.mapping th,.mapping td{padding:11px 14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--border-color)}.mapping th{background:var(--section-bg)}.mapping td:first-child{white-space:nowrap}.note{margin-top:16px;font-size:12px;color:var(--text-secondary)}.status{min-height:20px}
+@media(max-width:1000px){.baseline{width:175px}.frame.compact{flex-shrink:1}.tools{max-width:330px}}@media(max-width:760px){.page{padding:18px 12px 36px}.intro{display:block}.tools{justify-content:flex-start;max-width:none;margin-top:14px}.baseline{display:none}.workspace{display:block}.frame,.frame.compact{width:100%}.app{height:730px}.frame-caption{font-size:11px}h1{font-size:22px}.row{padding:12px 10px;gap:9px}.content{padding:4px 10px 20px}.apphead{padding:10px;gap:7px}.back{display:none}.value{max-width:78px}.tile{width:32px;height:32px}.tile>span{width:25px;height:25px;font-size:15px}.mapping th,.mapping td{padding:10px 6px}.mapping td:first-child{white-space:normal}}@media(max-width:450px){.row{flex-wrap:wrap}.value{max-width:none;margin-left:auto}.navitem{padding-left:8px;padding-right:7px;gap:6px}.nav{min-width:122px}.searchbox{padding:5px}.row .switch{margin-left:auto}}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="intro">
+    <div><h1>设置分类，按功能找到位置</h1><p>方案 B · 13 个入口，四组导航。调整名称和归属，沿用现有设置页样式。</p></div>
+    <div class="tools" aria-label="设计稿预览工具">
+      <button class="tool" id="width" aria-pressed="false">600px 窗口</button>
+      <button class="tool" id="theme" aria-pressed="false">深色预览</button>
+      <button class="tool" id="notes" aria-pressed="true">显示改动说明</button>
+    </div>
+  </header>
+  <div class="workspace">
+    <aside class="baseline" aria-label="现有分类对照"><h2>当前分类</h2><p>点击旧分类，查看新归属。<br>内容拆分关系见下方对照表。</p><div class="oldlist" id="oldnav"></div><p class="footnote">本稿依据当前分支源码。右侧展示典型设置项；数值和开关均为示意，不读取实际配置。</p></aside>
+    <div class="frame" id="frame">
+      <div class="frame-caption"><span>调整后 · 点击分类或滚动查看</span><span id="size">最大 900px · 高 750px</span></div>
+      <section class="app" aria-label="方案 B 设置页交互预览">
+        <header class="apphead"><span class="back">← 返回</span><h2>⚙ 设置</h2><label class="searchbox"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="搜索设计稿中的设置项" placeholder="搜索设置（稿内演示）"></label></header>
+        <div class="appbody"><nav class="nav" id="nav" aria-label="设置分类"></nav><div class="content" id="content" tabindex="0" aria-label="设置内容"></div></div>
+        <footer class="appfooter"><span id="receipt" role="status">设计预览 · 控件仅在本稿内演示</span><button id="done">完成</button></footer>
+      </section>
+    </div>
+  </div>
+  <section class="below"><h2>分类调整对照</h2><p>四组标题仅用于组织导航，不增加点击层级。右侧保留连续滚动与分类定位；类内用小节标题区分不同用途，快捷键集中到统一入口。</p><table class="mapping"><thead><tr><th>当前分类</th><th>调整后归属</th><th>主要变化</th></tr></thead><tbody id="mapping"></tbody></table>
+  <p class="note">预览范围：分类、名称、典型设置项和迁移关系。AI 与工具接入保留独立的配置入口；这里的搜索仅帮助核对稿内归属，正式应用的搜索范围需沿用现有约束。分类迁移时保留旧名称搜索别名与原有跳转入口。</p>
+  <p class="note">确认点：四组导航是否容易理解；「外观与窗口」「剪贴板」「设备与连接」「工具接入」的边界是否清楚；600px 下名称是否完整可读。</p>
+  </section>
+</main>
+<script>
+const row=(label,desc,icon='⚙️',hue='system',control='开',from='')=>({label,desc,icon,hue,control,from});
+const group=(title,rows)=>({title,rows});
+const sections=[
+{id:'appearance',label:'外观与窗口',icon:'🎨',family:'基础设置',note:'合并「外观」与窗口行为；编辑器和模板移到「笔记与编辑」。',groups:[group('主题与界面',[
+row('主题配色','沿用现有主题配色选择。','🎨','brand','经典白'),row('标签样式','切换筛选标签的显示风格。','🏷️','brand','分段'),row('来源图标','控制列表中来源应用图标的显示。','📱','brand','开'),row('时间线','主页面左侧显示竖版时间轴导航。','⏱️','editor','开'),row('界面动效','页面、菜单和弹窗自然衔接；跟随系统减少动态效果设置。','✨','system','开')]),group('窗口与启动',[
+row('窗口置顶','始终显示在其他窗口之上。','📌','system','关','系统与编辑'),row('失焦自动隐藏','窗口失去焦点时隐藏到托盘。','👁️','system','开','系统与编辑'),row('开机自启','登录系统后自动运行。','🚀','system','关','系统与编辑'),row('托盘右键菜单','右键托盘图标时使用的菜单样式。','🖱️','system','原生菜单','系统与编辑')])]},
+{id:'hotkey',label:'快捷键',icon:'⌨️',family:'基础设置',note:'保留已有快捷键，集中显示录屏相关快捷键，避免跨分类寻找。',groups:[group('窗口与粘贴',[
+row('唤出窗口','打开主窗口。','🪟','system','快捷键'),row('依次粘贴','按顺序粘贴剪贴板内容。','📋','paste','快捷键'),row('收集模式开关','开启或关闭粘贴栈收集模式。','📥','paste','快捷键'),row('粘贴最近收集','粘贴最近收集的内容。','📋','paste','快捷键'),row('快捷粘贴','唤起快捷粘贴面板。','⚡','paste','快捷键')]),group('截图、录屏与待办',[
+row('截图标注','启动截图标注。','📸','capture','快捷键'),row('录屏热键','开始屏幕录制。','🎥','capture','快捷键','截图与栈 → 屏幕录制'),row('录制中：暂停 / 继续','暂停或继续当前录制。','⏯️','capture','快捷键','截图与栈 → 屏幕录制'),row('录制中：停止并保存','结束录制并保存视频。','⏹️','capture','快捷键','截图与栈 → 屏幕录制'),row('录制中：标记时刻','录制时记录一个标记。','📍','capture','快捷键','截图与栈 → 屏幕录制'),row('今日速记','打开今日速记。','📝','editor','快捷键'),row('待办岛唤起','唤起待办灵动岛。','🏖️','brand','快捷键')])]},
+{id:'copy',label:'剪贴板',icon:'📋',family:'功能设置',note:'「复制与粘贴」扩展为「剪贴板」：粘贴栈、快捷粘贴布局和列表操作归到一起。',groups:[group('采集与隐私',[
+row('自动去除空白','复制时去除首尾空白字符。','✂️','save','开'),row('文档保真采集','从 Word / 网页等复制时保留格式结构。','📄','capture','开'),row('敏感内容防护','不记录匹配密钥 / 凭证模式的内容。','🛡️','privacy','开'),row('应用排除名单','指定不采集剪贴板内容的应用。','🚫','privacy','应用名单')]),group('浏览与粘贴',[
+row('卡片悬浮行为','设置鼠标悬浮在卡片上时的行为。','🖱️','paste','预览','外观'),row('双击列表行为','双击时复制内容，或打开预览。','🖱️','paste','复制','外观'),row('保留格式粘贴','粘贴文档 / 图文时保留富格式。','📋','paste','开'),row('依次粘贴循环','到达末尾后从头开始。','🔁','paste','开'),row('快捷粘贴布局','单栏列表或双栏网格。','🗂️','paste','双栏网格','截图与栈 → 面板布局')]),group('粘贴栈',[
+row('表格自动拆行入栈','栈模式下复制表格时自动按行拆分。','📐','paste','开','截图与栈 → 粘贴栈'),row('拆行格式与表头','设置表格拆行格式和是否包含表头。','📊','paste','现有选项','截图与栈 → 粘贴栈'),row('栈浮标','查看条数、目标应用、下一条内容和粘贴结果。','🎯','paste','开','截图与栈 → 粘贴栈'),row('栈容量','设置最多收集的条数。','📥','paste','容量选项','截图与栈 → 粘贴栈')])]},
+{id:'notes',label:'笔记与编辑',icon:'📝',family:'功能设置',note:'从「系统与编辑」独立出来，编辑器保存、文件关联与转笔记模板集中管理。',groups:[group('编辑器',[
+row('编辑器自动保存','全屏编辑器中停止输入后自动回写内容。','💾','save','开','系统与编辑'),row('编辑器保存写入历史','全屏编辑器中保存 .md 文件时，同时写入剪贴板历史。','📝','editor','开','系统与编辑'),row('关联 .md 文件','注册 .md 打开方式并引导设为默认。','📄','editor','文件关联','系统与编辑')]),group('转笔记模板',[
+row('默认模板','设置将内容转为笔记时使用的模板。','📑','editor','编辑模板','系统与编辑 → 转笔记模板'),row('按类型定制','针对不同内容类型使用不同模板。','🗂️','editor','编辑模板','系统与编辑 → 转笔记模板')])]},
+{id:'capture',label:'截图与录屏',icon:'📸',family:'功能设置',note:'明确包含截图和录屏；移出粘贴栈与快捷粘贴布局。录屏快捷键统一放在「快捷键」。',groups:[group('截图与文字识别',[
+row('自动框选当前窗口','截图时自动识别当前窗口范围。','🪟','capture','开'),row('截图窗口常驻','设置截图窗口的常驻行为。','⚡','capture','关'),row('OCR 选字模式','设置文字识别后的选字方式。','🔤','capture','选字模式'),row('截图后执行动作链','截图完成后自动执行选定动作链。','🔗','capture','不自动执行','截图与栈 → 完成后自动执行动作链')]),group('截图晾衣绳',[
+row('截图晾衣绳','设置桌面截图晾衣绳。','🖼️','capture','开'),row('晾衣绳微风','设置晾衣绳的微风动效。','🍃','capture','关'),row('锁定绳位置','锁定晾衣绳的位置。','🔒','capture','关'),row('绳子默认位置','恢复晾衣绳的默认位置。','📍','capture','恢复位置')]),group('屏幕录制',[
+row('默认画质档','开始录制前的确认条可临时切换。','🎚️','capture','画质选项'),row('录制系统声音','把电脑正在播放的声音录进视频。','🔊','capture','开'),row('录制麦克风','在视频中录入麦克风声音。','🎙️','capture','关'),row('点击高亮（烧入画面）','在录制画面中显示点击高亮。','🖱️','capture','关'),row('记录点击与按键事件','记录录制过程中的点击与按键事件。','⌨️','capture','关'),row('保存目录','设置录屏文件保存位置。','📂','save','选择目录')])]},
+{id:'island',label:'待办灵动岛',icon:'🏖️',family:'功能设置',note:'「灵动岛」改为「待办灵动岛」，让名称说明用途。',groups:[group('待办与提醒',[
+row('启用灵动岛','控制待办灵动岛的启用状态。','🏖️','brand','开'),row('到点提醒','待办到点时显示提醒。','⏰','brand','开'),row('提醒横幅停留','设置提醒横幅的显示时长。','⏱️','brand','时长选项'),row('到期优先排序','优先显示到期的待办。','📅','brand','开')]),group('外观与位置',[
+row('玻璃透度','调整待办灵动岛的玻璃透明程度。','🪟','brand','透度选项'),row('停靠位置','设置灵动岛在屏幕上的停靠位置。','📍','brand','位置选项')])]},
+{id:'sync',label:'设备与连接',icon:'🌐',family:'连接与扩展',note:'「同步与互联」改名；三种连接能力用独立小节说明，不混用同步和远程控制。',groups:[group('剪贴板同步',[
+row('剪贴板同步','多台电脑自动共享剪贴板，仅限同一局域网。','🌐','sync','关'),row('附近设备与已配对设备','保留现有发现、配对和设备管理面板。','💻','sync','原面板保留')]),group('知识库同步',[
+row('知识库同步','在自己的设备之间同步笔记，支持局域网与跨网。','📚','sync','关'),row('知识库设备配对','保留现有配对和同步管理面板。','🔗','sync','原面板保留')]),group('远程电脑',[
+row('允许被远程协助','管理本机被远程协助的权限。','🖥️','sync','关'),row('远程连接设置','保留现有连接、已配对设备及被控限制分组。','🔐','sync','原面板保留')]),group('手机安装',[
+row('在手机上安装 PastePanda','保留现有手机安装入口。','📱','sync','安装入口')])]},
+{id:'ai',label:'AI 设置',icon:'✨',family:'连接与扩展',note:'「AI」明确为「AI 设置」；保留现有摘要卡和折叠配置面板，本稿仅示意内容归属。',groups:[group('本应用使用的 AI',[
+row('服务商与密钥','选择服务商、配置模型和密钥，测试连接。','🔑','brand','原面板保留'),row('用量与费用','查看 AI 调用用量与费用。','📊','brand','原面板保留'),row('自定义动作','保留现有自定义 AI 动作设置。','✨','brand','原面板保留')])]},
+{id:'mcp',label:'工具接入',icon:'🧩',family:'连接与扩展',note:'「MCP」改为「工具接入」；在页内保留 MCP 名称与说明，方便熟悉协议的用户识别。',groups:[group('知识库 MCP 服务',[
+row('知识库 MCP 服务','通过 MCP，让外部 AI 工具读写知识库。','🧩','brand','关'),row('服务与访问范围','保留原有服务配置、访问范围及读写权限。','🛡️','privacy','原面板保留'),row('连接外部工具','保留现有客户端连接配置与审计面板。','🔌','sync','原面板保留')])]},
+{id:'data',label:'数据管理',icon:'💾',family:'数据与支持',note:'保留分类名称，用小节区分清理、剪贴板导入导出和笔记导入导出，明确操作对象。',groups:[group('保留与清理',[
+row('剪贴板保留天数','清理超过指定天数的记录，置顶除外。','🗑️','save','保留选项','数据管理 → 自动清理'),row('回收站保留天数','删除的笔记在回收站保留多久，到期永久删除。','♻️','save','保留选项','数据管理 → 笔记回收站'),row('保护常用内容','打标签、粘贴过、搜索找回过的内容不参与自动清理。','💎','save','开'),row('清理过期记录','按已有清理条件管理过期剪贴板记录。','🗑️','save','原操作保留'),row('深度清理','按时间、类型、来源组合条件清理，支持预览与撤销。','🛟','privacy','原操作保留')]),group('剪贴板导入导出',[
+row('导出剪贴板记录','导出剪贴板历史记录的 JSON 文件。','📤','save','原操作保留','数据管理 → 导出数据'),row('导入剪贴板记录','导入剪贴板历史记录的 JSON 文件。','📥','save','原操作保留','数据管理 → 导入数据')]),group('笔记导入导出',[
+row('导出笔记为 Markdown 目录','可直接当作 Obsidian vault 打开。','📝','editor','原操作保留'),row('从 Markdown 目录导入','只新增与更新，不会删除现有笔记。','📂','save','原操作保留')])]},
+{id:'stats',label:'使用统计',icon:'📊',family:'数据与支持',note:'「数据统计」改为「使用统计」，与负责清理、导入导出的「数据管理」区分。',groups:[group('使用情况',[
+row('统计与周报','保留原有统计面板和剪贴板周报入口。','📊','brand','原面板保留')])]},
+{id:'help',label:'帮助',icon:'📖',family:'数据与支持',note:'名称和内容保持不变。',groups:[group('使用帮助',[row('使用说明','保留当前帮助内容。','📖','brand','原页面保留')])]},
+{id:'about',label:'关于',icon:'ℹ️',family:'数据与支持',note:'名称和内容保持不变。',groups:[group('应用信息',[row('版本与更新','保留当前关于页面及更新入口。','ℹ️','brand','原页面保留')])]}
+];
+const old=[['🎨','外观','appearance','外观与窗口、剪贴板','卡片悬浮行为、双击列表行为移到剪贴板。'],['📋','复制与粘贴','copy','剪贴板','与粘贴栈、快捷粘贴布局一起管理。'],['🪟','系统与编辑','notes','外观与窗口、笔记与编辑','窗口和启动留在基础设置；编辑器和模板独立。'],['⌨️','快捷键','hotkey','快捷键','集中录屏快捷键。'],['📸','截图与栈','capture','截图与录屏、剪贴板、快捷键','拆出粘贴栈和快捷粘贴布局；录屏快捷键统一管理。'],['🏖️','灵动岛','island','待办灵动岛','名称补充功能用途。'],['💾','数据管理','data','数据管理','按操作对象分小节；导入导出明确写出剪贴板。'],['🌐','同步与互联','sync','设备与连接','明确剪贴板同步、知识库同步、远程电脑三个小节。'],['📊','数据统计','stats','使用统计','与数据管理的用途区分。'],['✨','AI','ai','AI 设置','说明这是本应用所用模型的配置入口。'],['🧩','MCP','mcp','工具接入','页内解释 MCP 的用途；原配置能力保留。'],['📖','帮助','help','帮助','内容保持不变。'],['ℹ️','关于','about','关于','内容保持不变。']];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nav=$('#nav'),content=$('#content');
+let family='';
+for(const s of sections){if(family!==s.family){family=s.family;nav.insertAdjacentHTML('beforeend',`<p class="navgroup">${family}</p>`)}nav.insertAdjacentHTML('beforeend',`<button class="navitem" data-id="${s.id}"><span class="emoji" aria-hidden="true">${s.icon}</span><span>${s.label}</span></button>`)}
+function rowHtml(r){const toggle=r.control==='开'||r.control==='关';return `<div class="row"><span class="tile ${r.hue}" aria-hidden="true"><span>${r.icon}</span></span><div class="rowbody"><div class="label">${esc(r.label)}</div><div class="desc">${esc(r.desc)}</div>${r.from?`<span class="moved">原位置：${esc(r.from)}</span>`:''}</div>${toggle?`<button class="switch" role="switch" aria-label="${esc(r.label)}（预览）" aria-checked="${r.control==='开'}"></button>`:`<span class="value">${esc(r.control)}</span>`}</div>`}
+function render(query=''){const q=query.trim().toLowerCase();content.innerHTML='';for(const s of sections){const all=(s.label+' '+s.note).toLowerCase().includes(q);const groups=s.groups.map(g=>({...g,rows:g.rows.filter(r=>!q||all||(g.title+' '+r.label+' '+r.desc+' '+r.from).toLowerCase().includes(q))})).filter(g=>g.rows.length);if(!groups.length)continue;content.insertAdjacentHTML('beforeend',`<section class="section" id="section-${s.id}" data-id="${s.id}" aria-labelledby="title-${s.id}"><h3 class="sectiontitle" id="title-${s.id}">${s.label}</h3><div class="annotation">${s.note}</div>${groups.map(g=>`<div class="subhead">${g.title}</div>${g.rows.map(rowHtml).join('')}`).join('')}</section>`)}if(!content.children.length)content.innerHTML='<div class="noresult">本稿没有匹配项。清空搜索，查看全部分类。</div>';content.scrollTop=0;updateActive()}
+function activate(id){nav.querySelectorAll('.navitem').forEach(b=>{const active=b.dataset.id===id;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','location');else b.removeAttribute('aria-current')});document.querySelectorAll('.old').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.target===id)))}
+function updateActive(){const top=content.getBoundingClientRect().top;const visible=[...content.querySelectorAll('.section')];let current=visible[0];for(const s of visible){if(s.getBoundingClientRect().top<=top+45)current=s}if(current)activate(current.dataset.id)}
+function jump(id){if($('#search').value){$('#search').value='';render()}const target=$('#section-'+id);if(!target)return;content.scrollTop=target.offsetTop-8;activate(id)}
+$('#oldnav').innerHTML=old.map(o=>`<button class="old" data-target="${o[2]}" aria-pressed="false"><span aria-hidden="true">${o[0]}</span>${o[1]}<span aria-hidden="true">→</span></button>`).join('');
+$('#mapping').innerHTML=old.map(o=>`<tr><td>${o[1]}</td><td>${o[3]}</td><td>${o[4]}</td></tr>`).join('');
+nav.addEventListener('click',e=>{const b=e.target.closest('button');if(b)jump(b.dataset.id)});
+$('#oldnav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)jump(b.dataset.target)});
+content.addEventListener('scroll',updateActive,{passive:true});
+content.addEventListener('click',e=>{const b=e.target.closest('.switch');if(!b)return;const on=b.getAttribute('aria-checked')!=='true';b.setAttribute('aria-checked',String(on));$('#receipt').textContent=`预览：${b.getAttribute('aria-label').replace('（预览）','')}已${on?'开启':'关闭'}，未修改应用配置`});
+$('#search').addEventListener('input',e=>render(e.target.value));
+$('#search').addEventListener('keydown',e=>{if(e.key==='Escape'&&e.target.value){e.preventDefault();e.target.value='';render()}});
+$('#width').addEventListener('click',()=>{const compact=$('#frame').classList.toggle('compact');$('#width').setAttribute('aria-pressed',String(compact));$('#size').textContent=compact?'600px 窗口 · 高 750px':'最大 900px · 高 750px'});
+$('#theme').addEventListener('click',()=>$('#theme').setAttribute('aria-pressed',String(document.body.classList.toggle('dark'))));
+$('#notes').addEventListener('click',()=>$('#notes').setAttribute('aria-pressed',String(!document.body.classList.toggle('hide-notes'))));
+$('#done').addEventListener('click',()=>$('#receipt').textContent='已看完当前预览，可在聊天中确认方案或提出调整。');
+render();
+</script>
+</body>
+</html>

@@ -9,7 +9,7 @@ import { AboutTabContent } from "@/components/settings/AboutTabContent";
 import { AiTab } from "@/components/settings/AiTab";
 import { McpTab } from "@/components/settings/McpTab";
 import { LazyMount } from "@/components/settings/LazyMount";
-import { SETTINGS_SECTIONS, type SettingsNavEntry, type SettingsNavKey } from "@/components/settings/sections/meta";
+import { type SettingsNavEntry, type SettingsNavKey } from "@/components/settings/sections/meta";
 import type { SettingsTabName } from "@/lib/openSettings";
 import { useSettingsSearch } from "@/hooks/useSettingsSearch";
 import { useSettingsShell } from "@/hooks/useSettingsShell";
@@ -25,7 +25,7 @@ import styles from "./Settings.module.css";
  * - `useSettingsNav`   —— 菜单高亮、平滑跳转、scroll-spy
  * - `useSettingsSearch`—— 搜索关键字与就地 DOM 过滤
  *
- * ❗ 菜单项（七个分区 + 四个页）的**顺序与文字**全部收在 `sections/meta.ts`，
+ * ❗ 菜单项的顺序、分组与文字全部收在 `sections/meta.ts`，
  * 本文件不再自己拼一份——scroll-spy 与跳转都依赖「数组顺序＝滚动顺序」。
  *
  * 这里没有断点判断。菜单宽度全靠 CSS 的百分比 + 夹值（占 20%，128–220px），
@@ -113,6 +113,7 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
     return (
       <button key={n.key}
         className={`${styles.settingsNavItem}${!searching && nav === n.key ? ` ${styles.settingsNavItemActive}` : ""}`}
+        aria-current={!searching && nav === n.key ? "location" : undefined}
         onClick={() => jumpTo(n.key)}>
         <span className={styles.settingsNavIcon}>{n.icon}</span>
         <span className={styles.settingsNavLabel}>{n.label}</span>
@@ -162,16 +163,17 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
       </div>
 
       <div className={styles.settingsViewBody}>
-        {/* 左侧菜单：7 个分区 + 分隔线 + 4 个独立页。
-            宽度全交给 CSS（占 20%，夹在 128–220px），所以这里不需要任何断点判断。 */}
-        <div className={styles.settingsNav}>
+        {/* 四组导航标题不增加点击层级；宽度仍由 CSS 控制，文字始终可见。 */}
+        <nav className={styles.settingsNav} aria-label="设置分类">
           {navItems.map((n, i) => (
             <Fragment key={n.key}>
-              {i === SETTINGS_SECTIONS.length && <div className={styles.settingsNavSep} />}
+              {(i === 0 || n.group !== navItems[i - 1].group) && (
+                <div className={styles.settingsNavGroup}>{n.group}</div>
+              )}
               {navItem(n)}
             </Fragment>
           ))}
-        </div>
+        </nav>
 
         <div className={styles.settingsContentCol}>
           {/* E2 结果条：只在搜索时出现。摘要文本由 effect 写入 summaryRef */}
@@ -195,9 +197,7 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
             </div>
           )}
 
-        {/* 右侧详情：**全部 11 项排在同一根滚动里**，滑到哪一节菜单就高亮哪一项。
-            前七个分区在 GeneralTab 里（它们得待在搜索容器内，那里的 children 必须是一层扁平的行）；
-            AI/MCP/帮助/关于 是整块组件，放在容器**之外**，自己带分区标题。 */}
+        {/* 全部分类连续滚动；AI / 工具接入插在连接与数据之间，搜索时移除这两个独立配置块。 */}
         <div className={styles.settingsContent} ref={bodyRef}>
           <GeneralTab
             config={sh.config} updateConfig={sh.updateConfig} updateAndSave={sh.updateAndSave}
@@ -208,17 +208,17 @@ export function SettingsView({ onClose, initialTab, initialSection, jump }: {
             exporting={sh.exporting} importing={sh.importing}
             search={search}
             onJumpPage={jumpTo}
+            extensions={!searching && <>
+              <div className={styles.sSection}>AI 设置</div>
+              <AiTab />
+              <div className={styles.sSection}>工具接入</div>
+              {/* 保留懒挂载，未滚到工具接入时不启动 MCP 轮询。 */}
+              <LazyMount minHeight={220}><McpTab /></LazyMount>
+            </>}
           />
-          {/* 搜索时隐掉这四块：它们不是「设置行」，不参与逐行过滤，
-              留着会让搜索结果下面拖着四大块不相干的内容。 */}
+          {/* 帮助 / 关于同样不参与逐行搜索。 */}
           {!searching && (
             <>
-              <div className={styles.sSection}>AI</div>
-              <AiTab />
-              <div className={styles.sSection}>MCP</div>
-              {/* 🔴 MCP 必须懒挂载：useMcpServer 带 5s 轮询，直接挂等于一打开设置就轮询，
-                  会把 McpTab 当初搬出 GeneralTab 时做的那个优化撤销。详见 LazyMount 注释。 */}
-              <LazyMount minHeight={220}><McpTab /></LazyMount>
               <div className={styles.sSection}>帮助</div>
               <HelpTabContent config={sh.config} appName={sh.appName} appVersion={sh.appVersion} />
               <div className={styles.sSection}>关于</div>

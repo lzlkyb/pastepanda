@@ -220,12 +220,20 @@ export function useSettingsSearch(): SettingsSearch {
     const heads: Head[] = [];
     // 分区标题自己命中时，整节展开——搜「外观」「数据管理」这种词本来就应当有结果
     let sectionHit = false;
+    let parentTitle = "";
+    let parentHit = false;
     let cur: Head | null = null;
     for (const el of children) {
       if (el.classList.contains(styles.sSection)) {
         const title = sectionTitleOf(el);
-        sectionHit = kw !== "" && [title, ...(SETTING_SECTION_ALIASES[title] ?? [])]
+        const ownHit = kw !== "" && [title, ...(SETTING_SECTION_ALIASES[title] ?? [])]
           .some((name) => name.toLowerCase().includes(kw));
+        if (!el.dataset.settingsParent) {
+          parentTitle = title;
+          parentHit = ownHit;
+        }
+        // 一级分类命中时，其下所有小节都展开；不把命中状态带到下一个分类。
+        sectionHit = ownHit || (el.dataset.settingsParent === parentTitle && parentHit);
         cur = { el, title, direct: 0, shown: 0, titleHit: sectionHit };
         heads.push(cur);
         continue;
@@ -264,7 +272,8 @@ export function useSettingsSearch(): SettingsSearch {
       const next = children[i + 1];
       const nextShownHead = isHead(next) && next.style.display !== "none";
       const stat = heads.find((h) => h.el === el);
-      el.style.display = kw === "" || (stat?.shown ?? 0) > 0 || nextShownHead ? "" : "none";
+      const childShown = heads.some(h => h.el.dataset.settingsParent === stat?.title && h.shown > 0);
+      el.style.display = kw === "" || (stat?.shown ?? 0) > 0 || nextShownHead || childShown ? "" : "none";
     }
     /** 屏幕上真算「结果」的分区：本节有直接命中的，加上节名命中而整节展开的。
      *  只看直接命中会漏——搜「外观」时一行都没命中，但那一节整节摆在那儿。 */

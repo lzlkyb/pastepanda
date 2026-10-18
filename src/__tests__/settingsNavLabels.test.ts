@@ -145,6 +145,15 @@ describe("设置页左菜单与分区标题", () => {
     expect(missing).toEqual([]);
   });
 
+  it("所有小节声明的上级分类都存在，改名不能静默破坏整节搜索", () => {
+    const parents = sourceFiles().flatMap(path =>
+      [...readFileSync(path, "utf8").matchAll(/data-settings-parent="([^"]+)"/g)].map(m => m[1]),
+    );
+    expect(parents.length).toBeGreaterThan(6);
+    const labels = new Set<string>(SETTINGS_SECTIONS.map(s => s.label));
+    expect(parents.filter(parent => !labels.has(parent))).toEqual([]);
+  });
+
   it("樱花主题只换图标、不换文字", () => {
     // 换了文字的话，樱花主题下点菜单就不滚了——而那只在那个主题下复现。
     const plain = settingsNavItems(false).map((n) => n.label);

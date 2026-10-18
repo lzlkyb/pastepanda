@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AppConfig } from "@/stores/appStore";
 import { StatsDetail } from "@/lib/api";
 import { useSettingsData } from "@/hooks/useSettingsData";
@@ -35,20 +36,22 @@ interface GeneralTabProps {
   exporting?: boolean;
   importing?: boolean;
   /**
-   * 搜索状态与 ref。搜索框本身在**左侧菜单顶部**（SettingsView 渲染），
+   * 搜索状态与 ref。搜索框在设置标题栏（SettingsView 渲染），
    * 而装设置行的容器在这里——两边靠这组 ref 对接。
    */
   search: SettingsSearch;
   /** 空态里那四个「整块页面」的跳转：与左菜单同一条路径（清关键词 + 跳） */
   onJumpPage: (key: SettingsPageKey) => void;
+  /** AI / 工具接入按导航顺序插入；搜索时移除，保持原有搜索范围。 */
+  extensions: ReactNode;
 }
 
 /**
- * 设置页左列（九个分区）的**编排层**：只负责分区顺序与弹窗，
+ * 设置内容的编排层：只负责分区顺序、独立配置插槽与弹窗，
  * 具体设置行在 sections/ 下按分区分文件，共用状态在 useSettingsData。
  *
  * 🔴 九个分区组件都返回 <>…</> 片段，所以 settingsSections 容器的 children
- * 仍然是「分区标题 + 设置行」一层扁平结构——搜索过滤就靠这个。
+ * 搜索时仍是「分区标题 + 设置行」一层扁平结构——独立配置插槽不参与搜索。
  * （容器里还会有一批**小节标题**：同样用 `sSection`、同样不入左菜单，
  * 见 `sections/meta.ts` 的 `SETTINGS_SUBSECTIONS`。）
  */
@@ -56,7 +59,7 @@ export function GeneralTab({
   config, updateAndSave, stats, statsError, onRetryStats, expiredCount,
   tabStyle, handleSwitchTabStyle,
   handleExport, handleImport, handleCleanup,
-  exporting, importing, search, onJumpPage,
+  exporting, importing, search, onJumpPage, extensions,
 }: GeneralTabProps) {
   // 各分区共用的状态与副作用统一收口到 useSettingsData（规则 #11）
   const {
@@ -80,14 +83,16 @@ export function GeneralTab({
           config={config} updateAndSave={updateAndSave}
           tabStyle={tabStyle} handleSwitchTabStyle={handleSwitchTabStyle}
         />
+        <HotkeySection config={config} updateAndSave={updateAndSave} />
         <CopyPasteSection config={config} updateAndSave={updateAndSave} />
         <WindowEditorSection
           config={config} updateAndSave={updateAndSave}
           mdAssoc={mdAssoc} mdAssocBusy={mdAssocBusy} handleMdAssocToggle={handleMdAssocToggle} refreshMdAssoc={refreshMdAssoc}
         />
-        <HotkeySection config={config} updateAndSave={updateAndSave} />
         <CaptureSection config={config} updateAndSave={updateAndSave} chains={chains} />
         <IslandSection config={config} updateAndSave={updateAndSave} />
+        <SyncSection config={config} updateAndSave={updateAndSave} filter={search.filter} />
+        {extensions}
         <DataSection
           config={config} updateAndSave={updateAndSave} expiredCount={expiredCount}
           handleExport={handleExport} handleImport={handleImport} handleCleanup={handleCleanup}
@@ -96,7 +101,6 @@ export function GeneralTab({
           cleanupDays={cleanupDays} handlePickCleanupDays={handlePickCleanupDays}
           trashDays={trashDays} handlePickTrashDays={handlePickTrashDays}
         />
-        <SyncSection config={config} updateAndSave={updateAndSave} filter={search.filter} />
         <StatsSection
           config={config} stats={stats} statsError={statsError} onRetryStats={onRetryStats}
           setShowWeekReport={setShowWeekReport}
@@ -109,13 +113,9 @@ export function GeneralTab({
       <div ref={search.noResultRef} className={styles.settingsNoResult} style={{ display: "none" }}>
         😕 没有找到与「{search.filter}」匹配的设置项
         <div className={styles.settingsNoResultHint}>清掉搜索看全部设置，或换个词试试，比如「主题」「热键」</div>
-        {/* 🔴 「没有匹配项」有第二种成因：这四块是**整块组件**，不在这个逐行过滤的
-            容器里（见 SettingsView：它们排在 settingsSections 之外），所以搜「密钥」「模型」
-            「MCP」天然是 0 结果。不写这一句，空态就是在骗人——而用户明明在界面上
-            看得见「AI」那一页里有个密钥框。按钮走左菜单同一个 handleNavPick：
-            先清关键词再跳，否则落点标题被过滤藏着，点了没反应（本轮 P0-1 的同一件事）。 */}
+        {/* 独立配置页在搜索时移除；空态提供明确入口，并先清关键词再跳转。 */}
         <div className={styles.settingsNoResultHint}>
-          「AI / MCP / 帮助 / 关于」是整块页面，不参与逐行搜索——可直接跳过去：
+          「AI 设置 / 工具接入（MCP） / 帮助 / 关于」不参与逐行搜索，可直接前往：
         </div>
         <div className={styles.settingsNoResultPages}>
           {SETTINGS_PAGES.map((pg) => (

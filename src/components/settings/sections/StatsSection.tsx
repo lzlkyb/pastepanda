@@ -44,7 +44,7 @@ export function StatsSection({
   return (
     <>
       {/* ── 数据统计 ── */}
-      <div className={settings.sSection}>数据统计</div>
+      <div className={settings.sSection}>使用统计</div>
       <div className={styles.statsPanel}>
         <div className={styles.statsPanelHeader}>
           📊 剪贴板数据概览

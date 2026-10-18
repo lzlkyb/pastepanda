@@ -12,14 +12,10 @@ interface ScreenshotRowsProps {
   chains: SettingsData["chains"];
 }
 
-// 「截图与栈」分区里截图相关的行为设置（自动框选、窗口常驻、默认动作链、快速粘贴布局）。
-// 与栈那一组（StackRows）分文件只是把代码切开（规则 #7）；节标题在 CaptureSection，
-// 两个子组件都返回片段，所以容器 children 依旧扁平。
-// 🔴 必须返回片段，原因同 StatsSection。
+// 截图行为行保持扁平；快捷粘贴布局已移入剪贴板分类。
 export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRowsProps) {
   return (
     <>
-      <ClotheslineRows config={config} updateAndSave={updateAndSave}/>
       <ToggleRow icon="🪟" hue="capture" label="自动框选当前窗口"
         desc="按截图热键后自动选中光标所在窗口（微信同款），可直接完成或重新拖选"
         value={config.auto_frame_window}
@@ -80,7 +76,7 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
       <div className={styles.sRow}>
         <SettingTile hue="capture">⚡</SettingTile>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>完成后自动执行动作链</div>
+          <div className={`${styles.sRowLabel}`}>截图后执行动作链</div>
           <div className={`${styles.sRowDesc}`}>
             截图完成自动跑链（OCR 文字为输入）；自动执行仅限纯本地步骤，云端步骤会跳过
           </div>
@@ -114,25 +110,8 @@ export function ScreenshotRows({ config, updateAndSave, chains }: ScreenshotRows
           </select>
         )}
       </div>
-      <div className={styles.sRow}>
-        <SettingTile hue="paste">🗂️</SettingTile>
-        <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>面板布局</div>
-          <div className={`${styles.sRowDesc}`}>
-            {config.quick_paste_layout === "list" ? "单栏列表，同屏可查看更多条记录" : "双栏网格，卡片预览更多内容"}
-          </div>
-        </div>
-        <div className={styles.sSegGroup}>
-          {/* 🔴 这两个按钮的内容只有一个 emoji 字形，读屏会念成「black square」之类
-              的码点名；含义必须写进 aria-label（title 只做鼠标提示）。 */}
-          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "grid" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "grid" })} title="双栏网格" aria-label="双栏网格" aria-pressed={config.quick_paste_layout === "grid"}>
-            <span className={styles.sSegEmoji}>🔲</span>
-          </button>
-          <button className={`${styles.sSegOpt}${config.quick_paste_layout === "list" ? ` ${styles.sSegActive}` : ""}`} onClick={() => updateAndSave({ quick_paste_layout: "list" })} title="单栏列表" aria-label="单栏列表" aria-pressed={config.quick_paste_layout === "list"}>
-            <span className={styles.sSegEmoji}>☰</span>
-          </button>
-        </div>
-      </div>
+      <div data-settings-parent="截图与录屏" className={styles.sSection}>截图晾衣绳</div>
+      <ClotheslineRows config={config} updateAndSave={updateAndSave}/>
     </>
   );
 }

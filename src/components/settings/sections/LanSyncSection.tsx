@@ -22,7 +22,7 @@ export function LanSyncSection({ config, updateAndSave }: LanSyncSectionProps) {
           以致下面那个不得不写一句「与上面那个无关」来消歧——那句话已删。
           🔴 只改文案：配置键 `lan_sync_enabled` 与命令 `toggle_lan_sync` 不动，
           改了会把用户已经开着的开关静默变回默认。 */}
-      <div className={styles.sSection}>剪贴板同步</div>
+      <div data-settings-parent="设备与连接" className={styles.sSection}>剪贴板同步</div>
       <ToggleRow icon="🌐" hue="sync" label="剪贴板同步" desc="多台电脑自动共享剪贴板。仅限同一局域网，跳网用不了" value={config.lan_sync_enabled}
         detailTitle="剪贴板同步"
         detail={<>

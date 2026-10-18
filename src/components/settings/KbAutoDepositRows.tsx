@@ -21,7 +21,7 @@ export function KbAutoDepositRows({ config, updateAndSave }: Props) {
   const on = config.kb_auto_deposit ?? false;
   return (
     <>
-      <div className={styles.sSection}>星标自动沉淀</div>
+      <div data-settings-parent="笔记与编辑" className={styles.sSection}>星标自动沉淀</div>
       <ToggleRow
         icon="⭐"
         hue="editor"
