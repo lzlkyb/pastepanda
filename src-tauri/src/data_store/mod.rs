@@ -35,6 +35,7 @@ mod sequence_memory;
 mod snippet;
 mod stack_templates;
 mod sticky;
+pub mod storage;
 mod tag;
 // 库体检（N3）：只聚合，不新增表。
 mod note_health;

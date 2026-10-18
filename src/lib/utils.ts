@@ -247,6 +247,15 @@ export function formatRate(bytesPerSec: number): string {
   return `${formatBytes(bytesPerSec)}/s`;
 }
 
+/** Storage labels use IEC units; the shared formatter already divides by 1024. */
+export function formatStorageBytes(bytes: number): string {
+  return formatBytes(bytes).replace(/\b(K|M|G)B\b/g, "$1iB");
+}
+
+export function storageTableBytes(table: { table_bytes: number | null; index_bytes: number | null }): number | null {
+  return table.table_bytes === null || table.index_bytes === null ? null : table.table_bytes + table.index_bytes;
+}
+
 /** 剥离 HTML 标签，返回纯文本 */
 export function stripHtml(text: string): string {
   try {

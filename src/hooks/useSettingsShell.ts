@@ -1,4 +1,5 @@
 import { useSettingsSave } from "@/hooks/useSettingsSave";
+import { invalidateStorageStats } from "@/lib/api/storage";
 import { primaryShortcutLabel } from "@/lib/utils";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, HistoryItem, DEFAULT_CONFIG } from "@/stores/appStore";
@@ -183,6 +184,7 @@ export function useSettingsShell() {
         if (valid.length === 0) { toast(`文件中没有有效记录（共 ${items.length} 条，全部格式不符）`, "error"); return; }
         const { invoke } = await import("@tauri-apps/api/core");
         const count = await invoke<number>("import_history", { items: valid });
+        invalidateStorageStats();
         // The import has committed. A failed refresh must not invite a duplicate import.
         invalidateCountsCache();
         try {
@@ -220,6 +222,7 @@ export function useSettingsShell() {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke<{ count: number; deleted_items: HistoryItem[] }>("clear_history", { workspace: config.current_workspace, beforeDays: Number(cleanupDays) });
+      invalidateStorageStats();
       if (result.count > 0) {
         // 按已删 ID 从内存列表精确移除，不重新拉取整页（避免列表被截断到 limit 条）
         const deletedIds = new Set(result.deleted_items.map((d) => d.id));

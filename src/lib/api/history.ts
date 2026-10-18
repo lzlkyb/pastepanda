@@ -6,6 +6,7 @@ import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { logger } from "@/lib/logger";
 import { toastActionFailed } from "@/lib/utils";
 import { invalidateCountsCache, fetchCounts } from "./cache";
+import { invalidateStorageStats } from "./storage";
 
 /** 分页在飞行中标志位：防止连续滑动触发两次 loadMoreHistory 并发请求同一页导致重复行 */
 let isLoadingMore = false;
@@ -254,6 +255,7 @@ export async function clearHistoryConditions(c: DeepCleanConditions): Promise<nu
       undoStack: [result.deleted_items, ...s.undoStack].slice(0, 10),
     }));
     invalidateCountsCache();
+    invalidateStorageStats();
   }
   return result.count;
 }
