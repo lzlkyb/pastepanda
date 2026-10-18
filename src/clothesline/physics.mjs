@@ -105,13 +105,6 @@ export function ropeDrop(geometry, curve, x) {
   return { ...ropePoint(geometry, curve, t), t };
 }
 
-export function restoreSnapshot(current, snapshot, capacity) {
-  const present = new Set(current.map((item) => item.id));
-  const restored = snapshot.filter((item) => !present.has(item.id));
-  // 撤销只恢复当次快照；后续新挂照片优先保留，容量不足的旧卡明确留在排队区。
-  return { items: [...restored, ...current], queued: Math.max(0, restored.length + current.length - capacity) };
-}
-
 export function isDetached(dx, dy, height) {
   return dy > Math.min(60, height * 0.4) || dy < -45 || Math.abs(dx) > 90;
 }

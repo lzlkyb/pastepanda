@@ -322,22 +322,6 @@ input[type="checkbox"] {
   z-index: 55;
   pointer-events: none;
 }
-.undoBar {
-  position: absolute;
-  bottom: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--card-bg);
-  color: var(--text-primary);
-  padding: 12px 16px;
-  border-radius: 8px;
-  z-index: 70;
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-}
 .toast {
   position: absolute;
   bottom: 104px;
@@ -493,10 +477,4 @@ body {
 .toast {
   bottom: 96px;
   max-width: min(520px, 90vw);
-}
-.undoBar {
-  bottom: 48px;
-  max-width: 90vw;
-  flex-wrap: wrap;
-  white-space: normal;
 }

@@ -63,6 +63,15 @@ fn raise_above_desktop(win: &tauri::WebviewWindow) {
 }
 
 pub(super) fn sync_visibility(app: &AppHandle) {
+    // 自愈：页面已 ready、窗口确实存在，但原生初始化那一位没点亮——来路只有一条，
+    // 就是建窗线程在穿透确认上超时（见 ensure 里的注释）。此时窗口本身是好的，
+    // 只要把穿透补投一次就能放行；否则一次 3 秒超时会把晾衣绳永久锁在「存在但不可见」。
+    if READY.load(Ordering::SeqCst) && !NATIVE_READY.load(Ordering::SeqCst) {
+        if let Some(win) = app.get_webview_window(LABEL) {
+            let _ = set_pointer_passthrough(&win, true);
+            NATIVE_READY.store(true, Ordering::SeqCst);
+        }
+    }
     if !READY.load(Ordering::SeqCst) || !NATIVE_READY.load(Ordering::SeqCst) {
         return;
     }
@@ -179,8 +188,20 @@ pub(crate) fn ensure(app: &AppHandle) {
             .position(wa.position.x as f64 / scale, wa.position.y as f64 / scale)
             .build()
             .map_err(|e| e.to_string())?;
-            set_pointer_passthrough(&win, true)
-                .map_err(|e| e.to_string())?;
+            // 🔴 `build()` 在非主线程返回时**只代表「建窗消息已投递」**，不代表 WebView2
+            // 已经创建完：tauri-runtime-wry 的 `create_window` 就是发一条
+            // `Message::CreateWindow` 到主线程队列后立刻返回 DetachedWindow。
+            // 所以紧接着的穿透初始化会排在这条创建消息**后面**，必须等主线程把
+            // WebView2 初始化完（冷启动常见数秒）才有机会执行。3 秒等不到就是
+            // `RecvTimeoutError::Timeout`，Display 原文 "timed out waiting on channel"。
+            //
+            // 这**只是「未在期限内确认」**，闭包仍在队列里、稍后照样执行。
+            // 绝不能把它当成建窗失败：`?` 一传播，下面的 NATIVE_READY 就永远停在
+            // false，`sync_visibility` 此后每次都直接 return —— 窗口建好了、页面加载了、
+            // 图片历史也都在，但永远不显示（2026-10-18 用户报的正是这一条）。
+            if let Err(error) = set_pointer_passthrough(&win, true) {
+                log::warn!("[Clothesline] 穿透初始化未在期限内确认（不阻断显示）: {error}");
+            }
             win.set_position(tauri::PhysicalPosition::new(wa.position.x, wa.position.y))
                 .map_err(|e| e.to_string())?;
             win.set_size(tauri::PhysicalSize::new(wa.size.width, wa.size.height))
@@ -205,7 +226,10 @@ pub(crate) fn retry(app: &AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(LABEL) {
         READY.store(false, Ordering::SeqCst);
         hide_window(app);
-        set_pointer_passthrough(&win, true).map_err(|e| e.to_string())?;
+        // 同 ensure：确认超时不代表窗口有问题，别让它中断重试。
+        if let Err(error) = set_pointer_passthrough(&win, true) {
+            log::warn!("[Clothesline] 重试时穿透未确认（继续重载页面）: {error}");
+        }
         NATIVE_READY.store(true, Ordering::SeqCst);
         win.eval("location.reload()").map_err(|e| e.to_string())?;
     } else { ensure(app); }
@@ -384,10 +408,13 @@ fn start_poll(app: &AppHandle) {
                 };
                 #[cfg(not(windows))]
                 let pressed_inside = false;
+                // 进入交互态的容差原来只有 2px：鼠标必须精确落到 region 边缘 2px 内，
+                // 窗口才从「穿透」切回可交互，差一点就直接点穿到桌面（用户感受是
+                // 「明明在图上，点了没反应」）。放宽到 8px，进入后用 10px 形成滞回。
                 let hit = model().hit(
                     (x - origin.x as f64) / scale,
                     (y - origin.y as f64) / scale,
-                    if inside { 6.0 } else { 2.0 },
+                    if inside { 10.0 } else { 8.0 },
                     pressed_inside,
                 );
                 if hit != inside {

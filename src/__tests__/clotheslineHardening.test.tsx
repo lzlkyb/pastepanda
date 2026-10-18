@@ -101,18 +101,6 @@ const begin=(card:HTMLElement)=>{
   return {hangs,event};
 };
 describe('Clothesline hardening regressions',()=>{
-  it('leaving undo and restoring visibility cannot resume its timer during native reception',async()=>{
-    vi.useFakeTimers();
-    try {
-      const bridge=fakeBridge(),ready=deferred<Photo>();dispose=await mountClothesline(bridge);
-      const button=card0().querySelector('button') as HTMLButtonElement;await button.onclick!.call(button,new MouseEvent('click'));
-      bridge.photoForPin.mockImplementation(()=>ready.promise);const pending=bridge.emitDrop({...bridge.pin,hwnd:43,force:true});
-      document.getElementById('undoBar')!.onpointerleave!({} as PointerEvent);
-      bridge.emitVisible(false);bridge.emitVisible(true);vi.advanceTimersByTime(9000);
-      expect(document.getElementById('undoBar')!.hidden).toBe(false);
-      ready.resolve(photos[1]);await pending;
-    } finally { vi.useRealTimers(); }
-  });
   it('disposing while detach creation is pending restores and closes its late pin without touching a new DOM',async()=>{
     const bridge=fakeBridge(),ready=deferred<Pin>();bridge.dragTake.mockImplementation(()=>ready.promise);
     dispose=await mountClothesline(bridge);const {hangs,event}=begin(card0());hangs.onpointermove!(event(0,120));
@@ -131,31 +119,14 @@ describe('Clothesline hardening regressions',()=>{
     const {hangs,event}=begin(card);hangs.onpointermove!(event(0,120));
     expect(bridge.dragTake).not.toHaveBeenCalled();ready.resolve();
   });
-  it('slow hangback keeps visible progress until cancelled and then clears it',async()=>{
-    vi.useFakeTimers();
-    try {
-      const bridge=fakeBridge(),ready=deferred<Photo>();bridge.photoForPin.mockImplementation(()=>ready.promise);
-      dispose=await mountClothesline(bridge);const pending=bridge.emitDrop({...bridge.pin,force:true});
-      vi.advanceTimersByTime(5000);expect(document.getElementById('toast')!.hidden).toBe(false);
-      fireEvent.keyDown(document,{key:'Escape'});ready.resolve(photos[0]);await pending;
-      vi.advanceTimersByTime(5000);expect(document.getElementById('toast')!.hidden).toBe(true);
-    } finally { vi.useRealTimers(); }
-  });
-  it('dropping another pin while one is receiving gives feedback and keeps the other pin',async()=>{
+  it('dropping another pin while one is receiving is handled independently without a blocking toast',async()=>{
     const bridge=fakeBridge(),ready=deferred<Photo>();bridge.photoForPin.mockImplementation(()=>ready.promise);
     dispose=await mountClothesline(bridge);const pending=bridge.emitDrop({...bridge.pin,force:true});
-    await bridge.emitDrop({...bridge.pin,hwnd:43,force:true});
-    expect(document.getElementById('toast')!.textContent).toContain('正在挂回其它照片');
-    expect(bridge.closePin).not.toHaveBeenCalled();ready.resolve(photos[0]);await pending;
-  });
-  it('undo cannot restore a previous operation while another pin is preparing hangback',async()=>{
-    const bridge=fakeBridge(),ready=deferred<Photo>();dispose=await mountClothesline(bridge);
-    const button=card0().querySelector('button') as HTMLButtonElement;await button.onclick!.call(button,new MouseEvent('click'));
-    bridge.photoForPin.mockImplementation(()=>ready.promise);
-    const pending=bridge.emitDrop({...bridge.pin,hwnd:43,force:true});
-    const undo=document.getElementById('undo') as HTMLButtonElement;
-    expect(undo.disabled).toBe(true);await undo.onclick!.call(undo,new MouseEvent('click'));
-    expect(bridge.restore).not.toHaveBeenCalled();ready.resolve(photos[1]);await pending;
+    // 安静优先：不再为「另一张正在接收」弹提示，也不再把它弹回去；两张各自独立处理。
+    const second=bridge.emitDrop({...bridge.pin,hwnd:43,force:true});
+    expect(document.getElementById('toast')!.hidden).toBe(true);
+    expect(bridge.closePin).not.toHaveBeenCalled();
+    ready.resolve(photos[0]);await Promise.all([pending,second]);
   });
   it.each([false,true])('disposing during native commit must not render into the removed window (reject=%s)',async(reject)=>{
     const bridge=fakeBridge(),ready=deferred<Photo>();bridge.returnPin.mockImplementation(()=>ready.promise.then(item=>{if(reject)throw new Error('window closed');return item;}));
@@ -164,23 +135,12 @@ describe('Clothesline hardening regressions',()=>{
     dispose();dispose=undefined;document.body.innerHTML='';ready.resolve(photos[0]);
     await expect(pending).resolves.toBeUndefined();
   });
-  it('undo countdown pauses while hangback preparation disables undo',async()=>{
-    vi.useFakeTimers();
-    try {
-      const bridge=fakeBridge(),ready=deferred<Photo>();dispose=await mountClothesline(bridge);
-      const button=card0().querySelector('button') as HTMLButtonElement;await button.onclick!.call(button,new MouseEvent('click'));
-      bridge.photoForPin.mockImplementation(()=>ready.promise);
-      const pending=bridge.emitDrop({...bridge.pin,hwnd:43,force:true});
-      vi.advanceTimersByTime(9000);
-      expect(document.getElementById('undoBar')!.hidden).toBe(false);
-      ready.resolve(photos[1]);await pending;
-    } finally { vi.useRealTimers(); }
-  });
   it('Esc after native commit begins must not promise the original pin is still kept',async()=>{
     const bridge=fakeBridge(),ready=deferred<Photo>();bridge.returnPin.mockImplementation(()=>ready.promise);
     dispose=await mountClothesline(bridge);const pending=bridge.emitDrop({...bridge.pin,force:true});
     await waitFor(()=>expect(bridge.returnPin).toHaveBeenCalled());fireEvent.keyDown(document,{key:'Escape'});
-    expect(document.getElementById('toast')!.textContent).toContain('完成后可撤销');
+    // 已经进入提交阶段就不能再承诺「原贴图保留」，也不该再出现撤销字样。
+    expect(document.getElementById('toast')!.textContent).toBe('正在完成挂回');
     ready.resolve(photos[0]);await pending;
   });
   it('Esc while reading a native photo stops hangback and leaves its native pin alone',async()=>{
@@ -205,10 +165,11 @@ describe('Clothesline hardening regressions',()=>{
     expect(bridge.returnPin).not.toHaveBeenCalled();
     expect(document.querySelectorAll('#pins > *')).toHaveLength(0);
   });
-  it('hangback preparation locks conflicting actions and ignores late movement previews',async()=>{
+  it('hangback preparation no longer locks unrelated actions but still ignores late movement previews',async()=>{
     const bridge=fakeBridge(),ready=deferred<Photo>();bridge.photoForPin.mockImplementation(()=>ready.promise);
     dispose=await mountClothesline(bridge);const pending=bridge.emitDrop({...bridge.pin,force:true});
-    expect((document.getElementById('clear') as HTMLButtonElement).disabled).toBe(true);
+    // 取挂只锁「这一张」：旧版会把收衣/清空一起灰掉，用户看着就是「点不动」。
+    expect((document.getElementById('clear') as HTMLButtonElement).disabled).toBe(false);
     bridge.emitPreview({...bridge.pin,point:[600,180],rect:{x:500,y:55,width:200,height:120}});
     expect(document.getElementById('slotMarker')!.hidden).toBe(true);
     ready.resolve(photos[0]);await pending;
@@ -284,16 +245,6 @@ describe('Clothesline hardening regressions',()=>{
     const bridge=fakeBridge();dispose=await mountClothesline(bridge);
     bridge.emitPreview({...bridge.pin,rect:{x:0,y:32,width:3840,height:2160}});
     expect(document.getElementById('slotMarker')!.hidden).toBe(false);
-  });
-  it('collect/clear must stay unavailable while undo restore is pending',async()=>{
-    const bridge=fakeBridge(),ready=deferred<void>();dispose=await mountClothesline(bridge);
-    const button=card0().querySelector('button')! as HTMLButtonElement;
-    await button.onclick!.call(button,new MouseEvent('click'));
-    bridge.restore.mockImplementation(()=>ready.promise);
-    const undo=document.getElementById('undo') as HTMLButtonElement;
-    const undoing=undo.onclick!.call(undo,new MouseEvent('click'));
-    const disabled=(document.getElementById('clear') as HTMLButtonElement).disabled;
-    ready.resolve();await undoing;expect(disabled).toBe(true);
   });
 });
 
