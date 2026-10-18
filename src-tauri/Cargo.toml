@@ -163,6 +163,11 @@ rxing = { version = "0.9.3", default-features = false, features = [
 [dev-dependencies]
 # v6.10 测试基建：本地 mock OpenAI 服务（tiny_http 轻量、仅测试用，不进发布包）
 tiny_http = "0.12"
+# `test-util` 只给测试构建开虚拟时钟（`#[tokio::test(start_paused = true)]`）。
+# 理由：写入合并窗口是纯时序逻辑，真等 60ms 窗口在满载机器上会飘——2026-10-18
+# 实测过 `test_连续写入会把窗口顶回去` 只跑出 79.39ms（下界 90ms）而单跑全绿。
+# 窗口长度仍从参数进（业务代码不为测试改形状），这里只是让测试不必真等。
+tokio = { version = "1", features = ["full", "test-util"] }
 # ⚠ 不要为了测试加 `tauri = { features = ["test"] }`。实测：开启它会让
 # getrandom 0.3 的 Windows 后端变成可达代码，test exe 于是静态导入
 # `bcryptprimitives.dll!ProcessPrng`——本机 Windows 11 build 22000 没有这个导出，
