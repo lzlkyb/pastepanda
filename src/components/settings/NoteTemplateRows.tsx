@@ -49,7 +49,7 @@ export function NoteTemplateRows({ config, updateAndSave }: Props) {
 
   return (
     <>
-      <div className={styles.sSection}>转笔记模板</div>
+      <div data-settings-parent="笔记与编辑" className={styles.sSection}>转笔记模板</div>
 
       <div className={styles.sRow}>
         <SettingTile hue="editor">📝</SettingTile>

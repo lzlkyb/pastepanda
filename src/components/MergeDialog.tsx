@@ -77,7 +77,7 @@ export const MergeDialog = memo(function MergeDialog({
         toast("AI 已整理（去重+顺排+润色）", "success");
       } else if (r.status === "budgetExceeded") {
         // v6.9：内置免费额度不足 → 引导签到/兑换；否则原预算提示
-        toast(r.isQuota ? "免费额度已用完，去设置 → AI 签到或兑换" : "超出本月 AI 预算", "info");
+        toast(r.isQuota ? "免费额度已用完，去设置 → AI 设置 签到或兑换" : "超出本月 AI 预算", "info");
       } else {
         toast("AI 合并失败，已保留规则版", "info");
       }

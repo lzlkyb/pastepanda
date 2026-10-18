@@ -150,7 +150,8 @@ export function IslandSection({
 }) {
   return (
     <>
-      <div className={shared.sSection}>灵动岛</div>
+      <div className={shared.sSection}>待办灵动岛</div>
+      <div data-settings-parent="待办灵动岛" className={shared.sSection}>待办与提醒</div>
       <ToggleRow
         icon="🏖️"
         hue="brand"
@@ -162,8 +163,6 @@ export function IslandSection({
       {/* 关 = 岛都不在，透度/提醒/排序调了也看不见——整块收起，不摆一列灰置行。 */}
       {config.todo_island_enabled && (
         <>
-          <GlassRow stored={config.todo_island_glass} updateAndSave={updateAndSave} />
-          <AnchorRow stored={config.todo_island_anchor} updateAndSave={updateAndSave} />
           <ToggleRow
             icon="🔔"
             hue="privacy"
@@ -199,6 +198,9 @@ export function IslandSection({
             value={config.todo_island_due_sort}
             onChange={(v) => saveAndNotify(updateAndSave, { todo_island_due_sort: v })}
           />
+          <div data-settings-parent="待办灵动岛" className={shared.sSection}>外观与位置</div>
+          <GlassRow stored={config.todo_island_glass} updateAndSave={updateAndSave} />
+          <AnchorRow stored={config.todo_island_anchor} updateAndSave={updateAndSave} />
         </>
       )}
     </>

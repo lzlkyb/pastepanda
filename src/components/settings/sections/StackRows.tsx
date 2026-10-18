@@ -1,13 +1,3 @@
-/**
- * 「截图与栈」分区里的**粘贴栈**小节（2026-09-29 分区重排 方案A）。
- *
- * 这五行原先挂在「快捷键」节里，和八行热键录制器混在一起——它们配的是栈的行为，
- * 不是热键。栈自己成一节又被拆成两半也不合适（截图与热键共用一条链路），
- * 于是与截图同节、用一个小节标题分开：小节标题不进左菜单，滚动时菜单仍亮「截图与栈」
- * （`useSettingsNav` 对认不出的标题是跳过而非掉高亮）。
- *
- * 🔴 必须返回片段，原因同 StatsSection。
- */
 import { STACK_MAX_TIERS, resolveStackMaxItems, useAppStore } from "@/stores/appStore";
 import type { AppConfig } from "@/stores/appStore";
 import { hudDismiss, hudStackModeEntered } from "@/lib/stack/hudBridge";
@@ -23,7 +13,7 @@ interface StackRowsProps {
 export function StackRows({ config, updateAndSave }: StackRowsProps) {
   return (
     <>
-      <div className={styles.sSection}>粘贴栈</div>
+      <div data-settings-parent="剪贴板" className={styles.sSection}>粘贴栈</div>
       <ToggleRow icon="📐" hue="paste" label="表格自动拆行入栈" desc="栈模式下复制表格时自动按行拆分（关闭=表格整块入栈）" value={config.table_split_enabled}
         tooltip="栈模式下复制表格（或非栈模式下按栈粘贴热键且剪贴板是表格）会自动按行拆分，可在「⋯」菜单里一键撤销"
         detailTitle="表格自动拆行入栈"

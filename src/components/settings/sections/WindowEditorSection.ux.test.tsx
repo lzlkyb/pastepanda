@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, DEFAULT_CONFIG } from "@/stores/appStore";
 import { useSettingsSave } from "@/hooks/useSettingsSave";
-import { WindowEditorSection } from "./WindowEditorSection";
+import { WindowBehaviorRows } from "./WindowBehaviorRows";
 
 const { toast, setAlwaysOnTop } = vi.hoisted(() => ({ toast: vi.fn(), setAlwaysOnTop: vi.fn() }));
 vi.mock("@/components/Toast", () => ({ useToast: () => ({ toast }) }));
@@ -18,7 +18,7 @@ vi.mock("../ToggleRow", () => ({
 function Harness() {
   const config = useAppStore(s => s.config);
   const { updateAndSave } = useSettingsSave();
-  return <WindowEditorSection config={config} updateAndSave={updateAndSave} mdAssoc="unsupported" mdAssocBusy={false} handleMdAssocToggle={vi.fn()} refreshMdAssoc={vi.fn()} />;
+  return <WindowBehaviorRows config={config} updateAndSave={updateAndSave} />;
 }
 beforeEach(() => {
   useAppStore.getState().updateConfig({ ...DEFAULT_CONFIG, auto_startup: false, always_on_top: false });

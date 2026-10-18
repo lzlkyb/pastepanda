@@ -42,14 +42,15 @@ export function DataSection({
     <>
       {/* ── 数据管理 ── */}
       <div className={styles.sSection}>数据管理</div>
+      <div data-settings-parent="数据管理" className={styles.sSection}>保留与清理</div>
       <div className={styles.sRow}>
         <SettingTile hue="save">🗑</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
-            自动清理
+            剪贴板保留天数
             <HelpTooltip
               tooltip="启动后每小时自动清理超过指定天数、未置顶的记录"
-              detailTitle="自动清理"
+              detailTitle="剪贴板保留天数"
               detail={<>
                 <p>应用启动后每小时检查一次，自动删除超过指定天数的旧记录。</p>
                 <p>📌 <b>推荐 30 天</b>：平衡存储空间和历史追溯</p>
@@ -77,15 +78,15 @@ export function DataSection({
         <SettingTile hue="save">♻</SettingTile>
         <div className={`${styles.sRowBody}`}>
           <div className={`${styles.sRowLabel}`}>
-            笔记回收站
+            回收站保留天数
             <HelpTooltip
               tooltip="删掉的笔记在回收站保留多久，到期自动销毁"
-              detailTitle="笔记回收站"
+              detailTitle="回收站保留天数"
               detail={<>
                 <p>删掉的笔记不会立即消失，而是进入<b>知识库侧栏底部的回收站</b>，随时可以恢复。</p>
                 <p>📌 连它的<b>历史版本与标签一起保留</b>，恢复后原样回来</p>
                 <p>📌 回收站里的笔记<b>不参与搜索</b>，也不算进笔记总数</p>
-                <p>⚠️ 这与上面的「自动清理」<b>是两回事</b>：那个管剪贴板历史，这个管笔记</p>
+                <p>⚠️ 这与上面的「剪贴板保留天数」<b>是两回事</b>：那个管剪贴板历史，这个管笔记</p>
                 <p>⚠️ 设为「关」则永久保留，只能在回收站里手动清</p>
               </>}
             />
@@ -164,10 +165,11 @@ export function DataSection({
         </div>
         <button className={styles.sAction} onClick={() => setShowDeepClean(true)}>打开</button>
       </div>
+      <div data-settings-parent="数据管理" className={styles.sSection}>剪贴板导入导出</div>
       <div className={styles.sRow}>
         <SettingTile hue="save">📦</SettingTile>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>导出数据</div>
+          <div className={`${styles.sRowLabel}`}>导出剪贴板记录</div>
           {/* 实际默认导出的是 Excel：handleExport 的 filters 顺序是 xlsx → csv → json，
               系统保存对话框取第一项做默认扩展名。原描述写死「JSON」，界面说的和实际发生的不是一回事。 */}
           <div className={`${styles.sRowDesc}`}>导出为 Excel / CSV / JSON，在保存对话框里选格式</div>
@@ -179,7 +181,7 @@ export function DataSection({
       <div className={styles.sRow}>
         <SettingTile hue="save">📥</SettingTile>
         <div className={`${styles.sRowBody}`}>
-          <div className={`${styles.sRowLabel}`}>导入数据</div>
+          <div className={`${styles.sRowLabel}`}>导入剪贴板记录</div>
           <div className={`${styles.sRowDesc}`}>从 JSON 文件导入历史记录</div>
         </div>
         <button className={styles.sAction} onClick={handleImport} disabled={importing}>
@@ -187,6 +189,7 @@ export function DataSection({
         </button>
       </div>
       {/* 笔记的 Markdown 目录导出/导入（B1 #5）。上面那两行是历史记录的 JSON，两回事 */}
+      <div data-settings-parent="数据管理" className={styles.sSection}>笔记导入导出</div>
       <NoteVaultRows />
     </>
   );

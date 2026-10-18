@@ -387,7 +387,27 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.settingsNavSep { height: 1px; background: var(--border-color); margin: 6px 12px; }
+.settingsNavGroup {
+  padding: 12px 16px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* 小节保持直接子节点，层级用留白和字重表达，不与一级标题争夺吸顶位置。 */
+.sSection[data-settings-parent]:not([data-label]) {
+  position: static;
+  padding: 12px 16px 8px;
+  border-radius: 0;
+  border-top: none;
+  border-bottom: none;
+  background: var(--card-bg);
+  box-shadow: none;
+  letter-spacing: normal;
+}
+.sSection[data-settings-parent]:not([data-label])::before { content: none; }
+
+.sWideSelect { width: 132px; }
 /* 🔴 这里不能写 display: flex + flex-direction: column。
    AboutTabContent / HelpTabContent 的根用的是全局 .dialog-body，而那个类带着
    `flex: 1` + `overflow-y: auto`（为弹框内布局设计的）。一旦父容器是 flex 列，
@@ -487,7 +507,8 @@
 /* 后面直接跟 lanPanel 时去掉行底边，由面板 border-top 接管，接缝只一条线 */
 .sRow:has(+ .lanPanel) { border-bottom: none; }
 /* 分区末行（下一个是标题）与整页末行：补下圆角，卡片才闭合 */
-.sRow:has(+ .sSection),
+.sRow:has(+ .sSection:not([data-settings-parent])),
+.sRow:has(+ .sSection[data-label]),
 .settingsSections > .sRow:last-child,
 .settingsContent > .sRow:last-child {
   border-radius: 0 0 12px 12px;

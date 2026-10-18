@@ -49,6 +49,7 @@ export function RcGroupHead({
       tabIndex={0}
       aria-expanded={open}
       aria-disabled={inert || undefined}
+      data-settings-parent="设备与连接"
       data-label={label}
       onClick={() => {
         if (!inert) onToggle();

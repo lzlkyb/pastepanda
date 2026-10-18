@@ -3,6 +3,7 @@ import { THEMES } from "@/lib/theme";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { SettingTile, ToggleRow } from "../ToggleRow"
 import shared from "../../Settings.module.css";
+import { WindowBehaviorRows } from "./WindowBehaviorRows";
 import styles from "./Appearance.module.css";
 
 const THEME_PREVIEWS: Record<string, { bg: string; accent: string; text: string; barBg: string; bodyBg: string; lineBg: string }> = {
@@ -26,7 +27,8 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
   return (
     <>
       {/* ── 外观 ── */}
-      <div className={shared.sSection}>外观</div>
+      <div className={shared.sSection}>外观与窗口</div>
+      <div data-settings-parent="外观与窗口" className={shared.sSection}>主题与界面</div>
       <div className={shared.sRow} style={{ flexDirection: "column", alignItems: "stretch", gap: 12 }}>
         <SettingTile hue="brand">🎨</SettingTile>
         <div className={shared.sRowBody}>
@@ -96,9 +98,6 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
         </button>
       </div>
 
-      {/* ── 以下五行 2026-09-29 从「通用」搬来 ──
-          它们管的都是「界面长什么样、怎么动」，原先却混在采集/粘贴那一筐里，
-          而这一节只剩两行、明显比别的节空。搬过来之后外观才真的叫外观。 */}
       <div className={shared.sRow}>
         <SettingTile hue="system">🎯</SettingTile>
         <div className={`${shared.sRowBody}`}>
@@ -130,62 +129,6 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           </button>
         </div>
       </div>
-      <div className={shared.sRow}>
-        <SettingTile hue="system">🖱️</SettingTile>
-        <div className={`${shared.sRowBody}`}>
-          <div className={`${shared.sRowLabel}`}>
-            卡片悬浮行为
-            <span className={`${shared.sRowRecommend}`}>⭐推荐</span>
-            <HelpTooltip
-              tooltip="鼠标悬停卡片时的交互方式"
-              detailTitle="卡片悬浮行为"
-              detail={<>
-                <p>设置鼠标悬停在卡片上时的交互方式。</p>
-                <p>📌 <b>关闭</b>：无悬浮交互，界面最简洁</p>
-                <p>📌 <b>操作按钮</b>：Hover 显示复制/收藏/编辑/删除按钮，时间自动隐藏</p>
-                <p>📌 <b>预览气泡</b>：弹出 Popover 气泡，内容预览+操作</p>
-                <p>💡 <b>推荐气泡模式</b>，适合浏览长文本内容</p>
-              </>}
-            />
-          </div>
-          <div className={`${shared.sRowDesc}`}>
-            {config.hover_mode === "off" ? "无悬浮交互，界面最简洁" : config.hover_mode === "inline" ? "Hover 显示操作按钮，时间自动隐藏" : "弹出 Popover 预览气泡，内容预览+操作"}
-          </div>
-        </div>
-        <div className={shared.sSegGroup}>
-          <button className={`${shared.sSegText}${config.hover_mode === "off" ? ` ${shared.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "off" })} aria-pressed={config.hover_mode === "off"}>
-            关闭
-          </button>
-          <button className={`${shared.sSegText}${config.hover_mode === "inline" ? ` ${shared.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "inline" })} aria-pressed={config.hover_mode === "inline"}>
-            操作按钮
-          </button>
-          <button className={`${shared.sSegText}${config.hover_mode === "popover" ? ` ${shared.sSegActive}` : ""}`} onClick={() => updateAndSave({ hover_mode: "popover" })} aria-pressed={config.hover_mode === "popover"}>
-            预览气泡
-          </button>
-        </div>
-      </div>
-      <div className={shared.sRow}>
-        <SettingTile hue="system">👆</SettingTile>
-        <div className={`${shared.sRowBody}`}>
-          <div className={`${shared.sRowLabel}`}>
-            双击列表行为
-            <HelpTooltip
-              tooltip="设为「复制」更快捷，设为「预览」可查看详情"
-              detailTitle="双击行为"
-              detail={<>
-                <p>设置双击卡片时的默认操作。</p>
-                <p>📌 <b>复制</b>：双击直接复制内容到剪贴板</p>
-                <p>📌 <b>预览</b>：双击弹出预览面板，可查看详情或编辑</p>
-                <p>💡 设为「预览」后仍可通过悬停卡片快速复制</p>
-              </>}
-            />
-          </div>
-          <div className={`${shared.sRowDesc}`}>{config.double_click_action === "copy" ? "双击复制到剪贴板" : "双击预览/编辑"}</div>
-        </div>
-        <button className={shared.sVal} onClick={() => updateAndSave({ double_click_action: config.double_click_action === "copy" ? "preview" : "copy" })}>
-          {config.double_click_action === "copy" ? "复制" : "预览"}
-        </button>
-      </div>
       <ToggleRow icon="⏱️" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
         tooltip="在剪贴板列表左侧显示时间轴，可快速跳转到不同时间段的记录"
         detailTitle="时间线"
@@ -206,6 +149,7 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           <p>系统启用减少动态效果时，自动减少位移与缩放。</p>
         </>}
         onChange={(v) => updateAndSave({ window_animation: v })} />
+      <WindowBehaviorRows config={config} updateAndSave={updateAndSave} />
     </>
   );
 }

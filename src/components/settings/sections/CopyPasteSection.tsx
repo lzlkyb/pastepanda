@@ -1,16 +1,9 @@
-/**
- * 设置页「复制与粘贴」分区（2026-09-29 分区重排 方案A）。
- *
- * 这一节原先叫「通用」，是个兜底筐：采集、粘贴、隐私、观感、窗口、编辑器全塞在一起。
- * 现在只留「内容进出的规则」这一族，其余各归各节（观感→外观，窗口/编辑器→系统与编辑，
- * 保留天数→数据管理）。
- *
- * 🔴 必须返回片段，原因同 StatsSection：搜索过滤要求容器 children 是「标题 + 行」一层扁平结构。
- */
 import { useEffect, useRef, useState } from "react";
 import type { AppConfig } from "@/stores/appStore";
 import { HelpTooltip } from "@/components/HelpTooltip";
 import { ToggleRow, SettingTile } from "../ToggleRow";
+import { ClipboardBrowseRows } from "./ClipboardBrowseRows";
+import { StackRows } from "./StackRows";
 import styles from "../../Settings.module.css";
 
 interface CopyPasteSectionProps {
@@ -47,7 +40,8 @@ export function CopyPasteSection({ config, updateAndSave }: CopyPasteSectionProp
 
   return (
     <>
-      <div className={styles.sSection}>复制与粘贴</div>
+      <div className={styles.sSection}>剪贴板</div>
+      <div data-settings-parent="剪贴板" className={styles.sSection}>采集与隐私</div>
       <ToggleRow icon="✂️" hue="save" label="自动去除空白" desc="复制时去除首尾空白字符" value={config.auto_strip} onChange={(v) => updateAndSave({ auto_strip: v })}
         tooltip="粘贴代码时尤其有用，避免多余缩进"
         detailTitle="自动去除空白"
@@ -64,14 +58,6 @@ export function CopyPasteSection({ config, updateAndSave }: CopyPasteSectionProp
           <p>开启后，从 Word/Excel/网页复制<b>带结构的内容</b>（表格、标题、列表）时，会保留 HTML 格式片段，不再只存纯文本。</p>
           <p>📌 保留的结构可在编辑器中清洗、转 Markdown、表格保真输出</p>
           <p>💡 无结构的普通复制（聊天、记事本）不受影响</p>
-        </>}
-      />
-      <ToggleRow icon="📋" hue="paste" label="保留格式粘贴" desc="粘贴文档/图文时保留富格式" value={config.paste_format_default !== "plain"} onChange={(v) => updateAndSave({ paste_format_default: v ? "auto" : "plain" })}
-        tooltip="开启时粘贴文档/图文内容保留富格式（CF_HTML）；关闭则全部粘贴纯文本"
-        detailTitle="保留格式粘贴"
-        detail={<>
-          <p>开启时，粘贴文档或图文内容到目标应用时保留<b>富格式</b>（表格、链接、加粗等）。</p>
-          <p>关闭后，所有内容一律粘贴为纯文本——适合需要干净粘贴到终端/代码编辑器的场景</p>
         </>}
       />
       <ToggleRow icon="🛡️" hue="privacy" label="敏感内容防护" desc="不记录匹配密钥/凭证模式的内容" value={config.skip_sensitive} onChange={(v) => updateAndSave({ skip_sensitive: v })}
@@ -103,9 +89,20 @@ export function CopyPasteSection({ config, updateAndSave }: CopyPasteSectionProp
           />
         </div>
       </div>
+      <div data-settings-parent="剪贴板" className={styles.sSection}>浏览与粘贴</div>
+      <ClipboardBrowseRows config={config} updateAndSave={updateAndSave} />
+      <ToggleRow icon="📋" hue="paste" label="保留格式粘贴" desc="粘贴文档/图文时保留富格式" value={config.paste_format_default !== "plain"} onChange={(v) => updateAndSave({ paste_format_default: v ? "auto" : "plain" })}
+        tooltip="开启时粘贴文档/图文内容保留富格式（CF_HTML）；关闭则全部粘贴纯文本"
+        detailTitle="保留格式粘贴"
+        detail={<>
+          <p>开启时，粘贴文档或图文内容到目标应用时保留<b>富格式</b>（表格、链接、加粗等）。</p>
+          <p>关闭后，所有内容一律粘贴为纯文本——适合需要干净粘贴到终端/代码编辑器的场景</p>
+        </>}
+      />
       <ToggleRow icon="🔁" hue="paste" label="依次粘贴循环" desc="到达末尾后从头开始" value={config.sequential_loop} onChange={(v) => updateAndSave({ sequential_loop: v })}
         tooltip="适合重复粘贴同一组内容时使用"
       />
+      <StackRows config={config} updateAndSave={updateAndSave} />
     </>
   );
 }
