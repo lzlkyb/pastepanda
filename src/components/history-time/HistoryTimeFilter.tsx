@@ -44,9 +44,14 @@ export function HistoryTimeFilter() {
   // Keep the surface mounted for its exit, but stop queries and interaction on close.
   const { isMounted, status } = useTransitionStatus(context, { duration: animate ? MOTION.fast * 1000 : 0 });
   // Both the open trigger and portal own their keys; otherwise Delete/Enter can
-  // act on a selected card behind the panel. Escape reaches Floating UI's dismiss handler.
+  // act on a selected card behind the panel. Escape 同样拦下并自己关面板：
+  // useDismiss 的元素级 stopPropagation 是主要防线，这里是双保险——面板开着
+  // 但焦点落在面板外时 Esc 直接进 document，App 全局链会落到 hide_window；
+  // 面板内路径也不依赖 useDismiss 的实现细节。
   const containKeys = (event: KeyboardEvent) => {
-    if (open && event.key !== "Escape") event.stopPropagation();
+    if (!open) return;
+    event.stopPropagation();
+    if (event.key === "Escape") setOpen(false);
   };
   const choose = (date: string) => { setPreviewDay(null); setDay(date); setTime(historyTimeWindow(date)); };
   const chooseHours = (date: string, start: number, end: number) => {

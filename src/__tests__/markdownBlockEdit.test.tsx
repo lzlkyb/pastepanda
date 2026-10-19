@@ -19,6 +19,21 @@ function mount(onEditBlock?: (i: number, raw: string, expectRaw: string) => bool
 }
 
 describe("块级就地编辑", () => {
+  // 🔴 表单填空控件不劫持：input 一直被排除，textarea/select 漏网——双击 textarea
+  // 是选词的常规操作，误开浮层会把输入劫走。
+  it("双击表单 textarea / select 不开块编辑浮层", () => {
+    const onEditBlock = vi.fn(() => true);
+    render(<MarkdownRenderer text={"第一段\n\n{{备注/多行}}\n\n{{状态|待处理|已完成}}"} onEditBlock={onEditBlock} />);
+    const ta = document.querySelector("textarea.md-fill-area") as HTMLTextAreaElement;
+    const sel = document.querySelector("select.md-fill") as HTMLSelectElement;
+    expect(ta).toBeTruthy();
+    expect(sel).toBeTruthy();
+    fireEvent.doubleClick(ta);
+    fireEvent.doubleClick(sel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onEditBlock).not.toHaveBeenCalled();
+  });
+
   it("双击段落 → 浮层打开，textarea 预填该块源码", () => {
     mount(vi.fn(() => true));
     fireEvent.doubleClick(screen.getByText("第一段"));

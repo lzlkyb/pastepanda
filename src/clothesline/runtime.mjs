@@ -502,7 +502,6 @@ export async function mountClothesline(bridge) {
     }
   }
   async function takeItem(id, sourceEl = cards.get(id), dragged = false, batch = false, continuous = false, handoff) {
-    let transferHeld = false;
     const item = state.items.find((i) => i.id === id);
     // 只挡「这一张」自己：同一张图不能同时在取下与挂回里，别的照片互不影响。
     if (
@@ -547,7 +546,6 @@ export async function mountClothesline(bridge) {
       if (continuous) {
         const landing = effects.rect(sourceEl);
         const transfer = handoff?.release() || { held: false, cancelled: false };
-        transferHeld = transfer.held;
         if (transfer.cancelled || disposed) {
           await bridge.restore([item]);
           if (!disposed) await bridge.order(state.items.map((photo) => photo.id));
@@ -649,8 +647,7 @@ export async function mountClothesline(bridge) {
       toast("请先开启晾衣绳，或等待本阵大风结束");
       return;
     }
-    const captured = effects.capture(sourceEl),
-      before = [...state.items];
+    const captured = effects.capture(sourceEl);
     pin.pendingBack = true;
     renderPins();
     renderCards();

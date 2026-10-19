@@ -89,6 +89,13 @@ describe("renderMarkdownForExport —— 正文与表单", () => {
     expect(r.html.trim()).toBe("");
     expect(r.warnings.length).toBeGreaterThan(0);
   });
+
+  // 🔴 导出实例必须与预览同 breaks 口径：预览（renderHtml 全局 marked）是 breaks:true，
+  // 导出实例漏配会把正文里的单换行合并成一行——「预览什么样、导出什么样」直接破约。
+  it("段落内单换行导出为 <br>（与预览 breaks:true 同口径）", async () => {
+    const r = await renderMarkdownForExport("第一行\n第二行");
+    expect(r.html).toContain("<br>");
+  });
 });
 
 describe("renderMarkdownForExport —— 图片内联", () => {
@@ -151,5 +158,19 @@ describe("renderMarkdownForExport —— 代码块与流程图", () => {
     const r = await renderMarkdownForExport("只是普通段落");
     expect(r.warnings).toEqual([]);
     expect(r.html).toContain("<p>");
+  });
+
+  // 🔴 mermaid 占位替换必须用函数替换：字符串 replacement 会把 `$&`/`$'`/`` $` ``
+  // 当 Replace Pattern 解释——失败保留源码的分支里源码本身进了 replacement，
+  // 标签含这类序列时导出产物被确定性改写（`$'` 还会大段复制匹配点之后的全文）。
+  // 断言口径：escapeHtml 把 `&` 转成 `&amp;`，但 `$` 不转义——`$&amp;` 在输出里
+  // 原样出现即证明 `$&` 没被 Replace Pattern 吃掉。
+  it("渲染失败保留源码时，源码里的 $& 与 $' 原样出现", async () => {
+    const mermaid = (await import("mermaid")).default;
+    vi.mocked(mermaid.render).mockRejectedValueOnce(new Error("bad graph"));
+    const r = await renderMarkdownForExport("```mermaid\ngraph TD\nA[价格$&税费]-->B[5$'s]\n```");
+    expect(r.html).toContain("$&amp;税费");
+    expect(r.html).toContain("5$'s");
+    expect(r.warnings.some((w) => w.includes("图表"))).toBe(true);
   });
 });

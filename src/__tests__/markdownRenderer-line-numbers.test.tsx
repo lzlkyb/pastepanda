@@ -14,6 +14,15 @@ vi.mock("@tauri-apps/api/core", async () => {
   return { ...actual, convertFileSrc: (p: string) => `asset://localhost/${p}` };
 });
 
+// 真包 mermaid 在 jsdom 里动态 import 极慢（实测 19s+ 超时）；本用例只关心
+// 行号包裹不碰 .md-mermaid-raw，把 render 钉成失败（raw 保持原样）即可
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn().mockRejectedValue(new Error("no render in test")),
+  },
+}));
+
 const writeText = vi.fn().mockResolvedValue(undefined);
 Object.defineProperty(navigator, "clipboard", {
   value: { writeText },
@@ -121,5 +130,16 @@ describe("MarkdownRenderer 行号模式", () => {
     const { container } = render(<MarkdownRenderer text={SAMPLE} />);
     expect((container.firstElementChild as HTMLElement).classList.contains("md-ln")).toBe(false);
     expect(container.querySelectorAll(".md-blknum").length).toBe(0);
+  });
+
+  // 🔴 行号包裹必须与高亮同口径排除 mermaid 源码块：.md-mermaid-raw code 被拆行后
+  // textContent 混入行号数字，mermaid 渲染读到污染源码直接挂，「编辑」按钮也会把
+  // 带行号的垃圾派发给 mermaid 编辑器。
+  it("行号模式下 mermaid 源码块不打行号（textContent 保持原始源码）", async () => {
+    const md = [SAMPLE, "", "```mermaid", "graph TD", "A-->B", "```"].join("\n");
+    const { container } = render(<MarkdownRenderer text={md} lineNumbers />);
+    await waitForCodeWrap(container);
+    const raw = container.querySelector(".md-mermaid-raw code") as HTMLElement;
+    expect(raw.textContent).toBe("graph TD\nA-->B");
   });
 });
