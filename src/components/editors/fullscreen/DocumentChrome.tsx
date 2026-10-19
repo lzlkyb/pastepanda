@@ -20,6 +20,8 @@ import { EditorStatusBar, type CursorInfo } from "./EditorStatusBar";
 import { PaneHeader, PreviewPaneHeader } from "./PaneHeader";
 import { FocusChrome } from "./FocusChrome";
 import { PreviewErrorBoundary } from "./PreviewErrorBoundary";
+import { useTaskProgress } from "./useTaskProgress";
+import { useExportHtml } from "@/components/markdown/useExportHtml";
 import type { DocumentFileApi } from "./useDocumentFile";
 import type { DocumentViewApi } from "./useDocumentView";
 import type { EditorPrefs } from "./useEditorPrefs";
@@ -90,6 +92,18 @@ export function DocumentChrome({
 
   const hasPreview = !!spec.Preview;
 
+  // 任务清单进度（仅 markdown；文档里没有 `- [ ]` 项时返回 null，面板头不占位）。
+  // 放在这里而不是预览组件里：面板头在预览组件之外，进度要跟「正在编辑的源文」走。
+  const taskProgress = useTaskProgress(file.text, spec.key === "markdown");
+
+  // 导出 HTML：hook 必须无条件调用（rules-of-hooks），是否暴露入口由 spec 决定
+  const { exportHtml, exporting: exportingHtml } = useExportHtml({
+    text: file.text,
+    baseDir: file.docDir,
+    fileName: file.fileName,
+  });
+  const canExportHtml = spec.key === "markdown";
+
   return (
     <>
       {/* Toolbar（deep 拖拽区：按住文件名/图标/空白处可移动窗口，按钮自动豁免） */}
@@ -116,6 +130,8 @@ export function DocumentChrome({
         onSave={() => void file.handleSave()}
         onClose={onClose}
         onFocusMode={view.toggleFocus}
+        onExportHtml={canExportHtml ? () => void exportHtml() : undefined}
+        exportingHtml={exportingHtml}
       />
 
       {/* 标签栏（宿主渲染，仅活动标签收到） */}
@@ -194,6 +210,7 @@ export function DocumentChrome({
                 showLineNumbersToggle={spec.key === "markdown"}
                 lineNumbersOn={prefs.previewLineNumbers}
                 onToggleLineNumbers={prefs.togglePreviewLineNumbers}
+                taskProgress={taskProgress}
               />
               <div
                 className={`${styles.previewBody} ${spec.previewFill ? styles.previewBodyFill : ""}${

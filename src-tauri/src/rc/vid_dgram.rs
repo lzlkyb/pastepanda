@@ -85,6 +85,7 @@ const MAX_REASM_BYTES: usize = 16 * 1024 * 1024;
 /// 3. `> frag_count * frag`：分片槽位的物理上界装不下声明长度 = 脏包
 ///    （即便前两条侥幸通过，`drain_ready` 也会因字节数不符报废整帧，
 ///    但那已经分配过一次了——必须在入口拦）。
+///
 /// `frag` 是本帧的片宽（FLAG_FRAG_BIG 决定，见模块头）。
 fn frame_len_ok(frame_len: u32, frag_count: u16, frag: usize) -> bool {
     let fl = frame_len as usize;
@@ -250,7 +251,7 @@ fn frame_dgrams(
     for i in 0..frag_count {
         let off = i as usize * frag;
         let end = (off + frag).min(data.len());
-        out.push(build(i as u16, flags, &data[off..end]));
+        out.push(build(i, flags, &data[off..end]));
     }
     // 奇偶分片：XOR 组内各片（补零对齐）
     for g in 0..n_groups {
@@ -334,7 +335,7 @@ fn frame_dgrams_rs(
         dg.push(DGRAM_TAG);
         dg.extend_from_slice(&seq.to_le_bytes());
         dg.push(f);
-        dg.extend_from_slice(&(frag_idx as u16).to_le_bytes());
+        dg.extend_from_slice(&frag_idx.to_le_bytes());
         dg.extend_from_slice(&(total as u16).to_le_bytes());
         dg.extend_from_slice(&(data.len() as u32).to_le_bytes());
         dg.extend_from_slice(&at_ms.to_le_bytes());
@@ -355,7 +356,7 @@ fn frame_dgrams_rs(
     // 校验片：每组 k 片（末组补零对齐）进 RS 编码
     for g in 0..groups {
         let start = g * RS_K;
-        let end = ((start + RS_K).min(n)) as usize;
+        let end = (start + RS_K).min(n);
         let group: Vec<Vec<u8>> = (start..end)
             .map(|i| {
                 let off = i * frag;
@@ -601,7 +602,7 @@ impl VidReassembler {
                 return None; // 校验片不足（每组至少 1）或数据片数超界
             }
             let m = (field - n) / groups;
-            if (field - n) % groups != 0 || m == 0 || m > 8 {
+            if !(field - n).is_multiple_of(groups) || m == 0 || m > 8 {
                 return None; // m 必须整除且在 1..=8
             }
             (n, m as u16, field)

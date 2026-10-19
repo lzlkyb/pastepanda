@@ -8,6 +8,9 @@ mod content_memory;
 pub mod device;
 mod group;
 mod history;
+mod history_search;
+pub mod history_time;
+pub mod history_source;
 mod image_barcode;
 mod image_ocr;
 mod kb_inbox;
@@ -35,6 +38,7 @@ mod sequence_memory;
 mod snippet;
 mod stack_templates;
 mod sticky;
+pub mod storage;
 mod tag;
 // 库体检（N3）：只聚合，不新增表。
 mod note_health;
@@ -60,6 +64,10 @@ mod tests_daily;
 // 事件聚合（G3）的用例。
 #[cfg(test)]
 mod tests_events;
+#[cfg(test)]
+mod tests_history_time;
+#[cfg(test)]
+mod tests_history_source;
 // 「库的脉搏」（L2 信号）那条查询的用例。MCP 层被 FakeKb 挡住，
 // 这条 SQL 只有在数据层才跑得到——详见该文件头部。
 #[cfg(test)]

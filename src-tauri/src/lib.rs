@@ -1046,6 +1046,11 @@ pub fn run() {
             commands::save_config,
             commands::get_stats,
             commands::get_stats_detail,
+            commands::get_storage_overview,
+            commands::get_history_time_distribution,
+            commands::get_history_source_distribution,
+            commands::get_storage_database,
+            commands::cancel_storage_request,
             commands::get_sidebar_counts,
             commands::search_history,
             commands::paste_text,
@@ -1357,6 +1362,10 @@ pub fn run() {
             rec::commands::rec_open_preview,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_preview_take,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_preview_window,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_hud_fit,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_start,
             #[cfg(any(windows, target_os = "macos"))]

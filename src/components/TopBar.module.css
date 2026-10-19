@@ -1,5 +1,18 @@
 /* TopBar.module.css — Header + Search + Filter + Tabs */
 
+/* The tools workspace supports the native 320px minimum without shrinking controls. */
+@media (max-width: 479px) {
+  .header[data-mode="tools"] .headerTop { position: relative; padding-bottom: 40px; }
+  .header[data-mode="tools"] .sidebarToggle { display: none; }
+  .header[data-mode="tools"] .headerTitle > [role="tablist"] {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: center;
+  }
+}
+
 /* ===== Header / TopBar ===== */
 .header {
   padding: 16px 16px 0;
@@ -549,22 +562,34 @@
 }
 
 .segItemActive {
-  color: var(--text-primary);
+  color: var(--accent-strong);
   font-weight: 600;
-  /* 滑块视觉交给内部 .segActiveIndicator 单层呈现，按钮自身透明，
-     避免双层背景叠加把 88% 玻璃滑块垫成近实心、透不出场景 */
+  /* 按钮保持透明；底色和轮廓由组内唯一的共享底板承接。 */
   background: transparent;
 }
 
 .segActiveIndicator {
   position: absolute;
-  inset: 0;
+  left: 3px;
+  top: 3px;
+  bottom: 3px;
+  width: calc((100% - 6px) / 5);
   border-radius: 8px;
-  /* 单层 88% 玻璃滑块（亮色=近白、深色=近暗），场景色可微微透出 */
-  background: color-mix(in srgb, var(--seg-active-bg) 88%, transparent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12), 0 0.5px 1px rgba(0, 0, 0, 0.05);
+  /* 沿用选中卡片的主题渐变，整组只保留这一块常驻底板。 */
+  background: var(--card-selected-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  box-shadow: var(--control-elev);
+  pointer-events: none;
   z-index: 0;
 }
+
+.segmented[data-motion="full"] .segActiveIndicator {
+  transition: transform var(--motion-base) var(--ease-enter);
+}
+.segmented[data-active="text"] .segActiveIndicator { transform: translateX(100%); }
+.segmented[data-active="image"] .segActiveIndicator { transform: translateX(200%); }
+.segmented[data-active="file"] .segActiveIndicator { transform: translateX(300%); }
+.segmented[data-active="pinned"] .segActiveIndicator { transform: translateX(400%); }
 
 /* blossom 主题：分段滑块染粉 + 圆形页签徽章粉化 */
 :global([data-theme="blossom"]) .segActiveIndicator {
@@ -598,7 +623,7 @@
 }
 
 .segItemActive .segCount {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* ===== Circle Tabs ===== */
@@ -740,10 +765,10 @@
   background: var(--accent-light);
 }
 
-/* 剪贴板同步入口：钉在标签筛选行最右（margin-left:auto）。
+/* 剪贴板同步入口：跟在已右对齐的筛选反馈后面。
    flex-shrink:0：标签芯片再多也不把胶囊压没。 */
 .tagRowEnd {
-  margin-left: auto;
+  margin-left: 0;
   flex-shrink: 0;
   display: flex;
   align-items: center;

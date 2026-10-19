@@ -40,6 +40,8 @@ import {
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codemirror/language";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { planLinePrefix } from "@/lib/mdLinePrefix";
+import { toggleTaskAt } from "@/lib/markdown/tasks";
+import { replaceBlockAt } from "@/lib/markdown/blockLocate";
 import type { ExtensionCtx, ShellBridge } from "./fullscreen/types";
 import { attachSearchPanelDrag } from "./cmSearchPanelDrag";
 
@@ -220,6 +222,36 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
   }, []);
 
   /**
+   * 任务列表勾选（markdown 预览态直接点勾选框）。
+   *
+   * 不复用 replaceDoc：那个是整篇替换 + `view.focus()`，会把焦点从预览抢回编辑区，
+   * 长文档还会连带滚动跳位。这里只替换 `[ ]` 中间**一个字符**——仍是一次可撤销
+   * 事务（Ctrl+Z 一步回去），光标由 CodeMirror 自动映射，焦点留在预览。
+   */
+  const toggleTask = useCallback((index: number): boolean => {
+    const view = viewRef.current;
+    if (!view) return false;
+    const res = toggleTaskAt(view.state.doc.toString(), index);
+    if (!res) return false;
+    view.dispatch({ changes: { from: res.charPos, to: res.charPos + 1, insert: res.insert } });
+    return true;
+  }, []);
+
+  /**
+   * 块级就地编辑（预览浮层改源码写回）。整块替换但仍是**一次 dispatch = 一步撤销**；
+   * expectRaw 校验不过（浮层开着期间文档被改过）就整体拒绝，返回 false 让浮层
+   * 保留用户编辑的内容。不 focus —— 焦点留在浮层/预览，不抢回编辑区。
+   */
+  const replaceBlock = useCallback((index: number, newRaw: string, expectRaw: string): boolean => {
+    const view = viewRef.current;
+    if (!view) return false;
+    const res = replaceBlockAt(view.state.doc.toString(), index, newRaw, expectRaw);
+    if (!res) return false;
+    view.dispatch({ changes: { from: res.from, to: res.to, insert: res.insert } });
+    return true;
+  }, []);
+
+  /**
    * 跳转到指定行。`where` 控制落点：
    * - `"center"`：JSON 错误徽章点击定位（`gotoLine`）
    * - `"start"`：大纲点击（`jumpToLine`），把该行顶到列表顶部
@@ -269,13 +301,13 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
 
   const bridge: ShellBridge = useMemo(
     () => ({
-      text, replaceDoc, gotoLine, insertFormat, insertLinePrefix,
+      text, replaceDoc, toggleTask, replaceBlock, gotoLine, insertFormat, insertLinePrefix,
       toggleComment: bridgeToggleComment,
       indentMore: bridgeIndentMore,
       indentLess: bridgeIndentLess,
       openSearch,
     }),
-    [text, replaceDoc, gotoLine, insertFormat, insertLinePrefix, bridgeToggleComment, bridgeIndentMore, bridgeIndentLess, openSearch]
+    [text, replaceDoc, toggleTask, replaceBlock, gotoLine, insertFormat, insertLinePrefix, bridgeToggleComment, bridgeIndentMore, bridgeIndentLess, openSearch]
   );
 
   // ─── CM6 装配（只跑一次，ready 翻面才重建）───

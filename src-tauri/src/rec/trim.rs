@@ -5,8 +5,8 @@
 //!
 //! 读路径没问题，但它的 HEVC 写路径是坏的：`HvcCBox::new()` 只写 1 字节
 //! configuration_version，VPS/SPS/PPS 参数集全丢——原画档（HEVC）产物不可播。
-//! 我们的产物形状已知（MF SinkWriter：`ftyp + mdat + moov`、非分片、视频 avc1/hev1
-//! + 可选 mp4a），因此自研定向重组器：**stsd 整块字节拷贝**（avcC/hvcC/esds 免重建，
+//! 我们的产物形状已知（MF SinkWriter：`ftyp + mdat + moov`、非分片、
+//! 视频 avc1/hev1 加可选 mp4a），因此自研定向重组器：**stsd 整块字节拷贝**（avcC/hvcC/esds 免重建，
 //! 编解码无关），只重建四张表（stts / stss / stsc / stsz / stco）。
 //!
 //! # 时间域
@@ -31,6 +31,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+#[allow(clippy::duplicate_mod)] // output.rs 是各录制器以 #[path] 自带的共享模块，各自实例化互不引用，刻意布局
 #[path = "output.rs"]
 mod output;
 #[path = "trim_job.rs"]
@@ -59,11 +60,23 @@ pub fn scan_keyframes(path: &Path) -> Result<KeyframeIndex, String> {
         .filter(|s| s.is_sync && s.media_time >= v.elst_media_time)
         .map(|s| (s.media_time - v.elst_media_time) * 1000 / ts)
         .collect();
-    Ok(KeyframeIndex { duration_ms: v.duration_ms(), keyframes_ms, warning: None })
+    // 帧率取样本时长的**中位数**：静止期 MF 把空隙写进前一个样本的 duration
+    // （见 timeline.rs 文件头），那些长样本会把平均值拉低；中位数仍是真实帧长。
+    let fps = {
+        let mut durations: Vec<u32> = v.samples.iter().map(|s| s.duration).filter(|d| *d > 0).collect();
+        durations.sort_unstable();
+        durations
+            .get(durations.len() / 2)
+            .map(|&ticks| (ts as f64 / f64::from(ticks) * 1000.0).round() / 1000.0)
+            .filter(|fps| *fps > 0.0)
+    };
+    Ok(KeyframeIndex { duration_ms: v.duration_ms(), keyframes_ms, warning: None, fps })
 }
 
 /// 剪切 `[in_ms, out_ms]`（播放域，内部按宁多勿少吸附）到 `dst`。
 /// 返回 (文件字节数, 实际入点, 实际出点)——实际值已按关键帧吸附。
+/// 生产路径都带 TrimJob 走 [`trim_with_job`]；本包装目前仅测试在用，故 cfg(test)。
+#[cfg(test)]
 pub fn trim(src: &Path, in_ms: u64, out_ms: u64, dst: &Path) -> Result<(u64, u64, u64), String> {
     if in_ms >= out_ms {
         return Err("选段为空（入点不早于出点）".into());
@@ -71,6 +84,8 @@ pub fn trim(src: &Path, in_ms: u64, out_ms: u64, dst: &Path) -> Result<(u64, u64
     trim_with_job(src, in_ms, out_ms, dst, None)
 }
 
+/// 剪切 `[in_ms, out_ms]`（播放域，内部按宁多勿少吸附）到 `dst`。
+/// 返回 (文件字节数, 实际入点, 实际出点)——实际值已按关键帧吸附。
 pub fn trim_with_job(src: &Path, in_ms: u64, out_ms: u64, dst: &Path, job: Option<&TrimJob>) -> Result<(u64,u64,u64),String> {
     if in_ms >= out_ms {return Err("选段为空（入点不早于出点）".into());}
     if let Some(job)=job {job.check_cancelled()?;}
@@ -93,7 +108,7 @@ fn media_to_playback_ms(media_ts: u64, timescale: u32, elst_media_time: u64) -> 
 
 
 fn ms_to_ticks_ceil(ms:u64, timescale:u64)->u64 {
-    ((u128::from(ms)*u128::from(timescale)+999)/1000).min(u128::from(u64::MAX)) as u64
+    (u128::from(ms)*u128::from(timescale)).div_ceil(1000).min(u128::from(u64::MAX)) as u64
 }
 fn table_entries(payload:&[u8], header:usize, entry_size:usize)->Result<usize,String> {
     if payload.len()<header {return Err("样本表头不完整".into());}
@@ -148,6 +163,8 @@ fn u64be(b: &[u8], off: usize) -> u64 {
 fn push_u32(v: &mut Vec<u8>, x: u32) {
     v.extend_from_slice(&x.to_be_bytes());
 }
+/// 仅对抗样本测试（hostile_co64）使用；生产路径一律走 `push_u64_at`。
+#[cfg(test)]
 fn push_u64(v: &mut Vec<u8>, x: u64) {
     v.extend_from_slice(&x.to_be_bytes());
 }

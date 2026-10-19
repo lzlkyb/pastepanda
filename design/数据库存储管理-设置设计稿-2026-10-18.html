@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PastePanda · 数据库存储管理设计稿</title>
+<!-- 已实施设计稿。基线：SettingsView.tsx / Settings.module.css / DataSection.tsx / theme.css。
+     图表基线：StatsSection.tsx / StatsSection.module.css 的指标格、占比环图、来源排行。
+     新增范围仅「数据管理」顶部的存储区。示例数字与目录不来自用户真实数据库。
+     顶部审阅工具条不属于产品。正式版动态统计全部表，本稿节选真实存在的表名；不再展示文件和字段技术明细。 -->
+<style>
+:root{color-scheme:light;--card-bg:#fff;--dialog-bg:#fff;--section-bg:#f0f4f8;--text-primary:#0f172a;--text-secondary:#495565;--text-muted:#627083;--border-color:#e0e4eb;--accent:#0284c7;--accent-strong:#0273ad;--accent-light:#e0f2fe;--accent-solid:#027cbb;--text-on-accent:#fff;--success:#067647;--warning:#8b5300;--danger:#b42318;--input-bg:#f1f5f9;--stage-bg:#e8edf3;--focus:var(--accent);--motion-fast:150ms;--ease-standard:cubic-bezier(.2,0,0,1)}
+[data-theme=dark]{color-scheme:dark;--card-bg:#18181b;--dialog-bg:#18181b;--section-bg:#0f0f11;--text-primary:#e4e4e7;--text-secondary:#afafb7;--text-muted:#8d8d95;--border-color:#35353b;--accent:#818cf8;--accent-strong:#a5b4fc;--accent-light:#1e1b4b;--accent-solid:#666fc4;--success:#75d5a5;--warning:#f2c77b;--danger:#ffaaa4;--input-bg:#27272a;--stage-bg:#09090b}
+*{box-sizing:border-box}body{margin:0;background:var(--stage-bg);color:var(--text-primary);font:13px/1.6 "Segoe UI","Microsoft YaHei",sans-serif}button,input,select{font:inherit}button,summary,select{cursor:pointer}button{color:var(--text-secondary);background:var(--card-bg);border:1px solid var(--border-color);border-radius:8px;min-height:28px;padding:4px 12px;font-size:11px;font-weight:600;transition:background var(--motion-fast) var(--ease-standard),color var(--motion-fast) var(--ease-standard)}button:hover{color:var(--accent-strong);background:var(--accent-light)}button:disabled{opacity:.6;cursor:wait}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}::selection{background:var(--accent-light);color:var(--accent-strong)}input{caret-color:var(--accent)}h1,h2,p{margin:0}h1{font-size:20px;font-weight:600}h2{font-size:15px;font-weight:600}code,.num{font-variant-numeric:tabular-nums}code{font:11px/1.5 Consolas,monospace;overflow-wrap:anywhere}.muted{color:var(--text-muted);font-size:11px}.tools{max-width:1060px;margin:24px auto 16px;padding:0 16px}.tools p{margin:4px 0 12px;color:var(--text-secondary);font-size:12px}.toolrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.toolrow .selected{background:var(--accent-light);color:var(--accent-strong);border-color:var(--accent)}select,input{color:var(--text-primary);background:var(--input-bg);border:1px solid var(--border-color);border-radius:8px;padding:4px 8px;min-height:28px;font-size:11px}.app{width:min(100% - 32px,1000px);height:780px;margin:0 auto 24px;background:var(--dialog-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}.app.narrow{width:min(100% - 16px,600px)}.header{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border-color)}.header b{font-size:13px;white-space:nowrap}.header input{flex:1;min-width:40px;background:var(--card-bg)}.body{display:flex;min-height:0;flex:1}.nav{flex:0 0 20%;min-width:128px;max-width:220px;background:var(--section-bg);border-right:1px solid var(--border-color);overflow:auto;padding:6px 0}.navgroup{font-size:11px;color:var(--text-secondary);padding:12px 16px 4px;font-weight:600}.navitem{font-size:12.5px;padding:9px 14px;display:flex;gap:8px;white-space:nowrap;border-left:3px solid transparent}.navitem.active{background:color-mix(in srgb,var(--accent) 10%,transparent);border-left-color:var(--accent);color:var(--accent-strong);font-weight:600}.content{flex:1;min-width:0;padding:4px 16px 20px;background:color-mix(in srgb,var(--section-bg) 35%,var(--dialog-bg));overflow:auto;scrollbar-color:var(--text-muted) var(--section-bg)}.card{max-width:800px;margin:auto;background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden}.section{padding:10px 16px;font-size:11px;font-weight:700;color:var(--text-secondary);background:var(--section-bg);border-bottom:1px solid var(--border-color)}.subhead{padding:12px 16px 8px;font-size:13px;font-weight:600}.storage{padding:4px 16px 12px}.headline{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.metric{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.metric strong{font-size:20px;line-height:1.6;font-weight:600}.metric span{font-size:12px;color:var(--text-secondary)}.scope{margin-top:4px}.sources{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.source small{display:block;font-size:11px;color:var(--text-muted)}.source b{display:block;font-size:13px;font-weight:600}.status{margin-top:8px;color:var(--text-muted);font-size:11px;min-height:18px}.status.error{color:var(--danger)}.status.partial{color:var(--warning)}.status.loading{color:var(--text-secondary)}details.block{border-top:1px solid var(--border-color)}summary{list-style:none;display:flex;align-items:center;gap:8px;padding:12px 16px;min-height:48px}summary::-webkit-details-marker{display:none}summary:before{content:'›';font-size:15px;width:12px;color:var(--text-muted);flex-shrink:0}details[open]>summary:before{transform:rotate(90deg)}summary b{font-size:13px;font-weight:600}summary .muted{margin-left:auto;text-align:right}summary:hover{background:color-mix(in srgb,var(--accent) 4%,var(--card-bg))}.detailbody{padding:0 16px 16px}.file{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:6px 0;font-size:12px}.file span:first-child{min-width:0;overflow-wrap:anywhere}.file span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}.file code{color:var(--text-muted);margin-left:8px}.notice{font-size:11px;color:var(--text-muted);margin-top:8px}.tabletools{display:flex;gap:8px;margin:8px 0 12px;flex-wrap:wrap}.tabletools input{flex:1;min-width:100px}.tabletools select{max-width:100%}table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}th{text-align:left;font-size:11px;font-weight:400;color:var(--text-muted);padding:6px 0;border-bottom:1px solid var(--border-color)}th:first-child{width:54%}th:nth-child(2){width:20%}th:nth-child(3){width:26%}td{padding:8px 0;vertical-align:top;border-bottom:1px solid var(--border-color)}th:not(:first-child),td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.tablebutton{border:0;border-radius:4px;padding:0;text-align:left;color:var(--text-primary);font-size:12px;font-weight:500;min-height:24px;background:none;max-width:100%}.tablebutton:hover{background:var(--accent-light)}.tablename{display:block;color:var(--text-muted);font-weight:400;padding-right:4px}.inspect td{text-align:left!important;white-space:normal!important;background:var(--input-bg);padding:12px;font-size:11px;color:var(--text-secondary)}.inspect code{display:block;margin-top:8px}.pathrow{padding:12px 16px;border-top:1px solid var(--border-color)}.path{display:block;color:var(--text-muted);margin:4px 0 8px;overflow-wrap:anywhere}.actions{display:flex;gap:8px;flex-wrap:wrap}.row{padding:12px 16px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--border-color)}.tile{width:40px;height:40px;border-radius:12px;background:var(--section-bg);display:grid;place-items:center;flex-shrink:0;font-size:16px}.rowtext{flex:1;min-width:0}.rowtext b{font-size:13px;font-weight:600}.rowtext p{font-size:11px;color:var(--text-muted);margin-top:2px}.pills{display:flex;gap:4px;flex-wrap:wrap}.pills button{padding:0 8px;min-height:24px;border-radius:24px;font-size:11px}.pills .on{background:var(--accent-light);border-color:var(--accent);color:var(--accent-strong)}.preserved{padding-top:8px}.reviewnote{max-width:1000px;margin:0 auto 24px;padding:0 16px;color:var(--text-secondary);font-size:12px}.foot{font-size:11px;color:var(--text-muted);padding:8px 16px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;gap:8px}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%)}.placeholder{height:20px;background:var(--input-bg);border-radius:4px;display:inline-block;width:72px}.hidden{display:none!important}.retention{flex-wrap:wrap}.retention .pills{flex:1 1 100%;padding-left:52px}.compact .sources{gap:8px}.compact .source b{font-size:12px}.compact .file code{display:block;margin-left:0}.compact summary{align-items:flex-start}.compact summary .muted{max-width:35%}.compact .row{gap:8px}.compact .tabletools select{flex:1}.compact .tile{width:32px;height:32px;border-radius:8px}.compact .retention .pills{padding-left:40px}@media(max-width:620px){.tools{margin-top:16px}.app{width:calc(100% - 16px)}.content{padding-left:8px;padding-right:8px}.source b{font-size:12px}.sources{gap:8px}.file code{display:block;margin-left:0}.header{gap:8px}.header input{font-size:11px}summary .muted{max-width:35%}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* 沿用使用统计的四格指标、SVG 环图、Top 排行；分类颜色是数据编码，非按钮强调色。 */
+:root{--storage-database:var(--accent);--storage-images:var(--success);--storage-cache:var(--warning);--storage-neutral:var(--text-muted)}
+.storage{padding:0}.dashboard-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;color:var(--text-secondary);font-size:12px;font-weight:600}.dashboard-head button{flex-shrink:0}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border-color);border-block:1px solid var(--border-color)}.metric-cell{background:var(--input-bg);padding:12px 4px;text-align:center;min-width:0}.metric-cell strong{display:block;font-size:20px;line-height:1.2;letter-spacing:-.5px;font-weight:700;font-variant-numeric:tabular-nums}.metric-cell .unit{font-size:11px;font-weight:500;margin-left:2px;letter-spacing:0}.metric-cell small{display:block;margin-top:4px;font-size:11px;color:var(--text-muted)}.db-color{color:var(--storage-database)}.image-color{color:var(--storage-images)}.cache-color{color:var(--storage-cache)}.chart-title{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:12px 14px 4px;font-size:12px;font-weight:600;color:var(--text-secondary)}.chart-title .muted{font-weight:400}.composition{display:flex;align-items:center;gap:16px;padding:4px 14px 8px}.ring{width:112px;height:112px;flex-shrink:0;overflow:visible}.ring .arc{fill:none;stroke-width:11;transition:stroke-width var(--motion-fast) var(--ease-standard),opacity var(--motion-fast) var(--ease-standard)}.ring .arc:hover{stroke-width:14}.ring .track{fill:none;stroke:var(--input-bg);stroke-width:11}.ring .arc.database{stroke:var(--storage-database)}.ring .arc.images{stroke:var(--storage-images)}.ring .arc.cache{stroke:var(--storage-cache)}.ring text{font-family:inherit;fill:var(--text-primary);font-size:16px;font-weight:700}.ring text.ring-label{font-size:10px;font-weight:400;fill:var(--text-muted)}.chart-legend{flex:1;min-width:0;display:grid;gap:4px}.legend-item{display:flex;align-items:center;gap:6px;min-width:0;width:100%;padding:4px;border:0;border-radius:4px;font-size:11px;font-weight:400;background:none;text-align:left;color:var(--text-secondary)}.legend-item .amount{margin-left:auto;color:var(--text-primary);font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.legend-item .percent{width:40px;text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);flex-shrink:0}.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--storage-database)}.legend-dot.images{background:var(--storage-images)}.legend-dot.cache{background:var(--storage-cache)}.chart-insight{margin:0 14px 8px;min-height:18px;font-size:11px;color:var(--text-muted)}.chart-insight b{color:var(--text-primary);font-weight:600}.storage .status{margin:0;padding:8px 14px;font-size:11px;background:var(--section-bg);border-top:1px solid var(--border-color)}.storage .scope{padding:4px 14px 0;margin:0}.ranking{padding-bottom:8px;border-top:1px solid var(--border-color)}.rank-list{padding:4px 14px 0;display:grid;gap:4px}.rank-item{display:grid;grid-template-columns:14px 96px minmax(16px,1fr) 52px 40px;gap:8px;align-items:center;width:100%;border:0;border-radius:4px;min-height:28px;padding:4px 0;font-size:11px;font-weight:400;background:none;text-align:left}.rank-index{color:var(--accent-strong);font-weight:700;font-variant-numeric:tabular-nums}.rank-label{color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rank-chart{width:100%;height:8px;display:block;overflow:visible}.rank-chart .track{fill:var(--input-bg)}.rank-chart .fill{fill:url(#rank-fill)}.rank-value{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--text-primary)}.rank-percent{font-variant-numeric:tabular-nums;text-align:right;color:var(--text-muted)}.rank-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 14px 0;font-size:11px;color:var(--text-muted)}.rank-footer button{padding:0 8px;min-height:24px}.chart-empty{padding:16px 14px;color:var(--text-muted);font-size:12px}.file-total-note{margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color)}.file-bar{height:12px;display:flex;overflow:hidden;background:var(--input-bg);border-radius:4px;margin-top:8px}.file-bar svg{width:100%;height:12px}.mini-key{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--text-secondary)}.mini-key span{display:flex;align-items:center;gap:4px}.mini-key i{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent)}.mini-key .free{background:var(--text-muted)}.mini-key .other{background:var(--border-color)}.inspect-action{padding-top:8px}.compact .rank-item{grid-template-columns:12px 84px minmax(16px,1fr) 48px 36px;gap:6px}.compact .composition{gap:12px}.compact .ring{width:104px;height:104px}.compact .legend-item{gap:4px}.compact .legend-item .percent{width:36px}.compact .metric-cell strong{font-size:20px}.compact .metric-cell .unit{display:block;font-size:11px;line-height:1.6;margin:0}.compact .chart-title .muted{font-size:11px}.app{height:900px}@media(max-width:620px){.rank-item{grid-template-columns:12px 84px minmax(16px,1fr) 48px 36px;gap:6px}.composition{gap:12px}.ring{width:104px;height:104px}.metric-cell .unit{display:block;font-size:11px;line-height:1.6;margin:0}.legend-item .percent{width:36px}.legend-item{gap:4px}}@media(max-width:460px){.composition{flex-wrap:wrap;justify-content:center}.chart-legend{flex-basis:100%}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rank-item{grid-template-columns:12px minmax(60px,1fr) 48px 36px}.rank-chart{grid-column:2/-1;grid-row:2}.rank-footer{flex-wrap:wrap}}
+.ranking>svg{position:absolute}.ring text.ring-label{font-size:11px}
+</style>
+</head>
+<body>
+<div class="tools">
+  <h1>数据库与存储空间</h1>
+  <p>图表版 · 沿用「使用统计」的指标格、占比环图与横向排行。先看图，再查表。所有数字均为示例。</p>
+  <div class="toolrow" aria-label="设计稿审阅工具，不属于产品">
+    <button id="wide" class="selected">宽窗口</button><button id="narrow">600px 窗口</button>
+    <button id="theme">切换深色</button><button id="showtables">展开全部排行</button>
+    <label for="state">状态</label><select id="state"><option value="normal">正常</option><option value="loading">首次统计</option><option value="partial">部分失败</option><option value="error">刷新失败</option><option value="empty">空记录</option><option value="unsupported">表占用不可用</option></select>
+  </div>
+</div>
+<div class="app" id="app">
+  <header class="header"><button id="back">← 返回</button><b>⚙ 设置</b><input aria-label="设置搜索（外壳示意）" placeholder="搜索设置  Ctrl+F" readonly></header>
+  <div class="body">
+    <aside class="nav" aria-label="现有设置导航（外壳示意）">
+      <div class="navgroup">基础设置</div><div class="navitem">🎨 外观与窗口</div><div class="navitem">⌨️ 快捷键</div>
+      <div class="navgroup">功能设置</div><div class="navitem">📋 剪贴板</div><div class="navitem">📝 笔记与编辑</div><div class="navitem">📸 截图与录屏</div><div class="navitem">🏖️ 待办灵动岛</div>
+      <div class="navgroup">连接与扩展</div><div class="navitem">🌐 设备与连接</div><div class="navitem">✨ AI 设置</div><div class="navitem">🧩 工具接入</div>
+      <div class="navgroup">数据与支持</div><div class="navitem active">💾 数据管理</div><div class="navitem">📊 使用统计</div><div class="navitem">📖 帮助</div><div class="navitem">ℹ️ 关于</div>
+    </aside>
+    <main class="content" id="scroll">
+      <div class="card">
+        <div class="section">数据管理</div>
+        <div class="storage">
+          <div class="dashboard-head"><span>存储空间概览</span><button id="refresh">刷新统计</button></div>
+          <div class="metrics">
+            <div class="metric-cell"><strong id="totalsize">472<span class="unit">MiB</span></strong><small id="total-label">总占用</small></div>
+            <div class="metric-cell"><strong id="dbsize" class="db-color">136<span class="unit">MiB</span></strong><small>数据库</small></div>
+            <div class="metric-cell"><strong id="imgsource" class="image-color">316<span class="unit">MiB</span></strong><small>图片与截图</small></div>
+            <div class="metric-cell"><strong id="cachesource" class="cache-color">20<span class="unit">MiB</span></strong><small>缓存</small></div>
+          </div>
+          <p class="scope muted">全部工作空间共用 · SQLite · <code>clipboard.db</code></p>
+          <div class="chart-title"><span>空间花在哪里</span><span class="muted">按文件大小</span></div>
+          <div class="composition">
+            <svg class="ring" id="storage-ring" viewBox="0 0 112 112" role="img" aria-label="存储构成：数据库约29%，图片与截图约67%，缓存约4%">
+              <circle class="track" cx="56" cy="56" r="42"/>
+              <g transform="rotate(-90 56 56)" id="ring-arcs"></g>
+              <text x="56" y="53" text-anchor="middle" id="ring-value">67%</text>
+              <text class="ring-label" x="56" y="70" text-anchor="middle" id="ring-label">图片与截图</text>
+            </svg>
+            <div class="chart-legend" id="storage-legend"></div>
+          </div>
+          <p class="chart-insight" id="chart-insight" role="status">图片与截图占用最多，约占全部文件的 <b>67%</b>。</p>
+          <div class="ranking">
+            <div class="chart-title"><span id="rank-title">表占用 Top 5</span><span class="muted">含索引 · 占主库比例</span></div>
+            <svg width="0" height="0" aria-hidden="true"><defs><linearGradient id="rank-fill"><stop stop-color="var(--accent-solid)"/><stop offset="1" stop-color="var(--accent)"/></linearGradient></defs></svg>
+            <div class="rank-list" id="table-ranking"></div>
+            <div class="rank-footer"><span id="rank-summary">主库 128 MiB</span><button id="rank-all">展开全部排行</button></div>
+          </div>
+          <div class="status" id="status" role="status">已统计文件合计 472 MiB · 刚刚更新</div>
+        </div>
+        <div class="pathrow"><b>数据位置</b><code class="path" id="datapath">%APPDATA%\com.pastepanda.app\</code><div class="actions"><button id="copy">复制路径</button><button id="openfolder">打开文件夹</button></div><p class="notice">此处为示例路径；正式版显示当前软件实际使用的完整路径。</p></div>
+        <div class="preserved">
+          <h2 class="subhead">保留与清理</h2>
+          <div class="row retention"><span class="tile">🗑</span><div class="rowtext"><b>剪贴板保留天数</b><p>清理超过该天数的记录（置顶除外），启动后每小时自动执行</p></div><div class="pills" aria-label="保留天数示例"><button>关</button><button>7天</button><button>15天</button><button class="on">30天</button><button>60天</button></div></div>
+          <div class="row retention"><span class="tile">♻</span><div class="rowtext"><b>回收站保留天数</b><p>删掉的笔记先进回收站，超过该天数后自动销毁（不可恢复）</p></div><div class="pills" aria-label="回收站天数示例"><button>关</button><button>7天</button><button>15天</button><button class="on">30天</button><button>60天</button></div></div>
+          <div class="row"><span class="tile">💎</span><div class="rowtext"><b>保护常用内容</b><p>打标签 / 粘贴过 / 搜索找回过的内容不参与自动清理</p></div><button data-demo="保护常用内容">已开启</button></div>
+          <div class="row"><span class="tile">🗑</span><div class="rowtext"><b>清理过期记录</b><p>暂无过期记录 · 超过 30 天的记录才会算进来</p></div><button disabled>无过期</button></div>
+          <div class="row"><span class="tile">🛟</span><div class="rowtext"><b>深度清理</b><p>按时间 / 类型 / 来源组合条件清理，支持预览与撤销</p></div><button data-demo="打开已有深度清理面板">打开</button></div>
+          <h2 class="subhead">剪贴板导入导出</h2>
+          <div class="row"><span class="tile">📦</span><div class="rowtext"><b>导出剪贴板记录</b><p>导出为 Excel / CSV / JSON，在保存对话框里选格式</p></div><button data-demo="导出剪贴板记录">导出</button></div>
+          <div class="row"><span class="tile">📥</span><div class="rowtext"><b>导入剪贴板记录</b><p>从 JSON 文件导入历史记录</p></div><button data-demo="导入剪贴板记录">导入</button></div>
+          <h2 class="subhead">笔记导入导出</h2>
+          <div class="row"><span class="tile">📝</span><div class="rowtext"><b>导出笔记为 Markdown 目录</b><p>可直接当 Obsidian vault 打开；重复导出到同一目录会清理已删笔记留下的旧文件</p></div><button data-demo="导出笔记为 Markdown 目录">导出</button></div>
+          <div class="row"><span class="tile">📂</span><div class="rowtext"><b>从 Markdown 目录导入</b><p>只新增与更新，不会删除现有笔记</p></div><button data-demo="从 Markdown 目录导入">导入</button></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <footer class="foot"><span>设计预览 · 示例数据</span><span id="feedback" role="status">新增存储区，其余设置沿用现有结构</span></footer>
+</div>
+<p class="reviewnote">审阅：默认展示占比环图和表排行；点分类查看占比，可展开完整排行。支持 600px / 宽窗口、浅深主题与六种状态。目录与清理按钮仅演示反馈，不操作本机文件。</p>
+<script>
+const $=id=>document.getElementById(id);
+const rows=[
+{name:'history',label:'剪贴板记录',count:12486,size:72,index:8,desc:'全部工作空间的剪贴板历史。图片原文件另外计入图片目录。',fields:'id TEXT · text TEXT · time TEXT · type TEXT · content TEXT · workspace TEXT',indexes:'idx_history_workspace · idx_history_time · idx_history_pinned 等'},
+{name:'notes',label:'笔记（含回收站）',count:328,size:24,index:1,desc:'笔记正文。deleted_at 不为空表示回收站中的笔记，并非独立的回收站表。',fields:'id TEXT · title TEXT · content TEXT · created_at TEXT · updated_at TEXT · deleted_at TEXT',indexes:'idx_notes_history · idx_notes_updated 等'},
+{name:'note_revisions',label:'笔记历史版本',count:1042,size:8,index:.5,desc:'笔记的历史正文快照，不是重复的当前笔记。',fields:'id INTEGER · note_id TEXT · title TEXT · content TEXT · created_at TEXT',indexes:'idx_note_rev'},
+{name:'image_ocr_cache',label:'文字识别缓存',count:615,size:6,index:.1,desc:'本地识别得到的文字与图片路径，不包含图片原文件。',fields:'image_path TEXT · full_text TEXT · updated_at TEXT',indexes:'主键索引'},
+{name:'history_tags',label:'剪贴板标签关联',count:1328,size:1,index:.2,desc:'连接剪贴板记录和标签；一条记录可以有多个标签。',fields:'正式版从实际表结构读取字段',indexes:'正式版从实际数据库读取索引'},
+{name:'mcp_audit',label:'工具调用日志',count:196,size:.7,index:.1,desc:'工具访问审计信息，不保存笔记返回正文。',fields:'正式版从实际表结构读取字段',indexes:'正式版从实际数据库读取索引'},
+{name:'tags',label:'标签',count:46,size:.3,index:.05,desc:'剪贴板和笔记使用的标签定义。',fields:'正式版从实际表结构读取字段',indexes:'正式版从实际数据库读取索引'}
+];
+let mode='normal',refreshTimer,showAll=false;
+const size=n=>n<1?(n*1024).toFixed(0)+' KiB':n.toFixed(n%1?1:0)+' MiB';
+function scrollToBlock(element){const scroller=$('scroll');scroller.scrollTop+=element.getBoundingClientRect().top-scroller.getBoundingClientRect().top}
+function setMetric(id,value,unit='MiB'){$(id).innerHTML=value+(unit?`<span class="unit">${unit}</span>`:'')}
+function showCategory(key){
+ const labels={database:'数据库',images:'图片与截图',cache:'缓存'},values={database:136,images:316,cache:20};
+ if(mode==='loading')return;
+ if(mode==='partial'){$('chart-insight').textContent=key==='images'?'图片目录未统计，当前无法计算完整占比。':`${labels[key]}已统计 ${values[key]} MiB；图片目录未统计，完整占比暂不可计算。`;return;}
+ const value=mode==='empty'?(key==='database'?.3125:0):values[key];
+ const percent=value/(mode==='empty'?.3125:472)*100;
+ $('ring-value').textContent=percent.toFixed(percent%1?1:0)+'%';$('ring-label').textContent=labels[key];
+ $('chart-insight').textContent=`${labels[key]} ${size(value)}，占已统计文件的 ${percent.toFixed(1)}%。`;
+}
+function renderCharts(){
+ const partial=mode==='partial',loading=mode==='loading',empty=mode==='empty';
+ const segments=[{key:'database',label:'数据库',value:empty?.3125:136},{key:'images',label:'图片与截图',value:empty?0:316},{key:'cache',label:'缓存',value:empty?0:20}];
+ const total=segments.reduce((sum,s)=>sum+s.value,0),C=2*Math.PI*42;let offset=0;
+ $('ring-arcs').innerHTML=partial||loading?'':segments.map(s=>{const arc=s.value/total*C;const result=`<circle class="arc ${s.key}" cx="56" cy="56" r="42" stroke-dasharray="${arc} ${C-arc}" stroke-dashoffset="${-offset}"><title>${s.label} ${size(s.value)} · ${(s.value/total*100).toFixed(1)}%</title></circle>`;offset+=arc;return result}).join('');
+ $('storage-legend').innerHTML=segments.map(s=>`<button class="legend-item" data-category="${s.key}" ${loading?'disabled':''}><i class="legend-dot ${s.key}" aria-hidden="true"></i><span>${s.label}</span><span class="amount">${loading?'—':partial&&s.key==='images'?'未统计':size(s.value)}</span><span class="percent">${partial||loading?'—':(s.value/total*100).toFixed(1)+'%'}</span></button>`).join('');
+ $('storage-ring').setAttribute('aria-label',loading?'占比统计中':partial?'图片未统计，无法计算完整占比':segments.map(s=>`${s.label} ${(s.value/total*100).toFixed(1)}%`).join('，'));
+ $('ring-value').textContent=loading?'—':partial?'—':empty?'100%':'67%';$('ring-label').textContent=loading?'统计中':partial?'未完整':empty?'数据库结构':'图片与截图';
+ $('chart-insight').textContent=loading?'正在统计占用，图表将在数据完整后显示。':partial?'图片目录未统计，暂不绘制完整占比，避免把未知数据当成零。':empty?'还没有记录，当前占用来自数据库结构。':'图片与截图占用最多，约占全部文件的 67%。';
+ const unavailable=loading||empty||mode==='unsupported';
+ $('table-ranking').innerHTML=unavailable?`<div class="chart-empty">${loading?'正在分析各表占用…':empty?'还没有剪贴板记录或笔记，表结构仍会占用少量空间。':'当前版本暂不支持表占用图表；上方文件占用统计仍可查看。'}</div>`:rows.slice().sort((a,b)=>b.size-a.size).slice(0,showAll?rows.length:5).map((r,i)=>`<div class="rank-item"><span class="rank-index">${i+1}</span><span class="rank-label">${r.label}</span><svg class="rank-chart" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true"><rect class="track" width="100" height="8" rx="4"/><rect class="fill" width="${r.size/72*100}" height="8" rx="4"/></svg><span class="rank-value">${size(r.size)}</span><span class="rank-percent">${(r.size/128*100).toFixed(1)}%</span></div>`).join('');
+ $('rank-summary').textContent=loading?'统计中':empty?'主库结构 320 KiB':mode==='unsupported'?'按本机实际占用统计':'主库 128 MiB';
+ $('rank-all').disabled=loading;$('rank-all').textContent=showAll?'收起排行':'展开全部 7 项';$('rank-title').textContent=showAll?'全部占用排行':'表占用 Top 5';
+}
+function applyState(){
+ setMetric('totalsize',mode==='loading'?'—':mode==='empty'?'320':mode==='partial'?'156':'472',mode==='loading'?'':mode==='empty'?'KiB':'MiB');
+ setMetric('dbsize',mode==='loading'?'—':mode==='empty'?'320':'136',mode==='loading'?'':mode==='empty'?'KiB':'MiB');
+ setMetric('imgsource',mode==='partial'?'未统计':mode==='loading'?'—':mode==='empty'?'0':'316',mode==='partial'||mode==='loading'?'':mode==='empty'?'B':'MiB');
+ setMetric('cachesource',mode==='loading'?'—':mode==='empty'?'0':'20',mode==='loading'?'':mode==='empty'?'B':'MiB');
+ $('total-label').textContent=mode==='partial'?'已统计占用':'总占用';
+ $('refresh').disabled=mode==='loading';$('refresh').textContent=mode==='loading'?'统计中…':mode==='error'?'重试统计':'刷新统计';
+ const messages={normal:'已统计文件合计 472 MiB · 刚刚更新',loading:'正在读取数据库与扫描目录…',partial:'图片目录无法读取 · 已统计 156 MiB · 可刷新重试',error:'刷新失败，保留上次结果（14:32）· 请重试',empty:'还没有剪贴板记录或笔记 · 数据库结构仍占空间',unsupported:'已统计文件合计 472 MiB · 表占用暂不支持'};
+ $('status').textContent=messages[mode];$('status').className='status '+mode;
+ renderCharts();
+}
+$('storage-legend').addEventListener('click',event=>{const item=event.target.closest('[data-category]');if(item)showCategory(item.dataset.category)});
+$('rank-all').onclick=()=>{showAll=!showAll;renderCharts()};
+$('state').onchange=()=>{clearTimeout(refreshTimer);mode=$('state').value;applyState()};
+$('refresh').onclick=()=>{const previous=mode;mode='loading';applyState();refreshTimer=setTimeout(()=>{mode=previous==='empty'?'empty':'normal';$('state').value=mode;applyState()},1100)};
+$('wide').onclick=()=>{$('app').classList.remove('narrow','compact');$('wide').classList.add('selected');$('narrow').classList.remove('selected')};
+$('narrow').onclick=()=>{$('app').classList.add('narrow','compact');$('narrow').classList.add('selected');$('wide').classList.remove('selected')};
+$('theme').onclick=()=>{const dark=document.documentElement.dataset.theme!=='dark';document.documentElement.dataset.theme=dark?'dark':'';$('theme').textContent=dark?'切换浅色':'切换深色'};
+$('showtables').onclick=()=>{showAll=!showAll;renderCharts();scrollToBlock($('table-ranking'))};
+$('copy').onclick=()=>{$('feedback').textContent='演示：正式版将复制当前实际数据目录的完整路径'};
+$('openfolder').onclick=()=>{$('feedback').textContent='演示：正式版将在资源管理器中打开数据目录'};
+$('back').onclick=()=>{$('feedback').textContent='演示：正式版返回软件主界面'};
+document.querySelectorAll('[data-demo]').forEach(b=>b.onclick=()=>{$('feedback').textContent='演示：'+b.dataset.demo+'，沿用现有流程'});
+document.querySelectorAll('.pills').forEach(group=>group.addEventListener('click',e=>{if(e.target.tagName!=='BUTTON')return;group.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===e.target));$('feedback').textContent='设计稿演示，不写入软件配置'}));
+applyState();
+</script>
+</body>
+</html>

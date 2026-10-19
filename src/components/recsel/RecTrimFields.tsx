@@ -87,7 +87,7 @@ export function TrimFields({
       {chip("inMs", "裁剪起点", "起点")}
       {chip("outMs", "裁剪终点", "终点")}
       <span className="rec-pv-sp" />
-      <span className="rec-pv-keep">{keepInfo}</span>
+      <span className="rec-pv-keepinfo">{keepInfo}</span>
     </div>
   );
 }

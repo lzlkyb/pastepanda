@@ -3,6 +3,7 @@
  *
  * 一条轨道同时说清四件事：**保留哪一段**（keep 亮 / 两侧斜纹 = 会被剪掉）、
  * 播放到哪（playhead）、切点能落在哪（关键帧刻度）、以及正在拖的那一端（气泡读数）。
+ * 第五件是 2026-10-18 补的：**切点落在哪个画面**（`frames` 缩略帧带）。
  * 改前这三件信息被拆在三条原生 `<input type=range>` 里，用户看不出「保留哪一段」，
  * 而原生滑杆的外观与全站的玻璃语言也不搭——这是这一窗廉价感的主要来源。
  *
@@ -23,6 +24,7 @@ type Drag = null | "inMs" | "outMs" | "seek";
 export function Timeline({
   duration,
   keyframes,
+  frames,
   range,
   currentMs,
   disabled,
@@ -31,7 +33,8 @@ export function Timeline({
 }: {
   duration: number;
   keyframes: number[];
-  /** 已解析的保留段（调用方负责把 null 折成 0 – duration）。 */
+  /** 缩略帧（data URL）。空数组 = 没抽到，轨道退回灰胶囊形态，帧带是增益不是新依赖。 */
+  frames?: string[];
   range: TrimRange;
   currentMs: number;
   disabled: boolean;
@@ -42,6 +45,7 @@ export function Timeline({
   const [drag, setDrag] = useState<Drag>(null);
   const [bubbleMs, setBubbleMs] = useState<number | null>(null);
   const span = Math.max(1, duration);
+  const hasFrames = !!frames && frames.length > 0;
   const pct = (ms: number) => Math.min(100, Math.max(0, (ms / span) * 100));
 
   /**
@@ -90,6 +94,7 @@ export function Timeline({
     <div
       ref={trackRef}
       className="rec-pv-track"
+      data-frames={hasFrames ? frames.length : undefined}
       data-disabled={disabled || undefined}
       onPointerDown={begin("seek")}
       onPointerMove={move}
@@ -105,6 +110,15 @@ export function Timeline({
         } as CSSProperties
       }
     >
+      {hasFrames && (
+        // 帧带只是衬底：所有指针事件归轨道，读屏也不必念 12 张装饰图
+        <span className="rec-pv-strip" aria-hidden="true">
+          {frames.map((frame, index) => (
+            // ui-rule-ok: 帧图是运行期抽出来的 data URL，静态样式表达不了
+            <i key={index} style={{ backgroundImage: `url("${frame}")` }} />
+          ))}
+        </span>
+      )}
       <span className="rec-pv-base" />
       <span className="rec-pv-cut before" />
       <span className="rec-pv-keep" />

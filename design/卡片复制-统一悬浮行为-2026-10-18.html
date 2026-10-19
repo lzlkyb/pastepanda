@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>卡片复制 · 统一悬浮行为</title>
+  <link rel="stylesheet" href="../src/styles/theme.css">
+  <style>
+    :root { --page-bg:#f0f4f8; --fallback-ink:#0f172a; --demo-shadow:0 2px 4px rgb(15 23 42 / 8%),0 8px 24px rgb(15 23 42 / 10%); }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:24px; background:var(--page-bg); color:var(--text-primary,var(--fallback-ink)); font:13px/1.6 "Segoe UI","Microsoft YaHei",sans-serif; }
+    main { max-width:1200px; margin:auto; }
+    h1 { font-size:20px; margin:0 0 8px; }
+    h2 { font-size:15px; margin:0 0 8px; }
+    p { margin:0 0 16px; color:var(--text-secondary); }
+    button { font:inherit; color:inherit; cursor:pointer; }
+    button:focus-visible,[tabindex]:focus-visible { outline:2px solid var(--accent-strong); outline-offset:3px; }
+    button:disabled { cursor:progress; }
+    button,select { min-height:28px; }
+    .controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:24px 0; }
+    .seg { display:flex; gap:4px; padding:4px; background:var(--seg-bg); border-radius:12px; }
+    .seg button,.quiet { border:0; background:transparent; padding:4px 12px; border-radius:8px; }
+    .seg button[aria-pressed=true] { background:var(--seg-active-bg); color:var(--accent-strong); }
+    .quiet { background:var(--card-bg); }
+    .check { display:flex; align-items:center; gap:4px; }
+    .check input { accent-color:var(--accent-strong); }
+    .compare { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+    .caption { margin-bottom:12px; }
+    .caption p { margin:0; min-height:42px; }
+    .window { background:var(--app-bg); border-radius:12px; padding:16px; min-height:450px; }
+    .top { display:flex; gap:16px; align-items:center; margin-bottom:16px; font-weight:600; }
+    .nav { display:flex; gap:4px; align-items:center; padding:4px; border-radius:12px; background:var(--card-bg); font-weight:400; }
+    .nav span { padding:0 8px; }
+    .nav .active { border-radius:8px; background:var(--accent-solid); color:var(--text-on-accent); }
+    .search { border-radius:8px; padding:8px 12px; margin-bottom:12px; color:var(--text-muted); background:var(--search-bg); }
+    .filters { display:flex; gap:16px; padding:8px 12px; margin-bottom:24px; border-radius:8px; background:var(--card-bg); }
+    .filters strong { color:var(--accent-strong); }
+    .wrap { position:relative; margin-bottom:8px; }
+    .wrap:has(.bubble:not([hidden])) { z-index:2; }
+    .card { display:flex; gap:12px; align-items:center; padding:12px 16px; height:72px; border-radius:16px; background:var(--glass-card-bg,var(--card-bg)); border:1px solid var(--glass-card-border,var(--card-border)); box-shadow:var(--glass-card-shadow); }
+    .icon { display:grid; place-items:center; width:42px; height:42px; flex-shrink:0; border-radius:12px; background:var(--accent-light); color:var(--accent-strong); border:1px solid var(--accent-border); }
+    svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+    .icon svg { width:22px; height:22px; }
+    .content { flex:1; min-width:0; }
+    .title { font-size:13px; font-weight:600; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .badges { display:flex; gap:6px; margin-top:2px; white-space:nowrap; overflow:hidden; }
+    .badge { padding:0 6px; font-size:11px; line-height:16px; border-radius:4px; background:var(--section-bg); color:var(--text-secondary); }
+    .time { color:var(--text-muted); font-size:11px; flex-shrink:0; font-variant-numeric:tabular-nums; }
+    .copy { display:inline-flex; gap:4px; align-items:center; justify-content:center; padding:4px 8px; min-width:70px; flex-shrink:0; border:1px solid var(--border-color); background:var(--card-bg); border-radius:8px; font-size:11px; }
+    .copy[data-done=true] { color:var(--success); border-color:var(--success); }
+    .actions { display:none; align-items:center; gap:4px; position:absolute; right:16px; top:50%; transform:translateY(-50%); background:var(--card-bg); border-radius:8px; }
+    .action { display:grid; place-items:center; width:28px; height:28px; border:0; border-radius:8px; background:transparent; color:var(--text-secondary); }
+    .action:hover,.copy:hover { background:var(--hover,var(--section-bg)); }
+    .action[data-action=delete]:hover { color:var(--danger); }
+    .after[data-mode=inline] .wrap:is(:hover,:focus-within,.held) .actions { display:flex; }
+    .after[data-mode=inline] .wrap:is(:hover,:focus-within,.held) .time { visibility:hidden; }
+    /* Reserve just the active row's action width so the title cannot sit underneath it. */
+    .after[data-mode=inline] .wrap:is(:hover,:focus-within,.held) .content { padding-right:132px; }
+    .bubble { position:absolute; top:calc(100% + 4px); right:0; width:min(360px,100%); padding:16px; border-radius:12px; background:var(--card-bg); box-shadow:var(--demo-shadow); }
+    .bubble p { margin:0 0 12px; color:var(--text-primary); white-space:pre-line; }
+    .bubble-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .text-action { display:inline-flex; align-items:center; gap:4px; border:0; border-radius:8px; padding:4px 8px; background:var(--section-bg); font-size:11px; }
+    .hint { margin-top:16px; color:var(--text-secondary); }
+    .feedback { margin-top:24px; min-height:32px; padding:8px 12px; border-radius:8px; background:var(--card-bg); color:var(--text-secondary); }
+    .feedback[data-error=true] { color:var(--danger); }
+    .notes { margin-top:24px; max-width:80ch; }
+    .notes li { margin:4px 0; }
+    [hidden] { display:none !important; }
+    @media(max-width:900px) { .compare { grid-template-columns:1fr; } .caption p { min-height:0; } }
+    @media(max-width:480px) { body { padding:12px; } .window { padding:12px; } .filters { gap:8px; } .card { gap:8px; padding:12px; } .top { gap:8px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>复制入口统一到「卡片悬浮行为」</h1>
+  <p>方案①交互稿 · 保留现有卡片、时间、来源和内容。调整复制入口，不新增设置。</p>
+  <div class="controls" aria-label="设计稿演示控制">
+    <span>卡片悬浮行为</span>
+    <div class="seg" role="group" aria-label="卡片悬浮行为">
+      <button type="button" data-mode="off" aria-pressed="false">关闭</button>
+      <button type="button" data-mode="inline" aria-pressed="true">操作按钮</button>
+      <button type="button" data-mode="popover" aria-pressed="false">预览气泡</button>
+    </div>
+    <label class="check"><input id="hold" type="checkbox" checked>固定展示第一条悬浮态</label>
+    <label class="check"><input id="fail" type="checkbox">模拟复制失败</label>
+  </div>
+  <div class="compare">
+    <section>
+      <div class="caption"><h2>当前</h2><p>每条卡片常驻复制，关闭悬浮交互后也仍然显示。</p></div>
+      <div class="window before" id="before"></div>
+    </section>
+    <section>
+      <div class="caption"><h2>调整后</h2><p id="mode-description">平时只显示时间；悬停或键盘聚焦时显示复制、置顶、编辑、删除。</p></div>
+      <div class="window after" id="after" data-mode="inline"></div>
+    </section>
+  </div>
+  <p class="hint">右侧可悬停卡片、按 Tab 聚焦、点击复制；也可勾选「模拟复制失败」查看错误反馈。</p>
+  <div class="feedback" id="feedback" role="status" aria-live="polite">演示提示：复制按钮仅模拟操作，不写入系统剪贴板。</div>
+  <div class="notes">
+    <h2>实施验收点</h2>
+    <ul>
+      <li>关闭：卡片只显示内容与时间，无悬浮按钮或气泡；右键复制及原有双击设置继续可用。</li>
+      <li>操作按钮：复制补回悬浮操作栏，键盘聚焦也能展开；操作栏接替时间位置，不额外保留常驻按钮槽位。</li>
+      <li>预览气泡：保留气泡内的复制，卡片上不再重复显示。</li>
+      <li>复制成功在按钮原位显示「已复制」；失败保留可见提示和重试入口。切换记录不继承上一条的成功状态。</li>
+    </ul>
+  </div>
+</main>
+<script>
+  const paths = {
+    copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    pin:'<path d="M16 9V3m-8 6V3M6 3h12M8 9l-3 4v3h14v-3l-3-4M12 16v6"/>',
+    edit:'<path d="m16 3 5 5M4 20l4-1L21 6a2 2 0 0 0-3-3L5 16z"/>',
+    delete:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
+    text:'<path d="M4 7V4h16v3M12 4v16M8 20h8"/>',
+    check:'<path d="m5 12 4 4L19 6"/>'
+  };
+  const icon = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
+  const items = [
+    {title:'缩略帧带',source:'WorkBuddy',time:'28分钟前'},
+    {title:'有个后台操作未能完成，可重试一次 这个是什么也要解决一下，无法排除录屏控制条，浮层可能进入成片',source:'WorkBuddy',time:'1小时前'},
+    {title:'无法排除录屏控制条，浮层可能进入成片，请先核对录像',source:'图片和视频',time:'1小时前'},
+    {title:'gpt-6.1-sol',source:'Microsoft…',time:'1小时前'}
+  ];
+  const copyButton = '<button type="button" class="copy" data-action="copy" title="复制到剪贴板">'+icon('copy')+'<span>复制</span></button>';
+  const actionButton = (name,label) => `<button type="button" class="action" data-action="${name}" aria-label="${label}" title="${label}">${icon(name)}</button>`;
+  const header = '<div class="top"><strong>PastePanda</strong><div class="nav"><span class="active">记录</span><span>工具</span><span>知识</span></div></div><div class="search">搜索剪贴板…　Ctrl+F</div><div class="filters"><strong>全部 3457</strong><span>文本 2861</span><span>图片 326</span><span>文件 72</span></div>';
+  for (const side of ['before','after']) {
+    document.getElementById(side).innerHTML = header + items.map((item,index) => `
+      <div class="wrap" data-index="${index}">
+        <div class="card" ${side === 'after' ? 'tabindex="0" role="group" aria-label="'+item.title+'"' : ''}>
+          <div class="icon">${icon('text')}</div>
+          <div class="content"><div class="title">${item.title}</div><div class="badges"><span class="badge">${item.source}</span><span class="badge">纯文本</span></div></div>
+          <span class="time">${item.time}</span>${side === 'before' ? copyButton : ''}
+        </div>
+        ${side === 'after' ? `<div class="actions">${copyButton}${actionButton('pin','置顶')}${actionButton('edit','编辑')}${actionButton('delete','删除')}</div><div class="bubble" hidden><p>${item.title}</p><div class="bubble-actions"><button type="button" class="text-action" data-action="pin">${icon('pin')}置顶</button>${copyButton}<button type="button" class="text-action" data-action="edit">${icon('edit')}编辑</button><button type="button" class="text-action" data-action="delete">${icon('delete')}删除</button></div></div>` : ''}
+      </div>`).join('');
+  }
+  const after = document.getElementById('after');
+  const feedback = document.getElementById('feedback');
+  const descriptions = {off:'只显示内容与时间，不出现悬浮操作。复制仍可通过原有右键菜单完成。',inline:'平时只显示时间；悬停或键盘聚焦时显示复制、置顶、编辑、删除。',popover:'卡片只显示时间；复制继续放在预览气泡中，不在卡片上重复显示。'};
+  let hovered = null;
+  let focused = null;
+  function refresh() {
+    after.querySelectorAll('.wrap').forEach((wrap,index) => {
+      const held = index === 0 && document.getElementById('hold').checked;
+      wrap.classList.toggle('held',held);
+      wrap.querySelector('.bubble').hidden = after.dataset.mode !== 'popover' || !(held || wrap === hovered || wrap === focused);
+      const active = after.dataset.mode === 'inline' && (held || wrap === hovered || wrap === focused);
+      wrap.querySelectorAll('.actions button').forEach(button => button.tabIndex = active ? 0 : -1);
+    });
+  }
+  document.querySelectorAll('.seg button').forEach(button => button.addEventListener('click',() => {
+    after.dataset.mode = button.dataset.mode;
+    document.querySelectorAll('.seg button').forEach(option => option.setAttribute('aria-pressed',String(option === button)));
+    document.getElementById('mode-description').textContent = descriptions[button.dataset.mode];
+    refresh();
+  }));
+  after.querySelectorAll('.wrap').forEach(wrap => {
+    wrap.addEventListener('mouseenter',() => { hovered = wrap; refresh(); });
+    wrap.addEventListener('mouseleave',() => { hovered = null; refresh(); });
+    wrap.addEventListener('focusin',() => { focused = wrap; refresh(); });
+    wrap.addEventListener('focusout',event => { if (!wrap.contains(event.relatedTarget)) { focused = null; refresh(); } });
+  });
+  document.getElementById('hold').addEventListener('change',refresh);
+  const timers = new WeakMap();
+  document.addEventListener('click',event => {
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    if (button.dataset.action !== 'copy') {
+      feedback.dataset.error = 'false';
+      feedback.textContent = '演示提示：本稿只演示复制入口，其他操作沿用现有功能。';
+      return;
+    }
+    clearTimeout(timers.get(button));
+    if (document.getElementById('fail').checked) {
+      feedback.dataset.error = 'true';
+      feedback.replaceChildren(document.createTextNode('复制失败，可重试。 '));
+      const retry = document.createElement('button'); retry.className = 'quiet'; retry.textContent = '重试复制';
+      retry.onclick = () => { document.getElementById('fail').checked = false; button.click(); };
+      feedback.append(retry);
+      return;
+    }
+    button.dataset.done = 'true'; button.innerHTML = icon('check')+'<span>已复制</span>';
+    feedback.dataset.error = 'false'; feedback.textContent = '演示：已复制。正式实现会沿用统一复制逻辑。';
+    timers.set(button,setTimeout(() => { button.dataset.done = 'false'; button.innerHTML = icon('copy')+'<span>复制</span>'; },1500));
+  });
+  refresh();
+</script>
+</body>
+</html>

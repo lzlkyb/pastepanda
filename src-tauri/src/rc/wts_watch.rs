@@ -43,9 +43,9 @@ mod imp {
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, DestroyWindow, GetMessageW,
-        GetWindowLongPtrW, PostQuitMessage, PostThreadMessageW, RegisterClassW,
+        GetWindowLongPtrW, PostQuitMessage, RegisterClassW,
         SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HCURSOR, HICON, MSG,
-        WINDOW_EX_STYLE, WINDOW_STYLE, WM_DESTROY, WM_QUIT, WM_WTSSESSION_CHANGE, WNDCLASSW,
+        WINDOW_EX_STYLE, WINDOW_STYLE, WM_DESTROY, WM_WTSSESSION_CHANGE, WNDCLASSW,
         WNDCLASS_STYLES,
     };
 
@@ -226,6 +226,7 @@ fn classify_open(open: Result<String, u32>) -> Option<bool> {
 
 /// `{"t":"wts","locked":bool}` 的字节帧。本仓 serde_json 启用 preserve_order（输出=
 /// 插入序，与字典序无关），此处钉死字节形态当跨端契约；控端解析改动必须双端一起改。
+#[cfg(test)] // 生产路径尚未发送 wts 帧，仅契约测试钉字节形态
 fn wts_frame(locked: bool) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({ "t": "wts", "locked": locked }))
         .expect("json 序列化不可能失败")

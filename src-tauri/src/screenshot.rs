@@ -1240,7 +1240,7 @@ pub async fn open_longshot_status(
     std::thread::spawn(move || {
         // build() 消耗 builder（收 ownership），重试必须能重建一个全新 builder
         let mk = || {
-            let mut b = tauri::WebviewWindowBuilder::new(
+            let b = tauri::WebviewWindowBuilder::new(
                 &app2,
                 LONGSHOT_LABEL,
                 tauri::WebviewUrl::App("longshot.html".into()),

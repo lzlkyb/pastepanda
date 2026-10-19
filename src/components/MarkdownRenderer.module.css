@@ -153,6 +153,70 @@
 .md input[type="checkbox"] { accent-color: var(--accent); transform: translateY(1px); }
 .md li:has(> input[type="checkbox"]:checked) { color: var(--text-muted); text-decoration: line-through; }
 
+/* 可勾选任务列表（全屏编辑器预览态，根节点挂 taskLive）：
+   只加「可点」的信号，不动布局 —— li 的负边距与 flex 是排版基线，改它会整体位移。
+   焦点环必须给：勾选框从 disabled 变成可操作，也就进了键盘 Tab 序列。 */
+.taskLive input[type="checkbox"]:not(:disabled) { cursor: pointer; border-radius: 4px; }
+.taskLive input[type="checkbox"]:not(:disabled):hover { outline: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); outline-offset: 2px; }
+.taskLive input[type="checkbox"]:not(:disabled):focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+
+/* 块级就地编辑（全屏编辑器预览态，根节点挂 blkLive）：
+   双击任意顶层块 → 浮层改源码 → 写回。hover 只描一圈淡虚线提示「可编辑」，
+   不改布局不改字号 —— outline 不占盒模型，offset 悬在块间空白里。 */
+.blkLive > :not(hr):hover { outline: 1px dashed color-mix(in srgb, var(--accent) 32%, transparent); outline-offset: 4px; }
+
+/* ===== 表单控件（`{{字段}}` 语法糖 + 手写 input/textarea/select）=====
+   预览与导出的 HTML **共用这一份**：导出时整份 CSS 被内联，根节点同样带 .md 哈希类名。
+   所以这里的任何改动会同时作用在预览和业务人员收到的文件上，不用改两处。
+   单行控件的纵向 padding 压到 4px（比块级控件小）：一行里嵌一个输入框不该把段落
+   撑高一倍；4 已是间距表里最小档，再小就只能在表外取值。 */
+.md :global(input.md-fill),
+.md :global(textarea.md-fill),
+.md :global(select.md-fill) {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+  border-radius: 8px;
+  padding: 8px;
+  max-width: 100%;
+  vertical-align: baseline;
+}
+.md :global(input.md-fill) {
+  min-width: 7em;
+  padding: 4px 8px;
+}
+.md :global(textarea.md-fill) {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  margin: 8px 0;
+  resize: vertical;
+}
+.md :global(select.md-fill) {
+  min-width: 8em;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.md :global(input.md-fill):focus-visible,
+.md :global(textarea.md-fill):focus-visible,
+.md :global(select.md-fill):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+}
+.md :global(.md-fill-check) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.md :global(.md-fill-check) input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 /* ===== 行内代码（主题感知：accent 与正文色混合）===== */
 
 .md code {
@@ -372,6 +436,51 @@
 .md tbody tr:hover td {
   background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
+
+/* ===== 表格装饰：wrapper + 右上角「复制表格」=====
+   DOM 由 tableTools.decorateTables 后处理注入（无法用哈希类名），故走 :global。
+   按钮默认透明、hover 表格才出现：既提示了能力，又不给每张表加一个常驻控件。 */
+
+.md :global(.md-tblwrap) {
+  position: relative;
+  margin: 18px 0; /* ui-rule-ok: 与 .md table 原有 18px 外边距对齐，避免 wrapper 内外不一致 */
+}
+
+/* wrapper 接管外边距，表格归零，否则 18px 叠两次 */
+.md :global(.md-tblwrap) > table {
+  margin: 0;
+}
+
+.md :global(.md-tblcopy) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 150ms cubic-bezier(0.2, 0, 0, 1),
+    color 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.md :global(.md-tblwrap):hover > :global(.md-tblcopy),
+.md :global(.md-tblcopy):focus-visible {
+  opacity: 1;
+}
+
+.md :global(.md-tblcopy):hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--card-bg));
+}
+
+.md :global(.md-tblcopy.md-tblcopy-ok) { color: var(--success); }
+.md :global(.md-tblcopy.md-tblcopy-fail) { color: var(--danger); }
 
 /* ===== kbd 按键（立体键帽）===== */
 

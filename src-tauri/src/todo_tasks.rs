@@ -318,6 +318,7 @@ pub fn due_label(at_ms: i64, has_time: bool, now: chrono::DateTime<chrono::Local
 /// - `Some(ok=false)`：有尾巴但解析失败——前端显示 ⚠ 与一键纠错；
 /// - `Some(ok=true)`：成功，`label` 与列表 chip 同源（`due_label`）；`has_time=false`
 ///   是全天任务（不提醒），措辞由前端如实区分。
+///
 /// 本地纯解析，不联网不花钱，不涉 AI 开关（规则 16）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -25,6 +25,19 @@ export interface ShellBridge {
   text: string;
   /** 整体替换文档（经 CodeMirror dispatch，自动触发脏标记/自动保存） */
   replaceDoc: (next: string) => void;
+  /**
+   * 翻转第 index 个任务项（markdown 预览态直接勾选）。
+   * 只改 `[ ]` 中间那一个字符：不动光标、不抢焦点、一次撤销一步。
+   * 返回 false = 源码定位不可信（结构异常），调用方须回滚乐观勾选。
+   */
+  toggleTask: (index: number) => boolean;
+  /**
+   * 用 newRaw 整块替换第 index 个顶层块（预览态块级就地编辑）。
+   * expectRaw = 打开浮层时展示给用户的源码，写入前逐字比对——不一致说明
+   * 期间文档被改过，拒绝写入返回 false（宁可让用户重开浮层，不写错区间）。
+   * 一次 dispatch = 一步撤销；不动光标、不抢焦点。
+   */
+  replaceBlock: (index: number, newRaw: string, expectRaw: string) => boolean;
   /** 跳转到指定行并居中显示（1 起；JSON 错误徽章点击定位用） */
   gotoLine: (line: number) => void;
   /** 在选区前后包裹（如加粗 **|** ） */

@@ -689,6 +689,35 @@
   margin-left: 8px;
 }
 
+/* 预览面板头右侧组：任务进度 + 行号开关。
+   打包成一个整体再 auto，避免两个各自 margin-left:auto 把空隙摊到这一组中间。 */
+.paneHeaderRight {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* 分屏拉到极窄时先压副标签，别把胶囊压成两行 */
+  flex-shrink: 0;
+}
+
+/* 任务清单进度（仅当文档里有 `- [ ]` 项才出现） */
+.taskProgress {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--section-bg);
+  white-space: nowrap;
+}
+
+.taskProgressDone {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .editorBody {
   flex: 1;
   overflow: hidden;

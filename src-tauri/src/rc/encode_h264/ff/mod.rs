@@ -214,6 +214,7 @@ impl FfEncoder {
         Err(format!("FFmpeg 三候选全部打不开（{width}x{height} {fps}fps）：{}", errs.join("；")))
     }
 
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     fn open_one(
         ff: &Ff,
         cand: &Candidate,

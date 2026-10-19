@@ -215,11 +215,10 @@ pub fn decode_group(
         let (gen, rhs) = (&rows[r].0, &rows[r].1);
         // data_col = rhs' ⊕ Σ_{c ∉ missing} coef[c]·data_c
         let mut rec = rhs.clone();
-        for c in 0..k {
+        for (c, &coef) in gen.iter().take(k).enumerate() {
             if missing.contains(&c) {
                 continue; // 该列在主元行上是单位系数，rhs' 里已含等价信息
             }
-            let coef = gen[c];
             if coef == 0 {
                 continue;
             }

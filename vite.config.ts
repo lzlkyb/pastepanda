@@ -74,9 +74,12 @@ export default defineConfig(async () => ({
   optimizeDeps: {
     include: [
       "@codemirror/commands",
+      "@codemirror/lang-html",
+      "@codemirror/lang-json",
       "@codemirror/lang-markdown",
       "@codemirror/language",
       "@codemirror/language-data",
+      "@codemirror/lint",
       "@codemirror/search",
       "@codemirror/state",
       "@codemirror/theme-one-dark",

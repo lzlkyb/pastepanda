@@ -745,8 +745,8 @@ fn draw_dot_on_icon(
     let h = base.height() as usize;
     let mut pixels = base.rgba().to_vec();
 
-    let cx = (w as f64 * 0.78) as f64; // 圆心 x
-    let cy = (h as f64 * 0.22) as f64; // 圆心 y
+    let cx = w as f64 * 0.78; // 圆心 x
+    let cy = h as f64 * 0.22; // 圆心 y
     let r = w as f64 * 0.20; // 圆点半径
     let border = 2.0_f64;
 

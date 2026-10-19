@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RecPreview } from "@/components/recsel/RecPreview";
-const api = vi.hoisted(() => ({ recKeyframes: vi.fn(), recOpenFile: vi.fn().mockResolvedValue(undefined), recReveal: vi.fn(), recTrim: vi.fn(), recTrimStatus: vi.fn().mockResolvedValue({ running: false, percent: 0, donePath: null, error: null }), recTrimCancel: vi.fn() }));
+const api = vi.hoisted(() => ({ recKeyframes: vi.fn(), recOpenFile: vi.fn().mockResolvedValue(undefined), recReveal: vi.fn(), recTrim: vi.fn(), recTrimStatus: vi.fn().mockResolvedValue({ running: false, percent: 0, donePath: null, error: null }), recTrimCancel: vi.fn(), recGifStart: vi.fn(), recGifStatus: vi.fn().mockResolvedValue({ running: false, percent: 0, donePath: null, error: null }), recGifCancel: vi.fn() }));
 vi.mock("@/lib/api/rec", () => api);
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => path }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ close: vi.fn() }) }));

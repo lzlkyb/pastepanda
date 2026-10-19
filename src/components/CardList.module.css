@@ -1,6 +1,6 @@
 /* CardList 组件样式 — 卡片列表 + 批量操作 + 加载更多 */
 
-/* #3 节点间距自动对齐 — CSS 变量统一卡片高度，供 Timeline 引用 */
+/* 卡片高度与虚拟行间距的统一变量。 */
 /* Lenis content 元素 — padding 从 wrapper 移到这里，wrapper 必须干净以便 Lenis 正确计算滚动范围 */
 .cardList {
   --card-height: 72px;
@@ -61,7 +61,8 @@
   -webkit-backdrop-filter: var(--glass-card-filter, none);
   border: 1px solid var(--glass-card-border);
   box-shadow: var(--glass-card-shadow);
-  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+  /* 当前项离开后立即恢复，连续导航不能留下背景/描边的淡出残影。 */
+  transition: color var(--motion-fast) var(--ease-standard), opacity var(--motion-fast) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
 }
 
 /* 静态光泽层 — 始终可见的顶部微光，模拟玻璃反光。
@@ -85,11 +86,6 @@
 .card:hover {
   border-color: var(--glass-card-hover-border);
   box-shadow: var(--glass-card-hover-shadow);
-}
-
-/* 点击确认保持卡片原位，以背景变化表达。 */
-.cardClickFeedback {
-  background: var(--hover) !important;
 }
 
 /* #5 固定卡片 📌 标记 */
@@ -156,14 +152,41 @@
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  /* 当前项本身提供可见焦点；按钮等子控件仍保留各自焦点样式。 */
+  outline: none;
 }
 
 .selected {
+  background: color-mix(in srgb, var(--accent) 5%, var(--card-bg));
+}
+
+/* 沿用原选中态的底色和柔影；清晰轮廓只画在卡片内，不再叠加浏览器外框。 */
+.card.current {
   background: var(--card-selected-bg);
-  border-color: var(--card-selected-border);
+  border-color: transparent;
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
   box-shadow: var(--card-selected-shadow), 0 4px 16px var(--accent-shadow);
+}
+
+.cardIconSlot {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.multiCheck {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--card-bg);
+  border-radius: 4px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
 }
 
 /* ===== 剪贴板栈标记 ===== */
@@ -487,6 +510,7 @@
   color: var(--text-muted);
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  transition: opacity var(--motion-fast) var(--ease-standard);
 }
 .cardPasting {
   display: inline-flex;
@@ -514,18 +538,38 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
 
   position: absolute;
-  right: 96px;
-  top: 50%;
-  transform: translateY(-50%);
+  right: 16px;
+  top: calc((100% - var(--card-gap, 8px)) / 2);
+  transform: translateY(-50%) translateX(4px);
   display: flex;
+  align-items: center;
   gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--card-bg);
   opacity: 0;
-  transition:opacity var(--dur-std) var(--ease);
+  visibility: hidden;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-std) var(--ease),
+    visibility 0s var(--dur-fast);
   z-index: 5;
+  pointer-events: none;
+}
+/* Fade the tail underneath the controls without changing text width or virtual row height. */
+.cardInlineActions::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 100%;
+  width: 16px;
+  background: linear-gradient(to right, transparent, var(--card-bg));
   pointer-events: none;
 }
 .cardInlineVisible {
   opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%);
+  transition-delay: 0s;
   pointer-events: auto;
 }
 
@@ -535,8 +579,17 @@
 .cardInlineVisible ~ .cardTime,
 .cardWrap:has(.cardInlineVisible) .cardTime {
   opacity: 0;
-  transition:opacity var(--motion-fast) var(--ease-standard);
 }
+
+.cardInlineCopy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card-bg);
+}
+.cardInlineCopy:hover { background: var(--hover); }
 
 .cardInlineBtn {
   width: 28px;
@@ -603,6 +656,10 @@
    停掉它们不是少了动画，是把「正在加载」这个信息删了——
    与蒸馏区 chevron 那处是同一个道理。剩下的等碰到再逐个判（§10）。 */
 @media (prefers-reduced-motion: reduce) {
+  .cardInlineActions,
+  .cardInlineVisible {
+    transform: translateY(-50%);
+  }
   .cardInlineBtn:hover,
   .cardInlineBtn:active {
     transform: none;
@@ -880,7 +937,7 @@
   border-radius: 12px;
   z-index: 100;
   pointer-events: auto;
-  animation: popoverFadeIn 0.18s ease;
+  animation: popoverFadeIn var(--motion-fast) var(--ease-enter);
 
   background: var(--float-card-bg, var(--card-bg));
   border: 1px solid var(--float-card-border, var(--border-color));
@@ -1019,6 +1076,9 @@
   gap: 8px;
   padding: 12px;
 }
+.cardPopoverImageGlyph { font-size: 20px; }
+.cardPopoverImageName { font-weight: 600; font-size: 11px; }
+.cardPopoverImageCaption { font-size: 11px; opacity: 0.7; }
 
 /* 预览区 — 文件列表 */
 .cardPopoverFile {
@@ -2053,7 +2113,7 @@
   color: var(--accent);
 }
 
-/* ===== 主内容区（relative 定位容器，包裹 timeline + 滚动区） ===== */
+/* ===== 主内容区（relative 定位容器，包裹筛选反馈与滚动区） ===== */
 .contentArea {
   flex: 1;
   display: flex;
@@ -2063,12 +2123,8 @@
   min-height: 0;
 }
 
-/* 时间轴展开时允许 Timeline tooltip 溢出 */
-.contentAreaOverflowVisible {
-  overflow: visible;
-}
 
-/* 时间轴可见时，整个 contentArea 保持不变，但内部滚动区会右移 */
+
 
 /* ===== 滚动区域（Lenis wrapper — 固定视口，Lenis 接管 wheel 平滑处理，保留原生滚动条作为视觉指示） ===== */
 .scrollArea {
@@ -2094,10 +2150,7 @@
     radial-gradient(ellipse 80% 40% at 20% 100%, var(--glass-card-hover-glow) 0%, transparent 50%);
 }
 
-/* 时间轴可见时卡片区域右移 — padding-left 在 cardList（Lenis content）上 */
-.scrollAreaTimelineVisible .cardList {
-  padding-left: calc(16px + 70px);
-}
+
 
 
 
@@ -2515,13 +2568,4 @@
   color: var(--text-muted);
   font-size: 11px;
   z-index: 8;
-}
-
-/* The primary copy action stays visible; secondary actions keep their existing mode. */
-.cardCopyPrimary { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-bg); }
-.cardCopyPrimary:hover { background: var(--hover); }
-.cardWrap:focus-within .cardInlineActions { opacity: 1; pointer-events: auto; }
-@media (max-width: 400px) {
-  .cardCopyPrimary { min-width: 28px; padding: 4px; }
-  .cardCopyPrimary span { display: none; }
 }

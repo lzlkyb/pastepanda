@@ -349,11 +349,11 @@ impl Drop for DragGuard {
         let _ = last;
         sync_visibility(&self.0);
         // 短拖动可能没赶上 60ms 的命中采样；重置 inside，避免结束后一直留在穿透态。
-        if last {
-            if self.0.get_webview_window(LABEL).is_some_and(|win| win.is_visible().unwrap_or(false)) {
-                let _ = self.0.emit_to(LABEL, "clothesline-visible", true);
-                start_poll(&self.0);
-            }
+        if last
+            && self.0.get_webview_window(LABEL).is_some_and(|win| win.is_visible().unwrap_or(false))
+        {
+            let _ = self.0.emit_to(LABEL, "clothesline-visible", true);
+            start_poll(&self.0);
         }
     }
 }

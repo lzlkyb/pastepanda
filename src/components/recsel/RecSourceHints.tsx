@@ -16,17 +16,27 @@ export function SizeHintBar({
   dpr,
   snapRect,
   rectFromWindow,
+  screenCssW,
 }: {
   phase: Phase;
   rect: Rect;
   dpr: number;
   snapRect: Rect | null;
   rectFromWindow: boolean;
+  /** 屏幕 CSS 宽：贴右缘框选时，条要从 rect.x 起画就会伸到屏幕外被裁（实测溢出 90px）。 */
+  screenCssW: number;
 }) {
+  // 实测最长文案 224px（`松手保留自选区域 · Esc 重选`）× 本组件只可能更短；留 16px 余量。
+  // 只用于判断「从 rect.x 往右画会不会出屏」，不是条的宽度。
+  const BAR_HINT_W = 240;
+  const spillRight = rect.x + BAR_HINT_W > screenCssW;
   return (
     <div
       className="rec-glass"
-      style={{ left: rect.x, top: Math.max(8, rect.y - 40) }} /* ui-rule-ok: 动态定位（跟随选区），同 recsel 既有模式 */
+      /* ui-rule-ok: 动态定位（跟随选区），同 recsel 既有模式 */
+      style={spillRight
+        ? { right: 8, top: Math.max(8, rect.y - 40) }
+        : { left: rect.x, top: Math.max(8, rect.y - 40) }}
     >
       {phase === "dragging" && (
         <>

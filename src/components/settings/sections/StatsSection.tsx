@@ -7,6 +7,7 @@ import type { SettingsData } from "@/hooks/useSettingsData";
 // （2026-09-16 之前这里把 Settings.module.css import 了两次当两个别名用，现已收口。）
 import styles from "./StatsSection.module.css";
 import settings from "../../Settings.module.css";
+import { openSettingsTab } from "@/lib/openSettings";
 
 /** 来源榜图标：真实应用图标 / emoji 双模式走 useSourceIcon（规则 #11） */
 function SourceRowIcon({ source, sourceIcon, fallbackEmoji, color }: { source: string; sourceIcon?: string | null; fallbackEmoji: string; color?: string }) {
@@ -211,7 +212,7 @@ export function StatsSection({
             )}
 
             <div className={styles.statsPanelFooter}>
-              <span>💾 {stats.db_size_kb.toFixed(1)} KB</span>
+              <button className={settings.sAction} onClick={() => openSettingsTab("general", "data")}>查看存储占用</button>
               {stats.earliest_time && <span>📅 最早 {stats.earliest_time.split(" ")[0]}</span>}
               <span>📦 {config.current_workspace || "默认"}空间</span>
             </div>

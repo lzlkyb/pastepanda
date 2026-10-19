@@ -1,10 +1,13 @@
 //! Android sharing is an inbox, never a note-writing command. The frontend owns confirmation.
 use serde::{Deserialize, Serialize};
+#[cfg(any(target_os = "android", test))]
 use std::path::{Path, PathBuf};
 use tauri::{plugin::{Builder, TauriPlugin}, AppHandle, Runtime};
 #[cfg(target_os = "android")]
 use tauri::Manager;
+#[cfg(any(target_os = "android", test))]
 use md5::{Digest, Md5};
+#[cfg(any(target_os = "android", test))]
 use std::io::Read;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -37,6 +40,7 @@ pub struct ShareReply {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))] // 字段仅 android 链路读取
 pub struct KnowledgeOutgoing { title: String, text: String, #[serde(default)] image_sources: Vec<String> }
 #[cfg(target_os = "android")]
 pub struct KnowledgeShare<R: Runtime>(pub(crate) tauri::plugin::PluginHandle<R>);
@@ -111,6 +115,7 @@ pub async fn mobile_knowledge_share_send(app: AppHandle, outgoing: KnowledgeOutg
     { let _ = (app, outgoing); Err("系统分享仅手机端可用".into()) }
 }
 
+#[cfg(any(target_os = "android", test))]
 fn promote_image(staging: &Path, images: &Path, source: &Path) -> Result<String, String> {
     let root = staging.canonicalize().map_err(|_| "收集图片已失效，请重新分享")?;
     let source = source.canonicalize().map_err(|_| "收集图片已失效，请重新分享")?;
@@ -137,6 +142,7 @@ fn promote_image(staging: &Path, images: &Path, source: &Path) -> Result<String,
     Ok(format!("pp-asset:{name}"))
 }
 
+#[cfg(any(target_os = "android", test))]
 fn prepare_outgoing(images: &Path, cache: &Path, outgoing: KnowledgeOutgoing) -> Result<serde_json::Value, String> {
     if outgoing.text.len() > 800_000 || outgoing.title.len() > 2000 || outgoing.image_sources.len() > 8 {
         return Err("分享内容过大，请分段分享".into());

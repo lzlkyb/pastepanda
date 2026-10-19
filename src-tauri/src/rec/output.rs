@@ -13,6 +13,7 @@ pub struct PendingOutput {
 }
 
 impl PendingOutput {
+    #[cfg(target_os = "macos")] // 仅 mac 裁剪链路（rec_trim）在用
     pub fn temporary_path(&self) -> &Path { &self.temporary }
     /// No final filename is visible while an export is incomplete.
     pub fn new(destination: &Path, replace: bool) -> Result<(Self, File), String> {

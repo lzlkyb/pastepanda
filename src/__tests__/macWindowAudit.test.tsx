@@ -85,6 +85,8 @@ describe("native labels and disabled physical bindings", () => {
     // Command+H belongs to the native macOS Hide menu, so do not advertise it as help.
     expect(app).toContain('desc: "打开帮助", keys: configuredShortcutLabel("ctrl+h", "")');
     expect(configuredShortcutLabel("ctrl+h", "")).toBe("Control+H");
-    expect(readFileSync("src/components/CardList.tsx", "utf8")).toContain("onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)");
+    // 卡片虚拟滚动重构后，条目点击的挂载点从 CardList 移到 card/VirtualCardRow
+    // （行为逐字未变：onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)）。
+    expect(readFileSync("src/components/card/VirtualCardRow.tsx", "utf8")).toContain("onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)");
   });
 });

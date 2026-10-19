@@ -12,7 +12,36 @@ impl RcService {
         // 放在取 `inner` 锁之前：通知会跑前端回调，不该在持锁期间做。
         // `take_path_change` 自带去重，多处 useRc 并发轮询时只会被消费一次。
         if let Some((from, to)) = self.link.take_path_change() {
+            // 【真机实测观测 · 2026-10-18】换路时间线。只加日志，不动判据。
+            // 实测要点：直连会话 15s 心跳超时前是否发生过 relay↔direct 抖动，
+            // 只能靠这一行和下一段的 `[RC-LINK]` 串起来看。
+            log::info!("[RC-PATH] {} -> {}", from.as_str(), to.as_str());
             self.notify.emit_path_changed(from.as_str(), to.as_str());
+        }
+        // 【真机实测观测 · 2026-10-18】1s 节流一行链路快照：**只读，不参与任何判定**。
+        // 为什么必须有：`[RC] 会话结束：对端失联（心跳超时）` 只给结局，答不了
+        // 「当时生效的阈值是 15s 还是 30s」「失联前有没有换路」——而这正是本轮
+        // 实测要分清的（阈值误判 vs 真断网）。
+        // 位置：放在取 `inner` 之前，与上面的通知同序（先 link/sched 后 inner）。
+        // 无会话时 `path` 为空串，直接跳过，避免空转刷日志。
+        {
+            use std::sync::atomic::{AtomicI64, Ordering};
+            static LAST_LINK_LOG_MS: AtomicI64 = AtomicI64::new(0);
+            let now = crate::rc::mono::mono_ms();
+            if now - LAST_LINK_LOG_MS.load(Ordering::Relaxed) >= 1_000 {
+                LAST_LINK_LOG_MS.store(now, Ordering::Relaxed);
+                let path = self.link.path_kind_str();
+                if !path.is_empty() {
+                    log::info!(
+                        "[RC-LINK] path={} sched={} timeout_ms={} rtt_ms={} pong_age_ms={:?}",
+                        path,
+                        self.link.sched_state_str(),
+                        self.heartbeat_timeout_ms(),
+                        self.video_rtt_ms(),
+                        self.link.pong_age_ms(now),
+                    );
+                }
+            }
         }
         // 🔴 D6（2026-09-22 审计）：显式把 `inner` 放掉，别依赖 NLL 的隐式丢弃点。
         //

@@ -520,6 +520,7 @@ static HUD_EPOCH: AtomicU64 = AtomicU64::new(0);
 ///   不清的话，第二次开栈会沿用上一轮的"光标锚不跟随"结论，浮标钉在旧位置不动。
 /// - **本轮钉住**（`PINNED`）解除：钉住只在**本轮**有效 —— 用户重新开栈 = 又要
 ///   「落到当前现场」，上一轮拖去的位置不该再把这一轮钉死。
+///
 /// ❗ 只挂在「显示」路径上（`show_hud` / `reveal`）。
 fn mark_shown() {
     HUD_EPOCH.fetch_add(1, Ordering::SeqCst);

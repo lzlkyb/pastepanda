@@ -155,9 +155,15 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
             <span className={styles.clock}>{clock}</span>
             {preparing && <span className={styles.state}>{stateLabel}</span>}
           </span>
-          <button type="button" onClick={() => void togglePause()} disabled={control.busy || preparing} title={control.status?.paused ? "继续录制" : "暂停录制"}>
-            {control.status?.paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}{control.status?.paused ? "继续" : "暂停"}
-          </button>
+          {/* 🔴 准备期不渲染暂停：`preparing` 时后端还没开录，暂停必失败，
+           * 旧版把它画成一枚 68px 的灰按钮——既是点不动的死控件，又把这一态
+           * 的自然宽度顶到 336px（超过窗口初值 320，右侧「更多」被裁一截）。
+           * 少这一枚，准备态收回 260px，录制态 311px，两态都在初值内。 */}
+          {!preparing && (
+            <button type="button" onClick={() => void togglePause()} disabled={control.busy} title={control.status?.paused ? "继续录制" : "暂停录制"}>
+              {control.status?.paused ? <Play size={12} aria-hidden="true" /> : <Pause size={12} aria-hidden="true" />}{control.status?.paused ? "继续" : "暂停"}
+            </button>
+          )}
           <button type="button" className={styles.stop} onClick={() => void stop()} aria-label="停止并保存" title="停止并保存">
             <Square size={12} aria-hidden="true" />停止
           </button>

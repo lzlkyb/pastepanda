@@ -83,6 +83,7 @@ struct Stored {
     _keep: std::sync::mpsc::Sender<()>,
 }
 
+#[allow(clippy::large_enum_variant)] // Ready 槽天然大（MF 上下文），Box 化徒增间接层
 enum Slot {
     Empty,
     /// 预热在途（带代际号：新请求会把它作废，在途线程完成时发现代际不符就地丢弃）

@@ -6,10 +6,11 @@ import { useToast } from "@/components/Toast";
 import styles from "./CardCopyButton.module.css";
 
 /** Feedback stays at the trigger; a recycled row cannot inherit another item's success. */
-export function CardCopyButton({ item, className = "", tabIndex }: { item: HistoryItem; className?: string; tabIndex?: number }) {
+export function CardCopyButton({ item, className = "", tabIndex, onFeedbackChange }: { item: HistoryItem; className?: string; tabIndex?: number; onFeedbackChange?: (visible: boolean) => void }) {
   const [state, setState] = useState<"idle" | "pending" | "done">("idle");
   const generation = useRef({ version: 0 });
   const reset = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const feedbackVisible = useRef(false);
   const { toast } = useToast();
   useEffect(() => {
     const token = generation.current;
@@ -17,10 +18,24 @@ export function CardCopyButton({ item, className = "", tabIndex }: { item: Histo
     setState("idle");
     return () => { token.version++; clearTimeout(reset.current); };
   }, [item.id]);
+  // A pointer leaving during IPC or confirmation must not hide the result of its own click.
+  useEffect(() => {
+    const visible = state !== "idle";
+    if (feedbackVisible.current === visible) return;
+    feedbackVisible.current = visible;
+    onFeedbackChange?.(visible);
+  }, [state, onFeedbackChange]);
+  useEffect(() => () => {
+    if (feedbackVisible.current) onFeedbackChange?.(false);
+  }, [onFeedbackChange]);
 
   const copy = async (feedback: "inline" | "toast" = "inline") => {
     const epoch = generation.current.version;
-    if (feedback === "inline") setState("pending");
+    if (feedback === "inline") {
+      // A second click starts a new confirmation lifetime, even if the first is still showing.
+      clearTimeout(reset.current);
+      setState("pending");
+    }
     try {
       const message = await copyItemToClipboard(item);
       if (feedback === "toast") { toast(message, "success"); return; }

@@ -90,6 +90,35 @@ describe("裁剪轨道：拖手柄 = 改保留段并吸附到关键帧", () => {
   });
 });
 
+describe("缩略帧带：衬底，不能顶替轨道本身", () => {
+  const FRAMES = ["data:image/jpeg;base64,AAA", "data:image/jpeg;base64,BBB", "data:image/jpeg;base64,CCC"];
+
+  it("有几帧就渲染几格，且每格都带自己的图", () => {
+    const { container } = mount({ frames: FRAMES });
+    const strip = container.querySelector(".rec-pv-strip") as HTMLElement;
+    expect(strip).not.toBeNull();
+    const cells = [...strip.children] as HTMLElement[];
+    expect(cells).toHaveLength(FRAMES.length);
+    // 背景图必须是**各自的** data URL：全都取第一张的话，帧带等于把同幅画面切碎
+    expect(cells.map((cell) => cell.style.backgroundImage)).toEqual(
+      FRAMES.map((frame) => `url("${frame}")`),
+    );
+  });
+
+  it("没抽到帧就不渲染帧带（否则空壳会盖住灰胶囊底衬）", () => {
+    expect(mount({ frames: [] }).container.querySelector(".rec-pv-strip")).toBeNull();
+    expect(mount().container.querySelector(".rec-pv-strip")).toBeNull();
+  });
+
+  it("帧带必须是轨道里**第一个**子节点，且对读屏隐藏", () => {
+    const { track } = mount({ frames: FRAMES });
+    const strip = track.firstElementChild as HTMLElement;
+    // 顺序反了帧带就会盖住保留段蓝框与两侧压暗层，拖动时看不出保留哪一段
+    expect(strip.className).toBe("rec-pv-strip");
+    expect(strip.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
 describe("裁剪轨道：不可裁剪时必须是死的", () => {
   it("disabled 下按下与移动都不产生任何回调", () => {
     const { container, track, onChange, onSeek } = mount({ disabled: true });

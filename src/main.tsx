@@ -56,11 +56,21 @@ function friendlyRejectionMessage(reason: unknown): string {
   if (low.includes("network") || low.includes("fetch") || low.includes("timeout") || low.includes("socket")) {
     return "网络连接失败，请检查网络后重试";
   }
-  return "有个后台操作未能完成，可重试一次";
+  // 兜底文案过去是一句无归因的「有个后台操作未能完成」，用户看到了也不知道是哪件事。
+  // 这里带上原始原因摘要（截断到 32 字，技术细节仍只进日志），让「是什么失败了」可回答。
+  const brief = raw.replace(/\s+/g, " ").trim().slice(0, 32);
+  return brief
+    ? `有个后台操作未能完成：${brief}`
+    : "有个后台操作未能完成，可重试一次";
 }
 
 window.addEventListener("unhandledrejection", (event) => {
-  logger.error("未处理的 Promise 拒绝", event.reason);
+  const reason = event.reason;
+  // 带 stack 进日志：这条兜底命中时，dev 控制台必须能直接定位到抛出的那一行。
+  logger.error(
+    reason instanceof Error ? `未处理的 Promise 拒绝\n${reason.stack || reason.message}` : "未处理的 Promise 拒绝",
+    reason,
+  );
   // 防止控制台静默吞掉错误
   event.preventDefault();
   // U55: 发送友好提示，而非原始技术文本

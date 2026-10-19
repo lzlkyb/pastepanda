@@ -47,8 +47,7 @@ fn detect_impl(path: &str) -> Result<Vec<BarcodeHit>, String> {
     let (w, h) = img.dimensions();
     let luma = img.to_luma8();
 
-    let mut hints = DecodeHints::default();
-    hints.TryHarder = Some(true);
+    let mut hints = DecodeHints { TryHarder: Some(true), ..Default::default() };
     let results = match detect_multiple_in_luma_with_hints(luma.into_raw(), w, h, &mut hints) {
         Ok(rs) => rs,
         // 「没找到码」是正常结果不是错误：存空数组，下次不再重跑

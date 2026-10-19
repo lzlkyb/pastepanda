@@ -119,6 +119,7 @@ pub fn anchor() -> IslandAnchor {
 ///
 /// - `(wa_x, wa_y, wa_w, wa_h)` = 主屏**工作区**逻辑矩形；
 /// - `(w, h)` = 当前舞台尺寸；`m` = 左右边距。
+#[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
 pub fn anchor_origin(
     anchor: IslandAnchor,
     wa_x: f64,

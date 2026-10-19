@@ -37,28 +37,43 @@ interface PreviewPaneHeaderProps {
   showLineNumbersToggle: boolean;
   lineNumbersOn: boolean;
   onToggleLineNumbers: () => void;
+  /** 任务清单进度；null/undefined = 文档里没有任务项，不占位 */
+  taskProgress?: { done: number; total: number } | null;
 }
 
-/** 预览面板头：标题 + 副标签 + （markdown）行号开关 */
+/** 预览面板头：标题 + 副标签 + （markdown）任务进度 + 行号开关 */
 export function PreviewPaneHeader({
   label = "预览",
   subLabel,
   showLineNumbersToggle,
   lineNumbersOn,
   onToggleLineNumbers,
+  taskProgress,
 }: PreviewPaneHeaderProps) {
   return (
     <PaneHeader label={label} subLabel={subLabel}>
-      {showLineNumbersToggle && (
-        <button
-          type="button"
-          className={`${styles.lnToggle} ${lineNumbersOn ? styles.lnToggleActive : ""}`}
-          onClick={onToggleLineNumbers}
-          title="预览区行号（块级编号 + 代码行号）"
-        >
-          <span className={styles.lnToggleDot} />
-          行号
-        </button>
+      {(taskProgress || showLineNumbersToggle) && (
+        <div className={styles.paneHeaderRight}>
+          {taskProgress && (
+            <span
+              className={`${styles.taskProgress}${taskProgress.done === taskProgress.total ? ` ${styles.taskProgressDone}` : ""}`}
+              title="任务清单勾选进度（在预览里直接点勾选框即可改写源文）"
+            >
+              已勾选 {taskProgress.done}/{taskProgress.total}
+            </span>
+          )}
+          {showLineNumbersToggle && (
+            <button
+              type="button"
+              className={`${styles.lnToggle} ${lineNumbersOn ? styles.lnToggleActive : ""}`}
+              onClick={onToggleLineNumbers}
+              title="预览区行号（块级编号 + 代码行号）"
+            >
+              <span className={styles.lnToggleDot} />
+              行号
+            </button>
+          )}
+        </div>
       )}
     </PaneHeader>
   );

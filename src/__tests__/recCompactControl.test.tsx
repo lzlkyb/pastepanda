@@ -124,9 +124,7 @@ describe("compact recording control", () => {
     mocks.pause.mockRejectedValueOnce(new Error("设备暂不可用"));
     render(<RecControlBar qualityLabel="高清" finalizing={false} onStop={vi.fn()} />);
     // 🔴 就绪判据是**计时器落到 00:12**（= status 已返回），不是「按钮出现了」：
-    // status 未落地时 `preparing` 为真，暂停按钮是 disabled 的，`fireEvent.click`
-    // 会被浏览器语义直接丢掉（不报错、也不触发 onClick）⇒ 这条用例会偶发挂在
-    // 「等不到 暂停失败 那条 alert」，看上去像产品缺陷。实测 2026-10-16 撞到过一次。
+    // status 未落地时 `preparing` 为真，暂停键根本不渲染，`getByRole` 会直接抛错。
     await screen.findByText("00:12");
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "暂停" })));
     expect((await screen.findByRole("alert")).textContent).toContain("暂停失败");
@@ -142,14 +140,17 @@ describe("compact recording control", () => {
     expect(screen.getByRole("button", { name: "重试停止" })).toBeTruthy();
   });
 
-  it("does not invent a running clock or enable pause before status arrives", async () => {
+  it("does not invent a running clock or offer pause before status arrives", async () => {
     mocks.status.mockReturnValue(deferred<typeof runningStatus>().promise);
     const onStop = vi.fn();
     render(<RecControlBar qualityLabel="高清" finalizing={false} onStop={onStop} />);
     expect(screen.getByText("--:--")).toBeTruthy();
     expect(screen.getByText("正在确认")).toBeTruthy();
     expect(screen.queryByLabelText("录制中")).toBeNull();
-    expect((screen.getByRole("button", { name: "暂停" }) as HTMLButtonElement).disabled).toBe(true);
+    // 🔴 准备态**不渲染**暂停键，而不是渲染成 disabled：此时后端还没开录，点了必失败。
+    // 旧版留一枚 68px 的灰按钮，既点不动，又把准备态撑到 336px（超过窗口初值 320，
+    // 右侧「更多」被裁）。别把它加回来当占位——要宽度就用 `.state` 文案本身。
+    expect(screen.queryByRole("button", { name: "暂停" })).toBeNull();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "停止并保存" })));
     expect(onStop).toHaveBeenCalledWith(false);
   });
@@ -264,11 +265,13 @@ describe("compact recording control", () => {
     expect(screen.getByText("正在准备")).toBeTruthy();
     expect(screen.getByText("--:--")).toBeTruthy();
     expect(screen.queryByLabelText("录制中")).toBeNull();
-    expect((screen.getByRole("button", { name: "暂停" }) as HTMLButtonElement).disabled).toBe(true);
+    // 准备态不渲染暂停键（后端还没开录，点了必失败）：旧版留的 disabled 灰按钮
+    // 既点不动，又把这一态撑到 336px —— 超过窗口初值 320，右侧「更多」被裁。
+    expect(screen.queryByRole("button", { name: "暂停" })).toBeNull();
     expect((screen.getByRole("button", { name: "停止并保存" }) as HTMLButtonElement).disabled).toBe(false);
-    // 「正在准备」多出一个词 ⇒ 浮条更宽，窗口要跟着长（这里是替 jsdom 量出来的盒子）
-    await measure(311, 37);
-    expect(mocks.resize).toHaveBeenLastCalledWith(311, 37);
+    // 准备态实测 276×38（少了暂停键、多了「正在准备」文案）：窗口跟着缩，不是公式
+    await measure(276, 38);
+    expect(mocks.resize).toHaveBeenLastCalledWith(276, 38);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     await act(async () => ready.resolve({ ...runningStatus, starting: false }));
     expect(screen.queryByText("正在准备")).toBeNull();

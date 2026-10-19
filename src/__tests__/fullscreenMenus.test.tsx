@@ -27,6 +27,8 @@ function makeBridge(): ShellBridge {
   return {
     text: "",
     replaceDoc: vi.fn(),
+    toggleTask: vi.fn(() => true),
+    replaceBlock: vi.fn(() => true),
     gotoLine: vi.fn(),
     insertFormat: vi.fn(),
     insertLinePrefix: vi.fn(),

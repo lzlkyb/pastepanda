@@ -16,19 +16,19 @@ export function ClipboardBrowseRows({ config, updateAndSave }: {
             卡片悬浮行为
             <span className={`${styles.sRowRecommend}`}>⭐推荐</span>
             <HelpTooltip
-              tooltip="鼠标悬停卡片时的交互方式"
+              tooltip="鼠标悬停或键盘聚焦卡片时的交互方式"
               detailTitle="卡片悬浮行为"
               detail={<>
                 <p>设置鼠标悬停在卡片上时的交互方式。</p>
                 <p>📌 <b>关闭</b>：无悬浮交互，界面最简洁</p>
-                <p>📌 <b>操作按钮</b>：Hover 显示复制/收藏/编辑/删除按钮，时间自动隐藏</p>
+                <p>📌 <b>操作按钮</b>：悬停或键盘聚焦时显示复制/置顶/编辑/删除按钮，时间自动隐藏</p>
                 <p>📌 <b>预览气泡</b>：弹出 Popover 气泡，内容预览+操作</p>
                 <p>💡 <b>推荐气泡模式</b>，适合浏览长文本内容</p>
               </>}
             />
           </div>
           <div className={`${styles.sRowDesc}`}>
-            {config.hover_mode === "off" ? "无悬浮交互，界面最简洁" : config.hover_mode === "inline" ? "Hover 显示操作按钮，时间自动隐藏" : "弹出 Popover 预览气泡，内容预览+操作"}
+            {config.hover_mode === "off" ? "无悬浮交互，界面最简洁" : config.hover_mode === "inline" ? "悬停或键盘聚焦显示操作按钮，时间自动隐藏" : "弹出 Popover 预览气泡，内容预览+操作"}
           </div>
         </div>
         <div className={styles.sSegGroup}>

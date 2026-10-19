@@ -5,6 +5,8 @@ import { ToggleRow, SettingTile } from "../ToggleRow";
 import { NoteVaultRows } from "../NoteVaultRows";
 import type { SettingsData } from "@/hooks/useSettingsData";
 import styles from "../../Settings.module.css";
+import { StoragePanel } from "../storage/StoragePanel";
+import { invalidateStorageStats } from "@/lib/api/storage";
 
 const CLEANUP_OPTIONS = [
   { label: "关", value: 0 },
@@ -42,6 +44,7 @@ export function DataSection({
     <>
       {/* ── 数据管理 ── */}
       <div className={styles.sSection}>数据管理</div>
+      <StoragePanel />
       <div data-settings-parent="数据管理" className={styles.sSection}>保留与清理</div>
       <div className={styles.sRow}>
         <SettingTile hue="save">🗑</SettingTile>
@@ -190,7 +193,7 @@ export function DataSection({
       </div>
       {/* 笔记的 Markdown 目录导出/导入（B1 #5）。上面那两行是历史记录的 JSON，两回事 */}
       <div data-settings-parent="数据管理" className={styles.sSection}>笔记导入导出</div>
-      <NoteVaultRows />
+      <NoteVaultRows onImported={invalidateStorageStats} />
     </>
   );
 }

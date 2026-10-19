@@ -15,7 +15,7 @@ import { primaryShortcutLabel } from "@/lib/utils";
  *    - 大纲只对 markdown 渲染。
  *    摆一个点了没反应的按钮比不摆更坏，不要在宿主里传「禁用态」进来。
  */
-import { ListTree, Save, X, Ellipsis, Crosshair, RotateCw, FolderOpen, Maximize2, Minimize2, Minus } from "lucide-react";
+import { ListTree, Save, X, Ellipsis, Crosshair, RotateCw, FolderOpen, Maximize2, Minimize2, Minus, FileDown } from "lucide-react";
 import { LanguagePicker } from "./LanguagePicker";
 import { DropdownMenu, type MenuEntry } from "./DropdownMenu";
 import type { SpecMode, ViewMode } from "./types";
@@ -59,6 +59,10 @@ interface EditorToolbarProps {
   onClose: () => void;
   /** ⋯ 菜单首项：专注模式（P1-3；快捷键 Ctrl+Shift+F 在外壳的键盘 effect） */
   onFocusMode: () => void;
+  /** 仅 markdown：导出为可独立打开的 HTML。不传则菜单里没有这一项 */
+  onExportHtml?: () => void;
+  /** 正在生成 HTML（渲染 + 读图内联是秒级，必须置忙防重复点） */
+  exportingHtml?: boolean;
 }
 
 export function EditorToolbar({
@@ -84,6 +88,8 @@ export function EditorToolbar({
   onSave,
   onClose,
   onFocusMode,
+  onExportHtml,
+  exportingHtml = false,
 }: EditorToolbarProps) {
   // ⋯ 菜单条目：专注模式 / 重载 / 打开文件。
   // 重载仅文件模式出现（不适用就不出现）。
@@ -115,6 +121,21 @@ export function EditorToolbar({
       icon: <FolderOpen size={14} />,
       onSelect: onOpen,
     },
+    // 导出只在 markdown 出现：别的类型没有「排版 + 表单」这层语义。
+    // 摆一个点了没反应的按钮比不摆更坏，所以整条不渲染而不是禁用。
+    ...(onExportHtml
+      ? [
+          "sep" as const,
+          {
+            key: "exportHtml",
+            label: exportingHtml ? "正在生成 HTML…" : "导出为 HTML（分享）…",
+            icon: <FileDown size={14} />,
+            title: "生成单个可独立打开的 HTML 文件，发给别人后用浏览器直接看",
+            disabled: exportingHtml,
+            onSelect: onExportHtml,
+          },
+        ]
+      : []),
   ];
 
   return (

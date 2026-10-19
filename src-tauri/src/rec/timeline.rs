@@ -82,6 +82,7 @@ impl VideoAxis {
     }
 
     /// 已落样本数（= 视频轨样本数）。
+    #[cfg_attr(not(test), allow(dead_code))] // 仅测试引用
     pub fn submitted(&self) -> u64 {
         self.submitted
     }

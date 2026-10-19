@@ -1,44 +1,24 @@
-import { CONTENT_TRANSITION } from "@/lib/motion";
 import { configuredShortcutLabel } from "@/lib/utils";
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAppStore, FilterType, TimeFilter, SourceFilter } from "@/stores/appStore";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useAppStore } from "@/stores/appStore";
+import { HistoryTimeFilter } from "@/components/history-time/HistoryTimeFilter";
 import { AiStatusCap } from "@/components/AiStatusCap";
 import { AiStatusDot } from "@/components/AiStatusDot";
-import { LanSyncCap } from "@/components/LanSyncCap";
 import { AiMark } from "@/components/ai/AiMark";
 import { getAppName, fetchCounts, toggleStackMode } from "@/lib/api";
-import { cleanSourceName } from "@/lib/source-mappings";
-import { useSourceIcon } from "@/hooks/useSourceIcon";
-import SourceBadge from "@/components/SourceBadge";
+import { HistorySourceFilter } from "@/components/history-source/HistorySourceFilter";
 import { UpdateBadge } from "@/components/UpdateBadge";
 import { ModeSwitcher } from "@/components/ModeSwitcher";
-import { TagBadge, AnimatedTagBadge } from "@/components/TagBadge";
 import { AppIcon } from "@/components/AppIcon";
 import { SearchBox } from "@/components/SearchBox";
 import { setTopBarSlot } from "@/lib/topbarSlot";
 import { logger } from "@/lib/logger";
-import { ChevronDown, Tag, X, EyeOff } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import styles from "./TopBar.module.css";
-import { useClickOutside } from "@/hooks/useClickOutside";
+import { HistoryFilterBar } from "./history-filter/HistoryFilterBar";
 
-const TABS: { key: FilterType; label: string; icon: string }[] = [
-  { key: "all",    label: "全部", icon: "📋" },
-  { key: "text",   label: "文本", icon: "📝" },
-  // 「图片」同时包含纯图片与图文混排（两者都是带图内容）。
-  // 图文不单独占一个标签页：480px 默认窗宽下 6 个标签已经拥挤，
-  // 只看图文时用「图文」自动标签精确筛。
-  { key: "image",  label: "图片", icon: "📸" },
-  { key: "file",   label: "文件", icon: "📁" },
-  { key: "pinned", label: "收藏", icon: "⭐" },
-];
 
-const TIME_OPTIONS: { key: TimeFilter; label: string }[] = [
-  { key: "all",   label: "全部时间" },
-  { key: "today", label: "今天" },
-  { key: "week",  label: "本周" },
-  { key: "month", label: "本月" },
-];
+
 
 /* 工具箱已整体离开顶栏：D15 把它从下拉面板改成了「工具」模式的主体区。
    条目数据在 `@/lib/toolbox`（一模一样搬过去的），渲染在 `ToolboxView`，
@@ -84,29 +64,16 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   // 父层传一个固定的就会变成「在知识模式下显示的是记录模式的状态」。
   const sidebarOpen = useAppStore((s) => (s.appMode === "tools" ? false : s.sidebarOpen[s.appMode]));
   const onToggleSidebar = useAppStore((s) => s.toggleSidebar);
-  const filterType = useAppStore((s) => s.filterType);
-  const setFilterType = useAppStore((s) => s.setFilterType);
-  const timeFilter = useAppStore((s) => s.timeFilter);
-  const setTimeFilter = useAppStore((s) => s.setTimeFilter);
-  const sourceFilter = useAppStore((s) => s.sourceFilter);
-  const setSourceFilter = useAppStore((s) => s.setSourceFilter);
-  const selectedTagIds = useAppStore((s) => s.selectedTagIds);
-  const toggleTagFilter = useAppStore((s) => s.toggleTagFilter);
-  const clearTagFilters = useAppStore((s) => s.clearTagFilters);
-  const allTags = useAppStore((s) => s.tags);
   const ws = useAppStore((s) => s.config.current_workspace);
   const stackMode = useAppStore((s) => s.stackMode);
   // 只订阅条数而不是整个 stackItems：这一行只用来拼提示文案，
   // 订阅数组会让每收集一条就重渲染整个顶栏。
   const stackCount = useAppStore((s) => s.stackItems.length);
   const stackToggleHotkey = useAppStore((s) => s.config.stack_toggle_hotkey);
-  // 剪贴板同步入口只挂在记录模式标签行；未开启时整行也不为它渲染（方案 A）
-  const lanSyncEnabled = useAppStore((s) => s.config.lan_sync_enabled);
   const [tabStyle, setTabStyle] = useState<TabStyle>(getTabStyle);
   const [appName, setAppName] = useState("PastePanda");
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [countsError, setCountsError] = useState(false);
-  const [tagPickerOpen, setTagPickerOpen] = useState(false);
 
   useEffect(() => {
     getAppName().then((name) => {
@@ -157,7 +124,7 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   }, []);
 
   return (
-    <div className={styles.header} data-tauri-drag-region role="banner">
+    <div className={styles.header} data-mode={appMode} data-tauri-drag-region role="banner">
       {/* 标题行 */}
       <div className={styles.headerTop} data-tauri-drag-region>
         <div className={styles.headerTitle}>
@@ -283,170 +250,17 @@ export function TopBar({ onSettings, settingsOpen = false }: {
         {/* 搜索 + 时间/来源筛选同行（方案 A：筛选并入搜索行，省一行垂直空间） */}
         <div className={styles.searchFilterRow} data-tauri-drag-region="false">
           <SearchBox fill />
-          <FilterDropdown
-            label="时间"
-            value={timeFilter}
-            options={TIME_OPTIONS}
-            onChange={(v) => setTimeFilter(v as TimeFilter)}
-            auto
-          />
-          {/* 事件筛选（G3）曾在这里，2026-09-05 撤掉。原因不是它不能用，是入口放错了：
-              ① 它与「时间」功能重叠（都在筛时间范围），且**共用同一个 `timeFilter` state**，
-                天然互斥；选中事件后「时间」会退回显示「时间」（`range:` 匹配不上任何时间选项），
-                这是两者耦合的唯一可见线索，很隐晦；
-              ② 真实数据下它有 48 项，在里面滚找「那一阵」未必比直接搜关键词便宜；
-              ③ 540 宽下顶栏已经很挤，它占的那一格是实打实的。
-              🔴 后端的 `range:` 支持（`time_bound`）与分段纯函数（`lib/events.ts`）**都留着**：
-              每日整理在用分段，而 `range:` 是日后把这个能力挪进「今日整理」时候的现成地基。 */}
-          <SourceFilterDropdown
-            value={sourceFilter}
-            onChange={setSourceFilter}
-            workspace={ws}
-            auto
-          />
+          <HistoryTimeFilter />
+          <HistorySourceFilter />
         </div>
 
-        {/* Tab 区域 */}
-        <div className={styles.tabsArea} data-tauri-drag-region="false">
-          {/* 改成按钮而不是一段死文字：计数失败常常只是一次性超时，
-              只报错不给重试入口的话用户只能重启窗口。 */}
-          {countsError && (
-            <button
-              type="button"
-              className={styles.countsErrorHint}
-              onClick={refreshCounts}
-              title="统计数据加载失败，点击重试"
-            >
-              ⚠ 计数获取失败，点击重试
-            </button>
-          )}
-          <AnimatePresence mode="wait">
-            {tabStyle === "segmented" ? (
-              <motion.div key="seg" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }}>
-                <SegmentedTabs filterType={filterType} setFilterType={setFilterType} counts={counts} />
-              </motion.div>
-            ) : (
-              <motion.div key="circle" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }} transition={{ duration: 0.15 }}>
-                <CircleTabs filterType={filterType} setFilterType={setFilterType} counts={counts} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* 标签筛选栏。
-            渲染条件：有标签，或剪贴板同步开着（同步入口钉在行最右；
-            未开启同步且无标签时整行消失，不为一个关着的功能占一行） */}
-        {(allTags.length > 0 || lanSyncEnabled) && (
-          <div className={styles.tagFilterBar} data-tauri-drag-region="false">
-            {allTags.length > 0 && (
-              <>
-                {/* #10 筛选芯片增删动画：勾选标签时芯片弹入，点 × 时弹出，兄弟芯片 layout 让位 */}
-                <AnimatePresence initial={false}>
-                {selectedTagIds.map((tid) => {
-                  const tag = allTags.find((t) => t.id === tid);
-                  if (!tag) return null;
-                  return (
-                    <AnimatedTagBadge
-                      key={tid}
-                      tag={tag}
-                      variant="chip"
-                      onRemove={(t) => toggleTagFilter(t.id)}
-                    />
-                  );
-                })}
-                </AnimatePresence>
-                {selectedTagIds.length > 0 && (
-                  <button className={styles.tagFilterClear} onClick={clearTagFilters} title="清除所有标签筛选">
-                    清除
-                  </button>
-                )}
-                <button
-                  className={styles.tagFilterAdd}
-                  onClick={() => setTagPickerOpen(!tagPickerOpen)}
-                >
-                  <Tag size={12} /> 标签筛选
-                </button>
-                <AnimatePresence>
-                  {tagPickerOpen && (
-                    <TagPickerPopover
-                      tags={allTags}
-                      selectedTagIds={selectedTagIds}
-                      onToggle={toggleTagFilter}
-                      onClose={() => setTagPickerOpen(false)}
-                    />
-                  )}
-                </AnimatePresence>
-              </>
-            )}
-            {/* 剪贴板同步：记录模式语境入口；未开启时整块不渲染 */}
-            {lanSyncEnabled && (
-              <div className={styles.tagRowEnd}>
-                <LanSyncCap />
-              </div>
-            )}
-          </div>
-        )}
+        <HistoryFilterBar tabStyle={tabStyle} counts={counts} countsError={countsError} refreshCounts={refreshCounts} />
       </div>
       )}
     </div>
   );
 }
 
-/* ===== 方案 B：iOS 分段控件 ===== */
-function SegmentedTabs({ filterType, setFilterType, counts }: {
-  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number> | null;
-}) {
-  const getCount = (key: string) => (counts ? counts[key] : undefined);
-  return (
-    <div className={styles.segmented}>
-      {TABS.map((tab) => {
-        const active = filterType === tab.key;
-        const count = getCount(tab.key);
-        return (
-          <button key={tab.key} onClick={() => setFilterType(tab.key)}
-            className={`${styles.segItem}${active ? ` ${styles.segItemActive}` : ""}`}
-            style={{ position: "relative" }}>
-            {active && (
-              <motion.div
-                layoutId="seg-active"
-                className={styles.segActiveIndicator}
-                transition={CONTENT_TRANSITION}
-              />
-            )}
-            <span className={styles.segIcon}>{tab.icon}</span>
-            <span>{tab.label}</span>
-            {count !== undefined && count > 0 && <span className={`${styles.segCount}${active ? ` ${styles.segItemActive}` : ""}`}>{count}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ===== 方案 C：圆形图标 Tab ===== */
-function CircleTabs({ filterType, setFilterType, counts }: {
-  filterType: FilterType; setFilterType: (f: FilterType) => void; counts: Record<string, number> | null;
-}) {
-  const getCount = (key: string) => (counts ? counts[key] : undefined);
-  return (
-    <div className={styles.tabsCircle}>
-      {TABS.map((tab) => {
-        const active = filterType === tab.key;
-        const count = getCount(tab.key);
-        return (
-          <button key={tab.key} onClick={() => setFilterType(tab.key)}
-            className={`${styles.circleTab}${active ? ` ${styles.circleTabActive}` : ""}`}>
-            <div className={styles.circleIcon}>
-              <span style={{ fontSize: 22 }}>{tab.icon}</span>
-            </div>
-            <span className={styles.circleLabel}>{tab.label}</span>
-            {count !== undefined && count > 0 && <span className={styles.circleBadge}>{count}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 function IconBtn({ children, tip, danger, active, hue, onClick, ariaLabel }: {
   children: React.ReactNode; tip: string; danger?: boolean; active?: boolean;
@@ -459,206 +273,5 @@ function IconBtn({ children, tip, danger, active, hue, onClick, ariaLabel }: {
       className={`${styles.iconBtn}${danger ? ` ${styles.iconBtnDanger}` : ""}${active ? ` ${styles.iconBtnActive}` : ""}`}>
       {children}
     </button>
-  );
-}
-
-/* ===== 筛选下拉组件 ===== */
-function FilterDropdown<T extends string>({ label, value, options, onChange, auto, onOpen }: {
-  label: string; value: T; options: { key: T; label: string }[]; onChange: (v: T) => void; auto?: boolean;
-  /** 展开时回调。给选项需要现拉的下拉用（事件筛选）——
-     *  挂在 mount 上会白白多一次启动查询，而挂在 historyVersion 上则每复制一条就重拉。 */
-  onOpen?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const closeMenu = useCallback(() => setOpen(false), []);
-  useClickOutside(ref, closeMenu, open);
-
-  const activeLabel = options.find((o) => o.key === value)?.label || label;
-
-  return (
-    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref} data-tauri-drag-region="false">
-      <button className={styles.filterDropdownBtn} onClick={() => { if (!open) onOpen?.(); setOpen(!open); }}>
-        <span>{activeLabel}</span>
-        <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={CONTENT_TRANSITION}
-            className={styles.filterDropdownMenu}
-          >
-            {options.map((opt) => (
-              <button key={opt.key}
-                className={`${styles.filterDropdownItem}${opt.key === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-                onClick={() => { onChange(opt.key); setOpen(false); }}>
-                {opt.label}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/* ===== 来源筛选下拉 ===== */
-function SourceFilterDropdown({ value, onChange, workspace, auto }: {
-  value: SourceFilter; onChange: (v: SourceFilter) => void; workspace: string; auto?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  // 只订阅 history.length 作为缓存失效信号，避免每次 history 变化都重渲染
-  const historyLen = useAppStore((s) => s.history.length);
-
-  const closeMenu = useCallback(() => setOpen(false), []);
-  useClickOutside(ref, closeMenu, open);
-
-  // 收集当前工作空间下的所有来源应用（含 source_icon 信息）
-  // historyLen 作为缓存失效信号
-  const sources = useMemo(() => {
-    const history = useAppStore.getState().history;
-    const map = new Map<string, string | null>(); // source → source_icon
-    history.filter((h) => h.workspace === workspace && h.source).forEach((h) => {
-      if (!map.has(h.source)) {
-        map.set(h.source, h.source_icon ?? null);
-      } else if (h.source_icon && !map.get(h.source)) {
-        // 更新：之前没有 source_icon 的，现在有了
-        map.set(h.source, h.source_icon);
-      }
-    });
-    return Array.from(map.entries())
-      .sort(([a], [b]) => cleanSourceName(a).localeCompare(cleanSourceName(b), "zh"));
-    // historyLen 看着多余，实则是 history 的廉价代理：history 每次 store 更新都换引用，
-    // 直接依赖它等于不缓存；删掉 historyLen 则会让这个 memo 永不更新。
-    // 代价：条数不变但某条的 source 被改了不会重算（已知取舍）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyLen, workspace]);
-
-  // source → source_icon 的快速查找表
-  const sourceIconMap = useMemo(() => {
-    const map = new Map<string, string | null>();
-    sources.forEach(([source, icon]) => map.set(source, icon));
-    return map;
-  }, [sources]);
-
-  // 当前选中来源的 source_icon
-  const selectedSourceIcon = value ? sourceIconMap.get(value) ?? null : null;
-
-  // 当前选中来源的图标与显示名：双模式解析走 useSourceIcon（规则 #11）。
-  // displayName / emoji 也一并由它给，不再单调 cleanSourceName / getSourceIcon
-  // —— 那两个本来就是 resolveSource 的包装，分开调等于解析两次。
-  const { displayName, emoji, realIconUrl } = useSourceIcon(value, selectedSourceIcon);
-
-  const activeLabel = useMemo(() => {
-    if (!value) return "全部来源";
-    if (realIconUrl) {
-      return <><img src={realIconUrl} alt="" className={styles.filterDropdownIcon} /> {displayName}</>;
-    }
-    return <>{emoji && <span>{emoji}</span>} {displayName}</>;
-  }, [value, displayName, emoji, realIconUrl]);
-
-  return (
-    <div className={`${styles.filterDropdown}${auto ? ` ${styles.filterDropdownAuto}` : ""}`} ref={ref} data-tauri-drag-region="false">
-      <button className={styles.filterDropdownBtn} onClick={() => setOpen(!open)}>
-        {activeLabel}
-        <ChevronDown size={12} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0)" }} />
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.96 }}
-            transition={CONTENT_TRANSITION}
-            className={styles.filterDropdownMenu}
-          >
-            <button className={`${styles.filterDropdownItem}${!value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-              onClick={() => { onChange(""); setOpen(false); }}>
-              全部来源
-            </button>
-            {sources.map(([raw, icon]) => (
-              <button key={raw}
-                className={`${styles.filterDropdownItem}${raw === value ? ` ${styles.filterDropdownItemActive}` : ""}`}
-                onClick={() => { onChange(raw); setOpen(false); }}>
-                <SourceBadge source={raw} sourceIcon={icon} variant="plain" />
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-/* ===== 标签选择 Popover ===== */
-function TagPickerPopover({ tags, selectedTagIds, onToggle, onClose }: {
-  tags: import("@/stores/appStore").Tag[];
-  selectedTagIds: string[];
-  onToggle: (tagId: string) => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useClickOutside(ref, onClose);
-
-  // 分组：自动标签 vs 手动标签
-  const { autoTags, manualTags } = useMemo(() => {
-    const auto = tags.filter(t => t.source === "auto").sort((a, b) => a.name.localeCompare(b.name, "zh"));
-    const manual = tags.filter(t => t.source === "manual").sort((a, b) => a.name.localeCompare(b.name, "zh"));
-    return { autoTags: auto, manualTags: manual };
-  }, [tags]);
-
-  const renderTag = (tag: import("@/stores/appStore").Tag) => (
-    <TagBadge
-      key={tag.id}
-      tag={tag}
-      variant="picker"
-      active={selectedTagIds.includes(tag.id)}
-      onClick={(t) => onToggle(t.id)}
-    />
-  );
-
-  return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, y: -4, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -4, scale: 0.96 }}
-      transition={CONTENT_TRANSITION}
-      className={styles.tagPickerPopover}
-    >
-      <div className={styles.tagPickerHeader}>
-        <span>选择标签筛选</span>
-        <button className={styles.tagPickerClose} onClick={onClose}><X size={12} /></button>
-      </div>
-      <div className={styles.tagPickerBody}>
-        {tags.length === 0 ? (
-          <div className={styles.tagPickerEmpty}>
-            暂无标签，右键卡片 → 编辑标签 来创建
-          </div>
-        ) : (
-          <>
-            {autoTags.length > 0 && (
-              <>
-                <div className={styles.tagPickerSection}>🤖 智能标签</div>
-                {autoTags.map(renderTag)}
-                {manualTags.length > 0 && <div className={styles.tagPickerDivider} />}
-              </>
-            )}
-            {manualTags.length > 0 && (
-              <>
-                <div className={styles.tagPickerSection}>🏷️ 我的标签</div>
-                {manualTags.map(renderTag)}
-              </>
-            )}
-          </>
-        )}
-      </div>
-    </motion.div>
   );
 }

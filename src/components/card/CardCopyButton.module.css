@@ -7,7 +7,7 @@
   font-size: 11px;
   white-space: nowrap;
   color: var(--text-secondary);
-  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard);
+  transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
 }
 .button[data-confirmed="true"] { color: var(--success); border-color: var(--success); }
 .button:disabled { cursor: progress; }

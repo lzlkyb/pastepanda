@@ -202,6 +202,12 @@ export interface RecKeyframeIndex {
   durationMs: number;
   keyframesMs: number[];
   warning?: string | null;
+  /**
+   * 帧率（后端按样本时长中位数算）。`null` / 缺省 = 读不出或平台未提供
+   * （macOS 侧目前恒 null）⇒ 预览窗把「逐帧」两个按钮置为不可用，
+   * 而不是拿 1/30 假装精确。
+   */
+  fps?: number | null;
 }
 
 /** 预览窗数据（rec_preview_take 一次性消费）。 */
@@ -255,6 +261,56 @@ export function recOpenPreview(path: string): Promise<void> {
 /** 预览窗挂载后取数据（一次性消费；null = 已被重开的窗取走）。 */
 export function recPreviewTake(): Promise<RecPreviewData | null> {
   return invokeJson("rec_preview_take");
+}
+
+/**
+ * 结果卡内容比 HUD 固定窗高时把它撑高（底边不动、向上长）。
+ *
+ * HUD 窗是 440×280 的透明浮窗，而 `note` 是运行时 warnings 的拼接，长度不可控；
+ * 内容多时固定窗会把「预览并裁剪 / 再录一次」推出视口。撑不动也不报错——
+ * 卡片内部还有滚动兜底，不值得为一次窗口调整弹错误。
+ */
+export function recHudFit(height: number): Promise<void> {
+  return invokeVoid("rec_hud_fit", { height });
+}
+
+/* ── 预览窗窗壳（2026-10-18：可缩放 / 三键 / 最大化态）── */
+
+/** `query` 只读状态，其余三种是操作；返回操作后的最大化状态。 */
+export type RecPreviewWindowOp = "minimize" | "toggle-max" | "close" | "query";
+
+/**
+ * 窗口三键走**后端命令**而不是 `getCurrentWindow()`：per-window ACL 是本项目
+ * 一整类静默故障的来源（`lib/rcWindowOps.ts` 文件头两次前科）。命令不经 ACL，
+ * 失败以人话返回，这里统一上抛给调用方展示。
+ */
+export function recPreviewWindow(op: RecPreviewWindowOp): Promise<boolean> {
+  return invokeJson("rec_preview_window", { op });
+}
+
+/** 自绘边带的八个方向（`decorations(false)` 的窗没有可靠的系统缩放边）。 */
+export type RecResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
+const RESIZE_DIR: Record<RecResizeDir, "North" | "South" | "East" | "West" | "NorthEast" | "NorthWest" | "SouthEast" | "SouthWest"> = {
+  n: "North",
+  s: "South",
+  e: "East",
+  w: "West",
+  ne: "NorthEast",
+  nw: "NorthWest",
+  se: "SouthEast",
+  sw: "SouthWest",
+};
+
+/**
+ * 缩放走 JS 的 `startResizeDragging`（Tauri 没有在根上导出 `ResizeDirection`，
+ * 自写命令得额外引 `tauri-runtime` 才能拿到枚举）。**这条必须依赖 ACL**：
+ * `core:window:allow-start-resize-dragging` 缺了就是静默无效，已写进 default.json
+ * 的 rec-preview 能力组（判据 19 的同一条坑），改动时别删。
+ */
+export async function recPreviewResize(dir: RecResizeDir): Promise<void> {
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().startResizeDragging(RESIZE_DIR[dir]);
 }
 
 /* ── GIF 导出（四期 1.5；12fps / 宽 ≤480 / 循环，单任务串行可取消）── */

@@ -82,6 +82,42 @@ export function toAssetUrl(src: string, baseDir?: string | null): string | null 
   return r.kind === "resolved" ? r.url ?? null : null;
 }
 
+/**
+ * 本地图片的**绝对路径**；不是本地文件时返回 null。
+ *
+ * 与 `toAssetUrl` 的分工：应用内渲染要 asset 协议地址（WebView 才认），
+ * 导出 HTML 要原始路径（再读成 base64 内联）。两个需求不能共用一个返回值，
+ * 否则要么导出文件里留着对方电脑上不存在的 `asset://`，要么预览里显示不出来。
+ *
+ * `file://` 单独处理：它既不是 http 也不是盘符，会被 isAbs 判成相对路径，
+ * 拼进 baseDir 后变成一坨废路径。
+ */
+export function resolveLocalPath(src: string, baseDir?: string | null): string | null {
+  if (!src) return null;
+  if (/^(https?:|data:|blob:|asset:)/i.test(src)) return null;
+  if (src.includes("asset.localhost")) return null;
+  if (/^file:\/\//i.test(src)) {
+    try {
+      // Windows 下 pathname 是 /C:/a/b.png，去掉前导斜杠才是真路径
+      return decodeURIComponent(new URL(src).pathname).replace(/^\//, "");
+    } catch {
+      return null;
+    }
+  }
+  const isAbs = /^([a-zA-Z]:[/\\]|\\\\|\/)/.test(src);
+  if (!isAbs) {
+    if (!baseDir) return null;
+    let rel = src;
+    try {
+      rel = decodeURIComponent(src);
+    } catch {
+      /* 文件名里就带 % 的，按原样拼 */
+    }
+    return resolveAgainst(baseDir, rel);
+  }
+  return src;
+}
+
 const IMG_MISS_ICON =
   '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
   '<path d="M1 3h14v10H1V3zm1.4 1.4v7.2h11.2V4.4H2.4z"/>' +

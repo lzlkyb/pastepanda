@@ -788,7 +788,6 @@ pub fn rc_boot(app: &AppHandle) {
         };
         if let Err(e) = svc.start(&dir, true).await {
             log::warn!("[RC] 启动远程通道失败：{}", e);
-            return;
         }
         // 🔴 Android 不预热确认浮层（2026-10-03 回归撤除）：wry 在 Android 上
         // 每个 Activity 只有一块 webview，建第二块窗走 `setContentView` 会把
@@ -1712,7 +1711,7 @@ pub async fn rc_open_workbench(app: AppHandle) -> Result<(), String> {
         crate::present_window(&window);
         return Ok(());
     }
-    let mut builder = tauri::webview::WebviewWindowBuilder::new(
+    let builder = tauri::webview::WebviewWindowBuilder::new(
         &app,
         "rc-workbench",
         tauri::WebviewUrl::App("rc.html".into()),

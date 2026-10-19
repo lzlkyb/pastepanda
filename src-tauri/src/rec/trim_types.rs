@@ -4,6 +4,10 @@ pub struct KeyframeIndex {
     pub duration_ms: u64,
     pub keyframes_ms: Vec<u64>,
     pub warning: Option<String>,
+    /// 帧率（播放域）：逐帧步进的步长来源。取样本时长的**中位数**算，
+    /// 不取平均——静止期 MF 会把空隙写进前一个样本的 duration（见 `timeline.rs`
+    /// 文件头），平均值一定会被这些长样本拉低。None = 读不出（或平台未实现）。
+    pub fps: Option<f64>,
 }
 
 /// 吸附（纯函数，宁多勿少）：入点向下吸关键帧、出点向上吸关键帧。

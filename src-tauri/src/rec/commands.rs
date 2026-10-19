@@ -31,7 +31,7 @@ pub struct RecStartReq {
 #[tauri::command]
 pub fn rec_toggle(app: AppHandle) -> Result<(), String> {
     if session::status().recording {
-        return session::stop(false).map_err(|e| e);
+        return session::stop(false);
     }
     open_selector_window(&app);
     Ok(())
@@ -300,6 +300,7 @@ pub async fn rec_keyframes(
         "durationMs": kf.duration_ms,
         "keyframesMs": kf.keyframes_ms,
         "warning": kf.warning,
+        "fps": kf.fps,
     }))
 }
 
@@ -469,11 +470,91 @@ fn decide_output_path(app: &AppHandle, store: &State<'_, DataStore>) -> Result<P
     Ok(candidate)
 }
 
+/* ── 预览窗窗壳（2026-10-18：可缩放 + 三键 + 最大化态） ───────────────── */
+
+/// 预览窗三键 + 最大化态查询。**走注入窗口而不是 JS 的 Window API**：
+/// per-window ACL 是本项目一整类静默故障的来源（`src/lib/rcWindowOps.ts` 文件头
+/// 的 2026-09-18 / 09-25 两次前科），自定义命令不经 ACL，失败以 String 返回。
+/// 返回值 = 操作后的最大化状态，前端据此切换圆角与「还原」图标，不必再问一次。
+#[tauri::command]
+pub fn rec_preview_window(window: tauri::Window, op: String) -> Result<bool, String> {
+    match op.as_str() {
+        "minimize" => window.minimize().map_err(|e| format!("最小化窗口被拒绝：{e}"))?,
+        "toggle-max" => {
+            if window.is_maximized().unwrap_or(false) {
+                window.unmaximize().map_err(|e| format!("还原窗口被拒绝：{e}"))?;
+            } else {
+                window.maximize().map_err(|e| format!("最大化窗口被拒绝：{e}"))?;
+            }
+        }
+        "close" => window.close().map_err(|e| format!("关闭窗口被拒绝：{e}"))?,
+        // 查询：resize / 系统最大化（双击标题栏、Win+↑）之后前端对不上状态时用
+        "query" => {}
+        other => return Err(format!("未知的窗口操作：{other}")),
+    }
+    // 关闭后窗口已失效：这里读不到就按「非最大化」回，不把收尾报成错误
+    Ok(window.is_maximized().unwrap_or(false))
+}
+
+/// HUD 结果卡的高度上下限（逻辑像素）。
+///
+/// 上限 560：再高就不是「通知卡」而是一块面板，遮住的桌面比信息更值钱；
+/// 超出部分交给卡片内部滚动（`.warn` 是唯一可压缩段）。
+const HUD_MIN_H: f64 = 280.0;
+const HUD_MAX_H: f64 = 560.0;
+
+/// 内容高（逻辑像素）→ 窗口高（物理像素）。纯函数，便于单测倍数与夹取。
+fn fit_height(logical: f64, scale: f64) -> u32 {
+    let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+    let value = if logical.is_finite() { logical } else { HUD_MIN_H };
+    (value.clamp(HUD_MIN_H, HUD_MAX_H) * scale).round() as u32
+}
+
+/// 结果卡内容比窗口高时把 HUD 撑高（**底边不动，向上长**）。
+///
+/// 为什么不是固定 280：`note` 是运行时 warnings 的 `join("；")`，条数不固定；
+/// 固定高度下多一条警告就会把「预览并裁剪 / 再录一次」推出视口——
+/// 那是这张卡存在的理由（2026-10-18 实测：三条警告时内容 342 > 280）。
+#[tauri::command]
+pub fn rec_hud_fit(window: tauri::Window, height: f64) -> Result<(), String> {
+    let target = fit_height(height, window.scale_factor().unwrap_or(1.0)) as i32;
+    let size = window.outer_size().map_err(|e| format!("读取结果卡尺寸失败：{e}"))?;
+    let current = i32::try_from(size.height).unwrap_or(0);
+    // 差 1px 以内不折腾窗口：前端每次渲染都会量，抖动一次就够了
+    if (current - target).abs() <= 1 {
+        return Ok(());
+    }
+    let pos = window.outer_position().map_err(|e| format!("读取结果卡位置失败：{e}"))?;
+    let bottom = pos.y + current;
+    window
+        .set_size(tauri::PhysicalSize::new(size.width, target.max(1) as u32))
+        .map_err(|e| format!("调整结果卡高度被拒绝：{e}"))?;
+    window
+        .set_position(tauri::PhysicalPosition::new(pos.x, bottom - target))
+        .map_err(|e| format!("调整结果卡位置被拒绝：{e}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn preview_window_command_runs_off_the_main_thread() {
         let declaration = include_str!("commands.rs").split("/// 打开预览裁剪窗").nth(1).unwrap().split("/// 预览窗挂载").next().unwrap();
         assert!(declaration.contains("pub async fn rec_open_preview("), "native webview construction must run off the Tauri main thread");
+    }
+
+    /// HUD 结果卡的高度必须跟着内容走：`note` 是运行时 warnings 的拼接，条数不固定。
+    #[test]
+    fn hud_fit_height_is_clamped_to_a_sane_range() {
+        assert_eq!(fit_height(280.0, 1.0), 280);
+        assert_eq!(fit_height(342.0, 1.0), 342);
+        // 内容再长也只是一张卡；超出上限的部分交给卡片内部滚动
+        assert_eq!(fit_height(900.0, 1.0), 560);
+        assert_eq!(fit_height(10.0, 1.0), 280);
+        // 125% 缩放下夹的是物理像素
+        assert_eq!(fit_height(342.0, 1.25), 428);
+        assert_eq!(fit_height(f64::NAN, 1.0), 280);
     }
 }

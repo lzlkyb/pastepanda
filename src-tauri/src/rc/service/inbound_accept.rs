@@ -193,6 +193,7 @@ impl RcService {
 }
 
 /// 被控端任务入口：输入读取 + 画面推流（实现在 `rc/inbound.rs`）。
+#[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
 pub(in crate::rc) async fn spawn_inbound_video(
     peer: &str,
     send: iroh::endpoint::SendStream,

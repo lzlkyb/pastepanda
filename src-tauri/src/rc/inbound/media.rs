@@ -107,6 +107,7 @@ impl MediaWriter {
     }
 
     #[cfg(any(target_os="windows",target_os="macos"))]
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     pub(super) async fn send_via_video_plane(
         &mut self,
         p: &crate::rc::video_params::VideoPacket,

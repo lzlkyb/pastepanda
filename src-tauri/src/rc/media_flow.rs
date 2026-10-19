@@ -391,7 +391,7 @@ impl Flow {
         self.prev_backlog_ms = Some(self.backlog_ms);
         // 探测带（扩窗线..降速线）内的水位站定 3 秒才算平台；一路上涨的真积压站不住。
         if self.backlog_ms > self.backlog_probe_ms() && self.backlog_ms <= self.backlog_down_ms() {
-            if !self.plateau.is_some_and(|(base, _)| base.abs_diff(self.backlog_ms) <= BACKLOG_STABLE_MS) {
+            if self.plateau.is_none_or(|(base, _)| base.abs_diff(self.backlog_ms) > BACKLOG_STABLE_MS) {
                 self.plateau = Some((self.backlog_ms, now));
             }
         } else {

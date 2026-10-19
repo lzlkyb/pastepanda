@@ -160,7 +160,12 @@ pub fn open_preview_window(app: &AppHandle, data: serde_json::Value) -> Result<(
     .title("")
     .inner_size(840.0, 600.0) // 逻辑值占位；下方按物理覆盖
     .position(x as f64, y as f64)
-    .resizable(false)
+    // 2026-10-18：原先 `resizable(false)` 让这扇窗既不能拖边也不能最大化
+    // （用户报「预览和裁剪窗没办法窗口最大化」）。装饰仍是自绘的，所以缩放
+    // 命中区由前端 RecResizeEdges 用 8 条边带 + rec_preview_window("resize:*") 补，
+    // 不依赖系统标题栏；最小尺寸是为了时间轴与动作行不被挤成两行。
+    .resizable(true)
+    .min_inner_size(720.0, 480.0)
     .decorations(false)
     .shadow(true)
     .build();
@@ -280,7 +285,8 @@ pub(crate) fn virtual_screen_metrics() -> (i32, i32, i32, i32) {
 }
 
 /// Mac 选区几何采用窗口系统的真实显示器数据；不把原生查询失败静默变成 0×0。
-pub(crate) fn selector_screen_metrics(app: &AppHandle) -> Result<(i32, i32, i32, i32), String> {
+/// （`app` 参数当前两个平台分支都用不上，保留占位以稳定五个调用点签名。）
+pub(crate) fn selector_screen_metrics(_app: &AppHandle) -> Result<(i32, i32, i32, i32), String> {
     #[cfg(target_os = "macos")]
     let metrics = {let r=crate::macos::screen::desktop()?;(r.x,r.y,r.w,r.h)};
     #[cfg(windows)]
@@ -453,9 +459,17 @@ pub fn open_control_window(app: &AppHandle, region: (i32, i32, u32, u32)) -> Res
     #[cfg(windows)]
     for label in [CONTROL_LABEL] {
         if let Some(surface) = app.get_webview_window(label) {
-            if let Err(error) = capture_exclusion::protect(&surface) {
-                log::warn!("[Rec] 无法排除录屏浮层：{error}");
-                session::add_warning("无法排除录屏控制条，浮层可能进入成片，请先核对录像");
+            match capture_exclusion::protect(&surface) {
+                // 只有「两条通道都失败」才值得打扰用户：本产品录屏走的就是 Desktop Duplication，
+                // DDA 通道生效时控制条同样不会出现在成片里（见 capture_exclusion.rs 文件头）。
+                Ok(capture_exclusion::Excluded::Capture) => {}
+                Ok(capture_exclusion::Excluded::DdaOnly) => {
+                    log::info!("[Rec] 控制条仅对 Desktop Duplication 隐藏（本产品录屏路径）");
+                }
+                Err(error) => {
+                    log::warn!("[Rec] 无法排除录屏浮层：{error}");
+                    session::add_warning("无法排除录屏控制条，浮层可能进入成片，请先核对录像");
+                }
             }
         }
     }

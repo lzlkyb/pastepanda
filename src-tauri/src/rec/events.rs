@@ -16,6 +16,7 @@ use std::io::Write as _;
 use std::path::Path;
 
 use super::event_types::RecEvent;
+#[allow(clippy::duplicate_mod)] // output.rs 是各录制器以 #[path] 自带的共享模块，各自实例化互不引用，刻意布局
 #[path="output.rs"]
 mod output;
 
@@ -87,6 +88,7 @@ impl SidecarRecorder {
         }
     }
 
+    #[allow(dead_code)] // 诊断 API：主链路只用 record/warning，这四个方法仅测试引用
     pub fn active(&self) -> bool {
         self.enabled
     }
@@ -126,16 +128,19 @@ impl SidecarRecorder {
         self.truncated
             .then_some("事件轨达到 100000 条上限，已保存此前事件，后续未保存")
     }
+    #[allow(dead_code)] // 仅测试引用
     pub fn truncated(&self) -> bool {
         self.truncated
     }
 
+    #[allow(dead_code)] // 仅测试引用
     pub fn len(&self) -> usize {
         self.events.len()
     }
 
     /// 收尾写出（同名 `.events.json`）。开着就写（无事件也是合法空轨道——
     /// 「同名必有」的确定性比省 200 字节重要）。失败返回 Err 由调用方附注。
+    #[allow(dead_code)] // 仅测试引用（生产走 write_result）
     pub fn write(
         &self,
         mp4_path: &Path,
