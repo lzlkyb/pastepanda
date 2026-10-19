@@ -24,10 +24,12 @@ const MAX_ACTIONS = 3;
 export const CardActionBar = memo(function CardActionBar({
   item,
   compact = false,
+  tabIndex,
 }: {
   item: HistoryItem;
   /** inline 模式空间小，用更紧凑的间距 */
   compact?: boolean;
+  tabIndex?: number;
 }) {
   const { toast } = useToast();
 
@@ -84,6 +86,7 @@ export const CardActionBar = memo(function CardActionBar({
       {entries.map(({ t, text }) => (
         <button
           key={t.id}
+          tabIndex={tabIndex}
           className={styles.btn}
           title={t.label}
           aria-label={t.label}

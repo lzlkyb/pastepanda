@@ -9,6 +9,23 @@ vi.mock("@/components/Toast", () => ({ useToast: () => ({ toast }) }));
 const item = { id: "a", text: "content", type: "text" } as HistoryItem;
 afterEach(() => { cleanup(); copy.mockReset(); toast.mockReset(); });
 
+it("repeating a copy cannot let the previous confirmation timer hide a pending result", async () => {
+  vi.useFakeTimers();
+  try {
+    copy.mockResolvedValueOnce("已复制");
+    render(<CardCopyButton item={item} />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "复制" })));
+    act(() => vi.advanceTimersByTime(1400));
+    let resolve!: (message: string) => void;
+    copy.mockReturnValue(new Promise(done => { resolve = done; }));
+    fireEvent.click(screen.getByRole("button", { name: "已复制" }));
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByRole("button", { name: "复制中" }).getAttribute("aria-busy")).toBe("true");
+    await act(async () => resolve("已复制"));
+    expect(screen.getByRole("button", { name: "已复制" })).toBeTruthy();
+  } finally { vi.useRealTimers(); }
+});
+
 it("confirms copy at the button without generating another success toast", async () => {
   copy.mockResolvedValue("已复制");
   render(<CardCopyButton item={item} />);

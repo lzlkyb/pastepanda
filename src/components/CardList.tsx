@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
+import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -6,10 +6,10 @@ import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useFilteredItems } from "@/hooks/useFilteredItems";
 import { useDialogStore } from "@/stores/dialogStore";
 import { useToast } from "@/components/Toast";
-import { CardWithContext, ImgState } from "@/components/Card";
+import { type ImgState } from "@/components/Card";
 import { useCardOcr } from "@/hooks/useCardOcr";
 import { useCardBarcodes } from "@/hooks/useCardBarcodes";
-import type { ImageOcrState, ImageBarcodeState } from "@/lib/utils";
+import { VirtualCardRow } from "./card/VirtualCardRow";
 import { ContextMenu } from "@/components/ContextMenu";
 import { StackBanner } from "@/components/StackBanner";
 import { MdAssocBanner } from "@/components/MdAssocBanner";
@@ -17,7 +17,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
-import { configuredShortcutLabel, primaryShortcutLabel, errText, primaryModifierHeld, isHistoryQueryActive } from "@/lib/utils";
+import { configuredShortcutLabel, primaryShortcutLabel, errText, isHistoryQueryActive } from "@/lib/utils";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
 import { HistoryTimeSelection } from "@/components/history-time/HistoryTimeSelection";
@@ -60,68 +60,6 @@ function RegexPreviewDialogWrapper({ item, ruleId, onClose }: { item: HistoryIte
   );
 }
 
-
-/**
- * 虚拟化行（memoized）— CardList 每滚动帧因 scrollMetrics 重渲染，
- * 若行内联闭包则所有可见 Card 的 memo 全部失效。改为：行组件接收稳定的
- * by-id 回调 + 原始类型标志，浅比较通过即跳过，闭包放在行内部创建。
- */
-const VirtualCardRow = memo(function VirtualCardRow({
-  item, selected, pasting, imageState, searchKeyword, stackOrder, stackDone, ocrState, barcodeState,
-  index, disablePreview, showMoveToGroup,
-  onItemClick, onItemDoubleClick, onRetryImage, onEdit, onEditTags,
-  onQrCode, onRegexPreview, onManageRegexRules,
-}: {
-  item: HistoryItem;
-  selected: boolean;
-  pasting: boolean;
-  imageState: ImgState | undefined;
-  ocrState: ImageOcrState | undefined;
-  barcodeState: ImageBarcodeState | undefined;
-  searchKeyword: string;
-  stackOrder: number | undefined;
-  stackDone: boolean;
-  index: number;
-  disablePreview: boolean;
-  showMoveToGroup: boolean;
-  onItemClick: (id: string, ctrl: boolean, shift: boolean) => void;
-  onItemDoubleClick: (id: string) => void;
-  onRetryImage: (content: string) => void;
-  onEdit: (item: HistoryItem) => void;
-  onEditTags: (item: HistoryItem) => void;
-  onQrCode: (item: HistoryItem) => void;
-  onRegexPreview: (item: HistoryItem, ruleId: string) => void;
-  onManageRegexRules: () => void;
-}) {
-  return (
-    <CardWithContext
-      item={item} selected={selected}
-      imageState={imageState}
-      ocrState={ocrState}
-      barcodeState={barcodeState}
-      searchKeyword={searchKeyword}
-      pasting={pasting}
-      onRetryImage={(() => {
-        const p = thumbnailSourcePath(item);
-        return p && imageState?.status === "error" ? () => onRetryImage(p) : undefined;
-      })()}
-      onClick={(e: React.MouseEvent) => onItemClick(item.id, primaryModifierHeld(e), e.shiftKey)}
-      onDoubleClick={() => onItemDoubleClick(item.id)}
-      onEdit={onEdit}
-      onEditTags={onEditTags}
-      onMoveToGroup={showMoveToGroup ? (it) => {
-        window.dispatchEvent(new CustomEvent("app-move-to-group", { detail: { item: it } }));
-      } : undefined}
-      onQrCode={onQrCode}
-      onRegexPreview={onRegexPreview}
-      onManageRegexRules={onManageRegexRules}
-      stackOrder={stackOrder}
-      stackDone={stackDone}
-      index={index}
-      disablePreview={disablePreview}
-    />
-  );
-});
 
 export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
   const searchKeyword = useAppStore((s) => s.searchKeyword);
@@ -231,7 +169,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
 
   const { contentRef, isScrolling } = useVirtualScroll({
-    scrollRef, lenisRef, items, virtualizer, triggerLoadMore,
+    scrollRef, lenisRef, items, focusId, virtualizer, triggerLoadMore,
   });
   // ── 弹框打开时暂停 Lenis，防止滚轮事件穿透到背景列表 ──
   const anyDialogOpen = !!(editorItem || tagEditorItem || qrItem || diffPair || regexPreview || showRegexRules);
@@ -474,6 +412,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
         className={styles.scrollArea}
         ref={handleScrollRef}
         role="listbox"
+        tabIndex={-1}
         aria-label="剪贴板记录列表"
         aria-multiselectable="true"
         aria-setsize={items.length}
@@ -712,7 +651,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                     className={landingId === item.id ? styles.rowLanding : undefined}
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}>
                       <VirtualCardRow
-                        item={item} selected={focusId === item.id || selectedIds.has(item.id)}
+                        item={item} selected={selectedIds.size ? selectedIds.has(item.id) : focusId === item.id}
+                        current={focusId === item.id} checked={selectedIds.has(item.id)}
                         imageState={(() => {
                           const p = thumbnailSourcePath(item);
                           return p ? imgCache[p] : undefined;

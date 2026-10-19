@@ -388,7 +388,7 @@ interface AppState {
   removeSearchHistory: (kw: string) => void;
   clearSearchHistory: () => void;
   selectItem: (id: string, multi?: boolean, range?: boolean) => void;
-  clearSelection: () => void;
+  clearSelection: (keepFocus?: boolean) => void;
   selectAll: () => void;
 
   setSeqPointer: (p: number) => void;
@@ -914,7 +914,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastClickedId: id,
       };
     }),
-  clearSelection: () => set({ selectedIds: new Set(), focusId: null, lastClickedId: null }),
+  clearSelection: (keepFocus = false) => set(s => ({
+    selectedIds: new Set(),
+    focusId: keepFocus ? s.focusId : null,
+    lastClickedId: keepFocus ? s.lastClickedId : null,
+  })),
   selectAll: () =>
     set((s) => {
       const items = s.getFilteredItems();

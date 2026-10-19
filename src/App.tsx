@@ -99,6 +99,10 @@ function App() {
   const timeFilter = useAppStore((s) => s.timeFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
   const workspace = useAppStore((s) => s.config.current_workspace);
+
+
+
+
   const { toast } = useToast();
   const anim = useDialogAnim();
   // 托盘原生菜单（方案丁）桥：远程项上行 + 最近粘贴/远程连接事件落前端收口
@@ -989,7 +993,7 @@ function App() {
         return;
       }
       case "clear_selection":
-        store.clearSelection();
+        store.clearSelection(store.selectedIds.size > 0);
         return;
       case "hide_window":
         await toggleWindow();

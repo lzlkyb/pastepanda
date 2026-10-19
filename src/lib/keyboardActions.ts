@@ -240,6 +240,7 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     if (state.showShortcuts) return { type: "close_dialog", dialog: "shortcuts" };
     if (state.moveToGroup) return { type: "close_dialog", dialog: "moveToGroup" };
     if (state.selectedIds.length > 0) return { type: "clear_selection" };
+    if ((state.appMode ?? "record") === "record" && state.focusId) return { type: "clear_selection" };
     return { type: "hide_window" };
   }
 
