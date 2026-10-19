@@ -18,6 +18,8 @@ pub(super) enum TimeBound {
     Since(String),
     /// `time BETWEEN a AND b`（**两端都包含**）。
     Between(String, String),
+    /// Calendar navigation uses an exclusive upper bound, including subsecond records.
+    Window(String, String),
 }
 
 /// 搜索的完整筛选条件（`search_history` 与 FTS 快速路径共用同一份）。
@@ -56,6 +58,15 @@ pub struct SearchQuery<'a> {
 /// 它是展示层筛选、值由本项目自己构造，真出现残缺就是代码 bug，
 /// 而那时把列表清空比不筛更难排查。未知值同理（与原来的 `_ => String::new()` 一致）。
 pub(super) fn time_bound(time_filter: &str) -> TimeBound {
+    if let Some(body) = time_filter.strip_prefix("window:") {
+        return match body.split_once('~') {
+            Some((a, b)) if a < b
+                && chrono::NaiveDateTime::parse_from_str(a, "%Y-%m-%d %H:%M:%S").is_ok()
+                && chrono::NaiveDateTime::parse_from_str(b, "%Y-%m-%d %H:%M:%S").is_ok() =>
+                    TimeBound::Window(a.to_string(), b.to_string()),
+            _ => TimeBound::None,
+        };
+    }
     if let Some(body) = time_filter.strip_prefix("range:") {
         return match body.split_once('~') {
             Some((a, b)) if !a.is_empty() && !b.is_empty() => {
@@ -94,6 +105,11 @@ pub(super) fn push_time_bound(
         }
         TimeBound::Between(a, b) => {
             sql.push_str(" AND time >= ? AND time <= ?");
+            params.push(Box::new(a));
+            params.push(Box::new(b));
+        }
+        TimeBound::Window(a, b) => {
+            sql.push_str(" AND time >= ? AND time < ?");
             params.push(Box::new(a));
             params.push(Box::new(b));
         }
@@ -179,7 +195,7 @@ pub(super) fn is_cjk(c: char) -> bool {
 }
 
 /// 判断查询词是否需要回退 LIKE（含 FTS5 MATCH 语法特殊字符）
-fn fts_safe(query: &str) -> bool {
+pub(super) fn fts_safe(query: &str) -> bool {
     !query.chars().any(|c| {
         matches!(
             c,
@@ -421,237 +437,28 @@ impl DataStore {
         Ok(items)
     }
 
-    /// v6.4 FTS5 快速路径：中文/混合关键词走全文索引（bigram 预处理），
-    /// 远快于 LIKE 三字段全扫。失败/空结果返回 Err/空 Vec，由调用方回退 LIKE。
-    fn try_search_fts(&self, q: &SearchQuery) -> Result<Vec<HistoryItem>, ()> {
-        let SearchQuery {
-            workspace,
-            search,
-            filter,
-            time_filter,
-            source,
-            group_filter,
-            tag_ids,
-            limit,
-        } = *q;
-        let conn = self.lock_conn();
-
-        let mut sql = String::from(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-             FROM history WHERE workspace = ?1
-             AND (history.rowid IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?2)
-                  OR history.rowid IN (SELECT rowid FROM image_ocr_fts WHERE image_ocr_fts MATCH ?3))",
-        );
-        // ?2 / ?3 是同一个查询词，但必须各绑一次：两张 FTS 表是各自独立的 MATCH 子查询。
-        // 第二个子查询让「截图里的字」可被搜到（image_ocr_fts，见 mod.rs 建表注释）。
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![
-            Box::new(workspace.to_string()),
-            Box::new(to_ngram(search)),
-            Box::new(to_ngram(search)),
-        ];
-
-        // 以下过滤子句与 search_history 的 LIKE 版保持一致
-        if filter == "pinned" {
-            sql.push_str(" AND pinned = 1");
-        } else if filter == "image" {
-            sql.push_str(" AND type IN ('image', 'rich')");
-        } else if filter == "text" {
-            sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
-        } else if filter != "all" {
-            sql.push_str(" AND type = ?");
-            params_vec.push(Box::new(filter.to_string()));
-        }
-        push_time_bound(&mut sql, &mut params_vec, time_filter);
-        if !source.is_empty() {
-            sql.push_str(" AND source = ?");
-            params_vec.push(Box::new(source.to_string()));
-        }
-        if group_filter == "ungrouped" {
-            sql.push_str(" AND group_id IS NULL");
-        } else if group_filter != "all" && !group_filter.is_empty() {
-            sql.push_str(" AND group_id = ?");
-            params_vec.push(Box::new(group_filter.to_string()));
-        }
-        for tag_id in tag_ids {
-            sql.push_str(" AND id IN (SELECT history_id FROM history_tags WHERE tag_id = ?)");
-            params_vec.push(Box::new(tag_id.clone()));
-        }
-        sql.push_str(" ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ?");
-        params_vec.push(Box::new(limit.min(1000)));
-
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
-        let mut items = {
-            let mut stmt = conn.prepare(&sql).map_err(|_| ())?;
-            let rows = stmt
-                .query_map(param_refs.as_slice(), |row| {
-                    Ok(HistoryItem {
-                        id: row.get(0)?,
-                        text: row.get(1)?,
-                        time: row.get(2)?,
-                        item_type: row.get(3)?,
-                        content: row.get(4)?,
-                        pinned: row.get::<_, i32>(5)? != 0,
-                        source: row.get(6)?,
-                        workspace: row.get(7)?,
-                        md5: row.get(8)?,
-                        pinyin_initials: row.get(9)?,
-                        group_id: row.get(10)?,
-                        source_icon: row.get(11)?,
-                        content_type: row.get(12)?,
-                        ocr_text: None,
-                        barcodes: None,
-                        tags: Vec::new(),
-                    })
-                })
-                .map_err(|_| ())?;
-            rows.filter_map(|r| r.ok()).collect::<Vec<HistoryItem>>()
-        };
-        // ⚠️ 必须先放锁再回填 OCR：`load_ocr_texts_into_items` 内部走 `get_ocr_texts`，
-        //    而它自己会 `lock_conn()`——std::sync::Mutex 不可重入，持锁调用就是死锁。
-        //    这里以前是持锁调的，只是从来没触发过：命中要求 FTS 快路径返回**图片**条目，
-        //    而 sync_fts_upsert 的 UPSERT 在虚拟表上一直失败、新条目从未进过索引。
-        //    image_ocr_fts 一接进来，命中图片就成了常态，这个坑必然踩到。
-        drop(conn);
-        self.load_image_extras_into_items(&mut items).map_err(|_| ())?;
-        Ok(items)
-    }
-
-    /// 全量搜索：把全部筛选条件下推到 SQL，直接扫整表，
-    /// 不依赖前端分页加载的内存窗口（修复"搜索只覆盖已加载记录"）。
-    /// 语义与前端 getFilteredItems 保持一致：
-    /// - search 同时匹配 text / pinyin_initials / content（U41：图片文件名、文件路径在 content）
-    /// - 时间为左闭区间（time >= cutoff），today/week/month 与前端算法一致
-    /// - 标签为 AND 逻辑（每个 tag 一个子查询）
-    ///
-    /// 结果按 置顶优先 + 时间倒序，设上限防止宽泛搜索整表返回。
+    /// Search and time distribution share the same predicate; only the list loads bodies.
     pub fn search_history(&self, q: &SearchQuery) -> Result<Vec<HistoryItem>, String> {
-        let SearchQuery {
-            workspace,
-            search,
-            filter,
-            time_filter,
-            source,
-            group_filter,
-            tag_ids,
-            limit,
-        } = *q;
-        // v6.4 FTS5 快速路径：命中即返回；空结果/出错（旧库无索引、语法异常）回退 LIKE。
-        // ⚠️ 必须在 lock_conn() 之前调用 try_search_fts（它内部会 lock_conn；
-        //     Mutex 不可重入，先锁再调会死锁——delete_history 踩过同一坑）。
-        if !search.is_empty() && fts_safe(search) {
-            if let Ok(fts_items) = self.try_search_fts(q) {
-                if !fts_items.is_empty() {
-                    // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
-                    return Ok(fts_items);
-                }
-            }
-        }
-
         let conn = self.lock_conn();
-
-        let mut sql = String::from(
-            "SELECT id, text, time, type, content, pinned, source, workspace, md5, pinyin_initials, group_id, source_icon, content_type
-             FROM history WHERE workspace = ?1",
-        );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(workspace.to_string())];
-
-        // 搜索关键词：text + 拼音首字母 + content（图片文件名 / 文件路径）+ 内容记忆摘要（M5-1）
-        if !search.is_empty() {
-            sql.push_str(
-                " AND (text LIKE ? ESCAPE '\\' OR pinyin_initials LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'\
-                 OR id IN (SELECT history_id FROM history_summaries WHERE summary LIKE ? ESCAPE '\\'))",
-            );
-            let pattern = format!("%{}%", escape_like_pattern(search));
-            params_vec.push(Box::new(pattern.clone()));
-            params_vec.push(Box::new(pattern.clone()));
-            params_vec.push(Box::new(pattern.clone()));
-            params_vec.push(Box::new(pattern));
-        }
-
-        // 类型过滤
-        if filter == "pinned" {
-            sql.push_str(" AND pinned = 1");
-        } else if filter == "image" {
-            // 图文混排归入「图片」筛选：两者都是带图内容，用户找图时希望一起看到。
-            // 只想看图文时用「图文」自动标签精确筛（不单独占一个顶部标签页，避免拥挤）。
-            sql.push_str(" AND type IN ('image', 'rich')");
-        } else if filter == "text" {
-            sql.push_str(" AND type IN ('text', 'diagram', 'doc')");
-        } else if filter != "all" {
-            sql.push_str(" AND type = ?");
-            params_vec.push(Box::new(filter.to_string()));
-        }
-
-        // 时间范围（左闭区间，与前端一致：today=今日零点 / week=7天 / month=30天）
-        push_time_bound(&mut sql, &mut params_vec, time_filter);
-
-        // 来源过滤
-        if !source.is_empty() {
-            sql.push_str(" AND source = ?");
-            params_vec.push(Box::new(source.to_string()));
-        }
-
-        // 分组过滤
-        if group_filter == "ungrouped" {
-            sql.push_str(" AND group_id IS NULL");
-        } else if group_filter != "all" && !group_filter.is_empty() {
-            sql.push_str(" AND group_id = ?");
-            params_vec.push(Box::new(group_filter.to_string()));
-        }
-
-        // 标签过滤（AND 逻辑）：每个 tag 一个 IN 子查询
-        for tag_id in tag_ids {
-            sql.push_str(" AND id IN (SELECT history_id FROM history_tags WHERE tag_id = ?)");
-            params_vec.push(Box::new(tag_id.clone()));
-        }
-
-        sql.push_str(" ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ?");
-        params_vec.push(Box::new(limit.min(1000))); // 上限，防止宽泛搜索整表返回
-
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
-
-        let mut items: Vec<HistoryItem> = {
+        let (predicate, mut values) = super::history_search::search_where(&conn, q)?;
+        let order = if q.time_filter.starts_with("window:") {
+            " ORDER BY time DESC, rowid DESC LIMIT ?"
+        } else {
+            " ORDER BY pinned DESC, time DESC, rowid DESC LIMIT ?"
+        };
+        let sql = format!("SELECT {HISTORY_COLS} {predicate}{order}");
+        values.push(Box::new(q.limit.min(1000)));
+        let params: Vec<&dyn rusqlite::ToSql> = values.iter().map(|v| v.as_ref()).collect();
+        let mut items = {
             let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-            let result: Vec<HistoryItem> = stmt
-                .query_map(param_refs.as_slice(), |row| {
-                    Ok(HistoryItem {
-                        id: row.get(0)?,
-                        text: row.get(1)?,
-                        time: row.get(2)?,
-                        item_type: row.get(3)?,
-                        content: row.get(4)?,
-                        pinned: row.get::<_, i32>(5)? != 0,
-                        source: row.get(6)?,
-                        workspace: row.get(7)?,
-                        md5: row.get(8)?,
-                        pinyin_initials: row.get(9)?,
-                        group_id: row.get(10)?,
-                        source_icon: row.get(11)?,
-                        content_type: row.get(12)?,
-                        ocr_text: None,
-                        barcodes: None,
-                        tags: Vec::new(),
-                    })
-                })
-                .map_err(|e| e.to_string())?
-                .filter_map(|r| r.ok())
-                .collect();
-            drop(stmt);
-            result
+            let rows = stmt.query_map(params.as_slice(), row_to_history_item).map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?
         };
         drop(conn);
         self.load_tags_into_items(&mut items)?;
         self.load_image_extras_into_items(&mut items)?;
-
-        // ❗ 原先在这里批量计数，已删——详见 `bump_search_recall`。
-
         Ok(items)
     }
-
     /// 获取最近 N 条记录（按时间倒序，用于托盘菜单快速预览）
     pub fn get_recent_items(&self, limit: u32) -> Result<Vec<HistoryItem>, String> {
         let conn = self.lock_conn();

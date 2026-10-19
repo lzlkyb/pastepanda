@@ -2,6 +2,57 @@ import { invoke } from "@tauri-apps/api/core";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { motionPreference } from "@/lib/motionPreference";
+import { parseEventRange } from "@/lib/eventLabel";
+
+/** Time navigation operates on local calendar dates, including DST and year boundaries. */
+export function historyLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function historyDateOffset(day: string, offset: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return historyLocalDate(new Date(y, m - 1, d + offset));
+}
+
+export function historyTimeWindow(day: string, startHour = 0, endHour = 24): `window:${string}` {
+  const [y, m, d] = day.split("-").map(Number);
+  const at = (hour: number) => {
+    const date = new Date(y, m - 1, d, hour);
+    return `${historyLocalDate(date)} ${String(date.getHours()).padStart(2, "0")}:00:00`;
+  };
+  return `window:${at(startHour)}~${at(endHour)}`;
+}
+
+export function parseHistoryWindow(value: string): { start: string; end: string } | null {
+  const match = /^window:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})~(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})$/.exec(value);
+  if (!match || match[1] >= match[2]) return null;
+  return { start: match[1], end: match[2] };
+}
+
+/** One gate for fetching, displaying and paginating database-backed history queries. */
+export function isHistoryQueryActive(search: string, timeFilter: string, sourceFilter: string): boolean {
+  return !!search.trim() || timeFilter !== "all" || !!sourceFilter;
+}
+
+export function historyTimeLabel(value: string, now = new Date()): string {
+  if (value === "all") return "全部时间";
+  if (value === "today") return "今天";
+  if (value === "week") return "近 7 天";
+  if (value === "month") return "近 30 天";
+  const range = parseHistoryWindow(value) ?? parseEventRange(value);
+  if (!range) return "时间";
+  const day = range.start.slice(0, 10);
+  const monday = historyDateOffset(historyLocalDate(now), -((now.getDay() + 6) % 7));
+  if (range.start === `${monday} 00:00:00` && range.end === `${historyDateOffset(monday, 7)} 00:00:00`) return "本周";
+  const prefix = day === historyLocalDate(now) ? "今天" : day === historyDateOffset(historyLocalDate(now), -1) ? "昨天"
+    : `${day.slice(0, 4) === String(now.getFullYear()) ? "" : `${day.slice(0, 4)} 年 `}${Number(day.slice(5, 7))} 月 ${Number(day.slice(8, 10))} 日`;
+  const start = range.start.slice(11, 16);
+  const end = range.end.slice(0, 10) === historyDateOffset(day, 1) && range.end.slice(11) === "00:00:00" ? "24:00" : range.end.slice(11, 16);
+  if (start === "00:00" && end === "24:00") return prefix;
+  if (range.end.slice(0, 10) !== day && end !== "24:00") return `${prefix}起的时间范围`;
+  const slot = start === "00:00" && end === "12:00" ? "上午" : start === "12:00" && end === "18:00" ? "下午" : start === "18:00" && end === "24:00" ? "晚上" : `${start}–${end}`;
+  return `${prefix} · ${slot}`;
+}
 
 /** Parsing a list is not evidence of query intent. Keep manual conversion separate. */
 export function sqlListRelevance(values: unknown[]): { score: number; text: string } {

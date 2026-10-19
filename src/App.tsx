@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { applyTheme, DEFAULT_THEME, ThemeKey } from "@/lib/theme";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useAppStore, HistoryItem, buildSearchKey } from "@/stores/appStore";
+import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useDialogStore, anyDialogOpen } from "@/stores/dialogStore";
 import { resolveKeyAction, computeNavIndex } from "@/lib/keyboardActions";
 import { TopBar } from "@/components/TopBar";
@@ -25,7 +25,7 @@ import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { useTrayMenuBridge } from "@/hooks/useTrayMenuBridge";
 import { useViewTransition } from "@/hooks/useViewTransition";
 import { logger } from "@/lib/logger";
-import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, searchHistory, type SidebarCounts } from "@/lib/api";
+import { deleteHistory, togglePin, toggleWindow, saveForeground, restoreDeleted, readClipboardText, createGroup, updateGroup, deleteGroup as deleteGroupApi, moveToGroup, fetchSidebarCounts, type SidebarCounts } from "@/lib/api";
 import { togglePinAndDeposit } from "@/lib/notes/deposit";
 import { openNoteForCard } from "@/lib/notes/open";
 import { resolveSource, getAutoTagIcon, getAutoTagColor } from "@/lib/source-mappings";
@@ -53,7 +53,7 @@ import { DiffDialog } from "@/components/DiffDialog";
 import { ToolboxView } from "@/components/ToolboxView";
 import { KnowledgeView } from "@/components/KnowledgeView";
 import type { ToolHandlers } from "@/lib/toolbox";
-import { isEventRange } from "@/lib/eventLabel";
+import { useHistorySearch } from "@/hooks/useHistorySearch";
 import { ItemEditorDialog } from "@/components/editors/ItemEditorDialog";
 import { QREditor } from "@/components/editors/QREditor";
 import { LearningsDialog } from "@/components/LearningsDialog";
@@ -99,11 +99,6 @@ function App() {
   const timeFilter = useAppStore((s) => s.timeFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
   const workspace = useAppStore((s) => s.config.current_workspace);
-  const historyVersion = useAppStore((s) => s.historyVersion);
-  const setSearchResults = useAppStore((s) => s.setSearchResults);
-  const setSearchLoading = useAppStore((s) => s.setSearchLoading);
-  const setSearchError = useAppStore((s) => s.setSearchError);
-  const searchRetryTick = useAppStore((s) => s.searchRetryTick);
   const { toast } = useToast();
   const anim = useDialogAnim();
   // 托盘原生菜单（方案丁）桥：远程项上行 + 最近粘贴/远程连接事件落前端收口
@@ -417,42 +412,7 @@ function App() {
     return () => { seq++; window.removeEventListener("counts-invalidated", refresh); };
   }, [config.current_workspace]);
 
-  // 搜索模式编排：关键词激活时按全部筛选条件查询后端（search_history 全量下推），
-  // 结果写回 store.searchResults —— getFilteredItems 在搜索模式直接返回它，
-  // 从而搜到尚未分页加载的记录（修复"搜索只覆盖已加载窗口"）。
-  // 依赖涵盖全部筛选 + 工作区 + historyVersion：搜索期间的增删/置顶等数据变更也会刷新结果。
-  // searchSeqRef 防竞态：筛选快速变化导致多个查询在飞时，只允许最新一次写回。
-  const searchSeqRef = useRef(0);
-  useEffect(() => {
-    // 无关键词 → 非搜索模式（setSearchKeyword 已清空结果）。
-    // 🔴 事件筛选（G3）是例外：它没有关键词，但同样需要后端全量下推——
-    // 无关键词时列表只筛内存窗口（初始 50 条），而一个三天前的事件根本不在里面，
-    // 不走这条路的话选了事件列表会是空的。
-    if (!searchKeyword.trim() && !isEventRange(timeFilter)) return;
-    const st = useAppStore.getState();
-    const key = buildSearchKey(st);
-    // 同查询且已成功才跳过；失败结果不能当新鲜（否则永远不重试）
-    if (st.searchResults !== null && st.searchResultsKey === key && !st.searchError) return;
-    const seq = ++searchSeqRef.current;
-    setSearchLoading(true);
-    searchHistory({
-      search: st.searchKeyword,
-      filter: st.filterType,
-      timeFilter: st.timeFilter,
-      source: st.sourceFilter,
-      groupFilter: st.groupFilter,
-      tagIds: st.selectedTagIds,
-    }).then((results) => {
-      if (seq !== searchSeqRef.current) return; // 已被更新的查询取代
-      setSearchResults(results, key);
-    }).catch((e) => {
-      if (seq !== searchSeqRef.current) return;
-      logger.warn("全量搜索失败", e);
-      // 🔴 不能 setSearchResults([], key)：那是把「没搜到」和「没搜成」写成同一屏（U3.5）。
-      // 标 searchError，CardList 优先展示错误态 + 重试；retrySearch 会 bump tick 重跑本 effect。
-      setSearchError(true);
-    });
-  }, [searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, workspace, historyVersion, searchRetryTick, setSearchResults, setSearchLoading, setSearchError]);
+  useHistorySearch(appMode === "record" && !showSettings);
 
   // 侧边栏分组数据（计数全部来自后端聚合，前端只做名称清洗 + 图标映射 + 排序）
   const sidebarGroups = useMemo<SidebarGroup[]>(() => {

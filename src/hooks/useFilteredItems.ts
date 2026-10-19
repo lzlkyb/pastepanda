@@ -28,6 +28,7 @@ export function useFilteredItems(): HistoryItem[] {
   const historyVersion = useAppStore((s) => s.historyVersion);
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const searchResults = useAppStore((s) => s.searchResults);
+  const searchResultsKey = useAppStore((s) => s.searchResultsKey);
   const filterType = useAppStore((s) => s.filterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
@@ -42,6 +43,7 @@ export function useFilteredItems(): HistoryItem[] {
     historyVersion,
     searchKeyword,
     searchResults,
+    searchResultsKey,
     filterType,
     timeFilter,
     sourceFilter,

@@ -41,7 +41,7 @@ impl ReadTask {
             Ok(())
         }
     }
-    fn connect(&self, path: &Path) -> Result<Connection, String> {
+    pub(crate) fn connect(&self, path: &Path) -> Result<Connection, String> {
         self.check()?;
         let conn = Connection::open_with_flags(
             path,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense, useCallback, useMemo, memo } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useAppStore, HistoryItem } from "@/stores/appStore";
 import { useFilteredItems } from "@/hooks/useFilteredItems";
@@ -17,18 +17,19 @@ import { TagEditor } from "@/components/TagEditor";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { getImageThumbnail, copyItemToClipboard, deleteHistory, copyOnly, pasteTextGuarded } from "@/lib/api";
 import { getAllRules } from "@/lib/regexRules";
-import { configuredShortcutLabel, primaryShortcutLabel, errText, primaryModifierHeld } from "@/lib/utils";
+import { configuredShortcutLabel, primaryShortcutLabel, errText, primaryModifierHeld, isHistoryQueryActive } from "@/lib/utils";
 import { thumbnailSourcePath } from "@/lib/richContent";
 import { ClipboardList, Copy, Search, Zap, CheckSquare, Square, FileDown, Trash2, GitCompare, FileX, Sparkles, ClipboardPaste } from "lucide-react";
-import { Timeline } from "@/components/Timeline";
+import { HistoryTimeSelection } from "@/components/history-time/HistoryTimeSelection";
 import Lenis from "lenis";
 import styles from "./CardList.module.css";
 import melodyUrl from "@/assets/melody.png";
 import { useLoadMore } from "@/hooks/useLoadMore";
 import { useVirtualScroll } from "@/hooks/useVirtualScroll";
-import { canAnimateInterface } from "@/lib/utils";
+import { useHistoryFilterMotion } from "@/hooks/useHistoryFilterMotion";
+import { useHistoryQueryStatus } from "@/hooks/useHistoryQueryStatus";
+import { HistoryQueryPending } from "./history-filter/HistoryQueryPending";
 import { useListMotion } from "@/hooks/useListMotion";
-import { CONTENT_TRANSITION, MOTION } from "@/lib/motion";
 import { MergeDialog, type MergeItem } from "@/components/MergeDialog";
 import { TransformHubDialog } from "@/components/TransformHubDialog";
 import { ChainRunnerDialog } from "@/components/ChainRunnerDialog";
@@ -58,6 +59,7 @@ function RegexPreviewDialogWrapper({ item, ruleId, onClose }: { item: HistoryIte
     />
   );
 }
+
 
 /**
  * 虚拟化行（memoized）— CardList 每滚动帧因 scrollMetrics 重渲染，
@@ -124,14 +126,14 @@ const VirtualCardRow = memo(function VirtualCardRow({
 export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenisRef, showMoveToGroup = false }: { scrollRef?: React.RefObject<HTMLDivElement | null>; lenisRef?: React.RefObject<Lenis | null>; showMoveToGroup?: boolean }) {
   const searchKeyword = useAppStore((s) => s.searchKeyword);
   const searchLoading = useAppStore((s) => s.searchLoading);
-  const searchError = useAppStore((s) => s.searchError);
   const filterType = useAppStore((s) => s.filterType);
   const timeFilter = useAppStore((s) => s.timeFilter);
   const sourceFilter = useAppStore((s) => s.sourceFilter);
   const groupFilter = useAppStore((s) => s.groupFilter);
   const selectedTagIds = useAppStore((s) => s.selectedTagIds);
-  // 搜索模式：关键词激活时列表数据源为后端全量搜索结果（非分页窗口），需禁用分页加载
-  const searchMode = !!searchKeyword.trim();
+  const workspace = useAppStore((s) => s.config.current_workspace);
+  // Source-only selection also needs database results beyond the loaded memory page.
+  const searchMode = isHistoryQueryActive(searchKeyword, timeFilter, sourceFilter);
   const hasActiveFilter = !!(
     searchKeyword ||
     filterType !== "all" ||
@@ -203,7 +205,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   // 依赖清单收在 useFilteredItems 里（它读 store 内部状态，漏一项就永远不重算）。
   // 原先这里是本地 useMemo，依赖数组漏了 searchResults 且组件也没订阅它，
   // 于是后端搜索结果到达后列表不刷新——「截图 OCR 文本可搜」把它暴露了出来。
-  const items = useFilteredItems();
+  const filteredItems = useFilteredItems();
+  const queryStatus = useHistoryQueryStatus();
+  const items = useMemo(() => queryStatus.pending ? [] : filteredItems, [queryStatus.pending, filteredItems]);
 
   // ── 虚拟列表 ──
   // useFlushSync:false — 3.14.x 默认 true 会在滚动中 onChange 调 flushSync(rerender)，
@@ -226,16 +230,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   });
 
 
-  const {
-    contentRef, scrollMetrics, isScrolling,
-    timelineExpanded, setTimelineExpanded,
-    timelineNodes, timelineGroupIndices, timelineHideTimerRef,
-    handleScrollToIndex, handleTimelineWheel, handleDragScroll,
-  } = useVirtualScroll({
-    scrollRef, lenisRef, items, virtualizer,
-    searchKeyword, filterType, triggerLoadMore,
+  const { contentRef, isScrolling } = useVirtualScroll({
+    scrollRef, lenisRef, items, virtualizer, triggerLoadMore,
   });
-
   // ── 弹框打开时暂停 Lenis，防止滚轮事件穿透到背景列表 ──
   const anyDialogOpen = !!(editorItem || tagEditorItem || qrItem || diffPair || regexPreview || showRegexRules);
   useEffect(() => {
@@ -250,32 +247,8 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   const { rowsWrapRef, landingId } = useListMotion(items, scrollRef);
 
-  // ── #5 筛选交叉淡入 ──
-  // 筛选条件变化时，新结果集快速淡入（WAAPI 直接驱动行容器）。
-  // 选 WAAPI 而非 framer/React state：不引入额外渲染、不重挂载行、不与虚拟列表
-  // 行内联 translateY 冲突（这里只改变行容器的透明度）。
-  // filterKey 不含 searchKeyword：搜索有独立 loading 节奏，逐键触发会闪烁。
-  const filterKey = `${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}`;
-  const prevFilterKeyRef = useRef(filterKey);
-  useEffect(() => {
-    if (prevFilterKeyRef.current === filterKey) return;
-    prevFilterKeyRef.current = filterKey;
-    // 筛选切换时滚动复位到顶部（功能性，不受动画开关影响）：
-    // 否则虚拟列表沿用旧偏移渲染，缩略图窗口（thumbFirst/Last）指向错误区间，
-    // 新 tab 的图片/文件不会进入可视范围、缩略图不加载。
-    lenisRef.current?.scrollTo(0, { immediate: true });
-    const el = rowsWrapRef.current;
-    if (!el || !el.isConnected) return;
-    if (!canAnimateInterface()) return;
-    const animation = el.animate(
-      [
-        { opacity: 0.7 },
-        { opacity: 1 },
-      ],
-      { duration: MOTION.base * 1000, easing: "cubic-bezier(0.2,0,0,1)" },
-    );
-    return () => animation.cancel();
-  }, [filterKey, lenisRef, rowsWrapRef]);
+  const filterKey = `${filterType}|${timeFilter}|${sourceFilter}|${groupFilter}|${selectedTagIds.join(",")}|${workspace}`;
+  const filterMotionRef = useHistoryFilterMotion({ filterKey, ready: queryStatus.ready, lenisRef });
 
   // ── 缩略图可视窗口范围 ──
   const vItemsNow = virtualizer.getVirtualItems();
@@ -469,8 +442,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   const selectedCount = items.filter((i) => selectedIds.has(i.id)).length;
 
-  // ── 时间轴设置 ──
-  const timelineEnabled = useAppStore((s) => s.config.timeline_enabled);
+  // ── 粘贴快捷键与主题 ──
   const sequentialHotkey = useAppStore((s) => s.config.sequential_hotkey);
   const theme = useAppStore((s) => s.config.theme);
 
@@ -491,46 +463,28 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
 
   return (
     <ContextMenu>
-    <div className={`${styles.contentArea} ${timelineExpanded ? styles.contentAreaOverflowVisible : ""}`}>
-      {timelineEnabled && (
-        <Timeline
-          visible={timelineEnabled}
-          scrollHeight={scrollMetrics.scrollHeight}
-          clientHeight={scrollMetrics.clientHeight}
-          scrollTop={scrollMetrics.scrollTop}
-          nodes={timelineNodes}
-          groupIndices={timelineGroupIndices}
-          onScrollToIndex={handleScrollToIndex}
-          onDragScroll={handleDragScroll}
-          onWheelScroll={handleTimelineWheel}
-          scrollRef={scrollRef}
-          onExpandChange={setTimelineExpanded}
-          onTriggerEnter={() => {
-            if (timelineHideTimerRef.current) window.clearTimeout(timelineHideTimerRef.current);
-          }}
-          onTimelineLeave={() => {
-          }}
-        />
-      )}
+    <div className={styles.contentArea} id="history-type-panel" role="tabpanel" aria-labelledby={`history-type-${filterType}`}>
+      <HistoryTimeSelection />
 
       <StackBanner />
 
       <MdAssocBanner />
 
       <div
-        className={`${styles.scrollArea} ${timelineExpanded ? styles.scrollAreaTimelineVisible : ""}`}
+        className={styles.scrollArea}
         ref={handleScrollRef}
         role="listbox"
         aria-label="剪贴板记录列表"
         aria-multiselectable="true"
         aria-setsize={items.length}
+        aria-busy={queryStatus.pending}
       >
         <div ref={contentRef} className={styles.cardList}>
         <div role="status" aria-live="polite" style={{ position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 }}>
           {items.length === 0 ? "没有符合条件的记录" : `共 ${items.length} 条记录`}
         </div>
         {/* M5-2 语义命中：按"意思"搜到的历史（开关开启时），展示在关键词结果上方 */}
-        {searchMode && semanticHits.length > 0 && (
+        {searchMode && queryStatus.ready && semanticHits.length > 0 && (
           <div className={styles.semanticHits}>
             <div className={styles.semanticHitsTitle}>
               <Sparkles size={12} /> 语义命中
@@ -579,29 +533,13 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             ))}
           </div>
         )}
-        {/* #6 列表 ⇄ 空状态切换：mode="wait" 先退场再入场，避免两分支同时占位跳动；
-            initial={false} 保证应用首屏（空剪贴板/已有记录）不做入场动画 */}
-        <AnimatePresence mode="wait" initial={false}>
+        {/* 结果容器常驻；筛选只动画这一层，不重挂载虚拟列表来制造转场。 */}
+        <div ref={filterMotionRef} className={styles.stateSwap}>
         {items.length === 0 ? (
-          <motion.div
-            key="empty"
-            className={styles.stateSwap}
-            initial={{ opacity: 0.7 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: "easeIn" } }}
-            transition={CONTENT_TRANSITION}
-          >
-          {searchMode && searchLoading ? (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyIconWrap}>
-                <span className={styles.loadMoreSpinner} />
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <p className={styles.emptyTitle}>搜索中…</p>
-                <p className={styles.emptyDesc}>正在全量检索 “{searchKeyword}”</p>
-              </div>
-            </div>
-          ) : searchMode && searchError ? (
+          <>
+          {queryStatus.pending ? (
+            <HistoryQueryPending queryKey={queryStatus.key} />
+          ) : queryStatus.error ? (
             /* 🔴 错误态抢在空态前：「没搜到」与「没搜成」在 items.length===0 上一样，
                但该说的话相反。对照 NoteListEmpty 的 loadError 写法（U3.5）。 */
             <div className={styles.emptyState} role="alert">
@@ -704,16 +642,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
             )}
           </div>
           )}
-          </motion.div>
+          </>
         ) : (
-          <motion.div
-            key="list"
-            className={styles.stateSwap}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.08 } }}
-            transition={CONTENT_TRANSITION}
-          >
+          <>
             {/* 批量操作工具栏 */}
             {selectedCount > 0 && (
               <div className={styles.batchToolbar}>
@@ -817,7 +748,7 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                       <span className={styles.loadMoreHint}>搜索中…</span>
                     </>
                   ) : (
-                    <span className={styles.loadMoreHint}>— 找到 {items.length} 条相关记录 —</span>
+                    <span className={styles.loadMoreHint}>— {items.length >= 1000 ? "已显示前 1000 条，请缩小时间范围或增加筛选条件" : `找到 ${items.length} 条相关记录`} —</span>
                   )
                 ) : (
                   <>
@@ -840,9 +771,9 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
                 )}
               </div>
             )}
-          </motion.div>
+          </>
         )}
-        </AnimatePresence>
+        </div>
       </div>
 
       {/* 弹窗 —— createPortal 到 body：

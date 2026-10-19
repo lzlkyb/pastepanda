@@ -8,7 +8,8 @@ import { splitTableToRows, isTableSplitCandidate } from "@/lib/tableSplit";
 import { normalizeTheme } from "@/lib/theme";
 import { normalizeGlass } from "@/lib/todo/glass";
 import { ANCHOR_DEFAULT, normalizeAnchor, type AnchorKey } from "@/lib/todo/anchor";
-import { parseEventRange, isEventRange } from "@/lib/eventLabel";
+import { parseEventRange } from "@/lib/eventLabel";
+import { isHistoryQueryActive, parseHistoryWindow } from "@/lib/utils";
 import type { BarcodeHit } from "@/lib/utils";
 
 // ===== 数据类型 =====
@@ -71,7 +72,7 @@ export type FilterType = "all" | "text" | "image" | "file" | "pinned";
  * 两个 state 传下去还得在某处合并，那个合并点就是新的分叉源。
  * 字面格式由 `lib/eventLabel.ts` 的 `eventRangeValue` 定义，前后端共用。
  */
-export type TimeFilter = "all" | "today" | "week" | "month" | `range:${string}`;
+export type TimeFilter = "all" | "today" | "week" | "month" | `range:${string}` | `window:${string}`;
 
 // 来源应用筛选
 export type SourceFilter = string | ""; // 空字符串表示全部
@@ -121,7 +122,7 @@ export interface AppConfig {
   double_click_action: "copy" | "preview"; // 双击列表行为
   hover_mode: "off" | "inline" | "popover"; // 鼠标悬停卡片交互模式
   source_icon_mode: "emoji" | "app"; // 来源图标显示方式
-  timeline_enabled: boolean; // 时间线功能开关
+  timeline_enabled: boolean; // Legacy config compatibility; replaced by the time filter panel.
   stack_toggle_hotkey: string; // 栈模式开关快捷键
   stack_paste_hotkey: string; // 栈顶粘贴快捷键
   quick_paste_hotkey: string; // 快捷粘贴面板快捷键（类 Win+V）
@@ -1283,9 +1284,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // 这也让无后端的纯 store 单测能继续验证搜索过滤逻辑。
     // 事件筛选（G3）走同一条路：它也需要后端全量结果。
     // 内存窗口只有已分页加载的那几十条，而事件可能是几天前的。
-    if (get().searchKeyword.trim() || isEventRange(get().timeFilter)) {
-      const sr = get().searchResults;
-      if (sr !== null) return sr;
+    if (isHistoryQueryActive(get().searchKeyword, get().timeFilter, get().sourceFilter)) {
+      const current = get();
+      const sr = current.searchResults;
+      // Effects run after render: reject the old scope immediately, before the
+      // query Hook has a chance to clear it or cancel an in-flight response.
+      if (sr !== null) return current.searchResultsKey === buildSearchKey(current) ? sr : [];
     }
 
     const { history, historyVersion, searchKeyword, filterType, timeFilter, sourceFilter, groupFilter, selectedTagIds, config } = get();
@@ -1320,7 +1324,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       } else if (timeFilter === "month") {
         cutoff = now - 30 * msInDay;
       } else {
-        const r = parseEventRange(timeFilter);
+        const r = parseHistoryWindow(timeFilter) ?? parseEventRange(timeFilter);
         if (r) {
           cutoff = new Date(r.start.replace(" ", "T")).getTime();
           until = new Date(r.end.replace(" ", "T")).getTime();
@@ -1366,7 +1370,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         if (h.timeStamp < cutoff) continue;
         // 事件筛选的上界，**含等号**：事件的首尾条目本身就属于这个事件
-        if (until > 0 && h.timeStamp > until) continue;
+        if (until > 0 && (timeFilter.startsWith("window:") ? h.timeStamp >= until : h.timeStamp > until)) continue;
       }
 
       // 来源过滤

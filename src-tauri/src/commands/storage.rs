@@ -21,7 +21,7 @@ impl Drop for TaskGuard {
     }
 }
 
-async fn run<T: Send + 'static>(
+pub(super) async fn run<T: Send + 'static>(
     id: String,
     work: impl FnOnce(&ReadTask) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {

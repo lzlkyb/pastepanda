@@ -1047,6 +1047,8 @@ pub fn run() {
             commands::get_stats,
             commands::get_stats_detail,
             commands::get_storage_overview,
+            commands::get_history_time_distribution,
+            commands::get_history_source_distribution,
             commands::get_storage_database,
             commands::cancel_storage_request,
             commands::get_sidebar_counts,

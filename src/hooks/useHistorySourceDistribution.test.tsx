@@ -1,0 +1,72 @@
+import { act, cleanup, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useAppStore } from "@/stores/appStore";
+import { getHistorySourceDistribution, type HistorySourceDistribution } from "@/lib/api/historySource";
+import { historyTimeWindow } from "@/lib/utils";
+import { cancelStorageRequest } from "@/lib/api/storage";
+import { useHistorySourceDistribution } from "./useHistorySourceDistribution";
+const visibility = vi.hoisted(() => ({ visible: true }));
+vi.mock("./useWindowVisible", () => ({ useWindowVisible: () => visibility.visible }));
+vi.mock("@/lib/api/historySource", () => ({ getHistorySourceDistribution: vi.fn() }));
+vi.mock("@/lib/api/storage", () => ({ cancelStorageRequest: vi.fn(async () => {}) }));
+const selectedTime = historyTimeWindow("2026-10-18", 12, 18);
+const data: HistorySourceDistribution = { total: { count: 9, text_count: 6, image_count: 2, file_count: 1, other_count: 0, latest_time: "2026-10-18 14:00:00" }, sources: [] };
+beforeEach(() => {
+  vi.useFakeTimers(); visibility.visible = true;
+  useAppStore.setState({ searchKeyword: "", timeFilter: "all", filterType: "all", sourceFilter: "", groupFilter: "all", selectedTagIds: [], historyVersion: 1 });
+  vi.mocked(getHistorySourceDistribution).mockResolvedValue(data);
+});
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); });
+const flush = async () => act(async () => { await vi.advanceTimersByTimeAsync(160); });
+
+it("只在面板可见时查询，携带完整上下文，排除来源自身", async () => {
+  useAppStore.setState({ sourceFilter: "Wechat", timeFilter: selectedTime, groupFilter: "review", selectedTagIds: ["tag"] });
+  const { rerender, result } = renderHook(({ open }) => useHistorySourceDistribution(open), { initialProps: { open: false } });
+  await flush(); expect(getHistorySourceDistribution).not.toHaveBeenCalled();
+  visibility.visible = false; rerender({ open: true }); await flush(); expect(getHistorySourceDistribution).not.toHaveBeenCalled();
+  visibility.visible = true; rerender({ open: true }); await flush();
+  const query = vi.mocked(getHistorySourceDistribution).mock.calls[0][1];
+  expect(query).toMatchObject({ time_filter: selectedTime, group_filter: "review", tag_ids: ["tag"] });
+  expect(query).not.toHaveProperty("source");
+  expect(result.current.data).toEqual(data);
+  act(() => useAppStore.getState().setSourceFilter("Browser")); await flush();
+  expect(getHistorySourceDistribution).toHaveBeenCalledTimes(1);
+});
+it("搜索合并、上下文变化立即隐藏旧数据，迟到响应不能覆盖最新条件", async () => {
+  const pending = new Map<string, (v: HistorySourceDistribution) => void>();
+  vi.mocked(getHistorySourceDistribution).mockImplementation((_id, q) => new Promise(resolve => pending.set(q.search, resolve)));
+  const { result } = renderHook(() => useHistorySourceDistribution(true));
+  act(() => useAppStore.getState().setSearchKeyword("a"));
+  await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+  act(() => useAppStore.getState().setSearchKeyword("ab")); await flush();
+  expect(getHistorySourceDistribution).toHaveBeenCalledTimes(1);
+  const oldId = vi.mocked(getHistorySourceDistribution).mock.calls[0][0];
+  act(() => useAppStore.getState().setSearchKeyword("abc")); await flush();
+  expect(cancelStorageRequest).toHaveBeenCalledWith(oldId);
+  const latest = { ...data, total: { ...data.total, count: 3 } };
+  await act(async () => pending.get("abc")!(latest));
+  await act(async () => pending.get("ab")!(data));
+  expect(result.current.data).toEqual(latest);
+  act(() => useAppStore.getState().setTimeFilter("today"));
+  expect(result.current.data).toBeNull(); expect(result.current.loading).toBe(true);
+});
+it("关闭和隐藏取消读取，迟到结果不写回，版本和重试会重新查询", async () => {
+  let finish!: (v: HistorySourceDistribution) => void;
+  vi.mocked(getHistorySourceDistribution).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const { rerender, result } = renderHook(({ open }) => useHistorySourceDistribution(open), { initialProps: { open: true } });
+  await flush(); rerender({ open: false });
+  expect(cancelStorageRequest).toHaveBeenCalled();
+  await act(async () => finish(data)); expect(result.current.data).toBeNull();
+  rerender({ open: true }); await flush(); expect(result.current.data).toEqual(data);
+  act(() => useAppStore.setState({ historyVersion: 2 })); expect(result.current.data).toBeNull(); await flush();
+  act(() => result.current.refresh()); expect(result.current.data).toBeNull(); await flush();
+  visibility.visible = false; rerender({ open: true }); expect(cancelStorageRequest).toHaveBeenCalledTimes(4);
+});
+it("失败不能显示旧条件数量，重试可以恢复", async () => {
+  const { result } = renderHook(() => useHistorySourceDistribution(true)); await flush();
+  vi.mocked(getHistorySourceDistribution).mockRejectedValueOnce(new Error("busy"));
+  act(() => result.current.refresh()); await flush();
+  expect(result.current.data).toBeNull(); expect(result.current.error).toContain("失败");
+  act(() => result.current.refresh()); expect(result.current.loading).toBe(true); await flush();
+  expect(result.current.data).toEqual(data); expect(result.current.error).toBe("");
+});

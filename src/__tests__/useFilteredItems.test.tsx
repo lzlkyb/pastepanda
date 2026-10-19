@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAppStore, HistoryItem } from "@/stores/appStore";
+import { buildSearchKey, useAppStore, HistoryItem } from "@/stores/appStore";
 import { useFilteredItems } from "@/hooks/useFilteredItems";
 
 function makeItem(o: Partial<HistoryItem> & { id: string; text: string }): HistoryItem {
@@ -65,7 +65,7 @@ describe("useFilteredItems", () => {
     expect(result.current).toHaveLength(0);
 
     act(() => {
-      useAppStore.getState().setSearchResults([img], "k1");
+      useAppStore.getState().setSearchResults([img], buildSearchKey(useAppStore.getState()));
     });
 
     // ← 修复前这里是 0：memo 没有 searchResults 依赖，永远不重算
@@ -99,5 +99,26 @@ describe("useFilteredItems", () => {
       useAppStore.setState({ filterType: "image", _filterCache: null });
     });
     expect(result.current.map((x) => x.id)).toEqual(["i"]);
+  });
+
+  it("切换来源后在新查询启动前，也不能把旧来源结果当作当前结果", () => {
+    const old = makeItem({ id: "old", text: "旧来源记录", source: "OldApp" });
+    useAppStore.setState({ sourceFilter: "OldApp", history: [] });
+    useAppStore.getState().setSearchResults([old], buildSearchKey(useAppStore.getState()));
+    const { result } = renderHook(() => useFilteredItems());
+    expect(result.current.map(i => i.id)).toEqual(["old"]);
+    // No query Hook is mounted: this observes the frame before its effect starts.
+    act(() => useAppStore.getState().setSourceFilter("OtherApp"));
+    expect(result.current).toEqual([]);
+    expect(useAppStore.getState().getFilteredItems()).toEqual([]);
+  });
+
+  it("只更新查询签名而复用结果数组时，列表也必须重新验证并显示结果", () => {
+    const rows = [makeItem({ id: "found", text: "OCR 命中的图片", source: "OtherApp" })];
+    useAppStore.setState({ sourceFilter: "OtherApp", history: [], searchResults: rows, searchResultsKey: "old-query" });
+    const { result } = renderHook(() => useFilteredItems());
+    expect(result.current).toEqual([]);
+    act(() => useAppStore.getState().setSearchResults(rows, buildSearchKey(useAppStore.getState())));
+    expect(result.current.map(i => i.id)).toEqual(["found"]);
   });
 });

@@ -129,16 +129,6 @@ export function AppearanceSection({ config, updateAndSave, tabStyle, handleSwitc
           </button>
         </div>
       </div>
-      <ToggleRow icon="⏱️" hue="editor" label="时间线" desc="主页面左侧显示竖版时间轴导航" value={config.timeline_enabled}
-        tooltip="在剪贴板列表左侧显示时间轴，可快速跳转到不同时间段的记录"
-        detailTitle="时间线"
-        detail={<>
-          <p>在主页左侧显示一条竖版时间轴导航条。</p>
-          <p>📌 <b>功能</b>：按时间分组（今天/昨天/本周/更早）快速定位剪贴板记录</p>
-          <p>🖱️ <b>操作</b>：悬停查看卡片预览，点击跳转到对应位置</p>
-          <p>💡 适合记录较多时使用，帮助快速浏览</p>
-        </>}
-        onChange={(v) => updateAndSave({ timeline_enabled: v })} />
       <ToggleRow icon="✨" hue="system" label="界面动效" desc="页面、菜单和弹窗自然衔接；跟随系统减少动态效果设置" value={config.window_animation}
         tooltip="动效可随时打断；关闭后即时显示，操作反馈仍保留"
         detailTitle="界面动效"
