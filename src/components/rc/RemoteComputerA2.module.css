@@ -291,6 +291,8 @@
   /* ui-rule-ok: 搜索框的轮廓——输入区底色是 --card-bg 与列表同层，V1 的②背景色在这里分不出可输入区 */
   border: 1px solid var(--border-color);
   border-radius: 8px;
+  /* The border itself carries focus; no second outer ring around this field. */
+  outline: none;
   background: var(--card-bg);
   color: var(--text-primary);
   font: inherit;
@@ -298,8 +300,7 @@
 }
 
 .searchRow input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-color: var(--accent-strong);
 }
 
 /* 名字 + 属性徽章一行（徽章挂名字后，不占副行段位） */
@@ -1386,9 +1387,10 @@
   font: inherit;
   font-size: 15px;
   font-weight: 600;
-  outline: 2px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  outline-offset: 1px;
+  outline: none;
 }
+
+.renameForm input:focus-visible { border-color: var(--accent-strong); }
 
 /* 状态行（稿 .hero-status）：必须 flex——块级 p 里 8px 彩点是行内 span，
    宽高不生效，实测渲染成 0 宽（点直接消失）。 */
