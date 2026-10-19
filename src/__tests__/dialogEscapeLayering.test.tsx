@@ -154,9 +154,11 @@ describe("捕获期 Esc 监听必须走 useDialogEscape，不许新写副本", (
    * - `hooks/useDialogEscape.ts` —— 判据本体。
    * - `components/ConfirmDialog.tsx` —— 它就是 hook 让路的那个 `.z-confirm` 层；
    *   走 hook 会扫到自己、把自己冻住。
-   * - `components/SettingsView.tsx` / `components/ToolboxView.tsx` —— **页面级**快捷键
+   * - `components/SettingsView.tsx` / `hooks/useToolboxWorkspace.ts` —— **页面级**快捷键
    *   （`/`、Ctrl+F，设置页还多一条「Esc 清搜索词」），不是「关自己」；
    *   让路判据走 `lib/modalLayers.ts`。
+   *   （toolbox 那份原在 `components/ToolboxView.tsx`，随工作台重构整体搬进
+   *   `useToolboxWorkspace`，语义不变——名单跟随代码搬迁，2026-10-19。）
    * - `screenshot-main.tsx` —— 截图**独立窗口**的错误边界兜底：Esc 关的是整个窗口，
    *   且写它的前提就是「崩溃态下不能再有任何人抢走这个键」。那里没有 `.dialog-backdrop`
    *   这一层，套 hook 是把两个概念糊在一起。
@@ -170,7 +172,7 @@ describe("捕获期 Esc 监听必须走 useDialogEscape，不许新写副本", (
     "hooks/useDialogEscape.ts",
     "components/ConfirmDialog.tsx",
     "components/SettingsView.tsx",
-    "components/ToolboxView.tsx",
+    "hooks/useToolboxWorkspace.ts",
     "screenshot-main.tsx",
     "rec-main.tsx",
   ];
