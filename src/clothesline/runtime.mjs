@@ -4,7 +4,6 @@ import {
   springProgress,
   springImpulse,
   sample,
-  restoreSnapshot,
   clamp,
   defaultAnchors,
   constrainAnchors,
@@ -47,7 +46,6 @@ export async function mountClothesline(bridge) {
     clearingIds: new Set(),
     pendingHangs: new Set(),
     taking,
-    undoing: false,
     get nativeReceiving() { return nativeReceivers.size > 0; },
     get clearing() { return !!clearOperation; },
   };
@@ -77,15 +75,10 @@ export async function mountClothesline(bridge) {
     previewAnimation = null,
     returnFocus = null,
     clearOperation = null;
-  let undoAction = null,
-    undoTimer = 0,
-    toastTimer = 0,
-    undoDeadline = 0,
-    undoRemaining = 0,
-    undoPaused = false;
+  let toastTimer = 0;
   let waitingSnapshot = null;
   const reduced = () => systemReduce.matches;
-  const blocked = () => dragging || hovered || focused || collecting || state.undoing || state.nativeReceiving || handoffs.size > 0 || previewId !== null || !!clearOperation;
+  const blocked = () => dragging || hovered || focused || collecting || state.nativeReceiving || handoffs.size > 0 || previewId !== null || !!clearOperation;
   const available = () => state.enabled && visible && !document.hidden && state.items.length > 0 && !reduced();
   const effects = createEffects({
     stage: $("stage"),
@@ -184,11 +177,13 @@ export async function mountClothesline(bridge) {
     regionsFrame = requestAnimationFrame(() => {
       regionsFrame = 0;
       if (!visible) return;
-      const selectors = "#hangs .hang,#anchorLeft,#anchorRight,#moveRope,#ropeToolbar,#undoBar,#toast,#takeProgress,#loupe,#queue";
+      const selectors = "#hangs .hang,#anchorLeft,#anchorRight,#moveRope,#ropeToolbar,#toast,#takeProgress,#loupe,#queue";
       const regions = [...document.querySelectorAll(selectors)].filter(el => !el.hidden && el.style.visibility !== 'hidden').map(el => {
         if (el.classList.contains('hang')) {
-          const width = parseFloat(el.style.getPropertyValue('--iw')) + 18, height = parseFloat(el.style.getPropertyValue('--ih')) + 30;
-          return {x:parseFloat(el.style.left)-width/2-8, y:parseFloat(el.style.top)-8, width:width+16, height:height+16};
+          // 卡片带 translateX(-50%) + rotate()，按 --iw/--ih 手工拼矩形会漏掉旋转后的四角：
+          // 鼠标落在角上不命中 ⇒ 窗口保持穿透 ⇒ 用户点不动。用真实包围盒。
+          const r = effects.rect(el);
+          return { x: r.x - 8, y: r.y - 8, width: r.w + 16, height: r.h + 16 };
         }
         let r = regionCache.get(el.id);
         if (!r) { r = effects.rect(el); regionCache.set(el.id, r); }
@@ -201,7 +196,7 @@ export async function mountClothesline(bridge) {
   }
   function queueIdle() {
     clearTimeout(idleTimer);
-    if (!state.items.length && !state.nativeReceiving && !state.pins.some((p) => p.pending) && !clearOperation && !undoAction)
+    if (!state.items.length && !state.nativeReceiving && !state.pins.some((p) => p.pending) && !clearOperation)
       idleTimer = setTimeout(() => bridge.idle(), 4000);
   }
   function renderCards() {
@@ -263,26 +258,21 @@ export async function mountClothesline(bridge) {
     }
     $("emptyRope").hidden = state.items.length > 0 || !!clearOperation;
     $("ropeLayer").hidden = !state.enabled;
-    $("gather").disabled =
-      !state.enabled ||
-      state.undoing ||
-      state.nativeReceiving ||
-      !state.items.length ||
-      !!clearOperation ||
-      !!state.pendingHangs.size ||
-      collecting ||
-      taking.size > 0 ||
-      state.pins.some((p) => p.pending || p.pendingBack);
+    // 取挂是逐张事务，只锁「正在处理的那一张」。旧版把 taking.size / pendingHangs /
+    // pins.pending 写成全局条件：只要有一张在途，整根绳子的按钮全灰，用户点不动，
+    // 而代码只回一句「正在完成取挂，请稍候」。
+    $("gather").disabled = !state.enabled || !state.items.length || collecting || !!clearOperation;
     $("clear").disabled = $("gather").disabled;
-    $("undo").disabled = state.undoing || state.nativeReceiving;
     for (const [id, el] of cards)
       el.querySelector(".takeOne").disabled =
-        state.nativeReceiving || taking.size > 0 || !!state.pendingHangs.size || state.pins.some(p => p.pending || p.pendingBack) ||
-        state.undoing ||
-        state.pins.some((p) => p.item.id === id && (p.pending || p.pendingBack)) ||
+        state.nativeReceiving ||
         collecting ||
-        !!clearOperation;
-    const geometryBusy = state.undoing || state.nativeReceiving || !!clearOperation || taking.size > 0 || !!state.pendingHangs.size || state.pins.some(p => p.pending || p.pendingBack);
+        !!clearOperation ||
+        taking.has(id) ||
+        state.pendingHangs.has(id) ||
+        state.pins.some((p) => p.item.id === id && (p.pending || p.pendingBack));
+    // 端点与整绳拖动和照片取挂正交，只避开批量动作与原生接收。
+    const geometryBusy = state.nativeReceiving || !!clearOperation || collecting;
     $("restoreAnchors").disabled = state.locked || geometryBusy;
     for (const id of ["anchorLeft", "anchorRight", "moveRope"]) $(id).disabled = state.locked || geometryBusy;
     $("stageStatus").textContent = !state.enabled
@@ -494,83 +484,6 @@ export async function mountClothesline(bridge) {
       queueIdle();
     }, 4000);
   }
-  function tickUndo() {
-    clearTimeout(undoTimer);
-    if (undoPaused) return;
-    const seconds = Math.max(0, (undoDeadline - performance.now()) / 1000);
-    $("undoTime").textContent = Math.ceil(seconds) + "s";
-    if (!seconds) {
-      undoAction = null;
-      $("undoBar").hidden = true;
-      sendRegions();
-      queueIdle();
-      return;
-    }
-    undoTimer = setTimeout(tickUndo, 200);
-  }
-  function setUndo(message, run, kind = "add") {
-    clearTimeout(undoTimer);
-    undoAction = { run, kind };
-    undoPaused = false;
-    undoDeadline = performance.now() + 8000;
-    $("undoText").textContent = message;
-    regionCache.delete('undoBar');
-    $("undoBar").hidden = false;
-    tickUndo();
-  }
-  $("undo").onclick = async () => {
-    const action = undoAction;
-    if (!action || $("undo").disabled) return;
-    pauseUndo();
-    $("undo").disabled = true;
-    state.undoing = true;
-    renderCards();
-    try {
-      await action.run();
-      if (undoAction === action) {
-        undoAction = null;
-        $("undoBar").hidden = true;
-      }
-    } catch (error) {
-      toast("撤销未完成 · " + String(error) + " · 可再次撤销");
-    } finally {
-      $("undo").disabled = false;
-      state.undoing = false;
-      renderCards();
-      flushSnapshot();
-      resumeUndo();
-      sendRegions();
-      queueIdle();
-    }
-  };
-  function pauseUndo() {
-    if (undoAction && !undoPaused) {
-      undoPaused = true;
-      undoRemaining = Math.max(0, undoDeadline - performance.now());
-      clearTimeout(undoTimer);
-    }
-  }
-  function resumeUndo() {
-    if (
-      visible &&
-      !document.hidden &&
-      !state.nativeReceiving &&
-      undoAction &&
-      undoPaused &&
-      !$("undoBar").matches(":hover") &&
-      !$("undoBar").contains(document.activeElement)
-    ) {
-      undoPaused = false;
-      undoDeadline = performance.now() + undoRemaining;
-      tickUndo();
-    }
-  }
-  $("undoBar").onpointerenter = pauseUndo;
-  $("undoBar").onpointerleave = resumeUndo;
-  $("undoBar").onfocusin = pauseUndo;
-  $("undoBar").onfocusout = (e) => {
-    if (!$("undoBar").contains(e.relatedTarget)) resumeUndo();
-  };
   function renderPins() {
     $("pins").replaceChildren();
     for (const pin of state.pins) {
@@ -591,12 +504,10 @@ export async function mountClothesline(bridge) {
   async function takeItem(id, sourceEl = cards.get(id), dragged = false, batch = false, continuous = false, handoff) {
     let transferHeld = false;
     const item = state.items.find((i) => i.id === id);
+    // 只挡「这一张」自己：同一张图不能同时在取下与挂回里，别的照片互不影响。
     if (
       disposed || !item || !!clearOperation ||
-      state.undoing ||
       state.nativeReceiving ||
-      state.pendingHangs.size ||
-      (!batch && (taking.size || state.pins.some(p => p.pending || p.pendingBack))) ||
       state.clearingIds.has(id) ||
       taking.has(id) ||
       state.pins.some((p) => p.item.id === id && (p.pending || p.pendingBack)) ||
@@ -624,7 +535,6 @@ export async function mountClothesline(bridge) {
     if (handoff) handoffs.set(id, handoff);
     if (continuous) { $("takeProgress").hidden = false; sendRegions(); }
     renderCards();
-    if (continuous) toast("夹子已松开 · 正在准备原图，保持按住鼠标");
     try {
       const create = continuous ? bridge.dragTake : bridge.take;
       pin.native = await create(item, { x: pin.x, y: pin.y, width: pin.width, height: pin.height });
@@ -642,7 +552,6 @@ export async function mountClothesline(bridge) {
           await bridge.restore([item]);
           if (!disposed) await bridge.order(state.items.map((photo) => photo.id));
           await bridge.closePin(pin.native);
-          toast("已取消取下，照片留在绳上");
           return false;
         }
         const size = bridge.logical(pin.native.rect);
@@ -688,24 +597,6 @@ export async function mountClothesline(bridge) {
     state.items = state.items.filter((i) => i.id !== id);
     renderPins();
     update(-90);
-    if (!batch) toast(continuous ? transferHeld ? "正在拖入应用 · 空白处松手转为贴图 · Esc 取消交付" : "已放下原尺寸贴图 · 可拖入应用或挂回" : "夹子已松开 · 正在转为贴图");
-    if (!batch)
-      setUndo(
-        "已取下「" + item.name + "」",
-        async () => {
-          effects.cancel(id);
-          await bridge.restore([item]);
-          state.items = state.items.filter((i) => i.id !== id);
-          state.items.splice(Math.min(order, state.items.length), 0, item);
-          await bridge.order(state.items.map((i) => i.id));
-          if (state.pins.includes(pin)) await bridge.closePin(pin.native);
-          state.pins = state.pins.filter((p) => p !== pin);
-          renderPins();
-          update(90);
-          toast("已重新挂回");
-        },
-        "take",
-      );
     if (continuous) {
       captured?.copy.remove();
       // Native Esc / release may arrive before startDrag's IPC acknowledgement registers the pin.
@@ -739,7 +630,6 @@ export async function mountClothesline(bridge) {
       pin.pending = false;
       renderPins();
       renderCards();
-      if (!batch) toast("已转为贴图 · 拖近绳子或点击「挂回」");
     }
     return completed || (!pin.pending && state.pins.includes(pin));
   }
@@ -750,13 +640,10 @@ export async function mountClothesline(bridge) {
     dragged = false,
     operation,
   ) {
-    if (!pin || pin.pending || pin.pendingBack || state.undoing) return;
-    if (taking.size || state.pendingHangs.size || state.pins.some(p => p !== pin && (p.pending || p.pendingBack))) { toast('正在完成取挂，请稍候再挂回'); return; }
+    // 只挡「这一张」自己的在途状态；别的照片在取挂不该拦住它。
+    if (!pin || pin.pending || pin.pendingBack) return;
     const id = pin.item.id;
-    if (taking.has(id) || state.pins.some((p) => p !== pin && p.item.id === id && (p.pending || p.pendingBack))) {
-      toast("这张照片正在取挂，请稍候再试");
-      return;
-    }
+    if (taking.has(id) || state.pins.some((p) => p !== pin && p.item.id === id && (p.pending || p.pendingBack))) return;
     if (!state.enabled || clearOperation) {
       renderPins();
       toast("请先开启晾衣绳，或等待本阵大风结束");
@@ -768,7 +655,6 @@ export async function mountClothesline(bridge) {
     renderPins();
     renderCards();
     if (captured) captured.copy.style.visibility = 'hidden';
-    toast('正在准备挂回，原贴图暂时保留');
     try {
       if (!pin.item.url || pin.item.error) Object.assign(pin.item, await bridge.prepare(pin.item, true));
       let ready = photo(pin.item);
@@ -786,7 +672,7 @@ export async function mountClothesline(bridge) {
       if (disposed || operation?.cancelled) {
         pin.pendingBack = false;
         captured?.copy.remove();
-        if (!disposed) { renderPins(); renderCards(); toast('已取消挂回，原贴图保留'); }
+        if (!disposed) { renderPins(); renderCards(); }
         return;
       }
       if (operation) operation.committing = true;
@@ -812,28 +698,6 @@ export async function mountClothesline(bridge) {
     renderPins();
     update(100);
     bridge.safe(bridge.order(state.items.map((i) => i.id)));
-    toast("正在挂回 · 贴图接收成功后再关闭");
-    setUndo(
-      "已挂回「" + pin.item.name + "」",
-      async () => {
-        effects.cancel(id);
-        state.pendingHangs.delete(id);
-        renderCards();
-        draw(curve);
-        pin.native = await bridge.take(pin.item, { x: pin.x, y: pin.y, width: pin.width, height: pin.height });
-        pin.key = pin.native.hwnd + ":" + pin.native.generation;
-        await bridge.showPin(pin.native);
-        effects.cancel(id);
-        state.pendingHangs.delete(id);
-        state.items = state.items.filter((i) => i.id !== id);
-        pin.pendingBack = false;
-        if (!state.pins.includes(pin)) state.pins.push(pin);
-        renderPins();
-        update(-90);
-        toast("已回到桌面贴图");
-      },
-      "back",
-    );
     const completed = await effects.transfer(id, captured, cards.get(id), "hang", dragged);
     if (completed && state.pendingHangs.has(id)) {
       state.pendingHangs.delete(id);
@@ -841,15 +705,12 @@ export async function mountClothesline(bridge) {
       renderPins();
       renderCards();
       draw(curve);
-      toast(
-        "已夹住绳子，桌面贴图已移除" + (state.items.length > before.length && geometry.queued ? " · 旧图已排队" : ""),
-      );
     }
     flushSnapshot();
   }
 
   async function gather() {
-    if (state.undoing || state.nativeReceiving || collecting || taking.size || clearOperation || state.pendingHangs.size) return;
+    if (state.nativeReceiving || collecting || clearOperation) return;
     gestures.cancelDrag();
     closePreview(false);
     collecting = true;
@@ -857,7 +718,6 @@ export async function mountClothesline(bridge) {
     const snapshot = geometry.cards.map(card => card.item),
       sources = new Map(snapshot.map((item) => [item.id, effects.capture(cards.get(item.id))]));
     renderCards();
-    toast("正在收衣 · " + snapshot.length + " 张");
     const results = new Array(snapshot.length).fill(false);
     let next = 0;
     let done = 0;
@@ -891,35 +751,17 @@ export async function mountClothesline(bridge) {
     $("batchProgress").hidden = true;
     $("stopBatch").hidden = true;
     collecting = false;
-    const succeeded = snapshot.filter((_, i) => results[i]),
-      created = state.pins.filter((pin) => succeeded.some((i) => i.id === pin.item.id));
+    const succeeded = snapshot.filter((_, i) => results[i]);
     renderCards();
     if (!succeeded.length) {
       toast(batchStopped ? "已停止收衣，剩余照片留在绳上" : "收衣失败，原图仍在绳上 · 请重试");
       return;
     }
-    setUndo(
-      "已收衣 " + succeeded.length + " 张 · 可放回",
-      async () => {
-        created.forEach((pin) => effects.cancel(pin.item.id));
-        await bridge.restore(succeeded);
-        for (const pin of created) if (state.pins.includes(pin)) await bridge.closePin(pin.native);
-        state.pins = state.pins.filter((pin) => !created.includes(pin));
-        state.items = restoreSnapshot(state.items, succeeded, 8).items;
-        renderPins();
-        update(100);
-        toast("本次收衣已放回绳上");
-      },
-      "gather",
-    );
-    toast(
-      batchStopped ? `已停止剩余，${succeeded.length} 张已转贴图 · 可撤销` : succeeded.length === snapshot.length
-        ? "已收下 " + succeeded.length + " 张，转为桌面贴图"
-        : "已转贴图 " + succeeded.length + "/" + snapshot.length + " 张；失败照片仍在绳上，可重试",
-    );
+    if (succeeded.length < snapshot.length)
+      toast("已转贴图 " + succeeded.length + "/" + snapshot.length + " 张；失败照片仍在绳上，可重试");
   }
   async function clearRope() {
-    if (state.undoing || state.nativeReceiving || !state.items.length || clearOperation || collecting || taking.size || state.pendingHangs.size) return;
+    if (state.nativeReceiving || !state.items.length || clearOperation || collecting) return;
     gestures.cancelDrag();
     closePreview(false);
     const snapshot = [...state.items];
@@ -935,24 +777,6 @@ export async function mountClothesline(bridge) {
       return;
     }
     state.clearingIds = new Set(operation.ids);
-    setUndo(
-      "正在吹走 " + snapshot.length + " 张 · 可叫停",
-      async () => {
-        operation.ids.forEach((id) => effects.cancel(id));
-        if (clearOperation === operation) clearOperation = null;
-        state.clearingIds.clear();
-        await bridge.restore(snapshot);
-        state.items = restoreSnapshot(
-          state.items.filter((i) => !operation.ids.has(i.id)),
-          snapshot,
-          8,
-        ).items;
-        update(100);
-        renderPins();
-        toast("本阵大风已撤销；之后新增的照片仍保留");
-      },
-      "clear",
-    );
     // 先冻结所有可见源，再逐张卸重；排队图不会把离场时长拉长。
     const captured = new Map(
       geometry.cards.map((card) => [card.item.id, reduced() ? null : effects.capture(cards.get(card.item.id))]),
@@ -977,13 +801,10 @@ export async function mountClothesline(bridge) {
     renderCards();
     renderPins();
     scheduleWind();
-    toast("大风吹走了本次照片，剪贴板历史保留");
-    if (undoAction?.kind === "clear") $("undoText").textContent = "已吹走 " + snapshot.length + " 张 · 历史保留";
+    toast("已吹走 " + snapshot.length + " 张 · 剪贴板历史保留");
   }
   function reorder(id, slot) {
-    if (state.undoing) return;
-    const before = [...state.items],
-      item = state.items.find((i) => i.id === id);
+    const item = state.items.find((i) => i.id === id);
     if (!item) return;
     const positions = new Map([...cards].map(([key, el]) => [key, parseFloat(el.style.left)]));
     state.items = insertAtSlot(state.items, item, slot, geometry.cards.length);
@@ -998,36 +819,11 @@ export async function mountClothesline(bridge) {
             easing: "cubic-bezier(.05,.7,.1,1)",
           });
       }
-    setUndo(
-      "已调整照片顺序",
-      () => {
-        const present = new Set(state.items.map((i) => i.id));
-        state.items = [
-          ...before.filter((i) => present.has(i.id)),
-          ...state.items.filter((i) => !before.some((old) => old.id === i.id)),
-        ];
-        bridge.safe(bridge.order(state.items.map((i) => i.id)));
-        update(40);
-      },
-      "reorder",
-    );
-    toast("顺序已调整");
   }
-  function commitAnchors(before, beforeCustom = true) {
+  function commitAnchors() {
     state.custom = true;
     saveAnchors();
     update(30);
-    setUndo(
-      "绳位置已更新",
-      () => {
-        state.anchors = before;
-        state.custom = beforeCustom;
-        saveAnchors();
-        update(20);
-        toast("已恢复上一次位置");
-      },
-      "position",
-    );
   }
   function previewSlot(id, slot, itemOverride) {
     for (const el of cards.values()) {
@@ -1184,7 +980,6 @@ export async function mountClothesline(bridge) {
     onTransferEnd: (cancelled, id) => {
       if (disposed) return;
       if (cancelled) { cancelledTakes.add(id); draw(target); }
-      toast(cancelled ? "已取消取下，正在收回准备中的贴图" : "已松手 · 正在放下原尺寸贴图");
     },
     onReorder: reorder,
     onPreview: openPreview,
@@ -1220,8 +1015,7 @@ export async function mountClothesline(bridge) {
       const step = e.shiftKey ? 16 : 4,
         dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0,
         dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-      const before = structuredClone(state.anchors),
-        custom = state.custom;
+      const before = structuredClone(state.anchors);
       if (side === "whole") state.anchors = moveAnchors(before, dx, dy, state.width, state.height);
       else {
         const next = structuredClone(before);
@@ -1229,7 +1023,7 @@ export async function mountClothesline(bridge) {
         next[side].y += dy;
         state.anchors = constrainAnchors(next, side, state.width, state.height);
       }
-      commitAnchors(before, custom);
+      commitAnchors();
     };
   $("hangs").onkeydown = (e) => {
     if (e.target.closest("button")) return;
@@ -1245,17 +1039,17 @@ export async function mountClothesline(bridge) {
       else if (state.nativeReceiving) {
         let cancelled = false;
         for (const operation of nativeReceivers.values()) if (!operation.committing) { operation.cancelled = true; cancelled = true; }
-        toast(cancelled ? '正在结束挂回准备，原贴图保留' : '正在完成挂回，完成后可撤销');
+        toast(cancelled ? '正在结束挂回准备，原贴图保留' : '正在完成挂回');
       }
       else if (handoffs.size) { for (const handoff of handoffs.values()) handoff.cancel?.(); }
       else if (gestures.isDragging()) gestures.cancelDrag();
       else closePreview();
     }
   };
-  $("stopBatch").onclick = () => { batchStopped = true; $("stopBatch").disabled = true; toast("正在停止剩余，已开始的两张将完成接收"); };
+  $("stopBatch").onclick = () => { batchStopped = true; $("stopBatch").disabled = true; };
   $("cancelTake").onclick = () => { for (const handoff of handoffs.values()) handoff.cancel?.(); };
   $("stage").onpointermove = (e) => {
-    const next = !!e.target.closest(".hang,.loupe,.undoBar,.pinPanel,.pinGhost,.anchor,.moveGrip");
+    const next = !!e.target.closest(".hang,.loupe,.pinPanel,.pinGhost,.anchor,.moveGrip");
     if (next !== hovered) {
       hovered = next;
       interactionChanged();
@@ -1282,39 +1076,23 @@ export async function mountClothesline(bridge) {
     state.locked = $("locked").checked;
     bridge.safe(bridge.config({ clothesline_locked: state.locked }));
     renderCards();
-    toast(state.locked ? "绳位置已锁定，照片仍可取挂" : "绳位置已解锁");
   };
   $("restoreAnchors").onclick = () => {
     if ($("restoreAnchors").disabled) return;
-    const before = structuredClone(state.anchors),
-      custom = state.custom;
     state.anchors = defaultAnchors(state.width);
     state.custom = false;
     saveAnchors();
     update(30);
-    setUndo(
-      "已恢复默认位置",
-      () => {
-        state.anchors = before;
-        state.custom = custom;
-        saveAnchors();
-        update(20);
-      },
-      "position",
-    );
-    toast("端点回到工作区顶部，右端让开灵动岛");
   };
   systemReduce.onchange = () => update(0, true);
   document.onvisibilitychange = () => {
     if (document.hidden) {
-      pauseUndo();
       gestures.cancelDrag();
       stop();
       clearTimeout(windTimer);
       windTimer = 0;
       finishHiddenEffects();
     } else {
-      resumeUndo();
       update(0, true);
     }
   };
@@ -1356,7 +1134,7 @@ export async function mountClothesline(bridge) {
 
   async function receive(snapshot, initial = false) {
     if (disposed) return;
-    if ((state.pendingHangs.size || state.undoing) && !initial) { waitingSnapshot = snapshot; return; }
+    if (state.pendingHangs.size && !initial) { waitingSnapshot = snapshot; return; }
     const configurationChanged =
       JSON.stringify(snapshot.anchors) !== JSON.stringify(lastAnchors) || snapshot.locked !== state.locked;
     state.enabled = snapshot.enabled;
@@ -1390,7 +1168,7 @@ export async function mountClothesline(bridge) {
     update(initial ? 0 : added.length ? 130 : 0, initial || configurationChanged);
   }
   function flushSnapshot() {
-    if (!waitingSnapshot || state.pendingHangs.size || state.undoing) return;
+    if (!waitingSnapshot || state.pendingHangs.size) return;
     const next = waitingSnapshot; waitingSnapshot = null;
     bridge.safe(receive(next));
   }
@@ -1452,18 +1230,10 @@ export async function mountClothesline(bridge) {
       earlyNativeDrops.set(key, pin);
       return;
     }
-    if (taking.size) {
-      bridge.safe(bridge.showPin(pin));
-      toast('正在完成取下，这张贴图保留，请稍候再挂回');
-      return;
-    }
-    if (state.nativeReceiving) {
-      if (!nativeReceivers.has(key)) {
-        bridge.safe(bridge.showPin(pin));
-        toast('正在挂回其它照片，这张贴图保留，请稍候再试');
-      }
-      return;
-    }
+    // 同一张贴图的重复 drop 只处理一次；别的照片在途不再拦这一张。
+    // 旧版用 taking.size / nativeReceiving 做全局拦截，第二张会被弹回并回一句
+    // 「请稍候」，用户看到的就是「挂了没反应」。
+    if (nativeReceivers.has(key)) return;
     const slot = pin.force ? geometry.cards.length : nativeSlot(pin);
     nativeRope = null;
     dragging = false;
@@ -1481,10 +1251,8 @@ export async function mountClothesline(bridge) {
     const operation = {cancelled:false, committing:false};
     nativeReceivers.set(key, operation);
     clearTimeout(idleTimer);
-    pauseUndo();
     renderCards();
     interactionChanged();
-    toast('正在准备挂回，原贴图暂时保留');
     try {
       const existing = state.pins.find((p) => p.native?.hwnd === pin.hwnd && p.native?.generation === pin.generation);
       const item = existing?.item || (await bridge.photoForPin(pin));
@@ -1500,7 +1268,7 @@ export async function mountClothesline(bridge) {
     } finally {
       nativeReceivers.delete(key);
       if (!disposed) {
-        renderCards(); resumeUndo(); interactionChanged(); queueIdle();
+        renderCards(); interactionChanged(); queueIdle();
         if (!toastTimer && !$("toast").hidden) scheduleToastHide();
       }
     }
@@ -1545,7 +1313,6 @@ export async function mountClothesline(bridge) {
       visible = value;
       if (!value) {
         closePreview(false);
-        pauseUndo();
         gestures.cancelDrag();
         stop();
         clearTimeout(windTimer);
@@ -1554,7 +1321,6 @@ export async function mountClothesline(bridge) {
         regionsFrame = 0;
         finishHiddenEffects();
       } else {
-        resumeUndo();
         update(0, true);
         sendRegions();
       }
@@ -1603,7 +1369,7 @@ export async function mountClothesline(bridge) {
     originals.clear();
     earlyNativeDrops.clear();
     awaitingDragAcks.clear();
-    [idleTimer, windTimer, undoTimer, toastTimer].forEach(clearTimeout);
+    [idleTimer, windTimer, toastTimer].forEach(clearTimeout);
     cancelAnimationFrame(regionsFrame);
     document.onkeydown = null;
     document.onvisibilitychange = null;

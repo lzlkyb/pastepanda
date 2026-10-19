@@ -12,6 +12,44 @@ describe("晾衣绳桌面边界", () => {
     const wait = window.slice(window.indexOf('pub(crate) async fn wait_ready'), window.indexOf('pub(crate) fn hide('));
     expect(wait).toContain('!NATIVE_READY.load');
   });
+  it("穿透确认超时只算「未确认」，不能把已经建好的窗口判死", () => {
+    // 2026-10-18 用户报「晾衣绳未能显示：timed out waiting on channel」。
+    // 真因：非主线程 build() 只把 CreateWindow 投递进队列就返回，紧接着的穿透初始化
+    // 排在它后面，WebView2 冷启动超过 3 秒 ⇒ recv_timeout 超时。旧代码用 `?` 把这条
+    // 超时当建窗失败，NATIVE_READY 永远停在 false，窗口建好却永不显示。
+    const window = source("clothesline/window.rs");
+    const ensure = window.slice(window.indexOf("pub(crate) fn ensure"), window.indexOf("pub(crate) fn retry"));
+    expect(ensure).toMatch(/if let Err\(error\) = set_pointer_passthrough\(&win, true\)/);
+    // 换回 `?` 传播时这里会命中：那正是让窗口永久不可见的老写法。
+    expect(ensure).not.toMatch(/set_pointer_passthrough\(&win, true\)\s*\n\s*\.map_err/);
+    // 已有窗口但原生位没点亮时必须自愈（补投穿透 + 置位），而不是直接 return。
+    const sync = window.slice(window.indexOf("pub(super) fn sync_visibility"), window.indexOf("pub(crate) fn ensure"));
+    expect(sync).toMatch(
+      /!NATIVE_READY\.load[\s\S]{0,200}set_pointer_passthrough\(&win, true\)[\s\S]{0,80}NATIVE_READY\.store\(true/,
+    );
+  });
+  it("鼠标进入挂图区域的余量足够，不再要求 2px 精度", () => {
+    // 窗口默认穿透，光标必须落进上报区域外扩 pad 内才切回可交互。
+    // 2px 时用户「明明在图上却点不动」，实测就是这里。
+    const window = source("clothesline/window.rs");
+    expect(window).toContain("if inside { 10.0 } else { 8.0 }");
+  });
+  it("不再提供撤销条，也不再用全局在途状态锁住整根绳子的操作", () => {
+    // 2026-10-18 体验收敛：撤销条与「一张在途全绳禁用」是「点不动 + 提示太多」的两大来源。
+    const runtime = readFileSync("src/clothesline/runtime.mjs", "utf8");
+    expect(runtime).not.toContain("undoBar");
+    expect(runtime).not.toContain("setUndo");
+    const gather = runtime.slice(runtime.indexOf('$("gather").disabled'), runtime.indexOf('$("clear").disabled'));
+    expect(gather).not.toContain("taking.size");
+    expect(gather).not.toContain("pendingHangs");
+    expect(gather).not.toContain("state.pins.some");
+    // 单卡按钮只能按「这一张」禁用，不能回退成全局在途判断。
+    const cards = runtime.slice(runtime.indexOf('el.querySelector(".takeOne").disabled'), runtime.indexOf("geometryBusy"));
+    expect(cards).toContain("taking.has(id)");
+    expect(cards).not.toContain("taking.size");
+    const html = readFileSync("clothesline.html", "utf8");
+    expect(html).not.toContain('id="undoBar"');
+  });
   it("延迟与即时桌面检查串行，不能用旧桌面结果覆盖新应用焦点", () => {
     const desktop = source('clothesline/desktop.rs');
     expect(desktop).toMatch(/static REFRESH:\s*std::sync::Mutex<\(\)>/);
