@@ -179,14 +179,16 @@ async function renderMermaidBlocks(
       if (!out.includes(placeholder)) continue;
       try {
         const { svg } = await mermaid.render(`pp-mmd-${i}-${Date.now()}`, sources[i]);
-        out = out.replace(
-          placeholder,
+        // 函数替换：字符串 replacement 会把 `$&`/`$'`/`` $` `` 当 Replace Pattern 解释，
+        // 图表标签里出现这类序列会确定性改写导出产物
+        out = out.replace(placeholder, () =>
           `<div class="md-codeblock-mermaid"><div class="md-mermaid-body">${svg}</div></div>`,
         );
       } catch {
         out = out.replace(
           placeholder,
-          `<div class="md-codeblock-mermaid md-mermaid-error">` +
+          () =>
+            `<div class="md-codeblock-mermaid md-mermaid-error">` +
             `<pre class="md-mermaid-raw"><code>${escapeHtml(sources[i])}</code></pre></div>`,
         );
         warnings.push(`第 ${i + 1} 个图表无法渲染，已保留源码`);
@@ -219,7 +221,9 @@ export async function renderMarkdownForExport(
   const hljs = fences.code ? await loadHighlighter() : null;
   if (fences.code && !hljs) warnings.push("代码高亮组件加载失败，代码块以纯文本导出");
 
-  const instance = new Marked({ gfm: true });
+  // breaks 必须与预览（renderHtml.ts 全局 marked）同值：导出目标是「预览里什么样，
+  // 导出就是什么样」，单换行少了 <br> 会把多行段落合并成一行。
+  const instance = new Marked({ gfm: true, breaks: true });
   instance.use(FORM_SUGAR_EXT);
   instance.use({
     renderer: {

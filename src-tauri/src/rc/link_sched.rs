@@ -195,8 +195,10 @@ impl LinkSched {
 
     /// 事件世代与本机世代是否同源。状态机里的世代比较只看
     /// `network`（外部世界）与 `session`（会话边界）；`path` 位在
-    /// PathChanged 时内部递增，**事件里带来的 path 值只在 Detached 时精确对账**
-    /// ——其余事件允许 path 位滞后（观测与换路天然有先后）。
+    /// PathChanged 时内部递增，**事件里带来的 path 值一律不参与比较**
+    /// ——所有事件（含 Detached）都允许 path 位滞后（观测与换路天然有先后）。
+    /// Detached 也走这条：换路后的会话收尾仍按 network+session 接受，
+    /// 否则迟到的 detach 会把已换路的会话漏成 Unbound。
     fn same_lineage(&self, ev_epoch: SchedEpoch) -> bool {
         ev_epoch.network == self.epoch.network && ev_epoch.session == self.epoch.session
     }

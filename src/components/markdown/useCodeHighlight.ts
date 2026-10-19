@@ -26,7 +26,12 @@ export function useCodeHighlight(
     }).catch(() => { /* hljs 加载失败时保持纯文本 */ })
       .finally(() => {
         if (cancelled || !showLineNumbers) return;
-        blocks.forEach((block) => wrapCodeLines(block as HTMLElement));
+        blocks.forEach((block) => {
+          // 与上面高亮的排除口径一致：mermaid 源码块不打行号，否则行号字符
+          // 混进 textContent，mermaid 渲染与「编辑」派发拿到的都是被污染的源码
+          if ((block as HTMLElement).closest(".md-codeblock-mermaid")) return;
+          wrapCodeLines(block as HTMLElement);
+        });
       });
     return () => { cancelled = true; };
   }, [containerRef, html, showLineNumbers]);

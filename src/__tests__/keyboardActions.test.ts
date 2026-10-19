@@ -47,6 +47,24 @@ describe("Guard 条件", () => {
     expect(action).toEqual({ type: "ignore" });
   });
 
+  // 🔴 焦点在按钮上必须整段让位：Enter/Space 交给按钮原生激活。
+  // 不豁免的话 App 冒泡链 preventDefault 压掉 click——键盘导航 Tab 进卡片内
+  // 按钮（统一复制入口/置顶/编辑）后按回车变成「粘贴该条」，按钮永远点不动。
+  it("焦点在 BUTTON 上 Enter 被忽略（按钮原生激活，不劫持成粘贴）", () => {
+    const action = resolveKeyAction(makeState({ key: "Enter", targetTagName: "BUTTON", focusId: "a" }));
+    expect(action).toEqual({ type: "ignore" });
+  });
+
+  it("焦点在 BUTTON 上 Space 被忽略（不劫持成预览）", () => {
+    const action = resolveKeyAction(makeState({ key: " ", targetTagName: "BUTTON", focusId: "a" }));
+    expect(action).toEqual({ type: "ignore" });
+  });
+
+  it("焦点在卡片 div 上 Enter 仍是粘贴（role=option 不受 BUTTON 豁免影响）", () => {
+    const action = resolveKeyAction(makeState({ key: "Enter", targetTagName: "DIV", focusId: "a" }));
+    expect(action).toEqual({ type: "paste", targetId: "a" });
+  });
+
   it("右键菜单打开时所有按键让位", () => {
     const action = resolveKeyAction(makeState({ key: "Enter", ctxMenuOpen: true }));
     expect(action).toEqual({ type: "ignore" });

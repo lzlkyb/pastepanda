@@ -168,6 +168,12 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
   if (targetTagName === "INPUT" || targetTagName === "TEXTAREA" || targetTagName === "SELECT") {
     return { type: "ignore" };
   }
+  // 焦点落在按钮上时整段让位：Enter/Space 交给按钮原生激活，preventDefault 会把
+  // click 压掉——键盘导航 Tab 进卡片内按钮（统一复制入口/置顶/编辑）后按回车
+  // 变成「粘贴该条」，按钮永远点不动。卡片根是 div(role=option)，不受影响。
+  if (targetTagName === "BUTTON") {
+    return { type: "ignore" };
+  }
   if (state.targetContentEditable) {
     return { type: "ignore" };
   }

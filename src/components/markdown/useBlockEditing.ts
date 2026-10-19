@@ -42,8 +42,9 @@ export function useBlockEditing(
     if (!el || !enabled) return;
     const onDblClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // 已有单击行为的元素不劫持：链接/图片/按钮/勾选框/块号
-      if (target.closest("a, button, input, img, .md-blknum")) return;
+      // 已有单击行为的元素不劫持：链接/图片/按钮/勾选框/块号，
+      // textarea/select 是表单填空控件（双击常用于选词），同样不劫持
+      if (target.closest("a, button, input, textarea, select, img, .md-blknum")) return;
       const blockEl = target.closest("[data-blk-i]") as HTMLElement | null;
       if (!blockEl || !el.contains(blockEl)) return;
       const idx = Number(blockEl.dataset.blkI);
