@@ -235,6 +235,8 @@ fn write_blob_chunk(
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("暂存目录建不出来：{e}"))?;
     use std::io::{Seek, SeekFrom, Write};
+    // 分块写入：先 seek 到块 offset 再写，绝不能截断已有内容（组装中的半成品文件）
+    #[allow(clippy::suspicious_open_options)]
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .write(true)

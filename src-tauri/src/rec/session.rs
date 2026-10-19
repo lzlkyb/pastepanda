@@ -520,23 +520,18 @@ fn run_record(
         // 事件轨 drain（四期 1.3）：打点用当前视频时间轴，涟漪起点与编码画面严格
         // 对齐（静止段补帧照走，涟漪按时间到点消失）。
         let el_ms = session_ms(axis_t0, paused_ms);
-        loop {
-            match ev_rx.try_recv() {
-                Ok(ev) => {
-                    let t = axis.at(el_ms as i64) as u64;
-                    let canvas = match &ev {
-                        RecEvent::Click { x, y, .. } => Some((x - sx - rx, y - sy - ry)),
-                        _ => None,
-                    };
-                    recorder.record(&ev, canvas, t);
-                    if let (true, Some((cx, cy))) = (opts.click_highlight, canvas) {
-                        if ripples.len() >= 8 {
-                            ripples.remove(0);
-                        }
-                        ripples.push(Ripple { x: cx, y: cy, start_ms: t });
-                    }
+        while let Ok(ev) = ev_rx.try_recv() {
+            let t = axis.at(el_ms as i64) as u64;
+            let canvas = match &ev {
+                RecEvent::Click { x, y, .. } => Some((x - sx - rx, y - sy - ry)),
+                _ => None,
+            };
+            recorder.record(&ev, canvas, t);
+            if let (true, Some((cx, cy))) = (opts.click_highlight, canvas) {
+                if ripples.len() >= 8 {
+                    ripples.remove(0);
                 }
-                Err(mpsc::TryRecvError::Empty | mpsc::TryRecvError::Disconnected) => break,
+                ripples.push(Ripple { x: cx, y: cy, start_ms: t });
             }
         }
         // 音频 mux（无音频轨时立刻返回）
@@ -818,6 +813,7 @@ pub fn check_audio(sys:bool,mic:bool)->serde_json::Value {
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
 fn run_audio(
     sys: bool,
     mic: bool,
@@ -952,7 +948,6 @@ fn run_audio(
                     health.lock().unwrap_or_else(|p|p.into_inner()).disable_all(&format!("音频编码失败，声音可能不完整：{err}"));
                     if !cfg_sent {
                         // 首编即挂：回报空 cfg 让主循环走「只录画面」，别留空音轨
-                        cfg_sent = true;
                         let _ = ready_tx.send(AudioReady {
                             sr: 0,
                             ch: 0,

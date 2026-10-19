@@ -252,13 +252,13 @@ mod imp {
                     // 快捷键串只作展示用途；用户存的串解析失败时不能让整张菜单构建失败
                     let item = MenuItem::with_id(
                         app,
-                        spec_id(&id, index),
+                        spec_id(id, index),
                         title.clone(),
                         enabled,
                         accel.as_deref(),
                     )
                     .or_else(|_| {
-                        MenuItem::with_id(app, spec_id(&id, index), title, enabled, None::<&str>)
+                        MenuItem::with_id(app, spec_id(id, index), title, enabled, None::<&str>)
                     })?;
                     owned.push(OwnedEntry::Item(item));
                 }

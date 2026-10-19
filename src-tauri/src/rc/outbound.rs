@@ -323,7 +323,7 @@ impl OutboundVideo {
                 // 1000B，零风险。旧被控端发的探针不存在——此分支只对
                 // 新版对端生效，旧版互操作路径完全不进这段。
                 if dg.first() == Some(&super::pmtud::PROBE_TAG) {
-                    let _ = conn.send_datagram(dg.clone().into());
+                    let _ = conn.send_datagram(dg.clone());
                     continue;
                 }
                 let (frames, damaged) = {

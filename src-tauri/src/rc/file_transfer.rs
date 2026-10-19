@@ -596,10 +596,7 @@ async fn wait_peer_stream_end(recv: &mut RecvStream) -> bool {
             }
         }
     };
-    match tokio::time::timeout(Duration::from_secs(RECEIPT_WAIT_SECS), drained).await {
-        Ok(done) => done,
-        Err(_) => false,
-    }
+    tokio::time::timeout(Duration::from_secs(RECEIPT_WAIT_SECS), drained).await.unwrap_or(false)
 }
 
 /// 对端是不是用「批次收尾」的理由（code 0 / `done`）主动关掉了连接。

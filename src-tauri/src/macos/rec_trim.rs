@@ -1,6 +1,7 @@
 //! macOS container passthrough: supports AVAssetWriter B-frame/sample tables.
 pub use crate::rec::trim_types::{snap, KeyframeIndex};
 use std::{ffi::CString, path::Path};
+#[allow(clippy::duplicate_mod)] // output.rs 是各录制器以 #[path] 自带的共享模块，各自实例化互不引用，刻意布局
 #[path = "../rec/output.rs"]
 mod output;
 #[path = "../rec/trim_job.rs"]

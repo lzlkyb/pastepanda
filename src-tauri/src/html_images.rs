@@ -67,7 +67,7 @@ pub(crate) fn localize_one_image(src: &str, images_dir: &Path) -> Option<PathBuf
     if bytes.is_empty() {
         return None;
     }
-    Some(save_image_bytes(&bytes, images_dir)?)
+    save_image_bytes(&bytes, images_dir)
 }
 
 /// 把图片字节落盘（md5 命名去重），返回文件绝对路径。
@@ -140,9 +140,7 @@ async fn download_remote_image(
     let resp = match resp {
         Ok(r) if r.status().is_success() => r,
         Ok(r) if r.status().as_u16() == 403 || r.status().as_u16() == 451 => {
-            let Some(ref_tag) = referer else {
-                return None;
-            };
+            let ref_tag = referer?;
             let retried = client
                 .get(src)
                 .header(reqwest::header::REFERER, ref_tag)

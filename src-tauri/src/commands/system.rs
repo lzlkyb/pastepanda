@@ -1003,7 +1003,7 @@ fn build_editor_window(app: &tauri::AppHandle, content_type: Option<&str>) -> Re
     .title(title);
     // 自绘标题栏是桌面窗口概念（mobile 全屏页面无装饰位）
     #[cfg(desktop)]
-    let mut builder = builder.decorations(false);
+    let builder = builder.decorations(false);
     let mut builder = builder.visible(false);
 
     // 方案 A（近全屏留边）：按主窗口所在显示器（回退主显示器）计算 94%×90% 的居中尺寸，

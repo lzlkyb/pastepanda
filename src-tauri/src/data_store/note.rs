@@ -1129,6 +1129,7 @@ impl DataStore {
     }
 
     /// Shared insertion accepts a transaction so mobile draft creation and clearing are atomic.
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     pub(super) fn note_insert_on(
         &self,
         conn: &rusqlite::Connection,
@@ -1155,7 +1156,7 @@ impl DataStore {
             rusqlite::params![id, history_id, title, content, now, source, self.hlc_now(), auto as i64],
         )
         .map_err(|e| e.to_string())?;
-        Self::sync_note_indexes_on(&conn, &id);
+        Self::sync_note_indexes_on(conn, &id);
         Ok(Note {
             id,
             history_id: history_id.map(|s| s.to_string()),

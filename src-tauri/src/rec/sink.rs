@@ -89,7 +89,7 @@ fn split_annex_b(data: &[u8]) -> Vec<&[u8]> {
         let body_start = s + 3;
         let end = if k + 1 < starts.len() {
             let next = starts[k + 1];
-            if next > 0 && data[next - 1] == 0 && next - 1 >= body_start {
+            if next > 0 && data[next - 1] == 0 && next > body_start {
                 next - 1
             } else {
                 next
@@ -132,6 +132,7 @@ pub struct RecSink {
 impl RecSink {
     /// 打开 MP4 封装。音频轨可选（`None` = 纯画面）。
     /// 视频参数集由 sink 从 Annex-B 流内自取（见模块头：SEQUENCE_HEADER 喂不得）。
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     pub fn open(
         path: &std::path::Path,
         width: u32,
@@ -152,7 +153,7 @@ impl RecSink {
         // 装配收进闭包：任何一步失败都先把 COM 配平再返回——🔴 不配平会让本线程
         // 退出时引用计数失衡，干扰后续 MF/DXGI 初始化（同 Drop 的顺序纪律）
         let mut built: Option<Self> = None;
-        let mut assemble = || -> Result<(), String> {
+        let assemble = || -> Result<(), String> {
             unsafe {
                 crate::rc::encode_h264::ensure_mf_startup()?;
 

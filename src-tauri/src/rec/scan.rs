@@ -54,7 +54,7 @@ pub fn scan_recent(dir: &Path, limit: usize) -> Result<Vec<RecFileMeta>, String>
             ))
         })
         .collect();
-    metas.sort_by(|a, b| b.0.cmp(&a.0));
+    metas.sort_by_key(|m| std::cmp::Reverse(m.0));
     metas.truncate(limit);
     Ok(metas.into_iter().map(|(_, mut meta)| {
         meta.duration_ms=mp4_duration_ms(Path::new(&meta.path));

@@ -24,7 +24,7 @@ impl RcService {
     fn with_media<T>(&self, id: &str, f: impl FnOnce(&mut MediaState) -> T) -> Option<T> {
         // 短暂同时持锁，禁止旧会话的迟到采样重置新会话控制器。
         let inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        if !inner.session.as_ref().is_some_and(|s| s.id == id) { return None; }
+        if inner.session.as_ref().is_none_or(|s| s.id != id) { return None; }
         let mut state = self.media_state.lock().unwrap_or_else(|p| p.into_inner());
         if state.id != id { *state = MediaState { id: id.to_owned(), ..Default::default() }; }
         Some(f(&mut state))

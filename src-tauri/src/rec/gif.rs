@@ -12,13 +12,16 @@ use std::sync::Mutex;
 
 use windows::Win32::Media::MediaFoundation::{
     IMFSourceReader, MFCreateMediaType, MFCreateSourceReaderFromURL, MF_MT_DEFAULT_STRIDE,
-    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFMediaType_Video, MFVideoFormat_HEVC,
+    MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE, MFMediaType_Video,
     MFVideoFormat_RGB32, MF_SOURCE_READER_FIRST_VIDEO_STREAM, MF_SOURCE_READERF_ENDOFSTREAM,
 };
+#[cfg(test)]
+use windows::Win32::Media::MediaFoundation::MFVideoFormat_HEVC;
 
 use super::scan;
 #[path="gif_frames.rs"]
 mod gif_frames;
+#[allow(clippy::duplicate_mod)] // output.rs 是各录制器以 #[path] 自带的共享模块，各自实例化互不引用，刻意布局
 #[path="output.rs"]
 mod output;
 

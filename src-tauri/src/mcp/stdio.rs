@@ -89,7 +89,7 @@ pub fn app_dir_from_env() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         let roaming = std::env::var("APPDATA").ok()?;
-        return Some(PathBuf::from(roaming).join(APP_IDENTIFIER));
+        Some(PathBuf::from(roaming).join(APP_IDENTIFIER))
     }
     #[cfg(target_os = "macos")]
     {

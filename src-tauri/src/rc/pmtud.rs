@@ -61,6 +61,12 @@ pub struct ProbeState {
     ack_seen: AtomicU64,
 }
 
+impl Default for ProbeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProbeState {
     pub const fn new() -> Self {
         Self { frag: AtomicUsize::new(FRAG), ack_seen: AtomicU64::new(0) }

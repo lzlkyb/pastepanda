@@ -128,6 +128,7 @@ impl Drag {
     pub unsafe fn prepare(path: &str, rgba: &[u8], width: u32, height: u32, cache: &Path, cancel: Arc<AtomicBool>) -> Result<Self, String> {
         Self::prepare_with_preview(path, rgba, width, height, cache, cancel, None, None)
     }
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     pub unsafe fn prepare_with_preview(path: &str, rgba: &[u8], width: u32, height: u32, cache: &Path, cancel: Arc<AtomicBool>, preview: Option<Arc<dyn Fn() + Send + Sync>>, ignored_window: Option<isize>) -> Result<Self, String> {
         let ole = OleScope::new().map_err(|e| e.to_string())?;
         let staged = stage_file(Path::new(path), cache)?;

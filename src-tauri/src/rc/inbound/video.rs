@@ -246,6 +246,7 @@ impl InboundVideo {
     }
 
     /// 会话存在、是入站活跃、且属于本 peer 才建；否则 `None`（启动前会话已结束）。
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     pub(in crate::rc) fn try_new(
         svc: Arc<RcService>,
         peer: &str,

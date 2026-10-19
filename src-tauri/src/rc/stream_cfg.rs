@@ -274,7 +274,7 @@ pub(crate) fn next_rtt_ema(
 pub fn bitrate_scale_for_bw(kbps: i64) -> u32 {
     match kbps.max(0) {
         0 => 100,
-        0..=2_499 => 25,
+        1..=2_499 => 25,
         2_500..=5_999 => 50,
         6_000..=14_999 => 75,
         _ => 100,

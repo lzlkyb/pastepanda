@@ -140,7 +140,7 @@ fn image_data_url(path: &str) -> Result<String, String> {
     use std::io::Read;
 
     const MAX_FILE_SIZE: u64 = 20 * 1024 * 1024;
-    let canonical = validate_image_file_path(&path)?;
+    let canonical = validate_image_file_path(path)?;
     let metadata = std::fs::metadata(&canonical).map_err(|e| format!("无法读取文件信息: {}", e))?;
     if metadata.len() > MAX_FILE_SIZE {
         return Err(format!(
@@ -153,7 +153,7 @@ fn image_data_url(path: &str) -> Result<String, String> {
     let mut buffer = Vec::with_capacity(metadata.len() as usize);
     file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
     let base64_str = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buffer);
-    let mime = get_mime_from_path(&path);
+    let mime = get_mime_from_path(path);
     Ok(format!("data:{};base64,{}", mime, base64_str))
 }
 

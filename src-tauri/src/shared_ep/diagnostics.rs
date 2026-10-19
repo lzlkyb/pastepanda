@@ -74,11 +74,13 @@ pub enum PunchExpectation {
     /// 网络需要网页认证，探测结果不可信。
     Captive,
     /// 还没有可用报告（刚启动 / 探测未完成）。
+    #[allow(dead_code)] // 诊断面板预留态，前端尚未消费
     Unknown,
 }
 
 impl PunchExpectation {
     /// 给前端的一句话结论。文案口径与决策稿 §1 一致，别在组件里再写一份。
+    #[allow(dead_code)] // 预留给前端诊断面板（文案口径已定稿），接线前先压 dead_code
     pub fn zh_summary(self) -> &'static str {
         match self {
             PunchExpectation::DirectLikely => "映射稳定，可尝试直连",
@@ -189,7 +191,7 @@ fn to_snapshot(report: &NetReport) -> NetDiagSnapshot {
             ms: dur.as_millis() as u64,
         })
         .collect();
-    relay_latencies_ms.sort_by(|a, b| a.ms.cmp(&b.ms));
+    relay_latencies_ms.sort_by_key(|x| x.ms);
     NetDiagSnapshot {
         udp_v4: report.udp_v4,
         udp_v6: report.udp_v6,

@@ -123,6 +123,7 @@ impl MfH264Encoder {
         Self::open_inner(codec, width, height, fps, bitrate, Some((device, ctx)), false, false)
     }
 
+    #[allow(clippy::too_many_arguments)] // 独立语义参数，打包结构体反而难读
     fn open_inner(
         codec: VideoCodec,
         width: u32,

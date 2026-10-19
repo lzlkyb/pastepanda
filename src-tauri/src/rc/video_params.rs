@@ -102,10 +102,12 @@ pub struct VideoPacket {
 }
 
 /// Match Mac stream capture cadence to its supported native encoder range.
+#[cfg(any(target_os = "macos", test))] // 仅 mac 采集/编码链路在用
 pub(crate) fn mac_capture_fps(interval_ms: u64) -> u32 {
     crate::rc::pace::want_fps_for(interval_ms, false, true).min(60)
 }
 
+#[cfg(any(target_os = "macos", test))] // 仅 mac 采集/编码链路在用
 pub(crate) fn mac_encoder_fps(codec: VideoCodec, fps: u32) -> u32 {
     fps.max(1)
         .min(if codec == VideoCodec::Av1 { 30 } else { 165 })

@@ -762,10 +762,12 @@ impl ContentClassifier {
         //
         // 豁免：以已知命令开头的短串不是散文（"ipconfig /all" 13 字符，
         // 实测被这里拦成纯文本），放行到命令行检测。
-        if text.chars().count() < 15 && !text.contains('\n') && !text.contains("://") {
-            if !starts_with_known_command(text.trim()) {
-                return vec!["纯文本".to_string()];
-            }
+        if text.chars().count() < 15
+            && !text.contains('\n')
+            && !text.contains("://")
+            && !starts_with_known_command(text.trim())
+        {
+            return vec!["纯文本".to_string()];
         }
 
         // ===== 1. URL 检测 =====
