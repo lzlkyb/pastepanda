@@ -1,293 +1,100 @@
-/**
- * ToolboxView.tsx — 「工具」模式主体区（D15 → P1 → T2）。
- *
- * P1：hero 双卡 / 筛选 / kbd / chev / 分组计数。
- * T2：分类 chips、Ctrl+F|`/` 聚焦、Enter 跑第一命中、最近用过一行、
- *     高频「常用」pin、按压 scale（CSS）、禁用 title 说清原因。
- *
- * 条目仍只来自 TOOLBOX_GROUPS；使用痕迹在 lib/toolboxUsage（只存 key）。
- */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import {
-  TOOLBOX_GROUPS,
-  filterGroupsByCategory,
-  filterToolItems,
-  toolboxCategoryLabels,
-  toolsByKeys,
-  type ToolHandlers,
-  type ToolItem,
-  type ToolKey,
-} from "@/lib/toolbox";
-import {
-  bumpUsage,
-  loadRecent,
-  loadUsage,
-  pinnedKeys,
-  pushRecent,
-  saveRecent,
-  saveUsage,
-} from "@/lib/toolboxUsage";
-import { RecRecentList } from "@/components/recsel/RecRecentList";
-import styles from "./ToolboxView.module.css";
+import { useLayoutEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { Braces, ClipboardList, FileText, Monitor, Search, Shapes, X } from "lucide-react";
+import { TOOLBOX_GROUPS, filterToolItems, toolsByKeys, type ToolHandlers } from "@/lib/toolbox";
+import { primarySearchShortcut, toolShortcutLabel, canAnimateInterface } from "@/lib/utils";
 import { useAppStore } from "@/stores/appStore";
-import { blocksPageShortcuts, isConfirmLayerPresent } from "@/lib/modalLayers";
-import { primarySearchShortcut, toolShortcutLabel } from "@/lib/utils";
+import { useToolboxWorkspace } from "@/hooks/useToolboxWorkspace";
+import { useInterfaceMotion } from "@/components/MotionPolicy";
+import { ToolboxCard } from "./toolbox/ToolboxCard";
+import { ToolboxLaunchpad } from "./toolbox/ToolboxLaunchpad";
+import { ToolboxCategories } from "./toolbox/ToolboxCategories";
+import { ToolboxRecordings } from "./toolbox/ToolboxRecordings";
+import styles from "./ToolboxView.module.css";
 
-function ToolCard({
-  tool,
-  enabled,
-  hero,
-  pinned,
-  onRun,
-}: {
-  tool: ToolItem;
-  enabled: boolean;
-  hero?: boolean;
-  pinned?: boolean;
-  onRun: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={hero ? styles.heroCard : styles.item}
-      onClick={onRun}
-      disabled={!enabled}
-      title={
-        enabled
-          ? tool.desc
-          : `${tool.name}：当前环境不可用——请先在设置中完成相关配置`
-      }
-    >
-      <span className={styles.tile} data-hue={tool.hue} aria-hidden="true">
-        {tool.icon}
-      </span>
-      <span className={styles.text}>
-        <span className={styles.nameRow}>
-          <span className={styles.name}>{tool.name}</span>
-          {pinned ? <span className={styles.pin}>常用</span> : null}
-          {tool.shortcut ? <kbd className={styles.kbd}>{tool.shortcut}</kbd> : null}
-        </span>
-        <span className={styles.desc}>{tool.desc}</span>
-      </span>
-      <span className={styles.chev} aria-hidden="true">
-        ›
-      </span>
-    </button>
-  );
-}
+const GROUP_ICONS = { ClipboardList, FileText, Braces, Shapes, Monitor };
 
 export function ToolboxView({ handlers }: { handlers: ToolHandlers }) {
-  const config = useAppStore((s) => s.config);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("全部");
-  const [recentKeys, setRecentKeys] = useState<ToolKey[]>(() => loadRecent());
-  const [usage, setUsage] = useState(() => loadUsage());
-  const searchRef = useRef<HTMLInputElement>(null);
-  const q = query.trim();
-  const cats = useMemo(() => toolboxCategoryLabels(), []);
-  const pinned = useMemo(() => new Set(pinnedKeys(usage)), [usage]);
+  const config = useAppStore(state => state.config);
+  const state = useToolboxWorkspace(handlers);
+  const mode = useInterfaceMotion();
+  const scrollRef = useRef<HTMLDivElement>(null), catalogRef = useRef<HTMLDivElement>(null), padRef = useRef<HTMLDivElement>(null);
+  const q = state.query.trim();
+  const tools = useMemo(() => TOOLBOX_GROUPS.flatMap(group => group.items).map(tool => ({
+    ...tool, shortcut: toolShortcutLabel(tool.key, tool.shortcut, config),
+  })), [config]);
+  const groups = useMemo(() => TOOLBOX_GROUPS.map(group => ({ ...group,
+    items: group.items.filter(tool => !tool.secondaryOnly).map(tool => tools.find(item => item.key === tool.key)!),
+  })), [tools]);
+  const visible = useMemo(() => groups.filter(group => state.category === "全部" || group.label === state.category)
+    .map(group => ({ ...group, items: filterToolItems(group.items, q) })).filter(group => group.items.length), [groups, state.category, q]);
+  const matched = visible.reduce((count, group) => count + group.items.length, 0);
+  const first = visible.flatMap(group => group.items).find(tool => !!handlers[tool.key]);
+  const padTools = toolsByKeys(state.draft ?? (state.pad === "mine" ? state.pins : state.recent)).map(tool => tools.find(item => item.key === tool.key)!);
+  const filterKey = `${state.category}|${q}`;
+  const previous = useRef(filterKey);
+  useLayoutEffect(() => {
+    const changed = previous.current !== filterKey;
+    previous.current = filterKey;
+    if (!changed) return;
+    // Keep the chosen category and its new results visible after narrowing a long list.
+    const wrapper = scrollRef.current;
+    if (wrapper) wrapper.scrollTop = Math.min(wrapper.scrollTop, (padRef.current?.offsetHeight ?? 0) + 8);
+    if (mode !== "full" || !canAnimateInterface() || !catalogRef.current?.animate) return;
+    const animation = catalogRef.current.animate([
+      { opacity: .35, transform: "translateY(6px)" }, { opacity: 1, transform: "translateY(0)" },
+    ], { duration: 200, easing: "cubic-bezier(0.05,0.7,0.1,1)" });
+    return () => animation.cancel();
+  }, [filterKey, mode]);
 
-  /** Ctrl+F / `/` 聚焦筛选（与设置页同一心智；组件只在工具模式挂载） */
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.isComposing || e.keyCode === 229) return;
-      if (blocksPageShortcuts() || isConfirmLayerPresent()) return;
-      const t = e.target as HTMLElement | null;
-      const inField =
-        !!t &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.isContentEditable);
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        searchRef.current?.focus();
-        searchRef.current?.select();
-        return;
-      }
-      if (e.key === "/" && !inField && !mod) {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
-
-  const scopedGroups = useMemo(
-    () => filterGroupsByCategory(TOOLBOX_GROUPS, category).map((group) => ({
-      ...group,
-      items: group.items.map((tool) => ({ ...tool, shortcut: toolShortcutLabel(tool.key, tool.shortcut, config) })),
-    })),
-    [category, config],
-  );
-
-  const heroes = useMemo(
-    () =>
-      scopedGroups
-        .flatMap((g) => g.items)
-        .filter((t) => t.hero && filterToolItems([t], q).length > 0),
-    [scopedGroups, q],
-  );
-
-  const groups = useMemo(
-    () =>
-      scopedGroups
-        .map((g) => ({
-          ...g,
-          items: filterToolItems(g.items, q).filter((t) => !t.hero),
-        }))
-        .filter((g) => g.items.length > 0),
-    [scopedGroups, q],
-  );
-
-  /** Enter 跑第一命中：hero 优先，再按分组顺序 */
-  const firstHit = useMemo(
-    () => heroes[0] ?? groups[0]?.items[0] ?? null,
-    [heroes, groups],
-  );
-
-  const matched = useMemo(
-    () => groups.reduce((n, g) => n + g.items.length, 0) + heroes.length,
-    [groups, heroes],
-  );
-
-  /** 最近用过：有搜索词时藏起来，避免和命中结果抢注意力 */
-  const recentTools = useMemo(
-    () => (q ? [] : toolsByKeys(recentKeys)),
-    [q, recentKeys],
-  );
-
-  const runTool = (tool: ToolItem) => {
-    if (!handlers[tool.key]) return;
-    const nextRecent = pushRecent(recentKeys, tool.key);
-    setRecentKeys(nextRecent);
-    saveRecent(nextRecent);
-    const nextUsage = bumpUsage(usage, tool.key);
-    setUsage(nextUsage);
-    saveUsage(nextUsage);
-    handlers[tool.key]?.();
+  const searchKey = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "Enter") {
+      event.preventDefault(); event.stopPropagation(); if (first) state.run(first);
+    } else if (event.key === "Escape" && state.query) {
+      event.preventDefault(); event.stopPropagation(); state.setQuery("");
+    }
   };
-
-  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "Enter" || e.nativeEvent.isComposing || e.keyCode === 229) return;
-    e.preventDefault();
-    if (firstHit && handlers[firstHit.key]) runTool(firstHit);
-  };
-
-  const card = (tool: ToolItem, hero?: boolean) => (
-    <ToolCard
-      key={tool.key}
-      tool={tool}
-      hero={hero}
-      pinned={pinned.has(tool.key)}
-      enabled={!!handlers[tool.key]}
-      onRun={() => runTool(tool)}
-    />
-  );
-
-  return (
-    <div className={styles.wrap}>
-      <div className={styles.searchWrap}>
-        <input
-          ref={searchRef}
-          className={styles.search}
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onSearchKeyDown}
-          placeholder={`筛选工具…  ${primarySearchShortcut()}`}
-          aria-label="筛选工具"
-        />
-        <div className={styles.chips} role="group" aria-label="工具分类">
-          {cats.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-pressed={category === c}
-              className={
-                category === c ? `${styles.chip} ${styles.chipOn}` : styles.chip
-              }
-              onClick={() => setCategory(c)}
-            >
-              {c}
-            </button>
-          ))}
+  return <div className={styles.wrap} data-editing={state.editing}>
+    <div className={styles.workspace} onKeyDown={event => {
+      // Tool buttons own their native activation/navigation; global history commands yield.
+      if ((event.target as HTMLElement).closest("button") && ["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) event.stopPropagation();
+    }}>
+      <header className={styles.toolHead}><h1>工具台</h1>
+        <label className={styles.searchField}><Search size={16} /><input type="search" ref={state.searchRef}
+          placeholder="搜索名称、用途或快捷键…" aria-label="搜索工具" value={state.query}
+          onChange={event => state.setQuery(event.target.value)} onKeyDown={searchKey} /><kbd>{primarySearchShortcut()}</kbd></label>
+      </header>
+      <main className={styles.scroll} ref={scrollRef}>
+        {(!q || state.editing) && <div ref={padRef}><ToolboxLaunchpad tools={padTools} pad={state.pad} editing={state.editing}
+          handlers={handlers} editRef={state.editRef} onPad={state.setPad} onEdit={state.begin} onRun={state.run}
+          onRemove={state.togglePin} onMove={state.move} /></div>}
+        <ToolboxCategories groups={groups} category={state.category} onChange={state.setCategory} />
+        <div className={styles.catalogLabel}><span>{q ? "搜索结果 · " : ""}{state.category === "全部" ? "全部工具" : state.category}</span><span>{matched} 个入口</span></div>
+        <div className={styles.catalog} ref={catalogRef} id="toolbox-catalog" role="tabpanel"
+          aria-labelledby={`toolbox-category-${["全部", ...groups.map(group => group.label)].indexOf(state.category)}`}>
+          {visible.map(group => {
+            const Icon = GROUP_ICONS[group.icon as keyof typeof GROUP_ICONS] ?? FileText;
+            return <section className={styles.group} key={group.label}>
+              <header className={styles.groupHead}><Icon size={16} /><h2>{group.label}</h2><small>{group.items.length} 项</small></header>
+              <div className={styles.grid}>{group.items.map(tool => {
+                const secondary = tools.find(item => item.key === tool.secondaryKey);
+                return <ToolboxCard key={tool.key} tool={tool} secondary={secondary} enabled={!!handlers[tool.key]}
+                  secondaryEnabled={!!secondary && !!handlers[secondary.key]} editing={state.editing}
+                  pinned={!!state.draft?.includes(tool.key)} onRun={() => state.run(tool)}
+                  onSecondary={() => { if (secondary) state.run(secondary); }} onPin={() => state.togglePin(tool.key)} />;
+              })}</div>
+            </section>;
+          })}
+          {!matched && <div className={styles.empty}><Search size={28} /><h2>没有匹配的工具</h2><p>试试名称或用途，或者返回全部工具。</p>
+            <button type="button" onClick={() => { state.setQuery(""); state.setCategory("全部"); state.searchRef.current?.focus(); }}>清除筛选</button></div>}
         </div>
-      </div>
-
-      {heroes.length === 0 && groups.length === 0 ? (
-        <div className={styles.empty}>
-          <p className={styles.emptyTitle}>
-            {q ? `没有匹配「${q}」的工具` : `「${category}」下暂无工具`}
-          </p>
-          <p className={styles.emptyDesc}>试试名称、用途，或快捷键关键词。</p>
-          <button
-            type="button"
-            className={styles.clearBtn}
-            onClick={() => {
-              setQuery("");
-              setCategory("全部");
-            }}
-          >
-            清除筛选
-          </button>
-        </div>
-      ) : (
-        <>
-          {recentTools.length > 0 && (
-            <>
-              <div className={styles.section}>
-                最近用过
-                <span className={styles.cnt}>{recentTools.length}</span>
-              </div>
-              <div className={styles.recent} role="list">
-                {recentTools.map((tool) => (
-                  <button
-                    key={tool.key}
-                    type="button"
-                    role="listitem"
-                    className={styles.recentChip}
-                    disabled={!handlers[tool.key]}
-                    title={tool.desc}
-                    onClick={() => runTool(tool)}
-                  >
-                    <span aria-hidden="true">{tool.icon}</span>
-                    {tool.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {heroes.length > 0 && (
-            <>
-              <div className={styles.section}>
-                高频
-                <span className={styles.cnt}>{heroes.length}</span>
-              </div>
-              <div className={styles.hero}>{heroes.map((t) => card(t, true))}</div>
-            </>
-          )}
-
-          {/* 最近录制：录屏的交付闭环（设计稿二期 §2）；只在全部分类与「捕获」下展示，
-              搜索时隐藏——与「最近用过」chips 同一心智，别跟命中结果抢注意力 */}
-          {(category === "全部" || category === "捕获") && !q && <RecRecentList />}
-
-          {groups.map((group) => (
-            <div key={group.label}>
-              <div className={styles.section}>
-                {group.label}
-                <span className={styles.cnt}>{group.items.length}</span>
-                {q ? <span className={styles.secTotal}>匹配 {matched}</span> : null}
-              </div>
-              <div className={styles.grid}>
-                {group.items.map((t) => card(t))}
-              </div>
-            </div>
-          ))}
-        </>
-      )}
+        {!q && !state.editing && ["全部", "图形与录屏"].includes(state.category) && <ToolboxRecordings key={state.category} expanded={state.category === "图形与录屏"} />}
+      </main>
+      {state.editing && <footer className={styles.editBar}>
+        <div>{state.error ? <p role="alert">{state.error}</p> : <span role="status">已固定 {state.draft?.length} / 6 项</span>}</div>
+        <button type="button" onClick={state.cancel}>取消</button><button type="button" className={styles.saveButton} onClick={state.save}>保存常用</button>
+      </footer>}
+      {state.notice && <div className={styles.notice} role="status"><span>{state.notice}</span><button type="button" aria-label="关闭提示" onClick={() => state.setNotice("")}><X size={14} /></button></div>}
     </div>
-  );
+  </div>;
 }

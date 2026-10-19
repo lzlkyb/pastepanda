@@ -40,18 +40,23 @@ export interface ToolItem {
   hue: string;
   /** 显示用快捷键，如 Ctrl+Alt+Q；无则省略 */
   shortcut?: string;
-  /** 高频入口，进主体区顶部 hero 双卡 */
+  /** 兼容既有高频入口元数据；个人常用顺序单独保存。 */
   hero?: boolean;
+  /** An existing action exposed beside its primary tool instead of a duplicate tile. */
+  secondaryKey?: ToolKey;
+  secondaryOnly?: boolean;
 }
 
 export interface ToolGroup {
   label: string;
+  icon?: string;
   items: ToolItem[];
 }
 
 export const TOOLBOX_GROUPS: ToolGroup[] = [
   {
-    label: "内容",
+    label: "内容整理",
+    icon: "ClipboardList",
     items: [
       {
         key: "sequential",
@@ -77,15 +82,7 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         desc: "从记录中批量提取链接、邮箱、电话",
         hue: "rose",
       },
-      {
-        key: "newdiagram",
-        icon: "📊",
-        name: "新建流程图",
-        desc: "从零绘制，或让 AI 一键生成",
-        hue: "cyan",
-      },
-      // 不绑热键：规划建议的 Ctrl+Shift+D 已被下面的「文本对比」占用，
-      // 而日报是低频动作，不值得为它再抢一个。
+      // 不绑定新热键：Ctrl+Shift+D 已属于文本对比。
       {
         key: "dailybrief",
         icon: "📅",
@@ -96,7 +93,8 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
     ],
   },
   {
-    label: "文本处理",
+    label: "文本与文件",
+    icon: "FileText",
     items: [
       {
         key: "encoding",
@@ -113,6 +111,15 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         hue: "violet",
       },
       {
+        key: "diffedit",
+        icon: "🔀",
+        name: "文本对比",
+        desc: "自由对比两段文本",
+        hue: "green",
+        shortcut: "Ctrl+Shift+D",
+        secondaryKey: "difffull",
+      },
+      {
         key: "diff",
         icon: "📊",
         name: "配置对比",
@@ -120,27 +127,19 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
         hue: "green",
       },
       {
-        key: "diffedit",
-        icon: "🔀",
-        name: "文本对比",
-        desc: "自由对比两段文本",
-        hue: "green",
-        shortcut: "Ctrl+Shift+D",
-      },
-      {
         key: "difffull",
         icon: "🪟",
         name: "全屏文本对比",
         desc: "独立大窗深编对比，读剪贴板预填",
         hue: "green",
+        secondaryOnly: true,
       },
-      {
-        key: "qr",
-        icon: "▦",
-        name: "二维码",
-        desc: "文本生成二维码，或识图解码",
-        hue: "sky",
-      },
+    ],
+  },
+  {
+    label: "开发与数据",
+    icon: "Braces",
+    items: [
       {
         key: "sql",
         icon: "🗄",
@@ -172,8 +171,23 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
     ],
   },
   {
-    label: "捕获",
+    label: "图形与录屏",
+    icon: "Shapes",
     items: [
+      {
+        key: "newdiagram",
+        icon: "📊",
+        name: "新建流程图",
+        desc: "绘制流程图与结构图",
+        hue: "cyan",
+      },
+      {
+        key: "qr",
+        icon: "▦",
+        name: "二维码",
+        desc: "文本生成二维码，或识图解码",
+        hue: "sky",
+      },
       {
         key: "screenrec",
         icon: "🎬",
@@ -186,7 +200,8 @@ export const TOOLBOX_GROUPS: ToolGroup[] = [
     ],
   },
   {
-    label: "网络",
+    label: "设备连接",
+    icon: "Monitor",
     items: [
       {
         key: "remote",
@@ -214,7 +229,8 @@ export function filterToolItems(
     (t) =>
       t.name.toLowerCase().includes(q) ||
       t.desc.toLowerCase().includes(q) ||
-      (t.shortcut ?? "").toLowerCase().includes(q),
+      (t.shortcut ?? "").toLowerCase().includes(q) ||
+      (t.secondaryKey ? filterToolItems(toolsByKeys([t.secondaryKey]), q).length > 0 : false),
   );
 }
 

@@ -1,11 +1,37 @@
 /**
- * lib/toolboxUsage.ts — 工具箱「最近用过 / 常用 pin」本地痕迹。
+ * lib/toolboxUsage.ts — 工具箱个人常用、最近使用与历史频次的本地存储。
  *
  * 只存 ToolKey，不存展示文案——名称/图标仍以 toolbox.ts 为唯一数据源，
- * 这里挂了也不会和清单对不上。localStorage 异常时静默降级为空（工具箱本身不依赖痕迹）。
+ * 读取常用失败时回退默认入口；保存失败交由界面反馈，历史痕迹失败则静默降级。
  */
 
-import type { ToolKey } from "@/lib/toolbox";
+import { toolsByKeys, type ToolKey } from "@/lib/toolbox";
+
+const PINNED_KEY = "pastepanda_toolbox_pinned";
+export const TOOLBOX_PIN_LIMIT = 6;
+const DEFAULT_PINS: ToolKey[] = ["sequential", "screenrec", "snippets", "remote"];
+
+function validPins(value: unknown): ToolKey[] | null {
+  if (!Array.isArray(value)) return null;
+  const keys = [...new Set(value.filter((key): key is ToolKey => typeof key === "string"))];
+  return toolsByKeys(keys).filter(tool => !tool.secondaryOnly).map(tool => tool.key).slice(0, TOOLBOX_PIN_LIMIT);
+}
+
+/** A deliberately empty list is a saved preference, not a request for defaults. */
+export function loadToolboxPins(): ToolKey[] {
+  try {
+    const stored = localStorage.getItem(PINNED_KEY);
+    return stored === null ? [...DEFAULT_PINS] : validPins(JSON.parse(stored)) ?? [...DEFAULT_PINS];
+  } catch { return [...DEFAULT_PINS]; }
+}
+
+/** Keep the draft open if storage fails; do not claim a preference was saved. */
+export function saveToolboxPins(keys: ToolKey[]): boolean {
+  try {
+    localStorage.setItem(PINNED_KEY, JSON.stringify(validPins(keys) ?? []));
+    return true;
+  } catch { return false; }
+}
 
 const RECENT_KEY = "pastepanda_toolbox_recent";
 const USAGE_KEY = "pastepanda_toolbox_usage";

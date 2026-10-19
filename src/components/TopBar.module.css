@@ -1,5 +1,18 @@
 /* TopBar.module.css — Header + Search + Filter + Tabs */
 
+/* The tools workspace supports the native 320px minimum without shrinking controls. */
+@media (max-width: 479px) {
+  .header[data-mode="tools"] .headerTop { position: relative; padding-bottom: 40px; }
+  .header[data-mode="tools"] .sidebarToggle { display: none; }
+  .header[data-mode="tools"] .headerTitle > [role="tablist"] {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    justify-content: center;
+  }
+}
+
 /* ===== Header / TopBar ===== */
 .header {
   padding: 16px 16px 0;

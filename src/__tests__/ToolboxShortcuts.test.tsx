@@ -5,6 +5,7 @@ import { ToolboxView } from "@/components/ToolboxView";
 const state = vi.hoisted(() => ({ config: { sequential_hotkey: "ctrl+alt+q", rec_hotkey: "cmd+alt+g" } }));
 vi.mock("@/stores/appStore", () => ({ useAppStore: (selector: (value: typeof state) => unknown) => selector(state) }));
 vi.mock("@/components/recsel/RecRecentList", () => ({ RecRecentList: () => null }));
+vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); state.config.rec_hotkey = "cmd+alt+g"; });
 describe("configured toolbox shortcut hints", () => {
   it("confirming a Chinese candidate never launches the matching tool", () => {
@@ -19,7 +20,8 @@ describe("configured toolbox shortcut hints", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     render(<ToolboxView handlers={{}} />);
     expect(screen.getByText("Command+Option+G")).toBeTruthy();
-    expect(screen.getByPlaceholderText(/筛选工具…\s+Command\+F/)).toBeTruthy();
+    expect(screen.getByPlaceholderText("搜索名称、用途或快捷键…")).toBeTruthy();
+    expect(screen.getByText("Command+F")).toBeTruthy();
     expect(screen.queryByText("Ctrl+Alt+R")).toBeNull();
     fireEvent.keyDown(window, { key: "f", metaKey: true });
     expect(document.activeElement).toBe(screen.getByRole("searchbox"));

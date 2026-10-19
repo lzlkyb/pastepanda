@@ -124,7 +124,7 @@ export function TopBar({ onSettings, settingsOpen = false }: {
   }, []);
 
   return (
-    <div className={styles.header} data-tauri-drag-region role="banner">
+    <div className={styles.header} data-mode={appMode} data-tauri-drag-region role="banner">
       {/* 标题行 */}
       <div className={styles.headerTop} data-tauri-drag-region>
         <div className={styles.headerTitle}>
