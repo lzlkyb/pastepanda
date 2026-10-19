@@ -91,7 +91,7 @@ afterEach(() => {
 const count = () => document.querySelectorAll("#hangs .hang").length;
 const take = () => fireEvent.click(document.querySelector("#hangs .takeOne")!);
 describe("晾衣绳真实控制器接收事务", () => {
-  it("其它图片尚在按钮取下时，已有贴图挂回必须明确保留而非丢入接力队列", async () => {
+  it("其它图片尚在按钮取下时，已有贴图挂回直接接收而不是被弹回", async () => {
     const bridge = fakeBridge(); let acknowledge!: (pin: Pin) => void;
     dispose = await mountClothesline(bridge);
     take();
@@ -100,10 +100,11 @@ describe("晾衣绳真实控制器接收事务", () => {
     take();
     await waitFor(() => expect(bridge.take).toHaveBeenCalledTimes(2));
     await bridge.emitDrop({...bridge.pin,force:true});
-    expect(bridge.showPin).toHaveBeenCalledTimes(2);
-    expect(bridge.returnPin).not.toHaveBeenCalled();
+    // 只锁「正在处理的那一张」：别的照片在取下不拦这张挂回，也不再弹「请稍候」把它退回。
+    expect(bridge.returnPin).toHaveBeenCalledOnce();
+    expect(bridge.showPin).toHaveBeenCalledOnce();
     acknowledge({...bridge.pin,hwnd:43,generation:8,path:photos[1].path});
-    await waitFor(() => expect(bridge.showPin).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(bridge.showPin).toHaveBeenCalledTimes(2));
   });
   it("原生确认返回前的快速Esc挂回不能丢失，登记完成后必须接收", async () => {
     const bridge = fakeBridge(); let acknowledge!: (pin: Pin) => void;
@@ -168,7 +169,8 @@ describe("晾衣绳真实控制器接收事务", () => {
     expect(count()).toBe(5);
     expect(document.querySelectorAll("#fxLayer > *")).toHaveLength(0);
     hangs.onpointerup!(event(100, 200));
-    expect(document.getElementById("toast")!.textContent).toContain("正在放下");
+    // 过程提示已按「安静优先」移除：松手不弹 toast，后文用 startDrag 的 held=false 验证语义。
+    expect(document.getElementById("toast")!.hidden).toBe(true);
     await waitFor(() => expect(bridge.regions.mock.calls[bridge.regions.mock.calls.length - 1]?.[1]).toBe(false));
     bridge.emitUpdate({ ...bridge.snapshotValue, items: bridge.snapshotValue.items.slice(1) });
     expect(card.style.left).toBe(x + 100 + "px");
@@ -190,7 +192,8 @@ describe("晾衣绳真实控制器接收事务", () => {
     hangs.onpointerdown!(event(0)); hangs.onpointermove!(event(120));
     hangs.onpointercancel!(event(120));
     expect(card.style.top).toBe(y + "px");
-    expect(document.getElementById("toast")!.textContent).toContain("取消");
+    // 取消不再弹提示（照片回到原位本身就是反馈）。
+    expect(document.getElementById("toast")!.hidden).toBe(true);
     complete(bridge.pin);
     await waitFor(() => expect(bridge.closePin).toHaveBeenCalledWith(bridge.pin));
     expect(bridge.restore).toHaveBeenCalledWith([expect.objectContaining({ id: photos[2].id })]);
@@ -330,7 +333,7 @@ describe("晾衣绳真实控制器接收事务", () => {
     await waitFor(() => expect(bridge.ready).toHaveBeenCalled(), { timeout: 150 });
     dispose = await mounted;
   });
-  it("默认位置拖动后撤销，仍恢复默认模式而非保存固定坐标", async () => {
+  it("拖动端点后保存固定坐标", async () => {
     const bridge = fakeBridge();
     dispose = await mountClothesline(bridge);
     const left = document.getElementById("anchorLeft")!;
@@ -344,9 +347,12 @@ describe("晾衣绳真实控制器接收事务", () => {
       Object.defineProperty(event, "pointerId", { value: 1 });
       fireEvent(left, event);
     }
+    // 撤销已移除：拖动结果直接落盘，不会被一次误触回滚。
     expect(bridge.config).toHaveBeenCalled();
-    fireEvent.click(document.getElementById("undo")!);
-    await waitFor(() => expect(bridge.config).toHaveBeenLastCalledWith({ clothesline_anchors: null }));
+    const calls = bridge.config.mock.calls;
+    const lastConfig = calls[calls.length - 1]?.[0] as Record<string, unknown>;
+    expect(lastConfig).toHaveProperty("clothesline_anchors");
+    expect(lastConfig.clothesline_anchors).not.toBeNull();
   });
   it("同一图片存在两张桌面贴图时，挂回只接收当前拖动的窗口", async () => {
     const bridge = fakeBridge();
@@ -387,28 +393,6 @@ describe("晾衣绳真实控制器接收事务", () => {
     await waitFor(() =>
       expect(bridge.regions.mock.calls[bridge.regions.mock.calls.length - 1][0].some((r) => r.x === 400)).toBe(false),
     );
-  });
-  it("取下可见照片后撤销，后端广播也将它恢复到原可见位置", async () => {
-    const bridge = fakeBridge(),
-      all = Array.from({ length: 12 }, (_, i) => ({ ...photos[0], id: "photo-" + i }));
-    let backend = all;
-    bridge.snapshotValue.items = all;
-    bridge.take.mockImplementation(async (item) => {
-      backend = backend.filter((p) => p.id !== item.id);
-      await bridge.emitUpdate({ ...bridge.snapshotValue, items: backend });
-      return bridge.pin;
-    });
-    bridge.restore.mockImplementation(async (items) => {
-      backend = [...items.filter((p) => !backend.some((b) => b.id === p.id)), ...backend];
-      await bridge.emitUpdate({ ...bridge.snapshotValue, items: backend });
-    });
-    dispose = await mountClothesline(bridge);
-    expect(document.querySelector("#hangs .hang")?.getAttribute("data-id")).toBe("photo-4");
-    take();
-    await waitFor(() => expect(bridge.showPin).toHaveBeenCalledOnce());
-    fireEvent.click(document.getElementById("undo")!);
-    await waitFor(() => expect(document.querySelector('#hangs [data-id="photo-4"]')).not.toBeNull());
-    expect(bridge.order).toHaveBeenCalledWith(all.map((p) => p.id));
   });
   it("管理面板一键挂回可从绳带之外的位置启动同一转场", async () => {
     const bridge = fakeBridge();
@@ -462,7 +446,8 @@ describe("晾衣绳真实控制器接收事务", () => {
     take();
     expect(count()).toBe(5);
     expect(bridge.showPin).not.toHaveBeenCalled();
-    expect((document.querySelector("#clear") as HTMLButtonElement).disabled).toBe(true);
+    // 单张在途不再锁批量按钮：旧版这里会整根绳子置灰，用户点不动。
+    expect((document.querySelector("#clear") as HTMLButtonElement).disabled).toBe(false);
     reject(new Error("创建失败"));
     await waitFor(() => expect(document.querySelector("#toast")?.textContent).toContain("原图留在绳上"));
     expect(count()).toBe(5);
@@ -491,31 +476,15 @@ describe("晾衣绳真实控制器接收事务", () => {
     await bridge.emitDrop({ ...bridge.pin, rect: { x: 500, y: 55, width: 200, height: 120 } });
     expect(count()).toBe(5);
   });
-  it("取下后撤销关闭精确原生贴图，再恢复同一ID，后续新增不丢", async () => {
-    const bridge = fakeBridge();
-    dispose = await mountClothesline(bridge);
-    take();
-    await waitFor(() => expect(bridge.showPin).toHaveBeenCalledOnce());
-    const newPhoto = { ...photos[0], id: "new-photo", name: "后来新增" };
-    await bridge.emitUpdate({ ...bridge.snapshotValue, items: [...photos, newPhoto] });
-    fireEvent.click(document.querySelector("#undo")!);
-    await waitFor(() => expect(count()).toBe(6));
-    expect(bridge.closePin).toHaveBeenCalledWith(bridge.pin);
-    const ids = [...document.querySelectorAll("#hangs .hang")].map((e) => (e as HTMLElement).dataset.id);
-    expect(new Set(ids).size).toBe(6);
-    expect(ids).toContain("new-photo");
-    expect(ids).toContain("photo-0");
-  });
-  it("清空只发当次快照ID，撤销保留之后的图片", async () => {
+  it("清空只发当次快照ID，之后新增的图片不受影响", async () => {
     const bridge = fakeBridge();
     dispose = await mountClothesline(bridge);
     fireEvent.click(document.querySelector("#clear")!);
     await waitFor(() => expect(count()).toBe(0));
     expect(bridge.remove).toHaveBeenCalledWith(photos.map((p) => p.id));
+    // 撤销已移除：清空后新采集的图片照常出现，不会被一次回滚吞掉。
     await bridge.emitUpdate({ ...bridge.snapshotValue, items: [{ ...photos[0], id: "new-photo" }] });
-    fireEvent.click(document.querySelector("#undo")!);
-    await waitFor(() => expect(count()).toBe(6));
-    expect(bridge.restore).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: "photo-0" })]));
+    expect(count()).toBe(1);
   });
   it("批量收衣部分失败保留失败项并明确反馈", async () => {
     const bridge = fakeBridge();

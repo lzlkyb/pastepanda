@@ -55,7 +55,27 @@ jobs:
           node-version: '20'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - run: npm ci
+      # macOS runner 到 npm registry 持续 ECONNRESET（2026-10-18 实测连续 6 次、跨 55 分钟，
+      # 均在 npm ci 80–120s 的批量下载阶段整段断，fetch-retries 单包重试兜不住）。
+      # 两层防御：--maxsockets 3 把 npm 默认 15 条并行连接压到 3 条（大并发易被网络设备
+      # 当异常掐断）；步骤级整轮重试 3 次，断在元数据/批量阶段时从已落盘的缓存继续。
+      - name: Install npm dependencies (with retry)
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            echo "::group::npm ci attempt ${attempt}"
+            if npm ci --maxsockets 3 --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "$attempt" = 3 ]; then
+              echo "::error::npm ci failed after 3 attempts"
+              exit 1
+            fi
+            echo "attempt ${attempt} failed, retrying in 30s..."
+            sleep 30
+          done
       - name: Verify runner architecture
         env:
           EXPECTED_ARCH: ${{ matrix.architecture }}
