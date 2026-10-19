@@ -18,14 +18,20 @@
   cursor: default;
 }
 
+/* 🔴 这里**不能**写 max-width/max-height: 100vw / 100vh。
+ * 窗口尺寸由 `.surface` 的自然尺寸上报（见下），而 max-* 会把量测钳到**当前**窗口尺寸：
+ * 内容一旦比窗口大（常规条 312×38 vs 初始 320×38，展开面板约 312×233），
+ * offsetWidth/Height 报回来的永远等于旧窗口 ⇒ 后端收到「尺寸没变」⇒ 窗口不涨 ⇒
+ * 面板整块画在窗外被裁。ResizeObserver 也救不了：元素自身尺寸没变，回调根本不触发。
+ * 溢出交给窗口边界即可——webview 只画窗口内的像素，多余部分用户看不见。
+ * `flex: none` 是配套的：`.root` 是 100vh 的 flex 容器，默认 flex-shrink 会压缩它。 */
 .surface {
   display: flex;
+  flex: none;
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
   width: max-content;
-  max-width: 100vw;
-  max-height: 100vh;
 }
 
 /* 条与面板共用材料底（半透明底 + 细线；窗口本身透明，所以这里不再叠投影） */

@@ -1,8 +1,7 @@
 /** 预览、关键帧对齐裁剪；原录像保留，后台任务由后端拥有。 */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Pause, Play, X } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import {
   recKeyframes,
   recOpenFile,
@@ -11,43 +10,57 @@ import {
   type RecKeyframeIndex,
   type RecPreviewData,
 } from "@/lib/api/rec";
-import { formatBytes, formatRecordingTime } from "@/lib/utils";
 import { useDialogEscape } from "@/hooks/useDialogEscape";
+import { useRecGifExport } from "@/hooks/useRecGifExport";
 import { useRecTrimTask } from "@/hooks/useRecTrimTask";
 import { TrimFields } from "./RecTrimFields";
 import { Timeline } from "./RecTimeline";
 import { HelpHint } from "./RecHelpHint";
+import { PreviewChrome } from "./RecPreviewChrome";
+import { PreviewPlayer } from "./RecPreviewPlayer";
+import { PreviewAside } from "./RecPreviewAside";
+import { PreviewNotices } from "./RecPreviewNotices";
+import { ResizeEdges } from "./RecResizeEdges";
+import { useRecPlayback } from "./useRecPlayback";
+import { useRecPreviewWindow } from "./useRecPreviewWindow";
+import { useRecThumbnails } from "./useRecThumbnails";
 import { trimClock } from "./trimClock";
 import type { TrimRange } from "./trimSnap";
 
 /**
  * 预览窗（`rec-preview.html` 的根组件）。
  *
- * 2026-10-16 苹果风重做（方案 §5 / 设计稿 §05）：
- * ① 三条原生滑杆 → 一条自绘轨道：保留段 + 两侧斜纹 + 关键帧刻度 + 播放头共存，
- *    一眼看出「保留哪一段」（拆到 RecTimeline）；
- * ② 起止点做成读数芯片、键盘与读屏交给视觉隐藏的原生 range（拆到 RecTrimFields）；
- * ③ 播放入口从左下角一枚文字按钮改成画面正中 52px 玻璃按钮，播放中**淡出**而不是消失
- *    （鼠标移上去回来），空格仍是加速器；
- * ④ 键位说明从底部一整行 `<kbd>` 收进条右端的 `?`（L4 就地解释）；
- * ⑤ 文案只留事实：`实际保留 0:03.200 – 0:14.900（0:11.700）` → `共 00:11.7`，
- *    `正在另存 · 42%` → `正在另存 42%`（分隔靠间距，不靠 `·`）。
+ * 2026-10-18「可缩放 + 功能升级」：窗壳从 `resizable(false)` + 单枚 ✕ 改成
+ * 可缩放 + 三键 + 最大化态；播放区补逐帧/倍速/音量/循环/全屏；动作行补 GIF 导出；
+ * 最大化时右侧出现文件信息与快捷键。窗口能力在 `useRecPreviewWindow`，
+ * 播放状态在 `useRecPlayback`，媒体控件在 `PreviewPlayer` —— 本文件只做编排。
+ *
+ * 2026-10-16 苹果风重做的三条判断仍然有效：一条自绘轨道说明「保留哪一段」、
+ * 起止点读数芯片承载键盘与读屏、右下角 `?` 就地解释键位。
  */
 export function RecPreview({ data }: { data: RecPreviewData }) {
   const [kf, setKf] = useState<RecKeyframeIndex | null>(null);
   const [kfErr, setKfErr] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [sel, setSel] = useState<TrimRange | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentMs, setCurrentMs] = useState(0);
-  const [metaDur, setMetaDur] = useState(0);
-  const [videoErr, setVideoErr] = useState<string | null>(null);
   const [actErr, setActErr] = useState<string | null>(null);
   const [closeHint, setCloseHint] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playback = useRecPlayback();
+  // 解构出两个稳定方法：键盘 effect 只跟它们走，别把整个 playback 对象塞进依赖数组
+  //（那个对象每次渲染换身份，等于每帧摘挂一次 keydown 监听）
+  const { toggle: togglePlay, step: stepFrame } = playback;
+  const fail = useCallback((message: string) => setActErr(message), []);
+  const win = useRecPreviewWindow(fail);
   const task = useRecTrimTask(data.path);
-  const duration = kf?.durationMs || metaDur;
+  // 数组字面量会每次渲染换身份 ⇒ useRecGifExport 的 restore 链会无限重查
+  const gifPaths = useMemo(() => [data.path], [data.path]);
+  const gif = useRecGifExport(gifPaths);
+  const duration = kf?.durationMs || playback.metaMs;
+  const fps = kf?.fps ?? null;
+  // 必须是稳定字符串：抽帧 hook 拿它当依赖，每渲染换一次身份就会重抽一遍
+  const videoSrc = useMemo(() => convertFileSrc(data.path), [data.path]);
+  const thumbs = useRecThumbnails(videoSrc, duration);
   const canTrim = !!kf && kf.keyframesMs.length >= 2;
   useEffect(() => {
     let alive = true;
@@ -63,28 +76,22 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
       alive = false;
     };
   }, [data.path, reload]);
-  const seek = useCallback((ms: number) => {
-    if (videoRef.current) videoRef.current.currentTime = ms / 1000;
-    setCurrentMs(ms);
-  }, []);
-  const togglePlay = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (video.paused)
-      void video
-        .play()
-        .catch(() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。"));
-    else video.pause();
-  }, []);
+  /** 空格播放/暂停、← → 逐帧。焦点在控件上时不抢键（range 的方向键要留给自己）。 */
   useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key !== " " || (event.target as HTMLElement)?.closest?.("button,input,select,textarea")) return;
-      event.preventDefault();
-      togglePlay();
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("button,input,select,textarea")) return;
+      if (event.key === " ") {
+        event.preventDefault();
+        togglePlay();
+      } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && fps) {
+        event.preventDefault();
+        stepFrame(event.key === "ArrowLeft" ? -1 : 1, fps);
+      }
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [togglePlay]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fps, stepFrame, togglePlay]);
   useDialogEscape(() => {
     if (task.saving) {
       setCloseHint(true);
@@ -94,17 +101,19 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
       setSel(null);
       task.clearSaved();
       setActErr(null);
-    } else void getCurrentWindow().close();
+    } else void win.run("close");
   });
   const run = (action: () => Promise<void>) => {
     setActErr(null);
     void action().catch((e: unknown) => setActErr(e instanceof Error ? e.message : String(e)));
   };
   const range = task.saved ?? sel;
-  const error = [task.error, actErr, kfErr, videoErr, kf?.warning].filter(Boolean).join("；");
-  /** 轨道与芯片要的是**具体**区间：没选过就是整段；「没选过」这件事本身由按钮的 disabled 表达。 */
+  const error = [task.error, actErr, kfErr, playback.blocked, gif.task?.error, kf?.warning]
+    .filter(Boolean)
+    .join("；");
+  /** 轨道与芯片要的是**具体**区间：没选过就是整段；「没选过」由按钮的 disabled 表达。 */
   const shown: TrimRange = range ?? { inMs: 0, outMs: duration };
-  /** 右侧那格只说一件事：保留多久；不能裁的时候说清为什么（这也正是那两枚芯片不可用的原因）。 */
+  /** 右侧那格只说一件事：保留多久；不能裁的时候说清为什么。 */
   const keepInfo = canTrim
     ? `共 ${trimClock(shown.outMs - shown.inMs)}`
     : kfErr
@@ -112,172 +121,165 @@ export function RecPreview({ data }: { data: RecPreviewData }) {
       : kf
         ? "录制太短（无可对齐关键帧）"
         : "正在读取裁剪时间轴…";
-  /** 保存中关闭 = 任务留在后台，这件事必须写在按钮自己身上（hover 一下就知道，而不是点了才知道）。 */
-  const closeLabel = task.saving ? "关闭，后台继续保存" : "关闭预览";
+  const gifRunning = !!gif.task?.running;
   return (
-    <div className="rec-pv-root">
-      <div className="rec-pv-head" data-tauri-drag-region>
-        <span className="rec-pv-title" data-tauri-drag-region>
-          {data.name}
-          <em>{formatBytes(data.bytes)}</em>
-        </span>
-        <button
-          type="button"
-          className="rec-icon-btn"
-          onClick={() => void getCurrentWindow().close()}
-          title={closeLabel}
-          aria-label={closeLabel}
-        >
-          <X size={13} aria-hidden="true" />
-        </button>
-      </div>
-      {/* 播放态只把大按钮**淡出**（`:hover` / `:focus-visible` 把它带回来），不卸载：
-          卸载后画面正中就没有「暂停」这个出口了，而视频本身只有 1px 高的边缘可点。 */}
-      <div className="rec-pv-stage" data-playing={playing || undefined}>
-        <video
-          ref={videoRef}
-          className="rec-pv-video"
-          src={convertFileSrc(data.path)}
-          preload="metadata"
-          onClick={togglePlay}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-          onTimeUpdate={(event) => setCurrentMs(event.currentTarget.currentTime * 1000)}
-          onError={() => setVideoErr("应用内预览无法播放此录像，请用系统播放器打开。裁剪只保留文件中已有的视频帧。")}
-          onLoadedMetadata={(event) =>
-            setMetaDur(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration * 1000 : 0)
-          }
-        />
-        <span className="rec-pv-badge">
-          {formatRecordingTime(currentMs)} / {formatRecordingTime(duration)}
-        </span>
-        <button
-          type="button"
-          className="rec-pv-play"
-          onClick={togglePlay}
-          aria-label={playing ? "暂停" : "播放"}
-          title={playing ? "暂停（空格）" : "播放（空格）"}
-        >
-          {playing ? <Pause size={20} aria-hidden="true" /> : <Play size={20} aria-hidden="true" />}
-        </button>
-      </div>
-      <Timeline
-        duration={duration}
-        keyframes={kf?.keyframesMs ?? []}
-        range={shown}
-        currentMs={currentMs}
-        disabled={!canTrim || task.saving || !!task.saved}
-        onSeek={seek}
-        onChange={(next) => {
-          task.clearSaved();
-          setSel(next);
-        }}
+    <div className="rec-pv-root" data-max={win.maximized || undefined}>
+      <PreviewChrome
+        name={data.name}
+        bytes={data.bytes}
+        durationMs={duration}
+        resolution={playback.resolution}
+        fps={fps}
+        maximized={win.maximized}
+        closeLabel={task.saving ? "关闭，后台继续保存" : "关闭预览"}
+        onOp={(op) => void win.run(op)}
       />
-      <TrimFields
-        duration={duration}
-        keyframes={kf?.keyframesMs ?? []}
-        value={shown}
-        disabled={!canTrim || task.saving || !!task.saved}
-        keepInfo={keepInfo}
-        onChange={(next) => {
-          task.clearSaved();
-          setSel(next);
-        }}
-      />
-      {task.saving && (
-        <div className="rec-pv-progress" role="status">
-          <span>正在另存 {task.percent}%</span>
-          <progress className="rec-pv-bar" value={task.percent} max={100} aria-label="裁剪保存进度" />
-          <button type="button" className="rec-pv-btn" onClick={() => void task.cancel()}>
-            取消裁剪
-          </button>
+      <div className="rec-pv-body">
+        <div className="rec-pv-main">
+          <PreviewPlayer src={videoSrc} durationMs={duration} fps={fps} playback={playback} />
+          <Timeline
+            duration={duration}
+            keyframes={kf?.keyframesMs ?? []}
+            frames={thumbs.frames}
+            range={shown}
+            currentMs={playback.currentMs}
+            disabled={!canTrim || task.saving || !!task.saved}
+            onSeek={playback.seek}
+            onChange={(next) => {
+              task.clearSaved();
+              setSel(next);
+            }}
+          />
+          <TrimFields
+            duration={duration}
+            keyframes={kf?.keyframesMs ?? []}
+            value={shown}
+            disabled={!canTrim || task.saving || !!task.saved}
+            keepInfo={keepInfo}
+            onChange={(next) => {
+              task.clearSaved();
+              setSel(next);
+            }}
+          />
+          {task.saving && (
+            <div className="rec-pv-progress" role="status">
+              <span>正在另存 {task.percent}%</span>
+              <progress className="rec-pv-bar" value={task.percent} max={100} aria-label="裁剪保存进度" />
+              <button type="button" className="rec-pv-btn" onClick={() => void task.cancel()}>
+                取消裁剪
+              </button>
+            </div>
+          )}
+          {gifRunning && (
+            <div className="rec-pv-progress" role="status">
+              <span>正在导出 GIF {gif.task?.percent ?? 0}%</span>
+              <progress className="rec-pv-bar" value={gif.task?.percent ?? 0} max={100} aria-label="GIF 导出进度" />
+              <button type="button" className="rec-pv-btn" onClick={() => void gif.cancel()}>
+                取消导出
+              </button>
+            </div>
+          )}
+          {closeHint && task.saving && (
+            <p className="rec-pv-note">Esc 不会取消保存。请点击「取消裁剪」，或关闭窗口让任务在后台继续。</p>
+          )}
+          {task.saved && (
+            <p className="rec-pv-ok" role="status">
+              已另存为新文件：{task.saved.path.split(/[/\\]/).pop()}；原录像保留。
+            </p>
+          )}
+          {gif.task?.donePath && !gifRunning && (
+            <p className="rec-pv-ok" role="status">
+              已导出 GIF：{gif.task.donePath.split(/[/\\]/).pop()}
+            </p>
+          )}
+          <div className="rec-pv-actions">
+            {task.saved ? (
+              <>
+                <button
+                  type="button"
+                  className="rec-pv-btn primary"
+                  onClick={() => run(() => recOpenPreview(task.saved!.path))}
+                >
+                  预览裁剪文件
+                </button>
+                <button type="button" className="rec-pv-btn" onClick={() => run(() => recReveal(task.saved!.path))}>
+                  打开文件夹
+                </button>
+                <button
+                  type="button"
+                  className="rec-pv-btn"
+                  onClick={() => {
+                    task.clearSaved();
+                    setSel(null);
+                  }}
+                >
+                  继续裁剪原录像
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="rec-pv-btn primary"
+                  disabled={!sel || !canTrim || task.saving}
+                  onClick={() => {
+                    if (sel) void task.save(sel);
+                  }}
+                >
+                  {task.saving ? "保存中…" : "另存裁剪"}
+                </button>
+                <button type="button" className="rec-pv-btn" disabled={!sel || task.saving} onClick={() => setSel(null)}>
+                  重置
+                </button>
+                {/* GIF 后端只接受整段（`rec_gif_start` 没有 in/out），文案不能写「导出选区」 */}
+                <button
+                  type="button"
+                  className="rec-pv-btn"
+                  disabled={gifRunning || !!gif.starting || !!gif.restoreError}
+                  onClick={() => void gif.start(data.path)}
+                  title="按整段导出 GIF（12fps，宽 ≤ 480，循环）"
+                >
+                  导出 GIF
+                </button>
+                <button type="button" className="rec-pv-btn" onClick={() => run(() => recReveal(data.path))}>
+                  <FolderOpen size={13} aria-hidden="true" />
+                  打开文件夹
+                </button>
+              </>
+            )}
+            <span className="rec-pv-sp" />
+            <HelpHint open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} flipBelow={false}>
+              <kbd>空格</kbd> 播放 / 暂停 <kbd>← →</kbd> 逐帧 <kbd>Esc</kbd> 重置范围 / 关闭预览
+              <br />
+              拖轨道两端选保留段，切点自动对齐关键帧；原录像不会被改动。
+            </HelpHint>
+          </div>
+          <PreviewNotices
+            videoBlocked={!!playback.blocked}
+            keyframesFailed={!!kfErr}
+            trimQueryFailed={task.queryFailed}
+            gifRestoreFailed={!!gif.restoreError}
+            error={error}
+            onSystemPlayer={() => run(() => recOpenFile(data.path))}
+            onRetryKeyframes={() => setReload((value) => value + 1)}
+            onRetryTrim={() => void task.query()}
+            onRetryGif={() => void gif.restore()}
+          />
         </div>
-      )}
-      {closeHint && task.saving && (
-        <p className="rec-pv-note">Esc 不会取消保存。请点击「取消裁剪」，或关闭窗口让任务在后台继续。</p>
-      )}
-      {task.saved && (
-        <p className="rec-pv-ok" role="status">
-          已另存为新文件：{task.saved.path.split(/[/\\]/).pop()}；原录像保留。
-        </p>
-      )}
-      <div className="rec-pv-actions">
-        {task.saved ? (
-          <>
-            <button
-              type="button"
-              className="rec-pv-btn primary"
-              onClick={() => run(() => recOpenPreview(task.saved!.path))}
-            >
-              预览裁剪文件
-            </button>
-            <button type="button" className="rec-pv-btn" onClick={() => run(() => recReveal(task.saved!.path))}>
-              打开文件夹
-            </button>
-            <button
-              type="button"
-              className="rec-pv-btn"
-              onClick={() => {
-                task.clearSaved();
-                setSel(null);
-              }}
-            >
-              继续裁剪原录像
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="rec-pv-btn primary"
-              disabled={!sel || !canTrim || task.saving}
-              onClick={() => {
-                if (sel) void task.save(sel);
-              }}
-            >
-              {task.saving ? "保存中…" : "另存裁剪"}
-            </button>
-            <button type="button" className="rec-pv-btn" disabled={!sel || task.saving} onClick={() => setSel(null)}>
-              重置
-            </button>
-          </>
+        {win.maximized && (
+          <PreviewAside
+            name={data.name}
+            bytes={data.bytes}
+            durationMs={duration}
+            resolution={playback.resolution}
+            fps={fps}
+            range={shown}
+            onReveal={() => run(() => recReveal(data.path))}
+            onOpenFile={() => run(() => recOpenFile(data.path))}
+          />
         )}
-        <span className="rec-pv-sp" />
-        {/* 键位说明按需展开：原来底部常驻一整行 <kbd>（§5.1）。
-            预览条钉在屏下方，浮层恒朝上——不需翻转（对照确认条的 top < 150）。 */}
-        <HelpHint open={helpOpen} onToggle={() => setHelpOpen((v) => !v)} flipBelow={false}>
-          <kbd>空格</kbd> 播放 / 暂停 <kbd>Esc</kbd> 重置范围 / 关闭预览
-          <br />
-          拖轨道两端选保留段，切点自动对齐关键帧；原录像不会被改动。
-        </HelpHint>
       </div>
-      {videoErr && (
-        <div className="rec-pv-errorRow">
-          <button type="button" className="rec-pv-btn" onClick={() => run(() => recOpenFile(data.path))}>
-            用系统播放器打开
-          </button>
-        </div>
-      )}
-      {kfErr && (
-        <div className="rec-pv-errorRow">
-          <button type="button" className="rec-pv-btn" onClick={() => setReload((value) => value + 1)}>
-            重试时间轴
-          </button>
-        </div>
-      )}
-      {task.queryFailed && (
-        <div className="rec-pv-errorRow">
-          <button type="button" className="rec-pv-btn" onClick={() => void task.query()}>
-            重新查询裁剪
-          </button>
-        </div>
-      )}
-      {error && (
-        <div className="rec-pv-err" role="alert">
-          {error}
-        </div>
-      )}
+      <ResizeEdges onResize={(dir) => void win.resize(dir)} />
     </div>
   );
 }

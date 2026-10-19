@@ -89,10 +89,16 @@
 /* ===== 结果卡（设计稿 §4）=====
  * 六段结构：状态头 / 三格指标 / 文件去向 / 异常 / 动作 / 尾注。
  * 旧版是 5 个 <p> 平铺成的文档：标题行、文件名、`2:44 · 22.7 MB · 高清` 一行、路径、按钮组。 */
+/* 窗口是固定 440×280 的透明浮窗（`rec/mod.rs` 的 HUD）：内容比窗口高时，
+ * **动作行必须仍在视口内**——「预览并裁剪 / 再录一次」是这张卡存在的理由。
+ * 所以整卡不许滚（滚出去的就是按钮），溢出只由异常段自己内部滚消化。 */
 .result {
-  height: 100%;
+  /* min-height 而不是 height：HUD 靠量这个盒子的自然高度来决定窗口要多高
+   * （`rec-hud-main.tsx` → `rec_hud_fit`）。写成 height:100% 时量到的永远等于
+   * 当前窗口高，撑高逻辑会退化成永远「不需要撑」。 */
+  min-height: 100%;
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -114,6 +120,12 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* 标准 flex 子项默认 flex-shrink: 1：内容超高时它们会被等比压扁，
+ * 结果是状态头/指标/文件行/按钮一起变矮并互相重叠。除异常段外一律不可压。 */
+.result > :not(.warn) {
+  flex: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -248,9 +260,14 @@
   background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
 }
 
-/* 异常只报事实：「怎么办」由紧邻的那枚按钮回答（图标承担语义，文字不再变色） */
+/* 异常只报事实：「怎么办」由紧邻的那枚按钮回答（图标承担语义，文字不再变色）。
+ * 唯一可压缩段：文案长度不可控（后端 warnings 拼接 / 系统错误原文），
+ * 超出时在自己框内滚动，绝不把下面的按钮顶出窗口。 */
 .warn {
   display: flex;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   gap: 8px;
   padding: 12px;
   border-radius: 8px;

@@ -1363,6 +1363,10 @@ pub fn run() {
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_preview_take,
             #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_preview_window,
+            #[cfg(any(windows, target_os = "macos"))]
+            rec::commands::rec_hud_fit,
+            #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_start,
             #[cfg(any(windows, target_os = "macos"))]
             rec::commands::rec_gif_status,

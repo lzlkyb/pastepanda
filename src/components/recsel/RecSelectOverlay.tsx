@@ -211,6 +211,7 @@ export function RecSelectOverlay({ config }: { config: Record<string, unknown> |
           dpr={dpr}
           snapRect={snapRect}
           rectFromWindow={rectFromWindow}
+          screenCssW={screen.width / dpr}
         />
       )}
 

@@ -31,6 +31,9 @@ windows = { version = "0.58", features = [
     "Win32_Graphics_Imaging",
     # 质量参数要经 IPropertyBag2::Write 传 PROPBAG2 + VARIANT（VARENUM 在这个 feature）
     "Win32_System_Variant",
+    # exclude 探针（2026-10-18）：造窗口 + SetWindowCompositionAttribute + DDA 抓帧读像素
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
 ] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 anyhow = "1"
@@ -40,6 +43,13 @@ anyhow = "1"
 [[bin]]
 name = "wic"
 path = "src/wic.rs"
+
+# 捕获排除通道端到端验证（WCA_EXCLUDED_FROM_DDA 对 DXGI DDA 是否真的生效）：
+#   cargo run --release --bin exclude -- --no-exclude
+#   cargo run --release --bin exclude -- --exclude
+[[bin]]
+name = "exclude"
+path = "src/exclude.rs"
 
 # 与 pastePanda 的 [profile.release] 一致，否则量出来的数不可比。
 [profile.release]

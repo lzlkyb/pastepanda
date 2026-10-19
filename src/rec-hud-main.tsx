@@ -12,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { RecResultCard } from "./components/recsel/RecResultCard";
 import type { RecHudData } from "./lib/api/rec";
+import { recHudFit } from "./lib/api/rec";
 import { logger } from "./lib/logger";
 import { applyTheme, DEFAULT_THEME, normalizeTheme } from "./lib/theme";
 import "./styles/globals.css";
@@ -48,7 +49,22 @@ function Root() {
 }
 
 function RecHud({ data }: { data: RecHudData }) {
-  return <RecResultCard data={data} onClose={() => void getCurrentWindow().close()} />;
+  const host = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // HUD 窗固定 440×280，而 note 是运行时 warnings 的拼接，长度不可控。
+    // `.result` 用 min-height:100% ⇒ 量到的就是这个卡片**完整显示**需要的高度；
+    // 比窗口高时让后端把窗撑高（底边不动）。量不到/调整失败都不报错：
+    // 卡片内部的 `.warn` 还能滚，主操作另有兜底。
+    const card = host.current?.firstElementChild as HTMLElement | null;
+    if (!card) return;
+    const need = Math.ceil(card.getBoundingClientRect().height);
+    if (need > 0) void recHudFit(need).catch(() => { /* 内滚兜底 */ });
+  }, [data]);
+  return (
+    <div className="rec-hud-host" ref={host}>
+      <RecResultCard data={data} onClose={() => void getCurrentWindow().close()} />
+    </div>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

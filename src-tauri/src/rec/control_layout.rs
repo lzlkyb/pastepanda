@@ -1,4 +1,16 @@
 //! Control bar placement uses checked physical geometry; invalid screens must not panic.
+
+/// 控制条首次显示的逻辑尺寸。
+///
+/// **必须 ≥ 内容的自然尺寸**：前端会用 `.surface` 的 offsetWidth/Height 反过来收紧窗口
+/// （见 `RecControlBar.module.css` 的说明）。小于内容时首帧会被窗口裁掉一截
+/// ——2026-10-18 实测旧值 260×36 时条本身要 312×38，左侧抓手与底部各被切掉一部分。
+/// 320×38 = 实测 312×38 + 8px 余量；宁可先大后小（内容始终完整）也不要先小后大。
+/// 「正在准备」态会多一段文案（实测 352 宽），不在初值里预置最大态：那会让录制主态
+/// 每次都从 352 缩到 311；这类状态由前端量测上报自动跟随，初值只负责首帧不裁。
+const COMPACT_W: f64 = 320.0;
+const COMPACT_H: f64 = 38.0;
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct Layout {
     pub x: i32,
@@ -22,8 +34,8 @@ pub(super) fn place(
         i64::from(region.2),
         i64::from(region.3),
     );
-    let w = ((260.0 * scale).round() as i64).min(sw);
-    let h = ((36.0 * scale).round() as i64).min(sh);
+    let w = ((COMPACT_W * scale).round() as i64).min(sw);
+    let h = ((COMPACT_H * scale).round() as i64).min(sh);
     let gap = (12.0 * scale).round() as i64;
     let x = (rx + (rw - w) / 2).clamp(sx, sx + sw - w);
     let top = ry - h - gap;
@@ -57,9 +69,10 @@ pub(super) fn resize(screen: (i32, i32, i32, i32), current: (i32, i32, u32, u32)
 mod tests {
     use super::*;
     #[test]
-    fn normal_hit_area_matches_the_compact_bar() {
+    fn normal_hit_area_covers_the_whole_bar() {
         let layout = place((0, 0, 1920, 1080), (200, 200, 800, 600), 1.0).unwrap();
-        assert_eq!((layout.w, layout.h), (260, 36));
+        // 320×38 不是审美选择：小于它时首帧会裁掉抓手与底部（见 COMPACT_W 的说明）
+        assert_eq!((layout.w, layout.h), (320, 38));
     }
     #[test]
     fn collapse_resize_and_menu_stay_inside_the_monitor() {
@@ -84,10 +97,10 @@ mod tests {
         assert_eq!(
             layout,
             Layout {
-                x: 212,
+                x: 152,
                 y: 684,
-                w: 520,
-                h: 72
+                w: 640,
+                h: 76
             }
         );
     }
@@ -97,9 +110,9 @@ mod tests {
             place((-300, -200, 300, 200), (-300, -200, 300, 200), 2.0).unwrap(),
             Layout {
                 x: -300,
-                y: -72,
+                y: -76,
                 w: 300,
-                h: 72
+                h: 76
             }
         );
         assert!(place((i32::MAX, 0, 100, 100), (i32::MAX, 0, 100, 100), 1.0).is_ok());

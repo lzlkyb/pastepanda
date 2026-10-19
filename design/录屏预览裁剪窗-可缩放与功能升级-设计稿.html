@@ -1,0 +1,941 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="ocean">
+<head>
+<meta charset="utf-8">
+<title>录屏预览与裁剪窗 · 可缩放 + 功能升级 · 设计稿</title>
+<style>
+  /* ===== 令牌（直接取自 src/styles/theme.css 的 ocean / midnight 两套） ===== */
+  html[data-theme="ocean"]{
+    --page-bg: linear-gradient(168deg,#f4f8fc 0%,#eef3f8 42%,#e8f0f7 100%);
+    --page-fg:#0f172a; --page-mut:#627083;
+    --win-bg:#ffffff; --win-border:#e0e4eb;
+    --surface-2:#f0f4f8; --surface-3:#e8eef5;
+    --fg:#0f172a; --fg-2:#495565; --fg-3:#627083;
+    --accent:#0284c7; --accent-solid:#027cbb; --on-accent:#ffffff;
+    --chip:rgba(15,23,42,.06); --chip-2:rgba(15,23,42,.10);
+    --divider:rgba(15,23,42,.08);
+    --ring:rgba(15,23,42,.14);
+    --danger:#dc2626;
+    --win-shadow:0 28px 70px rgba(15,23,42,.20),0 2px 10px rgba(15,23,42,.07);
+    --card-shadow:0 1px 2px rgba(15,23,42,.06);
+    --glass-hi:inset 0 1px 0 rgba(255,255,255,.9);
+    --tl-dim:rgba(9,12,18,.60);
+  }
+  html[data-theme="midnight"]{
+    --page-bg: radial-gradient(100% 80% at 50% -10%,#1c1832 0%,#0b0b13 55%,#07070c 100%);
+    --page-fg:#e4e4e7; --page-mut:#8d8d95;
+    --win-bg:#18181b; --win-border:#27272a;
+    --surface-2:#131316; --surface-3:#202024;
+    --fg:#e4e4e7; --fg-2:#afafb7; --fg-3:#8d8d95;
+    --accent:#818cf8; --accent-solid:#666fc4; --on-accent:#ffffff;
+    --chip:rgba(255,255,255,.07); --chip-2:rgba(255,255,255,.12);
+    --divider:rgba(255,255,255,.09);
+    --ring:rgba(255,255,255,.16);
+    --danger:#f87171;
+    --win-shadow:0 28px 80px rgba(0,0,0,.65),0 2px 10px rgba(0,0,0,.4);
+    --card-shadow:0 1px 2px rgba(0,0,0,.5);
+    --glass-hi:inset 0 1px 0 rgba(255,255,255,.08);
+    --tl-dim:rgba(4,6,10,.74);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    min-height:100vh;
+    background:var(--page-bg);
+    background-attachment:fixed;
+    color:var(--page-fg);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:0 0 64px;
+  }
+
+  /* ===== 稿子自己的工具条（不属于产品 UI） ===== */
+  .docbar{
+    position:sticky; top:0; z-index:50;
+    display:flex; align-items:center; gap:16px;
+    padding:12px 24px;
+    background:color-mix(in srgb, var(--win-bg) 88%, transparent);
+    backdrop-filter:blur(18px) saturate(1.4);
+    border-bottom:1px solid var(--divider);
+  }
+  .docbar h1{font-size:14px;font-weight:650;margin:0;letter-spacing:.2px}
+  .docbar p{margin:0;font-size:11px;color:var(--page-mut)}
+  .docbar .grow{flex:1}
+  .seg{display:flex;gap:2px;padding:2px;border-radius:9px;background:var(--chip)}
+  .seg button{
+    border:0;background:transparent;color:var(--fg-2);font:inherit;font-size:11px;
+    padding:5px 10px;border-radius:7px;cursor:pointer;
+  }
+  .seg button[aria-pressed="true"]{background:var(--win-bg);color:var(--fg);box-shadow:var(--card-shadow);font-weight:600}
+  .doc-label{font-size:11px;color:var(--page-mut);margin-right:-8px}
+
+  .stage{width:min(1240px,calc(100% - 48px));margin:34px auto 0}
+  .stage-head{display:flex;align-items:baseline;gap:12px;margin-bottom:14px}
+  .stage-head b{font-size:13px;font-weight:650}
+  .stage-head span{font-size:11px;color:var(--page-mut)}
+
+  /* ===== 窗口 ===== */
+  .win-wrap{position:relative;width:max-content;margin:0 auto}
+  .win{
+    width:960px;height:680px;
+    display:flex;flex-direction:column;
+    background:var(--win-bg);
+    border:1px solid var(--win-border);
+    border-radius:12px;
+    box-shadow:var(--win-shadow);
+    overflow:hidden;
+    position:relative;
+    transition:width .28s cubic-bezier(.2,0,.1,1),height .28s cubic-bezier(.2,0,.1,1),border-radius .2s;
+  }
+  .win[data-max="1"]{width:1180px;height:806px;border-radius:0;border-color:transparent}
+
+  /* ---- 标题栏 44px ---- */
+  .tb{
+    height:44px;flex:none;display:flex;align-items:center;gap:10px;
+    padding:0 6px 0 12px;
+    border-bottom:1px solid var(--divider);
+    background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 70%,transparent),transparent);
+  }
+  .tb-icon{
+    width:26px;height:26px;border-radius:7px;flex:none;display:grid;place-items:center;
+    background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 88%,#22d3ee),var(--accent-solid));
+    color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 1px 3px rgba(0,0,0,.18);
+  }
+  .tb-name{
+    font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    max-width:min(46%,420px);
+  }
+  .tb-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-3);white-space:nowrap}
+  .tb-meta i{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.5}
+  .tb-grow{flex:1;min-width:8px;height:100%}
+  .tbtn{
+    width:32px;height:32px;flex:none;display:grid;place-items:center;
+    border:0;border-radius:8px;background:transparent;color:var(--fg-2);cursor:default;
+  }
+  .tbtn:hover{background:var(--chip-2);color:var(--fg)}
+  .tbtn.close:hover{background:var(--danger);color:#fff}
+  .tb-wins{display:flex;gap:2px;flex:none}
+
+  /* ---- 主体：播放区 + 侧栏 ---- */
+  .body{display:flex;flex:1;min-height:0}
+  .player{position:relative;flex:1;min-width:0;background:#08090c;overflow:hidden}
+
+  /* 录屏内容示意（内容层，不随主题变；16:9 contain，两侧留播放器黑边） */
+  .screen{
+    position:absolute;inset:0;overflow:hidden;background:#08090c;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .frame{position:relative;height:100%;aspect-ratio:16/9;max-width:100%;overflow:hidden}
+  .screen .wall{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse 60% 50% at 18% 12%,#2f6f8f 0%,transparent 58%),
+      radial-gradient(ellipse 55% 55% at 88% 82%,#3b2f6e 0%,transparent 62%),
+      linear-gradient(158deg,#0c2432 0%,#0f2c40 42%,#0a1a26 100%);
+  }
+  .fake-win{
+    position:absolute;border-radius:8px;
+    background:rgba(255,255,255,.09);
+    border:1px solid rgba(255,255,255,.15);
+    box-shadow:0 12px 30px rgba(0,0,0,.28);
+    overflow:hidden;
+  }
+  .fake-win .fb{height:16px;background:rgba(255,255,255,.10);display:flex;align-items:center;gap:4px;padding:0 6px}
+  .fake-win .fb i{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.35)}
+  .fake-win .fl{padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+  .fake-win .fl s{display:block;height:4px;border-radius:2px;background:rgba(255,255,255,.16);text-decoration:none}
+  .fake-win .fl s:nth-child(1){width:70%}
+  .fake-win .fl s:nth-child(2){width:92%}
+  .fake-win .fl s:nth-child(3){width:54%}
+  .fake-win .fl s:nth-child(4){width:78%}
+  .fw1{left:7%;top:12%;width:44%;height:52%}
+  .fw2{left:56%;top:26%;width:36%;height:44%}
+  .fake-dock{
+    position:absolute;left:50%;bottom:10px;transform:translateX(-50%);
+    width:52%;height:22px;border-radius:7px;
+    background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);
+    display:flex;align-items:center;justify-content:center;gap:8px;
+  }
+  .fake-dock i{width:12px;height:12px;border-radius:4px;background:rgba(255,255,255,.22)}
+  .fake-cursor{
+    position:absolute;left:47%;top:56%;width:14px;height:18px;
+    background:#fff;
+    clip-path:polygon(0 0,0 100%,38% 74%,60% 100%,78% 90%,56% 66%,100% 62%);
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));
+  }
+
+  .badge-res{
+    position:absolute;right:12px;top:12px;
+    height:22px;padding:0 9px;display:inline-flex;align-items:center;gap:6px;
+    border-radius:999px;font-size:11px;font-variant-numeric:tabular-nums;
+    background:rgba(12,14,20,.62);color:#e8eef7;
+    border:1px solid rgba(255,255,255,.14);
+    backdrop-filter:blur(10px);
+  }
+
+  /* 中央播放按钮 */
+  .playbig{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:54px;height:54px;border-radius:50%;border:0;padding:0;
+    display:grid;place-items:center;cursor:pointer;
+    background:rgba(14,16,22,.62);color:#fff;
+    border:1px solid rgba(255,255,255,.16);
+    backdrop-filter:blur(14px);
+    box-shadow:0 10px 30px rgba(0,0,0,.45);
+    transition:transform .2s cubic-bezier(.05,.7,.1,1),opacity .18s;
+  }
+  .playbig:hover{transform:translate(-50%,-50%) scale(1.06)}
+  .player[data-playing="1"] .playbig{opacity:0}
+  .player[data-playing="1"] .playbig:hover{opacity:1}
+
+  /* 悬浮传输条 */
+  .xb{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:4px;padding:5px;
+    border-radius:12px;white-space:nowrap;
+    background:rgba(12,14,20,.70);
+    border:1px solid rgba(255,255,255,.13);
+    backdrop-filter:blur(20px) saturate(1.3);
+    box-shadow:0 10px 28px rgba(0,0,0,.42);
+    transition:opacity .2s;
+  }
+  .player[data-playing="1"] .xb{opacity:.55}
+  .player:hover .xb,.xb:hover{opacity:1}
+  .xb button{
+    height:30px;min-width:30px;padding:0 7px;border:0;border-radius:7px;
+    background:transparent;color:#e9eef7;display:inline-flex;align-items:center;justify-content:center;
+    gap:5px;font:inherit;font-size:11px;cursor:pointer;font-variant-numeric:tabular-nums;
+  }
+  .xb button:hover{background:rgba(255,255,255,.16)}
+  .xb .play{width:34px;height:34px;border-radius:9px;background:#fff;color:#101216}
+  .xb .play:hover{background:#fff;filter:brightness(.94)}
+  .xb .sep{width:1px;height:18px;background:rgba(255,255,255,.16);margin:0 4px}
+  .xb .tc{font-size:12px;color:#fff;letter-spacing:.3px;padding:0 6px;font-weight:600}
+  .xb .tc em{font-style:normal;color:rgba(255,255,255,.55);font-weight:400}
+
+  /* ---- 右侧栏（仅最大化态） ---- */
+  .side{
+    display:none;width:274px;flex:none;
+    border-left:1px solid var(--divider);
+    background:var(--surface-2);
+    padding:14px;overflow:auto;
+  }
+  .win[data-max="1"] .side{display:block}
+  .side h4{
+    margin:0 0 8px;font-size:10px;font-weight:600;letter-spacing:.9px;
+    text-transform:uppercase;color:var(--fg-3);
+  }
+  .side .grp{margin-bottom:18px}
+  .kv{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;padding:3px 0}
+  .kv span{color:var(--fg-3)}
+  .kv b{font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+  .side .card{
+    background:var(--win-bg);border:1px solid var(--win-border);border-radius:10px;
+    padding:10px;box-shadow:var(--card-shadow);
+  }
+  .pathline{
+    display:flex;align-items:center;gap:6px;margin-top:8px;
+    font-size:10px;color:var(--fg-3);
+  }
+  .pathline code{
+    flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-family:ui-monospace,Consolas,monospace;
+  }
+  .keys{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--fg-2)}
+  .keys div{display:flex;align-items:center;gap:8px}
+  .keys em{flex:1;font-style:normal;color:var(--fg-3)}
+  kbd{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:20px;height:19px;padding:0 5px;border-radius:5px;
+    background:var(--win-bg);border:1px solid var(--ring);border-bottom-width:2px;
+    font-family:inherit;font-size:10px;color:var(--fg-2);
+  }
+
+  /* ---- 时间轴 ---- */
+  .tlwrap{flex:none;padding:12px 14px 4px;border-top:1px solid var(--divider);background:var(--win-bg)}
+  .ruler{position:relative;height:14px;margin:0 6px 4px}
+  .ruler span{
+    position:absolute;top:0;transform:translateX(-50%);
+    font-size:10px;color:var(--fg-3);font-variant-numeric:tabular-nums;
+  }
+  .ruler span:first-child{transform:none}
+  .ruler span:last-child{transform:translateX(-100%)}
+  .track{
+    position:relative;height:52px;margin:0 6px;border-radius:7px;
+    background:var(--surface-3);cursor:pointer;touch-action:none;
+    overflow:visible;
+  }
+  .thumbs{position:absolute;inset:0;display:flex;border-radius:7px;overflow:hidden}
+  .thumbs i{flex:1;position:relative;border-right:1px solid rgba(0,0,0,.22);overflow:hidden}
+  .thumbs i:last-child{border-right:0}
+  .thumbs i::before{
+    content:"";position:absolute;left:14%;top:18%;width:52%;height:36%;border-radius:2px;
+    background:rgba(255,255,255,.20);
+  }
+  .thumbs i::after{
+    content:"";position:absolute;left:14%;bottom:14%;width:70%;height:8%;border-radius:2px;
+    background:rgba(255,255,255,.12);
+  }
+  .thumbs i:nth-child(2n)::before{left:28%;top:32%;width:36%;height:26%}
+  .thumbs i:nth-child(3n)::before{left:20%;top:14%;width:62%;height:48%}
+  .thumbs i:nth-child(4n)::after{left:40%;width:42%}
+  .thumbs i:nth-child(5n)::before{left:14%;top:20%;width:46%;height:44%}
+  .dim{position:absolute;top:0;bottom:0;background:var(--tl-dim);z-index:2}
+  .dim.l{left:0;border-radius:7px 0 0 7px;width:18.2%;
+    background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 2px,transparent 2px 8px)}
+  .dim.r{left:62.1%;right:0;border-radius:0 7px 7px 0;
+    background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 2px,transparent 2px 8px)}
+  .keep{position:absolute;top:0;bottom:0;z-index:3;pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));
+    box-shadow:inset 0 0 0 2px var(--accent),0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
+  .kf{position:absolute;bottom:0;width:1px;height:5px;background:rgba(255,255,255,.55);z-index:4;opacity:.7}
+  .head{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--accent);z-index:6;pointer-events:none;
+    box-shadow:0 0 8px color-mix(in srgb,var(--accent) 70%,transparent)}
+  .head::before{
+    content:"";position:absolute;left:50%;top:2px;width:7px;height:7px;border-radius:50%;
+    transform:translateX(-50%);background:var(--accent);border:1.5px solid rgba(255,255,255,.85);
+  }
+  .handle{
+    position:absolute;top:-5px;bottom:-5px;width:11px;z-index:7;
+    transform:translateX(-50%);padding:0;border:0;cursor:ew-resize;
+    border-radius:4px;background:var(--win-bg);
+    border:1px solid var(--ring);
+    box-shadow:0 2px 8px rgba(0,0,0,.28),var(--glass-hi);
+  }
+  .handle::after{
+    content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:1.5px;height:16px;border-radius:1px;background:var(--fg-3);
+  }
+  .handle:hover{border-color:var(--accent)}
+  .handle:hover::after{background:var(--accent)}
+  .bubble{
+    position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);
+    padding:2px 6px;border-radius:6px;background:var(--fg);color:var(--win-bg);
+    font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap;
+    opacity:0;transition:opacity .12s;
+  }
+  .handle:hover .bubble{opacity:1}
+
+  .tlmeta{display:flex;align-items:center;gap:10px;padding:8px 6px 0;font-size:11px;color:var(--fg-3)}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;
+    border-radius:999px;background:var(--chip);font-size:11px;color:var(--fg-2);
+    font-variant-numeric:tabular-nums;
+  }
+  .pill.accent{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);font-weight:600}
+  html[data-theme="midnight"] .pill.accent{color:#a5b4fc}
+
+  /* ---- 底部动作行 ---- */
+  .actions{
+    flex:none;display:flex;align-items:center;gap:8px;
+    padding:10px 14px 12px;border-top:1px solid var(--divider);background:var(--win-bg);
+  }
+  .actions .grow{flex:1}
+  .btn{
+    height:32px;padding:0 12px;border-radius:8px;display:inline-flex;align-items:center;gap:6px;
+    font:inherit;font-size:12px;cursor:pointer;white-space:nowrap;
+    background:transparent;border:1px solid var(--ring);color:var(--fg-2);
+  }
+  .btn:hover:not(:disabled){background:var(--chip);color:var(--fg)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.primary{
+    background:var(--accent-solid);border-color:transparent;color:var(--on-accent);font-weight:600;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 1px 3px color-mix(in srgb,var(--accent-solid) 45%,transparent);
+  }
+  .btn.primary:hover{filter:brightness(1.07);background:var(--accent-solid);color:var(--on-accent)}
+  .btn.icon{width:32px;padding:0;justify-content:center}
+  .btn.ghost{border-color:transparent}
+  .btn.ghost:hover{background:var(--chip)}
+
+  /* ---- 标注 ---- */
+  .pin{
+    position:absolute;z-index:30;width:20px;height:20px;border-radius:50%;
+    display:grid;place-items:center;font-size:10px;font-weight:700;
+    background:var(--accent-solid);color:#fff;
+    box-shadow:0 0 0 2px var(--win-bg),0 4px 12px rgba(0,0,0,.3);
+    pointer-events:none;
+  }
+  .pin[data-only="max"]{display:none}
+  .win[data-max="1"] ~ .pin[data-only="max"]{display:grid}
+  html.nopin .pin{display:none}
+
+  /* ===== 控制条对照 ===== */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  .pane{border:1px solid var(--win-border);border-radius:12px;overflow:hidden;background:var(--win-bg);box-shadow:var(--card-shadow)}
+  .pane-h{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--divider);font-size:11px;color:var(--fg-2)}
+  .pane-h b{font-size:11px;font-weight:650;color:var(--fg)}
+  .pane-h .tag{margin-left:auto;font-size:10px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--fg-3)}
+  .desk{
+    height:190px;position:relative;display:grid;place-items:end center;padding-bottom:26px;
+    background:
+      radial-gradient(ellipse 70% 60% at 20% 20%,#2e6d4a 0%,transparent 60%),
+      radial-gradient(ellipse 60% 50% at 85% 70%,#6b4a1f 0%,transparent 60%),
+      linear-gradient(160deg,#173a2a 0%,#20452f 50%,#12281d 100%);
+  }
+  .desk::after{
+    content:"";position:absolute;inset:0;
+    background:repeating-linear-gradient(115deg,rgba(255,214,102,.10) 0 2px,transparent 2px 34px);
+    opacity:.5;
+  }
+  /* 旧版：源码实测值 4px padding / 12px 圆角 / 30px 按钮 / gap 8 */
+  .oldbar{
+    position:relative;z-index:2;display:flex;align-items:center;gap:8px;padding:4px;
+    border-radius:12px;background:rgba(255,255,255,.92);color:#0f172a;
+    box-shadow:0 8px 22px rgba(0,0,0,.28);
+  }
+  .oldbar .clk{font-size:15px;font-weight:650;padding:0 8px;font-variant-numeric:tabular-nums}
+  .oldbar .grip{width:24px;height:30px;display:grid;place-items:center;color:rgba(15,23,42,.42)}
+  .oldbar button{
+    height:30px;padding:0 12px;border:0;border-radius:8px;display:inline-flex;align-items:center;gap:8px;
+    background:rgba(15,23,42,.08);color:#0f172a;font:inherit;font-size:12px;cursor:default;
+  }
+  .oldbar .stop{background:#0284c7;color:#fff}
+  .oldbar .warn{background:transparent;color:#b45309;padding:0 8px}
+
+  /* 新版：同一尺寸逻辑（内容驱动），换材料与层次 */
+  .newbar{
+    position:relative;z-index:2;display:flex;align-items:center;gap:8px;padding:5px;
+    border-radius:14px;
+    background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(244,249,255,.86));
+    color:#0f172a;
+    border:1px solid rgba(255,255,255,.75);
+    box-shadow:
+      0 14px 38px rgba(4,10,20,.34),
+      0 2px 6px rgba(4,10,20,.20),
+      inset 0 1px 0 rgba(255,255,255,.95),
+      inset 0 0 0 1px rgba(160,186,210,.35);
+    backdrop-filter:blur(26px) saturate(1.5);
+  }
+  .newbar .clk{display:flex;align-items:center;gap:7px;padding:0 4px 0 8px}
+  .newbar .grip{width:24px;height:32px;display:grid;place-items:center;color:rgba(30,45,65,.42);margin-right:-2px}
+  .newbar .clk b{font-size:15px;font-weight:680;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+  .dotw{position:relative;width:8px;height:8px;border-radius:50%;background:#dc2626;flex:none}
+  .dotw::after{content:"";position:absolute;inset:-3px;border-radius:50%;background:rgba(220,38,38,.22)}
+  .newbar button{
+    height:32px;padding:0 12px;border:0;border-radius:9px;display:inline-flex;align-items:center;gap:7px;
+    background:linear-gradient(180deg,rgba(22,38,58,.05),rgba(22,38,58,.10));
+    color:#16202c;font:inherit;font-size:12px;cursor:default;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.85),inset 0 0 0 1px rgba(22,38,58,.06);
+  }
+  .newbar button.stop{
+    background:linear-gradient(180deg,#0b93d6,#0273ad);color:#fff;font-weight:600;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 2px 6px rgba(2,115,173,.42);
+  }
+  .newbar .more{width:32px;padding:0;justify-content:center;background:transparent}
+  .newbar .more:hover{background:rgba(15,23,42,.07)}
+  .newbar .pbar{position:absolute;left:10px;right:10px;bottom:0;height:2px;border-radius:2px;background:rgba(2,115,173,.18);overflow:hidden}
+  .newbar .pbar i{display:block;height:100%;width:38%;background:linear-gradient(90deg,#0b93d6,#22d3ee)}
+
+  .note{font-size:11px;line-height:1.75;color:var(--page-mut);margin:10px 2px 0}
+  .note b{color:var(--fg-2);font-weight:600}
+
+  /* ===== 说明表 ===== */
+  table.spec{width:100%;border-collapse:collapse;font-size:11.5px;background:var(--win-bg);
+    border:1px solid var(--win-border);border-radius:12px;overflow:hidden;box-shadow:var(--card-shadow)}
+  table.spec th,table.spec td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--divider);vertical-align:top;line-height:1.6}
+  table.spec th{font-weight:600;color:var(--fg-3);font-size:10px;letter-spacing:.6px;text-transform:uppercase;background:var(--surface-2)}
+  table.spec tr:last-child td{border-bottom:0}
+  table.spec td:first-child{font-weight:600;white-space:nowrap}
+  table.spec code{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;padding:1px 4px;border-radius:4px;background:var(--chip)}
+  .need{display:inline-block;font-size:10px;padding:1px 6px;border-radius:5px;font-weight:600;
+    background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent);white-space:nowrap}
+  html[data-theme="midnight"] .need{color:#a5b4fc}
+  .no{display:inline-block;font-size:10px;padding:1px 6px;border-radius:5px;font-weight:600;
+    background:var(--chip);color:var(--fg-3);white-space:nowrap}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-rec" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <rect x="3" y="6" width="12" height="12" rx="3"/>
+      <path d="M15 10.5l5-2.5v8l-5-2.5z"/>
+    </g>
+    <g id="i-min" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 12h14"/></g>
+    <g id="i-max" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="6" y="6" width="12" height="12" rx="1"/></g>
+    <g id="i-restore" fill="none" stroke="currentColor" stroke-width="1.6">
+      <rect x="8.5" y="4.5" width="11" height="11" rx="1"/><path d="M4.5 8.5v7a4 4 0 0 0 4 4h7"/>
+    </g>
+    <g id="i-close" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m7 7 10 10M17 7 7 17"/></g>
+    <g id="i-play" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></g>
+    <g id="i-pause" fill="currentColor"><rect x="7" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></g>
+    <g id="i-prevf" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M15 6v12M15 12L8 6v12z" fill="currentColor" stroke="none"/><path d="M6 5.5v13"/></g>
+    <g id="i-nextf" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M9 6v12M9 12l7-6v12z" fill="currentColor" stroke="none"/><path d="M18 5.5v13"/></g>
+    <g id="i-start" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 5.5v13"/><path d="M19 6v12L9 12z" fill="currentColor" stroke="none"/></g>
+    <g id="i-end" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M18 5.5v13"/><path d="M5 6v12l10-6z" fill="currentColor" stroke="none"/></g>
+    <g id="i-vol" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 9.5h3L12 6v12l-5-3.5H4z"/><path d="M15.5 9.5a4 4 0 0 1 0 5"/>
+    </g>
+    <g id="i-loop" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 11V9a3 3 0 0 1 3-3h10l-2.5-2.5M20 13v2a3 3 0 0 1-3 3H7l2.5 2.5"/>
+    </g>
+    <g id="i-full" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 9V4h5M20 15v5h-5M20 9V4h-5M4 15v5h5"/>
+    </g>
+    <g id="i-scissor" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <circle cx="6.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="17.5" r="2.5"/><path d="M8.6 8.2 19 18M8.6 15.8 19 6"/>
+    </g>
+    <g id="i-gif" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <rect x="3" y="5" width="18" height="14" rx="3"/><path d="M8 10v4M8 12h2M12.5 10v4M16 14v-4h3"/>
+    </g>
+    <g id="i-folder" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+    </g>
+    <g id="i-copy" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 6.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h.5"/>
+    </g>
+    <g id="i-more" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></g>
+    <g id="i-help" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.9.6c0 1.7-2.5 1.9-2.5 3.4"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/>
+    </g>
+    <g id="i-setin" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 5.5v13"/><path d="M20 12H9M13 8l-4 4 4 4"/>
+    </g>
+    <g id="i-setout" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M20 5.5v13"/><path d="M4 12h11M11 8l4 4-4 4"/>
+    </g>
+    <g id="i-reset" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M4 10a8 8 0 1 1 1.6 6.4"/><path d="M4 4v6h6"/>
+    </g>
+    <g id="i-alert" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+      <path d="M12 4.5 21 19H3z"/><path d="M12 10v4"/><circle cx="12" cy="16.6" r=".9" fill="currentColor" stroke="none"/>
+    </g>
+    <g id="i-grip" fill="currentColor">
+      <circle cx="9" cy="8" r="1.15"/><circle cx="9" cy="12" r="1.15"/><circle cx="9" cy="16" r="1.15"/>
+      <circle cx="15" cy="8" r="1.15"/><circle cx="15" cy="12" r="1.15"/><circle cx="15" cy="16" r="1.15"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="docbar">
+  <div>
+    <h1>录屏预览与裁剪窗 · 可缩放 + 功能升级</h1>
+    <p>基线：<code style="font-size:10px">src-tauri/src/rec/mod.rs:134-181</code> 的 <code style="font-size:10px">.resizable(false)</code> / <code style="font-size:10px">.decorations(false)</code> ＋ <code style="font-size:10px">RecPreview.tsx</code> 现版结构</p>
+  </div>
+  <div class="grow"></div>
+  <span class="doc-label">主题</span>
+  <div class="seg" id="segTheme">
+    <button data-v="ocean" aria-pressed="true">月白</button>
+    <button data-v="midnight" aria-pressed="false">午夜</button>
+  </div>
+  <span class="doc-label">窗口</span>
+  <div class="seg" id="segSize">
+    <button data-v="0" aria-pressed="true">常规 960×640</button>
+    <button data-v="1" aria-pressed="false">最大化</button>
+  </div>
+  <div class="seg" id="segPin">
+    <button data-v="1" aria-pressed="true">标注</button>
+  </div>
+</div>
+
+<!-- ================= 一、预览与裁剪窗 ================= -->
+<div class="stage">
+  <div class="stage-head">
+    <b>① 预览与裁剪窗</b>
+    <span>可拖边框缩放 / 双击标题栏或按三键最大化 / 最小 720×480 / 尺寸由 window-state 记住</span>
+  </div>
+
+  <div class="win-wrap">
+  <div class="win" id="win" data-max="0">
+    <!-- 标题栏 -->
+    <div class="tb" data-tauri-drag-region>
+      <span class="tb-icon"><svg width="15" height="15"><use href="#i-rec"/></svg></span>
+      <span class="tb-name">录屏 2026-10-18 20-31-04.mp4</span>
+      <span class="tb-meta">
+        <span>00:26.4</span><i></i><span>12.4 MB</span><i></i><span>1920×1080</span>
+      </span>
+      <span class="tb-grow" data-tauri-drag-region></span>
+      <span class="tb-wins" role="group" aria-label="窗口控制">
+        <button class="tbtn" title="最小化"><svg width="16" height="16"><use href="#i-min"/></svg></button>
+        <button class="tbtn" id="maxBtn" title="最大化"><svg width="15" height="15"><use href="#i-max"/></svg></button>
+        <button class="tbtn close" title="关闭"><svg width="14" height="14"><use href="#i-close"/></svg></button>
+      </span>
+    </div>
+
+    <div class="body">
+      <!-- 播放区 -->
+      <div class="player" id="player" data-playing="0">
+        <div class="screen">
+          <div class="frame">
+            <div class="wall"></div>
+            <div class="fake-win fw1">
+              <div class="fb"><i></i><i></i><i></i></div>
+              <div class="fl"><s></s><s></s><s></s><s></s></div>
+            </div>
+            <div class="fake-win fw2">
+              <div class="fb"><i></i><i></i><i></i></div>
+              <div class="fl"><s></s><s></s><s></s></div>
+            </div>
+            <div class="fake-dock"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="fake-cursor"></div>
+          </div>
+        </div>
+        <span class="badge-res">1920×1080 · 30fps</span>
+        <button class="playbig" id="bigPlay" aria-label="播放"><svg width="20" height="20" id="bigIcon"><use href="#i-play"/></svg></button>
+
+        <div class="xb">
+          <button title="跳到开头"><svg width="14" height="14"><use href="#i-start"/></svg></button>
+          <button title="上一帧（,）"><svg width="14" height="14"><use href="#i-prevf"/></svg></button>
+          <button class="play" id="xbPlay" title="播放（空格）"><svg width="15" height="15" id="xbIcon"><use href="#i-play"/></svg></button>
+          <button title="下一帧（.）"><svg width="14" height="14"><use href="#i-nextf"/></svg></button>
+          <button title="跳到结尾"><svg width="14" height="14"><use href="#i-end"/></svg></button>
+          <span class="sep"></span>
+          <span class="tc">00:04.8 <em>/ 00:26.4</em></span>
+          <span class="sep"></span>
+          <button id="rateBtn" title="播放速度">1×</button>
+          <button title="静音"><svg width="15" height="15"><use href="#i-vol"/></svg></button>
+          <button title="循环播放（选区）"><svg width="15" height="15"><use href="#i-loop"/></svg></button>
+          <button title="全屏播放"><svg width="14" height="14"><use href="#i-full"/></svg></button>
+        </div>
+      </div>
+
+      <!-- 右侧栏（最大化态） -->
+      <aside class="side">
+        <div class="grp">
+          <h4>文件信息</h4>
+          <div class="card">
+            <div class="kv"><span>分辨率</span><b>1920 × 1080</b></div>
+            <div class="kv"><span>帧率</span><b>30 fps</b></div>
+            <div class="kv"><span>视频编码</span><b>H.264 · 3.2 Mbps</b></div>
+            <div class="kv"><span>音频</span><b>系统声 · AAC 48 kHz</b></div>
+            <div class="kv"><span>大小</span><b>12.4 MB</b></div>
+            <div class="pathline">
+              <code title="D:\Videos\PastePanda\录屏 2026-10-18 20-31-04.mp4">视频\PastePanda\录屏 2026-10-18 …</code>
+              <button class="btn icon ghost" title="复制路径"><svg width="13" height="13"><use href="#i-copy"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <h4>导出</h4>
+          <div class="card">
+            <div class="kv"><span>保留段</span><b>00:11.6</b></div>
+            <div class="kv"><span>预计体积</span><b>≈ 5.4 MB</b></div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:9px">
+              <button class="btn primary" style="justify-content:center"><svg width="13" height="13"><use href="#i-scissor"/></svg>另存裁剪 MP4</button>
+              <button class="btn" style="justify-content:center"><svg width="13" height="13"><use href="#i-gif"/></svg>导出 GIF（≤480 宽 · 12fps）</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grp">
+          <h4>快捷键</h4>
+          <div class="keys">
+            <div><kbd>空格</kbd><em>播放 / 暂停</em></div>
+            <div><kbd>←</kbd><kbd>→</kbd><em>±1 秒（Shift ±5）</em></div>
+            <div><kbd>,</kbd><kbd>.</kbd><em>上一帧 / 下一帧</em></div>
+            <div><kbd>I</kbd><kbd>O</kbd><em>设起点 / 终点</em></div>
+            <div><kbd>Esc</kbd><em>重置选区，再按关闭</em></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- 时间轴 -->
+    <div class="tlwrap">
+      <div class="ruler" id="ruler">
+        <span style="left:0%">0:00</span>
+        <span style="left:19%">0:05</span>
+        <span style="left:38%">0:10</span>
+        <span style="left:57%">0:15</span>
+        <span style="left:76%">0:20</span>
+        <span style="left:95%">0:25</span>
+      </div>
+      <div class="track" id="track">
+        <div class="thumbs">
+          <i style="background:linear-gradient(150deg,#1d4257,#2b6d84)"></i>
+          <i style="background:linear-gradient(150deg,#234a63,#3a7d95)"></i>
+          <i style="background:linear-gradient(150deg,#1a3c52,#2f6a84)"></i>
+          <i style="background:linear-gradient(150deg,#254a5e,#417f92)"></i>
+          <i style="background:linear-gradient(150deg,#1e3f54,#356f83)"></i>
+          <i style="background:linear-gradient(150deg,#1b3a4e,#2d6478)"></i>
+          <i style="background:linear-gradient(150deg,#22475c,#3b7789)"></i>
+          <i style="background:linear-gradient(150deg,#1c3d51,#2a6175)"></i>
+          <i style="background:linear-gradient(150deg,#204357,#326d80)"></i>
+          <i style="background:linear-gradient(150deg,#1a3a4d,#2b6376)"></i>
+        </div>
+        <div class="kf" style="left:8%"></div>
+        <div class="kf" style="left:18.2%"></div>
+        <div class="kf" style="left:26%"></div>
+        <div class="kf" style="left:35%"></div>
+        <div class="kf" style="left:44%"></div>
+        <div class="kf" style="left:53%"></div>
+        <div class="kf" style="left:62.1%"></div>
+        <div class="kf" style="left:71%"></div>
+        <div class="kf" style="left:80%"></div>
+        <div class="kf" style="left:90%"></div>
+        <div class="dim l" id="dimL"></div>
+        <div class="dim r" id="dimR"></div>
+        <div class="keep" id="keepBox"></div>
+        <div class="head" id="head" style="left:27%"></div>
+        <button class="handle in" id="hIn" style="left:18.2%" title="拖动调整裁剪起点">
+          <span class="bubble">00:04.8</span>
+        </button>
+        <button class="handle out" id="hOut" style="left:62.1%" title="拖动调整裁剪终点">
+          <span class="bubble">00:16.4</span>
+        </button>
+      </div>
+      <div class="tlmeta">
+        <span class="pill accent" id="keepPill">保留 00:11.6</span>
+        <span class="pill">切点自动对齐关键帧</span>
+        <span class="pill">原录像不被修改</span>
+        <span style="margin-left:auto;color:var(--fg-3)">00:04.8 – 00:16.4</span>
+      </div>
+    </div>
+
+    <!-- 动作行 -->
+    <div class="actions">
+      <button class="btn"><svg width="13" height="13"><use href="#i-setin"/></svg>设为起点</button>
+      <button class="btn"><svg width="13" height="13"><use href="#i-setout"/></svg>设为终点</button>
+      <button class="btn ghost"><svg width="13" height="13"><use href="#i-reset"/></svg>重置</button>
+      <span class="grow"></span>
+      <button class="btn"><svg width="13" height="13"><use href="#i-folder"/></svg>打开文件夹</button>
+      <button class="btn" title="用系统播放器打开"><svg width="13" height="13"><use href="#i-play"/></svg>系统播放器</button>
+      <button class="btn primary" id="saveBtn"><svg width="13" height="13"><use href="#i-scissor"/></svg>另存裁剪</button>
+      <button class="btn icon" title="更多导出与信息"><svg width="14" height="14"><use href="#i-more"/></svg></button>
+      <button class="btn icon" title="快捷键"><svg width="14" height="14"><use href="#i-help"/></svg></button>
+    </div>
+
+    <!-- 标注（挂在窗口外缘，不遮挡任何控件） -->
+    <span class="pin" style="left:-9px;top:-9px">2</span>
+    <span class="pin" style="right:-9px;top:-9px">1</span>
+    <span class="pin" style="right:-9px;bottom:-9px">5</span>
+    <span class="pin" style="left:-9px;bottom:-9px">6</span>
+    <span class="pin" style="left:-9px;top:52%">3</span>
+    <span class="pin" data-only="max" style="right:-9px;top:38%">4</span>
+  </div>
+  </div>
+
+  <p class="note">
+    <b>1</b> 三键（走 Rust 命令，不经 per-window ACL，失败可见）· 双击标题栏最大化 · 边框可拖拽 · 最小 720×480 &nbsp;
+    <b>2</b> 标题栏：文件名 + 时长 / 体积 / 分辨率 &nbsp;
+    <b>3</b> 悬浮传输条：逐帧、倍速、音量、循环、全屏 &nbsp;
+    <b>4</b> 最大化态右侧栏：文件信息 + 导出 + 快捷键 &nbsp;
+    <b>5</b> 动作区收敛为「标切点」+「一个主操作」 &nbsp;
+    <b>6</b> 时间轴：缩略帧带 + 关键帧刻度 + 双端手柄
+  </p>
+</div>
+
+<!-- ================= 二、控制条对照 ================= -->
+<div class="stage">
+  <div class="stage-head">
+    <b>② 录制中控制条（截图那条）</b>
+    <span>元素不减、尺寸逻辑不变（仍由 ResizeObserver 量自然尺寸），只补材料层次与可点感</span>
+  </div>
+  <div class="compare">
+    <div class="pane">
+      <div class="pane-h"><b>现状</b><span>源码实测：4px 内距 / 12px 圆角 / 30px 按钮 / 平板底</span><span class="tag">RecControlBar.module.css</span></div>
+      <div class="desk">
+        <div class="oldbar">
+          <span class="grip"><svg width="12" height="12"><use href="#i-grip"/></svg></span>
+          <span class="clk">00:26</span>
+          <button><svg width="12" height="12"><use href="#i-pause"/></svg>暂停</button>
+          <button class="stop"><svg width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>停止</button>
+          <button class="warn"><svg width="13" height="13"><use href="#i-alert"/></svg></button>
+        </div>
+      </div>
+      <p class="note" style="padding:0 12px 10px">
+        没有边框、没有顶部高光，浅色主题下就是一块纯白圆角矩形；<br>
+        告警键 <code>background:transparent</code>，静止时看不出可点。
+      </p>
+    </div>
+
+    <div class="pane">
+      <div class="pane-h"><b>新版</b><span>玻璃材料 + 层次 + 唯一实色（停止）</span><span class="tag">建议</span></div>
+      <div class="desk">
+        <div class="newbar">
+          <span class="grip"><svg width="12" height="12"><use href="#i-grip"/></svg></span>
+          <span class="clk"><i class="dotw"></i><b>00:26</b></span>
+          <button><svg width="12" height="12"><use href="#i-pause"/></svg>暂停</button>
+          <button class="stop"><svg width="12" height="12" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>停止</button>
+          <button class="more" title="更多与异常"><svg width="14" height="14"><use href="#i-alert"/></svg></button>
+          <span class="pbar"><i></i></span>
+        </div>
+      </div>
+      <p class="note" style="padding:0 12px 10px">
+        玻璃底（模糊 + 顶部 1px 高光 + 细描边）→ 压在任意桌面上都有边界；<br>
+        按钮改「渐变微隆起」而非平板灰；停止键是全条唯一实色，带 2px 投影。
+      </p>
+    </div>
+  </div>
+  <p class="note">
+    底部 2px 进度条为<b>建议新增</b>：编码器已写入字节数 / 估计总字节不可得，因此它按<b>「已录时长 / 你设定的上限（可关）」</b>显示，仅在有上限时出现；没有上限则不画——不留一条永远 38% 的假进度。
+  </p>
+</div>
+
+<!-- ================= 三、功能与成本 ================= -->
+<div class="stage">
+  <div class="stage-head">
+    <b>③ 功能矩阵与依赖</b>
+    <span>标注「需后端」的项必须动 Rust；其余纯前端</span>
+  </div>
+  <table class="spec">
+    <thead><tr><th style="width:150px">能力</th><th style="width:88px">现状</th><th>说明</th><th style="width:96px">依赖</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>窗口缩放 / 最大化</td><td>不可</td>
+        <td><code>mod.rs:163</code> 的 <code>.resizable(false)</code> 直接掐死。改 true + <code>min_inner_size(720,480)</code>，保留 <code>decorations(false)</code> 自绘三键（复用 <code>rc_window_*</code> 三条命令，它们取注入窗口，不限 label）。</td>
+        <td><span class="need">Rust 1 行</span></td>
+      </tr>
+      <tr>
+        <td>记住窗口尺寸</td><td>不可</td>
+        <td><code>tauri-plugin-window-state</code> 已全局装（<code>lib.rs:206</code>），窗口一旦 <code>resizable(true)</code> 就自动持久化；需确认 MAXIMIZED 位恢复行为符合预期，必要时在 <code>open_preview_window</code> 里恢复「上次尺寸但非最大化」。</td>
+        <td><span class="no">验证</span></td>
+      </tr>
+      <tr>
+        <td>缩略帧时间轴</td><td>无</td>
+        <td>前端 canvas 从 <code>&lt;video&gt;</code> seek 抽 N 帧（N=10–16，按时长定），一次性画成一条 <code>&lt;canvas&gt;</code> 底图。大文件首帧 seek 慢时可先出 4 帧再补齐。</td>
+        <td><span class="no">纯前端</span></td>
+      </tr>
+      <tr>
+        <td>逐帧 / 倍速 / 音量 / 循环 / 全屏</td><td>无</td>
+        <td>全部走 <code>HTMLVideoElement</code>。逐帧精度取决于能否取到 fps：<b>没有 fps 只能按 1/30s 近似</b>，所以这里挂一个后端小命令返回真实 fps（moov 的 stts 解析，<code>scan.rs</code> 已有 moov 读取）。</td>
+        <td><span class="need">fps 需后端</span></td>
+      </tr>
+      <tr>
+        <td>I / O 标入出点</td><td>只能拖</td>
+        <td>播放头处一键设起点/终点，复用现有 <code>snapTrimRange</code> 吸附。</td>
+        <td><span class="no">纯前端</span></td>
+      </tr>
+      <tr>
+        <td>导出 GIF</td><td>后端已有</td>
+        <td><code>rec_gif_start/status/cancel</code> 四期已实现，但预览窗没有入口（只在最近录制列表）。这里补入口 + 进度 + 取消。<b>注意</b>：GIF 当前只导出整段，不接受 in/out——入口文案必须写「整段」，否则是假承诺。</td>
+        <td><span class="no">纯前端</span></td>
+      </tr>
+      <tr>
+        <td>文件信息（编码 / 码率 / 音轨）</td><td>无</td>
+        <td>分辨率与时长前端可读；<b>编码与码率读不到</b>，需后端解析 moov 后返回。</td>
+        <td><span class="need">需后端</span></td>
+      </tr>
+      <tr>
+        <td>多段裁剪 / 转码压缩</td><td>无</td>
+        <td>不进本轮：多段需要重封装修复时间戳与 sidecar，压缩需要引入编码管线，量与风险都不是「界面升级」的范畴。</td>
+        <td><span class="no">不做</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var win = document.getElementById("win");
+
+  function bindSeg(id, fn){
+    var seg = document.getElementById(id);
+    if(!seg) return;
+    seg.addEventListener("click", function(e){
+      var b = e.target.closest("button");
+      if(!b) return;
+      Array.prototype.forEach.call(seg.querySelectorAll("button"), function(x){
+        x.setAttribute("aria-pressed", x === b ? "true" : "false");
+      });
+      fn(b.dataset.v);
+    });
+  }
+
+  bindSeg("segTheme", function(v){ root.setAttribute("data-theme", v); });
+
+  function setSize(v){
+    win.dataset.max = v;
+    var icon = document.querySelector("#maxBtn use");
+    icon.setAttribute("href", v === "1" ? "#i-restore" : "#i-max");
+    document.getElementById("maxBtn").title = v === "1" ? "向下还原" : "最大化";
+  }
+  bindSeg("segSize", setSize);
+  bindSeg("segPin", function(v){ root.classList.toggle("nopin", v === "0"); });
+
+  // 便于自检与分享：?theme=midnight&max=1&pin=0
+  var q = new URLSearchParams(location.search);
+  if(q.get("theme")) root.setAttribute("data-theme", q.get("theme"));
+  if(q.get("max") === "1") setSize("1");
+  if(q.get("pin") === "0") root.classList.add("nopin");
+
+  var playing = false;
+  var bigIcon = document.getElementById("bigIcon");
+  var xbIcon = document.getElementById("xbIcon");
+  function setPlaying(v){
+    playing = v;
+    document.getElementById("player").dataset.playing = v ? "1" : "0";
+    bigIcon.querySelector("use").setAttribute("href", v ? "#i-pause" : "#i-play");
+    xbIcon.querySelector("use").setAttribute("href", v ? "#i-pause" : "#i-play");
+    document.getElementById("bigPlay").setAttribute("aria-label", v ? "暂停" : "播放");
+  }
+  document.getElementById("bigPlay").addEventListener("click", function(){ setPlaying(!playing); });
+  document.getElementById("xbPlay").addEventListener("click", function(){ setPlaying(!playing); });
+
+  var rates = ["1×","1.5×","2×","0.5×"], ri = 0;
+  document.getElementById("rateBtn").addEventListener("click", function(){
+    ri = (ri + 1) % rates.length;
+    this.textContent = rates[ri];
+  });
+
+  // 手柄拖拽（稿内演示：只动百分比与读数，不接真实时间轴）
+  var track = document.getElementById("track");
+  var hIn = document.getElementById("hIn");
+  var hOut = document.getElementById("hOut");
+  var dimL = document.getElementById("dimL");
+  var dimR = document.getElementById("dimR");
+  var keepBox = document.getElementById("keepBox");
+  var dragging = null;
+  var DUR = 26.4;
+
+  function clock(sec){
+    var m = Math.floor(sec / 60);
+    var s = sec - m * 60;
+    return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+  }
+
+  function apply(){
+    var a = parseFloat(hIn.style.left) || 18.2;
+    var b = parseFloat(hOut.style.left) || 62.1;
+    if(b - a < 2) return;
+    dimL.style.width = a + "%";
+    dimR.style.left = b + "%";
+    keepBox.style.left = a + "%";
+    keepBox.style.width = (b - a) + "%";
+    var inSec = a / 100 * DUR, outSec = b / 100 * DUR;
+    hIn.querySelector(".bubble").textContent = clock(inSec);
+    hOut.querySelector(".bubble").textContent = clock(outSec);
+    document.getElementById("keepPill").textContent = "保留 " + clock(outSec - inSec);
+    document.querySelector(".tlmeta span:last-child").textContent = clock(inSec) + " – " + clock(outSec);
+  }
+
+  function pct(clientX){
+    var r = track.getBoundingClientRect();
+    return Math.max(0, Math.min(100, (clientX - r.left) / r.width * 100));
+  }
+
+  [hIn, hOut].forEach(function(h){
+    h.addEventListener("pointerdown", function(e){
+      dragging = h;
+      h.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+  });
+  track.addEventListener("pointermove", function(e){
+    if(!dragging) return;
+    var a = parseFloat(hIn.style.left) || 0;
+    var b = parseFloat(hOut.style.left) || 100;
+    var p = pct(e.clientX);
+    if(dragging === hIn) hIn.style.left = Math.min(p, b - 2) + "%";
+    else hOut.style.left = Math.max(p, a + 2) + "%";
+    apply();
+  });
+  ["pointerup","pointercancel"].forEach(function(t){
+    track.addEventListener(t, function(){ dragging = null; });
+  });
+
+  // 点击轨道移动播放头
+  track.addEventListener("click", function(e){
+    if(e.target.closest(".handle")) return;
+    document.getElementById("head").style.left = pct(e.clientX) + "%";
+  });
+
+  apply();
+})();
+</script>
+</body>
+</html>

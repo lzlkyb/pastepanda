@@ -61,6 +61,9 @@ pub fn scan_keyframes(path: &Path) -> Result<KeyframeIndex, String> {
         duration_ms: data.duration_ms,
         keyframes_ms: data.keyframes_ms,
         warning: (data.asset_duration_ms > data.duration_ms.saturating_add(1000)).then(|| format!("视频轨只有 {:.2} 秒，文件总时长 {:.2} 秒；后续画面未录入。仅能裁剪已有视频，请用新版重新录制。", data.duration_ms as f64/1000.0, data.asset_duration_ms as f64/1000.0)),
+        // AVFoundation 侧还没把 nominalFrameRate 带出来：前端据此把「逐帧」按钮
+        // 置为不可用（而不是拿 1/30 假装准），见 RecPlayerControls 的 fps 分支。
+        fps: None,
     })
 }
 pub fn trim(src: &Path, begin: u64, end: u64, dst: &Path) -> Result<(u64, u64, u64), String> {

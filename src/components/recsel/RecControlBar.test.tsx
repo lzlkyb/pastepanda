@@ -6,6 +6,7 @@
  * 2. 暂停命令确认后换「继续」，传参保持标量 paused。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { act, fireEvent, render } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
@@ -62,13 +63,38 @@ describe("RecControlBar：体积列与暂停键", () => {
     const { getByText } = render(
       <RecControlBar qualityLabel="高清" onStop={() => {}} finalizing={false} />,
     );
+    // 准备态（status 还没到）不再渲染暂停键——它是点不动的死控件，而且会把条撑宽。
+    // 所以这里必须等首轮 rec_status 落地再取按钮。用 getByText 而不是 findByText：
+    // 本文件跑在 fake timers 下，findBy 的轮询等待不会自己前进（会挂到用例超时）。
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     const pause = getByText("暂停");
-    await act(async () => {});
     await act(async () => {
       fireEvent.click(pause);
     });
     expect(h.invoke).toHaveBeenCalledWith("rec_pause", { paused: true });
     expect(getByText("继续")).not.toBeNull();
     vi.useRealTimers();
+  });
+});
+
+/**
+ * 窗口尺寸自锁回归守卫（2026-10-18 实测缺陷）。
+ *
+ * `.surface` 的自然尺寸是后端窗口尺寸的**唯一**来源（ResizeObserver → rec_control_resize）。
+ * 给它加 `max-width/max-height: 100vw/100vh` 会把量测钳到**当前**窗口尺寸：
+ * 内容一旦比窗口大，量回来的永远等于旧窗口 ⇒ 后端收到「尺寸没变」⇒ 窗口不涨；
+ * 而元素自身尺寸没变，ResizeObserver 连回调都不触发。
+ * 实测 260×36 窗口里 `.row` 要 311×38（抓手与底部被切），展开「更多」后面板高 187
+ * 却只显示 36px 一条——就是这条自锁。jsdom 不做布局，只能用样式断言钉住。
+ */
+describe("控制条窗口尺寸由内容决定", () => {
+  it(".surface 不带 max-width / max-height 上限，且不被 flex 压缩", () => {
+    const css = readFileSync("src/components/recsel/RecControlBar.module.css", "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "");
+    const start = css.indexOf(".surface {");
+    expect(start).toBeGreaterThan(-1);
+    const block = css.slice(start, css.indexOf("}", start));
+    expect(block).not.toMatch(/max-(width|height)/);
+    expect(block).toMatch(/flex:\s*none/);
   });
 });

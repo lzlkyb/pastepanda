@@ -723,52 +723,220 @@ button.rec-target-chip:hover {
   white-space: nowrap;
 }
 
-/* ===== 预览窗（设计稿 §05：三条原生滑杆 → 一条自绘轨道） ===== */
+/* ===== 预览窗（2026-10-18：可缩放 + 功能升级）=====
+ * 设计稿：design/录屏预览裁剪窗-可缩放与功能升级-设计稿.html
+ *
+ * 底从「一层 --shot-bar-bg 纯色 + 8px 圆角」换成与全站一致的三层：
+ * 实心 --card-bg → 标题栏的 section 渐变 → 动作行的控件层。
+ * 🔴 浮在**视频画面**上的东西（播放按钮、传输条、时间读数）继续与主题无关：
+ * 画面可能是白底文档，跟主题走会在浅色主题下变成浅底白字。
+ * 同一判据在本文件里已有先例（.rec-pv-video 的 #000 信纸边）。
+ * ===== */
 .rec-pv-root {
+  position: relative;
   width: 100vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--shot-bar-bg);
-  color: var(--shot-bar-text);
-  border: 1px solid var(--shot-bar-border);
-  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   overflow: hidden;
   box-sizing: border-box;
   font-size: 12px;
   cursor: default;
 }
 
+/* 最大化是贴边的：留圆角会在四角漏出桌面；全屏同理 */
+.rec-pv-root[data-max],
+html:fullscreen .rec-pv-root {
+  border-radius: 0;
+  border-color: transparent;
+}
+
+/* ---- 标题栏 44px：文件身份 + 三项读数 + 三键 ---- */
 .rec-pv-head {
+  height: 44px;
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 12px 8px;
+  padding: 0 6px 0 12px;
+  border-bottom: 1px solid var(--border-color);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--section-bg) 72%, transparent), transparent);
+}
+
+.rec-pv-mark {
+  width: 26px;
+  height: 26px;
   flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-on-accent);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 78%, var(--card-bg)), var(--accent-solid));
+  box-shadow: var(--shadow-sm);
 }
 
 .rec-pv-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(42%, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 时长 / 体积 / 分辨率 / 帧率：改前这窗里只有文件名，用户看不到任何事实 */
+.rec-pv-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-pv-meta b {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.rec-pv-meta i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+/* 拖拽区：撑满标题栏剩余的空白（窗口拖动靠 data-tauri-drag-region） */
+.rec-pv-grow {
   flex: 1;
+  min-width: 8px;
+  align-self: stretch;
+}
+
+.rec-pv-wins {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+
+.rec-pv-wbtn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 150ms var(--ease-standard), color 150ms var(--ease-standard);
+}
+
+.rec-pv-wbtn:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.rec-pv-wbtn.close:hover {
+  background: var(--win-close-hover-bg);
+  color: var(--win-close-hover-fg);
+}
+
+/* ---- 主体：主列 + 最大化才出现的右栏 ---- */
+.rec-pv-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.rec-pv-main {
+  flex: 1;
+  min-width: 0;
+  /* 窗口最小 720×480，而「另存进度条 / 已保存提示 / 无法播放提示」是按运行期
+   * 状况增减的。给主体留一层纵向滚动兜底：无论多出几块，都不许把最底下的
+   * 提示或按钮画到窗口外（那是「被裁掉」而不是「需要滚动」）。 */
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.rec-pv-aside {
+  width: 248px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px 14px 18px;
+  overflow: auto;
+  border-left: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--section-bg) 46%, transparent);
+}
+
+.rec-pv-sec h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.rec-pv-sec .kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 11px;
+}
+
+.rec-pv-sec .kv > span {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.rec-pv-sec .kv > b {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
-  cursor: default;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
-.rec-pv-title em {
-  font-style: normal;
-  margin-left: 8px;
-  color: var(--shot-bar-muted);
-  font-weight: 400;
+.rec-pv-sec kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
-/* 画面区：视频自己带黑信纸边，播放按钮与读数浮在它上面 */
+.rec-pv-sec .rec-pv-btn {
+  width: 100%;
+  margin-bottom: 4px;
+  justify-content: center;
+}
+
+/* ---- 画面区 ---- */
 .rec-pv-stage {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  /* grow 但不 shrink：主体可滚之后，`flex: 1` 在灌满内容时会先把画面区压成 0，
+   * 看起来像「预览窗没有画面」。180px 是仍能看清内容的下限。 */
+  flex: 1 0 auto;
+  min-height: 180px;
   display: flex;
 }
 
@@ -781,27 +949,9 @@ button.rec-target-chip:hover {
   cursor: pointer;
 }
 
-/* 播放读数：压在**视频画面**上，所以与主题无关（和播放按钮同一条理由，见下）。
- * 它只报事实，不参与任何主题切换——浅色主题下改成浅底会把白字吃掉。 */
-.rec-pv-badge {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  height: 20px;
-  padding: 0 8px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  background: rgb(20 20 24 / 55%); /* ui-rule-ok: 浮在不可控的视频画面上，必须与主题无关 */
-  color: #fff; /* ui-rule-ok: 同上（深色半透明底上的白字，播放器惯例） */
-}
-
-/* 画面正中的播放入口（设计稿 §05）。
+/* 画面正中的播放入口。
  * 🔴 它压的是**视频内容**（可能是白底文档），所以底与字色都不能跟主题走：
- * 用 token 会在浅色主题下变成浅底白图标 = 图标消失。深底白图标是播放器的通行做法，
- * 与 .rec-pv-video 的 `#000` 信纸边同一条判据（那也是本文件里唯一的另一处豁免）。
+ * 用 token 会在浅色主题下变成浅底白图标 = 图标消失。深底白图标是播放器的通行做法。
  * 播放中**淡出**而不是卸载：卸载后画面正中就没有「暂停」这个出口了。 */
 .rec-pv-play {
   position: absolute;
@@ -819,7 +969,7 @@ button.rec-target-chip:hover {
   color: #fff; /* ui-rule-ok: 同上 */
   box-shadow: var(--float-card-shadow);
   cursor: pointer;
-  transition: transform 200ms cubic-bezier(0.05, 0.7, 0.1, 1), opacity 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition: transform 200ms var(--ease-enter), opacity 150ms var(--ease-standard);
 }
 
 .rec-pv-play:hover {
@@ -830,10 +980,133 @@ button.rec-target-chip:hover {
   opacity: 0;
 }
 
-/* 鼠标回来 / 键盘聚焦都把它带回来——不靠 hover 才能用的兜底 */
 .rec-pv-stage[data-playing] .rec-pv-play:hover,
 .rec-pv-stage[data-playing] .rec-pv-play:focus-visible {
   opacity: 1;
+}
+
+/* ---- 悬浮传输条（逐帧 / 时间 / 倍速 / 音量 / 循环 / 全屏）---- */
+.rec-pv-transport {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px;
+  border-radius: 12px;
+  background: rgb(20 20 24 / 62%); /* ui-rule-ok: 浮在不可控的视频画面上，必须与主题无关 */
+  color: #fff; /* ui-rule-ok: 同上 */
+  border: 1px solid rgb(255 255 255 / 14%); /* ui-rule-ok: 同上 */
+  box-shadow: 0 10px 26px rgb(0 0 0 / 30%); /* ui-rule-ok: 同上 */
+  backdrop-filter: blur(18px) saturate(1.3);
+  transition: opacity 200ms var(--ease-standard);
+}
+
+/* 播放中淡到 55%，鼠标回来 / 键盘聚焦就恢复：既不挡画面，也仍是「暂停」的出口 */
+.rec-pv-stage[data-playing] .rec-pv-transport {
+  opacity: 0.55;
+}
+
+.rec-pv-stage[data-playing] .rec-pv-transport:hover,
+.rec-pv-stage[data-playing] .rec-pv-transport:focus-within {
+  opacity: 1;
+}
+
+.rec-pv-tb {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 150ms var(--ease-standard), opacity 150ms var(--ease-standard);
+}
+
+.rec-pv-tb:hover:not(:disabled) {
+  background: rgb(255 255 255 / 16%); /* ui-rule-ok: 视频画面上的玻璃控件，与主题无关 */
+}
+
+.rec-pv-tb[aria-pressed="true"] {
+  background: rgb(255 255 255 / 22%); /* ui-rule-ok: 同上（循环开启态） */
+}
+
+.rec-pv-tb:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.rec-pv-tb.txt {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.rec-pv-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rec-pv-time b {
+  font-weight: 600;
+}
+
+.rec-pv-time i {
+  font-style: normal;
+  opacity: 0.4;
+}
+
+.rec-pv-time span {
+  opacity: 0.72;
+}
+
+.rec-pv-volwrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.rec-pv-vol {
+  width: 56px;
+  height: 3px;
+  margin: 0 4px 0 0;
+  appearance: none;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 28%); /* ui-rule-ok: 视频画面上的玻璃控件，与主题无关 */
+  cursor: pointer;
+}
+
+.rec-pv-vol::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff; /* ui-rule-ok: 同上（滑杆滑块） */
+}
+
+/* 最小宽 720 时先把音量条收掉：静音键仍在，容量让给时间读数与倍速 */
+@media (max-width: 820px) {
+  .rec-pv-vol {
+    display: none;
+  }
 }
 
 /* ===== 自绘时间轴 =====
@@ -842,10 +1115,40 @@ button.rec-target-chip:hover {
 .rec-pv-track {
   position: relative;
   flex: none;
-  height: 30px;
-  margin: 0 12px;
+  height: 40px;
+  /* 下方留 8px：帧带长高后紧贴下面的起止点芯片，视觉上会粘成一条 */
+  margin: 8px 12px;
   cursor: pointer;
   touch-action: none;
+}
+
+/* 缩略帧带：铺满轨道，作为「切点落在哪个画面」的衬底。
+ * 只做背景，指针事件全归轨道（帧带吃掉 pointerdown 就没法拖播放头了）。 */
+.rec-pv-strip {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--card-bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 12%, transparent);
+  pointer-events: none;
+  animation: rec-pv-strip-in 200ms var(--ease-standard);
+}
+
+.rec-pv-strip i {
+  flex: 1 1 0;
+  min-width: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+}
+
+/* 形态切换只做透明度：帧带从无到有会跳一下高度，淡入比硬切更像「加载完成」 */
+@keyframes rec-pv-strip-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .rec-pv-track[data-disabled] {
@@ -856,10 +1159,10 @@ button.rec-target-chip:hover {
   position: absolute;
   left: 0;
   right: 0;
-  top: 12px;
-  height: 6px;
+  top: 13px;
+  height: 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
 
 /* 保留段：与两侧斜纹同高同圆角，一眼看出「剪完剩这段」 */
@@ -867,19 +1170,24 @@ button.rec-target-chip:hover {
   position: absolute;
   left: var(--pv-in, 0%);
   width: var(--pv-keep, 100%);
-  top: 12px;
-  height: 6px;
+  top: 13px;
+  height: 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 82%, var(--card-bg)),
+    color-mix(in srgb, var(--accent) 52%, transparent)
+  );
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent), var(--shadow-sm);
 }
 
 .rec-pv-cut {
   position: absolute;
-  top: 12px;
-  height: 6px;
+  top: 13px;
+  height: 8px;
   background: repeating-linear-gradient(
     45deg,
-    color-mix(in srgb, var(--shot-bar-text) 24%, transparent) 0 3px,
+    color-mix(in srgb, var(--text-primary) 22%, transparent) 0 3px,
     transparent 3px 6px
   );
 }
@@ -894,37 +1202,41 @@ button.rec-target-chip:hover {
   right: 0;
 }
 
+/* 关键帧刻度：压在保留段的高饱和蓝带上，所以用**卡片色**而不是文字色
+ * ——文字色在蓝带上（同明度）几乎看不见，那就等于没画。 */
 .rec-pv-kf {
   position: absolute;
-  top: 9px;
+  top: 8px;
   width: 1px;
-  height: 12px;
-  background: color-mix(in srgb, var(--shot-bar-text) 26%, transparent);
+  height: 18px;
+  background: color-mix(in srgb, var(--card-bg) 58%, transparent);
   pointer-events: none;
 }
 
-/* 播放头。2px 宽的圆头（不是 2px 圆角方块：`border-radius: 2px` 不在 U5 的 4/8/12 档里，
+/* 播放头。2px 宽的圆头（`border-radius: 2px` 不在 U5 的 4/8/12 档里，
  * 而 2px 的宽度下 999px 与「圆角」视觉等价）。 */
 .rec-pv-playhead {
   position: absolute;
   left: var(--pv-head, 0%);
-  top: 6px;
+  top: 7px;
   width: 2px;
-  height: 18px;
+  height: 20px;
   transform: translateX(-50%);
   border-radius: 999px;
-  background: var(--shot-bar-text);
-  opacity: 0.85;
+  background: var(--text-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--card-bg) 50%, transparent);
   pointer-events: none;
 }
 
-/* 两枚手柄：命中区 18×28（比看得见的滑块宽，拖起来不飘），滑块本体走 ::after
+/* 两枚手柄：命中区 20×28（比看得见的滑块宽，拖起来不飘），滑块本体走 ::after
  * ——这样 hover 的 scaleY 只作用在滑块上，命中区不跟着变。 */
 .rec-pv-handle {
   position: absolute;
-  top: 1px;
-  width: 18px;
+  top: 6px;
+  width: 20px;
   height: 28px;
+  /* 高于保留段蓝框（2）：滑块就压在框边上，被框盖住会显得拖不动 */
+  z-index: 3;
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -944,13 +1256,14 @@ button.rec-target-chip:hover {
 .rec-pv-handle::after {
   content: "";
   position: absolute;
-  left: 5px;
-  right: 5px;
-  top: 6px;
-  bottom: 6px;
+  left: 6px;
+  right: 6px;
+  top: 5px;
+  bottom: 5px;
   border-radius: 999px;
   background: var(--accent-solid);
-  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: var(--shadow-sm);
+  transition: transform 150ms var(--ease-standard);
 }
 
 .rec-pv-handle:hover::after,
@@ -970,10 +1283,72 @@ button.rec-target-chip:hover {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  background: var(--shot-bar-bg);
-  color: var(--shot-bar-text);
-  border: 1px solid var(--shot-bar-border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
   pointer-events: none;
+}
+
+/* ===== 有缩略帧时的形态 =====
+ * 抽帧失败 / 时长太短 / 还在抽，都保持上面那套「灰胶囊 + 蓝带 + 斜纹」。
+ * 帧带是**增益**，不是新依赖：没有它，轨道仍然完整可用。
+ *
+ * 有帧时保留段必须改成蓝框、两侧压暗——用不透明的蓝带盖住画面，等于这 12 张图白抽。 */
+.rec-pv-track[data-frames] .rec-pv-base {
+  display: none;
+}
+
+.rec-pv-track[data-frames] .rec-pv-keep {
+  top: 0;
+  bottom: 0;
+  height: auto;
+  /* 抬到关键帧刻度之上：刻度是全高的，压在框上会把蓝框切成一段一段 */
+  z-index: 2;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 2px var(--accent-solid),
+    inset 0 0 0 3px color-mix(in srgb, var(--card-bg) 55%, transparent);
+}
+
+.rec-pv-track[data-frames] .rec-pv-cut {
+  top: 0;
+  bottom: 0;
+  height: auto;
+  /* 两层同色叠出约 0.58 的有效不透明度：`--overlay-bg` 本身是 0.35，
+   * 单层压不住画面，看上去像「蒙了层灰」而不是「这段会被剪掉」 */
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--card-bg) 10%, transparent) 0 3px,
+      transparent 3px 6px
+    ),
+    linear-gradient(var(--overlay-bg), var(--overlay-bg)),
+    linear-gradient(var(--overlay-bg), var(--overlay-bg));
+}
+
+.rec-pv-track[data-frames] .rec-pv-cut.before {
+  border-radius: 8px 0 0 8px;
+}
+
+.rec-pv-track[data-frames] .rec-pv-cut.after {
+  border-radius: 0 8px 8px 0;
+}
+
+/* 关键帧刻度要压在画面上。**有帧时缩成底部的小齿**：原来贯穿全高的竖线在
+ * 2s 一个关键帧的录像里会变成一排栅栏，把 40px 高的画面切成碎片；
+ * 而「切点能落在哪」这条信息只要贴在底边就够读了。 */
+.rec-pv-track[data-frames] .rec-pv-kf {
+  top: auto;
+  bottom: 4px;
+  height: 4px;
+  background: color-mix(in srgb, var(--card-bg) 62%, transparent);
+}
+
+.rec-pv-track[data-frames] .rec-pv-playhead {
+  top: 0;
+  height: 100%;
 }
 
 /* ===== 起止点读数芯片 + 保留时长 =====
@@ -996,14 +1371,15 @@ button.rec-target-chip:hover {
   padding: 0 12px;
   flex: none;
   border-radius: 999px;
-  border: 1px solid var(--shot-bar-border);
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  transition: background 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition: background 150ms var(--ease-standard), border-color 150ms var(--ease-standard);
 }
 
 .rec-pv-chip:hover {
-  background: color-mix(in srgb, var(--shot-bar-text) 10%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .rec-pv-chip:focus-within {
@@ -1012,15 +1388,17 @@ button.rec-target-chip:hover {
 
 .rec-pv-chip .k {
   font-size: 11px;
-  color: var(--shot-bar-muted);
+  color: var(--text-muted);
 }
 
-.rec-pv-keep {
+/* 保留时长那格。类名与时间轴的 `.rec-pv-keep` 分开：那个是 absolute 的色带，
+ * 两者同名时后者的 position 会串到这段文字上（改前就是这样）。 */
+.rec-pv-keepinfo {
   flex: 1;
   min-width: 0;
   text-align: right;
   font-size: 12px;
-  color: var(--shot-bar-muted);
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1044,7 +1422,7 @@ button.rec-target-chip:hover {
   gap: 8px;
   padding: 8px 12px 0;
   font-size: 12px;
-  color: var(--shot-bar-muted);
+  color: var(--text-muted);
   flex: none;
 }
 
@@ -1057,11 +1435,11 @@ button.rec-target-chip:hover {
   border: 0;
   border-radius: 999px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
 .rec-pv-bar::-webkit-progress-bar {
-  background: color-mix(in srgb, var(--shot-bar-text) 14%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
   border-radius: 999px;
 }
 
@@ -1074,7 +1452,7 @@ button.rec-target-chip:hover {
   margin: 0;
   padding: 4px 12px 0;
   font-size: 11px;
-  color: var(--shot-bar-muted);
+  color: var(--text-muted);
   flex: none;
 }
 
@@ -1105,21 +1483,29 @@ button.rec-target-chip:hover {
   flex: none;
 }
 
+/* 动作行按钮：改前 4px/12px 内距、纯 8% 灰底，比全站控件矮一档。
+ * 现在 30px 高 + 描边 + hover 抬一档，主按钮走 accent 渐变。 */
 .rec-pv-btn {
-  padding: 4px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--shot-bar-border);
-  background: color-mix(in srgb, var(--shot-bar-text) 8%, transparent);
-  color: var(--shot-bar-text);
-  font-size: 12px;
-  cursor: pointer;
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex: none;
   white-space: nowrap;
-  transition: background 150ms cubic-bezier(0.2, 0, 0, 1);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms var(--ease-standard), border-color 150ms var(--ease-standard);
 }
 
 .rec-pv-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--shot-bar-text) 15%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 22%, transparent);
 }
 
 .rec-pv-btn:disabled {
@@ -1128,10 +1514,16 @@ button.rec-target-chip:hover {
 }
 
 .rec-pv-btn.primary {
-  background: var(--accent-solid);
-  color: #fff; /* ui-rule-ok: 实色主按钮底上的白字，全站主按钮惯例（同 rec-btn-start） */
-  border: none;
+  border-color: transparent;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, var(--card-bg)), var(--accent-solid));
+  color: var(--text-on-accent);
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.rec-pv-btn.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--accent), var(--accent-solid));
+  border-color: transparent;
 }
 
 .rec-pv-err {
@@ -1139,4 +1531,98 @@ button.rec-target-chip:hover {
   color: var(--danger);
   font-size: 11px;
   flex: none;
+}
+
+/* ===== 自绘缩放边带 =====
+ * `decorations(false)` 的窗没有可靠系统缩放边（webview 铺满客户区），
+ * 命中区只能自己画：4 条 5px 贴边 + 4 个 8×8 角块。角块刻意做小，
+ * 免得抢掉标题栏右侧三键的点击（它们距边 6px）。
+ * 最大化时整组收起：贴边拖拽没有意义，留着只会吃掉边缘点击。 */
+.rec-pv-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.rec-pv-edge {
+  position: absolute;
+  display: block;
+  pointer-events: auto;
+}
+
+.rec-pv-edge.n {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  cursor: n-resize;
+}
+
+.rec-pv-edge.s {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  cursor: s-resize;
+}
+
+.rec-pv-edge.e {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: e-resize;
+}
+
+.rec-pv-edge.w {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: w-resize;
+}
+
+.rec-pv-edge.ne {
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  cursor: ne-resize;
+}
+
+.rec-pv-edge.nw {
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  cursor: nw-resize;
+}
+
+.rec-pv-edge.se {
+  bottom: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  cursor: se-resize;
+}
+
+.rec-pv-edge.sw {
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  cursor: sw-resize;
+}
+
+.rec-pv-root[data-max] .rec-pv-edges,
+html:fullscreen .rec-pv-edges {
+  display: none;
+}
+
+/* ---- HUD 结果卡的宿主（rec-hud.html）----
+ * 给 `.result` 的 min-height:100% 一个确定的参照：窗口 280 时卡片至少 280，
+ * 内容更多时按内容长，`rec-hud-main` 量到的就是这个自然高度。 */
+.rec-hud-host {
+  height: 100%;
 }
