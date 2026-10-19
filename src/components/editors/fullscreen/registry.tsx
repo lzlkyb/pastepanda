@@ -2,7 +2,7 @@
  * 全屏编辑器类型注册表：组装各内容类型的 FullscreenTypeSpec。
  * 外壳（FullscreenEditor）按 init 数据里的 contentType 在此查表。
  */
-import { lazy, type ComponentType } from "react";
+import { lazy, useCallback, type ComponentType } from "react";
 // Eye 已不在本文件用（它只属于 TRI_MODES，而那一份已移到 ./types）。
 // PanelLeft / Columns2 还在：下面几个类型自己拼的 modes 用到它们。
 import { PanelLeft, Columns2, Table, List } from "lucide-react";
@@ -13,7 +13,7 @@ import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { lintGutter } from "@codemirror/lint";
 import { TRI_MODES } from "./types";
-import type { FullscreenType, FullscreenTypeSpec, ExtensionCtx } from "./types";
+import type { FullscreenType, FullscreenTypeSpec, ExtensionCtx, ShellBridge } from "./types";
 import { MarkdownFormatBar } from "./MarkdownFormatBar";
 import { CodeFormatBar } from "./CodeFormatBar";
 import { JsonFormatBar, JsonPreview, jsonLinter } from "./JsonBody";
@@ -28,11 +28,33 @@ const MarkdownRenderer = lazy(() =>
 );
 const MarkdownPreview: ComponentType<{
   text: string;
+  bridge?: ShellBridge;
   lineNumbers?: boolean;
   baseDir?: string | null;
-}> = ({ text, lineNumbers, baseDir }) => (
-  <MarkdownRenderer text={text} debounceMs={300} lineNumbers={lineNumbers} baseDir={baseDir} />
-);
+}> = ({ text, bridge, lineNumbers, baseDir }) => {
+  // 任务列表勾选写回：bridge 是预览 → CodeMirror 的唯一通道。
+  // 没有 bridge（被别处单独复用）就保持只读，绝不假装能存。
+  const onToggleTask = useCallback(
+    (index: number) => bridge?.toggleTask(index) ?? false,
+    [bridge],
+  );
+  // 块级就地编辑：双击顶层块 → 浮层改源码 → replaceBlock 写回（expectRaw 校验）
+  const onEditBlock = useCallback(
+    (index: number, newRaw: string, expectRaw: string) =>
+      bridge?.replaceBlock(index, newRaw, expectRaw) ?? false,
+    [bridge],
+  );
+  return (
+    <MarkdownRenderer
+      text={text}
+      debounceMs={300}
+      lineNumbers={lineNumbers}
+      baseDir={baseDir}
+      onToggleTask={bridge ? onToggleTask : undefined}
+      onEditBlock={bridge ? onEditBlock : undefined}
+    />
+  );
+};
 
 /** Markdown 专属：拦截图片粘贴/拖入，交给外壳的 insertPastedImages 保存并插入引用 */
 function imagePasteExt(insertPastedImages: ExtensionCtx["insertPastedImages"]): Extension {
