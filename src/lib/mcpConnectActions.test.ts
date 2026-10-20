@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { invoke } from "@tauri-apps/api/core";
 import {
   MCP_CLIENTS,
   MCP_CONTAINER_KEY,
@@ -164,21 +165,33 @@ describe("复制 stdio 卡片", () => {
   const EXE = "C:\\Program Files\\PastePanda\\PastePanda.exe";
 
   /**
-   * 造一个能记录内容的假剪贴板。
+   * 造一个能记录内容的假剪贴板，**两条通道都接**。
    *
    * 必须用 `vi.stubGlobal` 而不是 `Object.defineProperty(navigator, …)`：本文件跑在
    * node 环境下（见 vitest.config.ts 的 projects），而 `navigator` 是 **Node 21+ 才有的
    * 全局**——本机 Node 24 摸得到、CI 的 Node 20 直接 `ReferenceError: navigator is not
    * defined`（2026-10-09 CI 实测，三条用例连片红）。stubGlobal 是「没有就造一个」，
    * 两边都成立。
+   *
+   * 为什么还要接 `invoke("copy_only")`：`copyToClipboard` 优先走 Rust 原生复制
+   * （WebView2 的 Web Clipboard `writeText` 会 resolve 却不写，是假成功）。
+   * 只 stub navigator 会让本文件在「一次都没复制」上**假红**——不是实现坏了，
+   * 是采集点漏了主通道。
    */
-  function fakeClipboard(writeText: (t: string) => Promise<void>) {
+  function spyClipboard() {
+    const copied: string[] = [];
+    const record = (t: string) => void copied.push(t);
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "copy_only") record(String((args as { text?: string } | undefined)?.text ?? ""));
+      return Promise.resolve(undefined);
+    });
+    const writeText = vi.fn(async (t: string) => record(t));
     vi.stubGlobal("navigator", { clipboard: { writeText } });
+    return { copied, writeText };
   }
 
   it("stdio：复制出去的是路径 + 参数，且一个令牌都没有", async () => {
-    const copied: string[] = [];
-    fakeClipboard(async (t) => void copied.push(t));
+    const { copied } = spyClipboard();
     const seen: string[] = [];
     const toast: McpToast = (m) => seen.push(m);
     await copyMcpClientConfig(
@@ -217,8 +230,7 @@ describe("复制 stdio 卡片", () => {
   });
 
   it("stdio：读不到程序路径 → 不复制、不取令牌、给出原因", async () => {
-    const writeText = vi.fn(async () => {});
-    fakeClipboard(writeText);
+    const { copied } = spyClipboard();
     const seen: string[] = [];
     const toast: McpToast = (m) => seen.push(m);
     let needTokenCalls = 0;
@@ -236,15 +248,14 @@ describe("复制 stdio 卡片", () => {
       },
       toast,
     );
-    expect(writeText, "路径未知却复制了东西").not.toHaveBeenCalled();
+    expect(copied, "路径未知却复制了东西").toEqual([]);
     expect(needTokenCalls, "stdio 不该去取令牌").toBe(0);
     expect(seen.join()).toContain("读不到本程序路径");
   });
 
   /** 反面守卫：http 那条路必须照旧取令牌，否则这条复制是空的。 */
   it("http：照旧取真令牌并复制", async () => {
-    const copied: string[] = [];
-    fakeClipboard(async (t) => void copied.push(t));
+    const { copied } = spyClipboard();
     const seen: string[] = [];
     await copyMcpClientConfig(
       http,

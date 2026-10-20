@@ -445,13 +445,53 @@ impl PasteEngine {
         { Err("系统剪贴板读取仅桌面端可用".to_string()) }
     }
 
-    /// 仅复制不粘贴
+    /// 仅复制不粘贴。UI 里所有「复制文字」入口（含图片 OCR 面板）最终都落到这里。
+    /// 三件事缺一不可，否则前端拿到的是**假的成功信号**：
+    /// 1. 写前报备自写入 —— 不报备，监听线程会把这次写入当成「用户在别处复制」再记一条卡片。
+    /// 2. 写后回读校验 —— `set_text` 可能因剪贴板被瞬时抢占而"成功"却没真正落地；
+    ///    只说"写完了"就返回 Ok，前端就会点亮「✓ 已复制」，用户粘出来还是旧内容。
+    /// 3. 移动端返回 Err 而不是 Ok —— 这里没有系统剪贴板引擎，假装成功会让调用方
+    ///    失去走 Web Clipboard 兜底的机会（桌面端才有 arboard 路径）。
     pub fn copy_only(&self, text: &str) -> Result<(), String> {
+        // 守卫活到函数结束：写入一完成竞争闸就开，身份窗口留给监听线程认「这是自己写的」。
+        let _suppress = self.paste_suppress.begin_write(WriteOpts::text(text));
+
         #[cfg(any(target_os = "windows", target_os = "macos"))]
-        { Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?; }
+        {
+            Self::with_clipboard_retry("复制文字", |cb| cb.set_text(text))?;
+            match Self::with_clipboard_retry("回读剪贴板", |cb| cb.get_text()) {
+                Ok(back) => {
+                    if !Self::clipboard_text_matches(text, &back) {
+                        return Err(format!(
+                            "复制后回读不一致（写入 {} 字符，回读 {} 字符）：剪贴板被其它程序抢占，内容没有真正落地",
+                            text.chars().count(),
+                            back.chars().count(),
+                        ));
+                    }
+                }
+                Err(e) => {
+                    // 回读失败 ≠ 写入失败（可能刚好被别的进程瞬时占用）。不判死，
+                    // 否则会把正常的复制全变成红色提示；留 warn 便于事后归因。
+                    log::warn!("[copy_only] 回读剪贴板失败，无法确认写入结果: {e}");
+                }
+            }
+        }
         #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        { let _ = text; }
+        {
+            let _ = text;
+            return Err("当前平台没有系统剪贴板引擎，请走 Web Clipboard".to_string());
+        }
         Ok(())
+    }
+
+    /// 剪贴板回读比较的归一化口径。
+    ///
+    /// Windows 的 `CF_UNICODETEXT` 写的是 UTF-16，回读时行尾可能是 `\r\n`；直接逐字节比较
+    /// 会把「写入成功」误判成「被抢占」（假红），进而让用户看到无中生有的「复制失败」。
+    /// 只统一 `\r\n` → `\n`，不动其它空白——首尾空格是否保留本身就是要校验的事实。
+    #[cfg(any(target_os = "windows", target_os = "macos", test))]
+    fn clipboard_text_matches(written: &str, readback: &str) -> bool {
+        written.replace("\r\n", "\n") == readback.replace("\r\n", "\n")
     }
 
     /// 带重试的剪贴板写入。**所有写入路径都走它**（规则 11：公共函数收口）。
@@ -1208,6 +1248,23 @@ impl PasteEngine {
             }
             ok
         }
+    }
+}
+
+#[cfg(test)]
+mod clipboard_text_guard_tests {
+    use super::*;
+
+    /// 回读比较必须容忍 `\r\n` 差异，否则「写入成功」会被判成「被抢占」——
+    /// 这是回读校验的前提：校验本身假红，等于把复制功能整个打死。
+    #[test]
+    fn round_trip_compare_tolerates_crlf_but_not_content_drift() {
+        assert!(PasteEngine::clipboard_text_matches("第一行\n第二行", "第一行\r\n第二行"));
+        assert!(PasteEngine::clipboard_text_matches("同一段文字", "同一段文字"));
+        // 内容/首尾空白真的变了就必须判不一致（否则又变成假成功）
+        assert!(!PasteEngine::clipboard_text_matches("第一行\n第二行", "第一行"));
+        assert!(!PasteEngine::clipboard_text_matches("abc", " abc"));
+        assert!(!PasteEngine::clipboard_text_matches("abc", ""));
     }
 }
 

@@ -3,6 +3,7 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { motionPreference } from "@/lib/motionPreference";
 import { parseEventRange } from "@/lib/eventLabel";
+import { logger } from "@/lib/logger";
 
 /** Time navigation operates on local calendar dates, including DST and year boundaries. */
 export function historyLocalDate(date: Date): string {
@@ -676,9 +677,16 @@ export function parseFilePaths(content: string): string[] {
 /**
  * 复制文本到剪贴板。
  *
- * 优先用 `navigator.clipboard.writeText`（需安全上下文 + 用户手势）；
- * 失败（如子窗口失焦、非聚焦态）兜底走 Tauri 原生 `copy_only` 命令
- * （src-tauri/src/commands/paste.rs，参数名 text）。
+ * **优先走 Rust `copy_only`**（src-tauri/src/commands/paste.rs → paste_engine::copy_only）：
+ * 它有 10 次递增退避重试、真实的错误信号，以及写后回读校验，还能向剪贴板监听线程
+ * 报备「这是应用自己写的」。WebView2 的 `navigator.clipboard.writeText` 在窗口未聚焦 /
+ * 失去用户激活时会 **resolve 却不写**（假成功）——前端据此点亮「✓ 已复制」，
+ * 用户粘出来还是旧内容；这个坑在图片 OCR 面板的「复制全部」上被真实碰到过。
+ *
+ * 兜底顺序：
+ * - 移动端 / 无 Tauri 环境 → `copy_only` 返回 Err → 落到 `writeText`；
+ * - `copy_only` 报「回读不一致」→ **不再回落**，直接判失败：剪贴板已被别的程序抢占，
+ *   此时 Web API 的 resolve 同样不可信，回落只会把失败又伪装成成功。
  *
  * 返回是否成功，便于调用方做内联反馈（如 toast 内的「已复制 ✓」）。
  * 收口缘由（规则 #11）：全项目 40+ 处内联 `navigator.clipboard` 散落，
@@ -686,15 +694,22 @@ export function parseFilePaths(content: string): string[] {
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
+    await invoke("copy_only", { text });
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    // 回读不一致 = 写入没落地，别再拿浏览器的 resolve 当成功（见上方注释）。
+    if (msg.includes("回读不一致")) {
+      logger.warn("[copy] 原生写入后回读不一致：", msg);
+      return false;
+    }
+    logger.warn("[copy] 原生复制不可用，回落 Web Clipboard：", msg);
+  }
+  try {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    try {
-      await invoke("copy_only", { text });
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
