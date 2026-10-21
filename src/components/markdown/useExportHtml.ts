@@ -86,10 +86,13 @@ export function useExportHtml(input: ExportHtmlInput) {
       const theme = root.getAttribute("data-theme") || "ocean";
       const appearance = root.getAttribute("data-appearance");
 
-      const { html: bodyHtml, fields, warnings } = await renderMarkdownForExport(input.text, {
-        baseDir: input.baseDir,
-        theme,
-      });
+      const { html: bodyHtml, fields, taskCount, warnings } = await renderMarkdownForExport(
+        input.text,
+        {
+          baseDir: input.baseDir,
+          theme,
+        },
+      );
 
       if (!bodyHtml.trim()) {
         toast("文档是空的，没有可导出的内容", "error");
@@ -106,8 +109,9 @@ export function useExportHtml(input: ExportHtmlInput) {
         theme: { name: theme, appearance, vars: collectThemeVars() },
         docId: makeDocId(),
         fields,
-        // 没有可填字段就不嵌任何脚本，纯阅读的导出保持零 JS
-        runtimeJs: fields.length > 0 ? EXPORT_RUNTIME : undefined,
+        taskCount,
+        // 没有可填字段也没有可勾任务就不嵌任何脚本，纯阅读的导出保持零 JS
+        runtimeJs: fields.length > 0 || taskCount > 0 ? EXPORT_RUNTIME : undefined,
         sourceName: input.fileName,
       });
 

@@ -8,10 +8,15 @@
  *    哈希类名，再把同一份 CSS 文本内联进来——排版与预览完全一致，不用维护第二套。
  * ③ **主题变量必须快照**：CSS 里全是 `var(--text-primary)` 这类引用。不把当前主题
  *    解析成 `:root{--x:具体值}` 写进去，文件到了别人电脑上就是透明/黑字。
- * ④ **脚本只在有表单时嵌**：纯阅读的导出不嵌任何 JS，攻击面最小。
+ * ④ **脚本只在有交互时嵌**：纯阅读的导出不嵌任何 JS，攻击面最小。这里的「交互」
+ *    指**可填字段**与**可勾的任务框**两类——任务勾选要记在本机、要能随「下载已填版本」
+ *    带走，没有运行时就成了「能点却记不住」的假交互。
+ * ⑤ **目录是结构不是交互**：`<details>` + `#锚点` 由浏览器原生行为完成折叠与跳转，
+ *    不引入一行脚本，纯阅读导出仍然是零 JS。
  */
 import { escapeHtml } from "./html";
 import { serializeValues, type FieldInfo } from "./formFields";
+import { buildTocHtml, collectHeadings } from "./exportToc";
 
 export interface ExportTheme {
   /** data-theme 值（决定 hljs 配色与主题变量来源） */
@@ -39,6 +44,14 @@ export interface ExportDocInput {
   exportedAt?: string;
   /** 内嵌的表单运行时脚本源码（为空则不嵌，导出文件退化为纯静态页） */
   runtimeJs?: string;
+  /**
+   * 正文里任务勾选框的数量（`- [ ]` 渲染出来的 `data-pp-task`）。
+   *
+   * 它决定要不要嵌运行时：勾选状态要存进 localStorage、要能随「下载已填版本」带走，
+   * 那就必须有脚本。**没有表单字段但有任务框时同样要嵌** —— 早期实现把「有表单」
+   * 当成唯一条件，于是纯清单文档的框能点却记不住，看着像"点了没用"。
+   */
+  taskCount?: number;
 }
 
 /** 导出页外壳样式。刻意只用主题变量：换成别的主题导出的文件配色也跟着对。 */
@@ -66,13 +79,32 @@ body{background:var(--app-bg);color:var(--text-primary);
 .pp-btn-primary:hover{background:color-mix(in srgb, var(--accent) 24%, transparent)}
 .pp-foot{margin-top:36px;padding-top:14px;border-top:1px solid var(--border-color);
   font-size:12px;color:var(--text-muted)}
+.pp-toc{margin:0 0 22px;padding:10px 14px;border:1px solid var(--border-color);
+  border-radius:10px;background:var(--card-bg);font-size:13px}
+.pp-toc>summary{cursor:pointer;color:var(--text-muted);font-size:12px;
+  list-style:none;user-select:none;padding:1px 0}
+.pp-toc>summary::-webkit-details-marker{display:none}
+.pp-toc>summary::before{content:"▸";display:inline-block;margin-right:8px;
+  transition:transform .15s ease}
+.pp-toc[open]>summary::before{transform:rotate(90deg)}
+.pp-toc-list{list-style:none;margin:8px 0 2px;padding:0}
+.pp-toc-i{margin:1px 0;line-height:1.5}
+.pp-toc-i>a{display:block;padding:2px 8px;border-radius:8px;color:var(--text-primary);
+  text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-toc-i>a:hover{background:color-mix(in srgb, var(--accent) 10%, transparent);
+  color:var(--accent)}
+.pp-toc-l2{padding-left:16px}
+.pp-toc-l3{padding-left:32px}
+.pp-toc-l4{padding-left:48px}
+.pp-toc-l5{padding-left:64px}
+.pp-toc-l6{padding-left:80px}
 .pp-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);
   padding:8px 14px;border-radius:8px;font-size:12px;background:var(--card-bg);
   border:1px solid var(--border-color);color:var(--text-primary);opacity:0;
   transition:opacity .18s ease;pointer-events:none}
 .pp-toast[data-on="1"]{opacity:1}
 @media print{
-  .pp-bar,.pp-foot,.pp-toast{display:none}
+  .pp-bar,.pp-foot,.pp-toast,.pp-toc{display:none}
   body{background:#fff}
   .pp-page{max-width:none;padding:0}
   a[href^="http"]::after{content:" (" attr(href) ")";font-size:11px;color:#555}
@@ -107,21 +139,32 @@ export function buildHtmlDocument(input: ExportDocInput): string {
     runtimeJs,
   } = input;
 
-  const hasForm = fields.length > 0 && !!runtimeJs;
+  const hasField = fields.length > 0;
+  const hasTasks = (input.taskCount ?? 0) > 0;
+  // 有字段或任务框就要嵌运行时：任务勾选同样需要「记住 + 随文件带走」
+  const hasForm = (hasField || hasTasks) && !!runtimeJs;
+  const toc = buildTocHtml(collectHeadings(bodyHtml));
   const themeAttr = theme.appearance ? ` data-appearance="${escapeHtml(theme.appearance)}"` : "";
 
   const bar = hasForm
     ? `<div class="pp-bar">` +
       `<span class="pp-bar-title">${escapeHtml(title)}</span>` +
       `<span class="pp-state" id="pp-state">已就绪</span>` +
-      `<button type="button" class="pp-btn" data-pp="copy">复制填写结果</button>` +
+      // 「复制填写结果」只对表单字段有意义；纯清单文档没有可复制的键值
+      (hasField ? `<button type="button" class="pp-btn" data-pp="copy">复制填写结果</button>` : "") +
       `<button type="button" class="pp-btn pp-btn-primary" data-pp="download">下载已填版本</button>` +
       `</div>`
     : "";
 
+  const footNote = hasTasks
+    ? " · 填写与勾选只保存在本机浏览器"
+    : hasField
+      ? " · 填写内容只保存在本机浏览器"
+      : "";
+
   const foot = `<div class="pp-foot">${escapeHtml(title)} · ${escapeHtml(exportedAt)}${
     sourceName ? ` · 来源 ${escapeHtml(sourceName)}` : ""
-  }${hasForm ? " · 填写内容只保存在本机浏览器" : ""}</div>`;
+  }${footNote}</div>`;
 
   const script = hasForm
     ? `<script id="pp-data" type="application/json">${serializeValues({
@@ -147,6 +190,7 @@ ${SHELL_CSS}
 <body>
 <div class="pp-page">
 ${bar}
+${toc}
 <div class="${rootClass}" data-pp-root="1">
 ${bodyHtml}
 </div>

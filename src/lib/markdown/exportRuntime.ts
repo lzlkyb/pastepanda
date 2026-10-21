@@ -2,6 +2,8 @@
  * 导出文件里内嵌的表单运行时（**字符串源码**，不能 import 任何东西）。
  *
  * 职责：回填上次填写 → 输入即存 → 「下载已填版本」把值烧回文件。
+ * 任务清单的勾选框（`data-pp-task`）走**同一套机制、独立的 key**：它不是表单字段
+ * （没有 `name`，不进「复制填写结果」），但同样要「记住 + 随文件带走」。
  *
  * 为什么是「下载已填版本」而不是「保存回原文件」：
  * 浏览器在 `file://` 下不允许回写打开的本地文件（`showSaveFilePicker` 实测直接
@@ -21,6 +23,7 @@ export const EXPORT_RUNTIME = String.raw`(function () {
   try { data = JSON.parse(dataEl ? dataEl.textContent || "{}" : "{}"); } catch (e) { data = {}; }
   var DOC_ID = data.docId || "unknown";
   var KEY = "pp-form:" + DOC_ID;
+  var TASK_KEY = "pp-task:" + DOC_ID;
   var stateEl = document.getElementById("pp-state");
   var toastEl = document.getElementById("pp-toast");
   var root = document.querySelector("[data-pp-root]");
@@ -56,12 +59,36 @@ export const EXPORT_RUNTIME = String.raw`(function () {
     var out = [];
     for (var i = 0; i < all.length; i++) {
       var el = all[i];
+      // 任务框是正文结构：它既不是表单字段，也不该出现在「复制填写结果」里
       if (el.hasAttribute("data-task-i")) continue;
+      if (el.hasAttribute("data-pp-task")) continue;
       var t = (el.getAttribute("type") || "").toLowerCase();
       if (t === "submit" || t === "button" || t === "reset" || t === "image" || t === "file") continue;
       out.push(el);
     }
     return out;
+  }
+
+  /** 任务勾选框。用 input[data-pp-task] 选择器而不是 type=checkbox：
+   *  正文里手写的普通 checkbox 属于表单字段，不能跟任务清单混成一锅。 */
+  function taskBoxes() {
+    return root.querySelectorAll("input[type='checkbox'][data-pp-task]");
+  }
+  function readTasks() {
+    var out = {};
+    var list = taskBoxes();
+    for (var i = 0; i < list.length; i++) {
+      out[list[i].getAttribute("data-pp-task")] = !!list[i].checked;
+    }
+    return out;
+  }
+  function applyTasks(v) {
+    if (!v) return;
+    var list = taskBoxes();
+    for (var i = 0; i < list.length; i++) {
+      var key = list[i].getAttribute("data-pp-task");
+      if (key in v) list[i].checked = !!v[key];
+    }
   }
   function kindOf(el) {
     var tag = el.tagName.toLowerCase();
@@ -101,19 +128,29 @@ export const EXPORT_RUNTIME = String.raw`(function () {
 
   var initial = data.values || {};
   var stored = null;
+  var storedTasks = null;
   if (STORE_OK) {
     try { stored = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { stored = null; }
+    try { storedTasks = JSON.parse(localStorage.getItem(TASK_KEY) || "null"); } catch (e) { storedTasks = null; }
   }
   applyValues(stored || initial);
+  applyTasks(storedTasks || data.tasks);
+  // 空对象也算"存过"，所以按条目数判断，否则纯字段文档一进来就说"已恢复"
+  var hasStoredTasks = !!storedTasks && Object.keys(storedTasks).length > 0;
+  var nFields = controls().length;
+  var nTasks = taskBoxes().length;
   if (!STORE_OK) state("本机不支持自动保存，请用「下载已填版本」", true);
-  else if (stored) state("已恢复上次填写");
-  else state(controls().length ? "填写内容会自动保存在本机浏览器" : "无可填字段");
+  else if (stored || hasStoredTasks) state("已恢复上次填写");
+  else if (nFields) state(nTasks ? "填写与勾选会自动保存在本机浏览器" : "填写内容会自动保存在本机浏览器");
+  else if (nTasks) state("勾选会自动保存在本机浏览器");
+  else state("无可填字段");
 
   var timer = null;
   function save() {
     if (!STORE_OK) return;
     try {
       localStorage.setItem(KEY, JSON.stringify(readValues()));
+      localStorage.setItem(TASK_KEY, JSON.stringify(readTasks()));
       state("已自动保存 " + pad(new Date().getHours()) + ":" + pad(new Date().getMinutes()));
     } catch (e) {
       STORE_OK = false;
@@ -147,13 +184,20 @@ export const EXPORT_RUNTIME = String.raw`(function () {
         el.setAttribute("value", el.value);
       }
     }
+    // 任务框同样要烧回 checked：不烧的话「下载已填版本」把勾选全丢了
+    var boxes = taskBoxes();
+    for (var t = 0; t < boxes.length; t++) {
+      if (boxes[t].checked) boxes[t].setAttribute("checked", "checked");
+      else boxes[t].removeAttribute("checked");
+    }
   }
 
   function download() {
     var values = readValues();
+    var tasks = readTasks();
     syncAttributes();
     if (dataEl) {
-      var json = JSON.stringify({ docId: DOC_ID, values: values });
+      var json = JSON.stringify({ docId: DOC_ID, values: values, tasks: tasks });
       dataEl.textContent = json
         .replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
     }
@@ -172,7 +216,13 @@ export const EXPORT_RUNTIME = String.raw`(function () {
     document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
     toast("已下载填好的文件");
-    state("已导出，共 " + Object.keys(values).length + " 个字段");
+    var nf = Object.keys(values).length;
+    var nt = Object.keys(tasks).length;
+    state(
+      "已导出" +
+        (nf ? "，共 " + nf + " 个字段" : "") +
+        (nt ? (nf ? "、" : "，") + nt + " 项勾选" : ""),
+    );
   }
 
   function toPlainText() {
@@ -195,6 +245,8 @@ export const EXPORT_RUNTIME = String.raw`(function () {
 
   function copy() {
     var text = toPlainText();
+    // 空串绝不落到 writeText("")：它会清空剪贴板却提示"已复制"，用户粘出来是空的
+    if (!text) { toast("没有可复制的填写内容"); return; }
     function fallback() {
       var ta = document.createElement("textarea");
       ta.value = text;

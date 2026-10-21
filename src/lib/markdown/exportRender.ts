@@ -32,6 +32,8 @@ export interface ExportRenderResult {
   /** 已 sanitize / 图片已内联 / 字段已补 name 的正文 */
   html: string;
   fields: FieldInfo[];
+  /** 正文里任务勾选框的数量（供 exportDoc 决定要不要嵌运行时） */
+  taskCount: number;
   warnings: string[];
 }
 
@@ -221,6 +223,11 @@ export async function renderMarkdownForExport(
   const hljs = fences.code ? await loadHighlighter() : null;
   if (fences.code && !hljs) warnings.push("代码高亮组件加载失败，代码块以纯文本导出");
 
+  // 任务框按**文档顺序**编号：导出侧靠这个编号在 localStorage 里对齐「哪一项被勾了」，
+  // 编号一漂（多插一项、重排）已勾状态就会挂到别的项上。这个计数与 renderer 的调用
+  // 顺序一致（marked 只在 parse 阶段逐 token 调用一次）。
+  let taskSeq = 0;
+
   // breaks 必须与预览（renderHtml.ts 全局 marked）同值：导出目标是「预览里什么样，
   // 导出就是什么样」，单换行少了 <br> 会把多行段落合并成一行。
   const instance = new Marked({ gfm: true, breaks: true });
@@ -228,16 +235,22 @@ export async function renderMarkdownForExport(
   instance.use({
     renderer: {
       /**
-       * 任务列表勾选框打 `data-pp-task`：它是**正文结构**（勾了表示「这项做完了」），
+       * 任务列表勾选框打 `data-pp-task="{序号}"`：它是**正文结构**（勾了表示「这项做完了」），
        * 不是表单字段。
        *
        * 不打这个标记会怎样：`ensureFieldNames` 会把它当无名控件补成 `__f0`，
        * 于是「已勾选状态」混进表单值里——而这个名字是按序号生成的，正文多插一项
-       * 后面全部错位，上次填的值会挂到别的项上。导出侧没有写回源文的通道，
-       * 所以直接保持 disabled。
+       * 后面全部错位，上次填的值会挂到别的项上。
+       *
+       * 为什么**不再 disabled**：导出文件本身就有「localStorage 记住 + 下载已填版本把值
+       * 烧回 HTML」这套通道（原本只为 `{{字段}}` 做），勾选状态走同一条路即可，不需要
+       * 回写源 md。早期把它禁掉的理由是「没有写回通道」，那个前提不成立 ——
+       * 能勾却存不下来才是真的假交互。
        */
       checkbox({ checked }: Tokens.Checkbox): string {
-        return `<input ${checked ? 'checked="" ' : ""}disabled="" type="checkbox" data-pp-task="1"> `;
+        const idx = taskSeq;
+        taskSeq += 1;
+        return `<input ${checked ? 'checked="" ' : ""}type="checkbox" data-pp-task="${idx}"> `;
       },
       code({ text: code, lang }: Tokens.Code): string {
         const language = (lang || "").trim().split(/\s+/)[0].toLowerCase();
@@ -282,10 +295,10 @@ export async function renderMarkdownForExport(
   try {
     html = transformAlerts(instance.parse(text) as string);
   } catch {
-    return { html: "", fields: [], warnings: ["解析失败：文档可能包含无法解析的结构"] };
+    return { html: "", fields: [], taskCount: 0, warnings: ["解析失败：文档可能包含无法解析的结构"] };
   }
   if (!html.trim()) {
-    return { html: "", fields: [], warnings: ["文档是空的，没有可导出的内容"] };
+    return { html: "", fields: [], taskCount: 0, warnings: ["文档是空的，没有可导出的内容"] };
   }
 
   // 图片占位必须在消毒前打（见 markLocalImages 注释）
@@ -327,5 +340,5 @@ export async function renderMarkdownForExport(
   html = await renderMermaidBlocks(html, mermaidSources, theme, warnings);
 
   const fields = ensureFieldNames(html);
-  return { html: fields.html, fields: fields.fields, warnings };
+  return { html: fields.html, fields: fields.fields, taskCount: taskSeq, warnings };
 }
