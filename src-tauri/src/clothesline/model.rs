@@ -86,7 +86,10 @@ impl Default for Snapshot {
     fn default() -> Self {
         Self {
             items: vec![],
-            enabled: true,
+            // 7.2.12 起晾衣绳是 opt-in：未显式开启的配置不建窗、不采图。
+            // 该功能此前未随版本发布过，所以没有「老用户库里存着 true」的存量问题，
+            // 改默认值即可，不需要迁移。
+            enabled: false,
             wind: true,
             locked: false,
             anchors: None,
@@ -107,7 +110,7 @@ pub struct Model {
     pub pending_pin: Option<(Pin, bool)>,
 }
 impl Model {
-    // 局部保存缺键代表“不修改”，不能把默认开启项静默关闭。
+    // 局部保存缺键代表“不修改”，不能把用户已开启的项静默关闭。
     pub fn configure(&mut self, value: &serde_json::Value) {
         if let Some(v) = value.get("clothesline").and_then(|v| v.as_bool()) {
             self.snapshot.enabled = v;
@@ -223,18 +226,32 @@ mod tests {
             height: 120,
         }
     }
-    #[test]
-    fn partial_config_preserves_defaults_and_explicit_false() {
+    /// 默认是「关」。测采图/命中这类**开着才有意义**的行为时必须显式打开，
+    /// 别再靠 `Model::default()` 里那个已翻转的默认值——否则用例会静默变成空跑。
+    fn enabled_model() -> Model {
         let mut m = Model::default();
+        m.snapshot.enabled = true;
+        m
+    }
+    #[test]
+    fn default_is_disabled_and_partial_config_never_overrides_explicit_choice() {
+        // 7.2.12：晾衣绳默认关闭（opt-in）。
+        let mut m = Model::default();
+        assert!(!m.snapshot.enabled);
+        // 别的设置项落盘时带着这棵树，缺 clothesline 键 ≠ 打开。
         m.configure(&serde_json::json!({"ocr_select_mode":"smart"}));
+        assert!(!m.snapshot.enabled);
+        // 用户显式开启后再来一次不带该键的局部保存，也不能被静默关回去。
+        m.configure(&serde_json::json!({"clothesline":true}));
+        assert!(m.snapshot.enabled);
+        m.configure(&serde_json::json!({"theme":"ocean"}));
         assert!(m.snapshot.enabled);
         m.configure(&serde_json::json!({"clothesline":false}));
-        m.configure(&serde_json::json!({"theme":"ocean"}));
         assert!(!m.snapshot.enabled);
     }
     #[test]
     fn metadata_update_does_not_rehang_but_new_capture_can() {
-        let mut m = Model::default();
+        let mut m = enabled_model();
         assert!(m.collect(photo("a"), "a:time1".into()));
         m.remove(&["a".into()]);
         assert!(!m.collect(photo("a"), "a:time1".into()));
@@ -259,7 +276,7 @@ mod tests {
     }
     #[test]
     fn click_through_excludes_blank_space_and_suspension() {
-        let mut m = Model::default();
+        let mut m = enabled_model();
         m.regions.push(Rect {
             x: 10.0,
             y: 20.0,
@@ -278,7 +295,7 @@ mod tests {
     }
     #[test]
     fn held_press_keeps_capture_before_drag_ipc_arrives_but_yields_to_native_transfer() {
-        let mut m = Model::default();
+        let mut m = enabled_model();
         assert!(!m.hit(800.0, 600.0, 2.0, false));
         assert!(m.hit(800.0, 600.0, 2.0, true));
         m.transfers = 1;

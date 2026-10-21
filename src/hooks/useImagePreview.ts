@@ -17,6 +17,8 @@ import {
 } from "@/lib/imageFormat";
 import { linesAsRowWords } from "@/lib/screenshot/ocrTable";
 import { clampImageZoom, imageFitScale } from "@/lib/imagePreviewFit";
+import { isInsidePreviewOverlay } from "@/lib/imagePreviewOverlay";
+import { copyToClipboard } from "@/lib/utils";
 
 // ===== 类型 =====
 
@@ -376,11 +378,12 @@ export function useImagePreview(): UseImagePreviewReturn {
       // Ctrl+C 复制选中 OCR 文字
       if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedWordIndices.size > 0) {
         e.preventDefault();
-        const texts = getSelectedOcrTexts();
-        navigator.clipboard.writeText(texts.join(' ')).then(() => {
-          toast("已复制选中文字", "success");
-        }).catch(() => {
-          toast("复制失败", "error");
+        const text = getSelectedOcrTexts().join(' ');
+        // 走收口函数（含 invoke("copy_only") 兜底）：裸 navigator.clipboard 在
+        // 子窗口失焦/非聚焦态会 reject，那时没有任何兜底，用户只看到「复制失败」。
+        if (!text) { toast("先在图上的文字上选词", "error"); return; }
+        void copyToClipboard(text).then((ok) => {
+          toast(ok ? "已复制选中文字" : "复制失败", ok ? "success" : "error");
         });
       }
       // 快捷键：0 重置 / R 旋转 / +/- 缩放
@@ -395,8 +398,9 @@ export function useImagePreview(): UseImagePreviewReturn {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // 不能补 getSelectedOcrTexts：它定义在本 effect 之后，写进依赖数组会 TDZ ReferenceError
+    // 但它闭包着 ocrResult：换图后 ocrResult 变而本 effect 不重建，Ctrl+C 会拿上一张图的词。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, activePanel, toast, fitPreview, rotatePreview, zoomPreview]);
+  }, [previewImage, previewLoading, closePreview, ocrActive, selectedWordIndices, cropMode, activePanel, toast, fitPreview, rotatePreview, zoomPreview, ocrResult]);
 
   // 滚轮 = 缩放，以光标为中心（设计稿交互规格；对齐看图器肌肉记忆，替代旧「滚轮平移」）。
   // 锚点换算：容器 transform = translate(offset)·S(s)（rotation 与均匀缩放可交换，视口坐标下消去），
@@ -588,6 +592,10 @@ export function useImagePreview(): UseImagePreviewReturn {
 
   const handleOcrSelectStart = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    // 浮层（OCR 面板/导出/码面板）里的按下不是框选起手。它挂在同一个 viewport 上，
+    // 不拦就会在 mousedown 里把已选词清空，等 click 落到「复制选中」时按钮已经
+    // 因为 size===0 变灰、事件不派发——表现为「选了词点复制没反应」。
+    if (isInsidePreviewOverlay(e.target)) return;
     const viewport = e.currentTarget as HTMLElement;
     const rect = viewport.getBoundingClientRect();
     selectDraggedRef.current = false;

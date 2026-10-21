@@ -38,7 +38,9 @@ export async function mountClothesline(bridge) {
     height: window.innerHeight,
     items: [],
     pins: [],
-    enabled: true,
+    // 初始值必须与 Rust `Snapshot::default()` 同口径（7.2.12 起默认关）。
+    // 窗口只在 enabled 时才会被创建，这里给 false 是为了「关掉后残留页」不先亮一帧绳子。
+    enabled: false,
     wind: true,
     locked: false,
     anchors: defaultAnchors(window.innerWidth),

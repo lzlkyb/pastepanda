@@ -534,7 +534,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   note_template_overrides: "",
   auto_frame_window: true, // 默认开启：截图自动框选光标所在窗口
   screenshot_window_persist: false, // 默认关：截图窗用完即销毁（省内存）；开启后常驻隐藏、再次截图秒开（微信同款）
-  clothesline:true,
+  clothesline: false, // 7.2.12 起默认关（opt-in）：不建窗、不采图。未发布过，无存量配置需要迁移
   clothesline_wind:true,
   clothesline_locked:false,
   clothesline_anchors:null,

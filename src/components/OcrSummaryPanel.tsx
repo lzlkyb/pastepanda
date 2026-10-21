@@ -5,7 +5,7 @@
  * - 摘要条（默认）：来自列表缓存的全文直接带出——行数字数 + 首行预览 + 复制/展开；
  * - 选词条（ocrActive 时顶替摘要条）：已选 N 词 + 复制选中/变换为…/搜索/清除；
  * - 展开态：下一步动作一行（复制全部/存为卡片/变换为…/搜索）+ 全文（实体可点）或校对对照。
- * 零二次识别：全文取 ocrResult?.full_text ?? ocrCachedText，不在此触发任何识别。
+ * 零二次识别：全文取 ocrResult?.full_text（空串时回退 ocrCachedText），不在此触发任何识别。
  */
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
@@ -40,7 +40,9 @@ export function OcrSummaryPanel({ preview, onOpenHub, mode }: OcrSummaryPanelPro
   const [popFeedback, setPopFeedback] = useState<string | null>(null);
   const fullPanelRef = useRef<HTMLDivElement | null>(null);
 
-  const fullText = ocrEditing ? ocrEditText : (ocrResult?.full_text ?? ocrCachedText ?? "");
+  // 用 `||` 而不是 `??`：识别出空串（图里没字/引擎漏检）时要回退到列表缓存，
+  // 否则复制走的是空串——writeText("") 会清空剪贴板还返回成功，表现为「提示已复制、粘出来是空的」。
+  const fullText = ocrEditing ? ocrEditText : (ocrResult?.full_text || ocrCachedText || "");
   const lineCount = ocrResult?.lines.length ?? null;
 
   useEffect(() => {
@@ -59,15 +61,20 @@ export function OcrSummaryPanel({ preview, onOpenHub, mode }: OcrSummaryPanelPro
   };
 
   const handleCopyAll = async () => {
+    // 无文字时不能落到 writeText("")：它会清空剪贴板却返回成功，「✓ 已复制」是假反馈。
+    // 用 trim 判空而不是 `!fullText`：引擎漏检时 full_text 可能只有换行/空格，
+    // 那种「有值但内容为空」同样会让用户粘出一个空行。
+    if (!fullText.trim()) { toast("没有可复制的文字", "error"); return; }
     const ok = await copyToClipboard(fullText);
     if (ok) flash(setCopiedAll);
     else toast("复制失败", "error");
   };
 
   const handleCopySel = async () => {
-    const texts = getSelectedOcrTexts();
-    if (texts.length === 0) return;
-    const ok = await copyToClipboard(texts.join(" "));
+    const joined = getSelectedOcrTexts().join(" ");
+    // 静默 return 会让「点了没反应」无从归因（按钮 disabled 只是兜底，状态不一致时仍会走到这）。
+    if (!joined.trim()) { toast("先在图上的文字上选词", "error"); return; }
+    const ok = await copyToClipboard(joined);
     if (ok) flash(setCopiedSel);
     else toast("复制失败", "error");
   };
@@ -88,6 +95,17 @@ export function OcrSummaryPanel({ preview, onOpenHub, mode }: OcrSummaryPanelPro
       workspace: store.config.current_workspace,
     });
     toast("已存为卡片", "success");
+  };
+
+  /** 进编辑态前把当前全文灌进 buffer。
+   *
+   * 面板的全文可能只来自列表缓存（`ocrResult == null`，effect 不会填 ocrEditText）——
+   * 那种情况下直接进编辑态会让全文变空，紧接着「复制全部」就变成「没有可复制的文字」，
+   * 看起来像复制坏了。 */
+  const toggleOcrEdit = () => {
+    if (ocrEditing) { setOcrEditing(false); return; }
+    if (!ocrEditText) setOcrEditText(fullText);
+    setOcrEditing(true);
   };
 
   const handleSearch = async () => {
@@ -206,7 +224,7 @@ export function OcrSummaryPanel({ preview, onOpenHub, mode }: OcrSummaryPanelPro
           {open && (
             <div className={styles.fsPanelBody}>
               <div className={styles.fsPanelActs}>
-                <button className={styles.fsPanelBtn} onClick={() => setOcrEditing((v) => !v)}>{ocrEditing ? "完成" : "可编辑"}</button>
+                <button className={styles.fsPanelBtn} onClick={toggleOcrEdit}>{ocrEditing ? "完成" : "可编辑"}</button>
                 <button className={styles.fsPanelBtn} onClick={() => saveOcrAsCard(fullText)}>💾 存为卡片</button>
                 <button className={styles.fsPanelBtn} onClick={() => onOpenHub(fullText)}>✨ 变换为…</button>
                 <button className={styles.fsPanelBtn} onClick={() => void handleSearch()}>🔍 搜索</button>
@@ -219,7 +237,7 @@ export function OcrSummaryPanel({ preview, onOpenHub, mode }: OcrSummaryPanelPro
                   spellCheck={false}
                 />
               ) : (
-                <div className={styles.fsPanelText}>{renderOcrText(ocrResult?.full_text ?? ocrCachedText ?? "")}</div>
+                <div className={styles.fsPanelText}>{renderOcrText(fullText)}</div>
               )}
             </div>
           )}

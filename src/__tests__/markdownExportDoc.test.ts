@@ -51,10 +51,19 @@ describe("ensureFieldNames —— 字段 name 必须稳定且按文档顺序", (
   });
 
   it("任务列表勾选框（data-task-i）不算表单字段，且不补 name", () => {
-    // 判据：导出的文件里没有写回通道，能勾但存不下来 = 假的可编辑
+    // 判据：预览侧的勾选框带源码定位，是正文结构，不是可填字段
     const r = ensureFieldNames(`<input type="checkbox" data-task-i="0">`);
     expect(r.fields).toEqual([]);
     expect(r.html).not.toContain("name=");
+  });
+
+  it("导出侧任务框（data-pp-task）同样不算字段——即使它带了 name", () => {
+    // 手写 HTML 或渲染器改动都可能让任务框同时"长得像字段"。漏掉这个跳过，
+    // 它会占掉 __f{n} 序号，后面所有真实字段的名字跟着错位、已填值全挂到别人身上。
+    const r = ensureFieldNames(`<input type="checkbox" name="t" data-pp-task="0">`);
+    expect(r.fields).toEqual([]);
+    expect(r.html).not.toContain("__f0");
+    expect(r.html).toContain('data-pp-task="0"');
   });
 
   it("data-pp-skip 的控件跳过；submit/button/reset/file 不算字段", () => {

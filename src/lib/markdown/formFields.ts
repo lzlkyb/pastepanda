@@ -49,9 +49,10 @@ function kindOf(tag: string, attrs: string): FieldKind {
 /**
  * 给缺 `name` 的控件按文档顺序补 `name="__f{n}"`，并汇总字段清单。
  *
- * - 任务列表的勾选框是**正文结构**不是表单字段：跳过，并且强制只读——
- *   否则导出的文件里能勾，却没有任何地方能存。两个标记都要认：`data-task-i`
- *   是预览侧（带源码定位）写的，`data-pp-task` 是导出侧写的（见 exportRender）。
+ * - 任务列表的勾选框是**正文结构**不是表单字段：跳过（不补 `name`、不占 `__f{n}` 序号）。
+ *   两个标记都要认：`data-task-i` 是预览侧写的（带源码定位），`data-pp-task` 是导出侧
+ *   写的（见 exportRender，编号即文档顺序）。导出侧的可勾状态由内嵌运行时的
+ *   localStorage 记，跟表单值走两条通道，混进来会让字段序号整体错位。
  * - 已被标记 `data-pp-skip` 的控件同样跳过（给「只想显示、不想入库」的控件留出口）。
  * - `input[type=submit|button|reset|image]` 不是字段。
  *

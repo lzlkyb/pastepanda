@@ -44,12 +44,29 @@ describe("renderMarkdownForExport —— 正文与表单", () => {
     expect(r.fields[0].kind).toBe("select");
   });
 
-  it("任务列表勾选框不算字段，且保持 disabled（导出里没有写回源文的通道）", async () => {
+  it("任务列表勾选框不算字段，也不禁用（勾选由内嵌运行时记在本机）", async () => {
     const r = await renderMarkdownForExport("- [ ] 未做的事\n- [x] 已完成");
     expect(r.fields).toEqual([]);
-    expect(r.html).toContain("data-pp-task");
+    expect(r.taskCount).toBe(2);
     expect(r.html).not.toContain("__f0");
-    expect(r.html).toContain("disabled");
+    // 编号按文档顺序，运行时靠它对上"哪一项被勾了"
+    expect(r.html).toContain('data-pp-task="0"');
+    expect(r.html).toContain('data-pp-task="1"');
+    // 早期实现硬编码 disabled，理由是「没有写回通道」——现在有通道了，禁掉就是假交互
+    expect(r.html).not.toContain("disabled");
+  });
+
+  it("任务框编号不受表单字段影响（两者各走各的序号空间）", async () => {
+    const r = await renderMarkdownForExport(
+      "姓名：{{姓名}}\n\n- [ ] 一\n- [ ] 二\n\n备注：{{备注/多行}}\n\n- [x] 三",
+    );
+    expect(r.fields.map((f) => f.name)).toEqual(["姓名", "备注"]);
+    expect(r.taskCount).toBe(3);
+    expect(r.html.match(/data-pp-task="(\d+)"/g)).toEqual([
+      'data-pp-task="0"',
+      'data-pp-task="1"',
+      'data-pp-task="2"',
+    ]);
   });
 
   it("裸 HTML 表单控件也保留，缺 name 的按序补齐", async () => {
