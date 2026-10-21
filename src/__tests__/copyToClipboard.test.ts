@@ -9,19 +9,33 @@
  * 1. 桌面端必须先走 Rust `copy_only`（有重试 + 回读校验 + 真实错误）；
  * 2. 原生报「回读不一致」时**不许**再回落 Web API —— 那会二次制造假成功。
  */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { copyToClipboard } from "@/lib/utils";
 
 const writeText = vi.fn<(text: string) => Promise<void>>();
 
+/**
+ * 用 `vi.stubGlobal` 造导航器，不要用 `Object.defineProperty` 往全局上挂属性。
+ *
+ * 本文件跑在 **node 档**（见 vitest.config.ts 的 projects），而导航器是 Node 21+ 才有的
+ * 全局。本机 Node 24 摸得到、`defineProperty` 直接能用，CI 的 Node 20 却抛
+ * `ReferenceError: navigator is not defined` —— 四条用例连片红，本机全绿。
+ * stubGlobal 是「没有就造一个」，两个版本都成立；配对 `unstubAllGlobals` 收尾。
+ * （同样的坑 2026-10-09 在 mcpConnectActions.test.ts 踩过一次。）
+ */
+function stubClipboard() {
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+}
+
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
   writeText.mockReset();
-  Object.defineProperty(navigator, "clipboard", {
-    value: { writeText },
-    configurable: true,
-  });
+  stubClipboard();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("copyToClipboard", () => {

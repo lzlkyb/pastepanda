@@ -112,15 +112,27 @@ describe("vitest 环境拆档守卫", () => {
 
   // node 档的测试碰到「只有 jsdom / 新版 Node 才有的全局」时，本机绿灯不代表 CI 绿灯：
   // CI 是 Node 20（test.yml 的 node-version），本机是 24，而 `navigator` 是 Node 21+ 才有的
-  // 全局。2026-10-09 就栽过一次——mcpConnectActions.test.ts 里 defineProperty(navigator,…)
-  // 本机全绿、CI 三条连片红。DOM_NEEDED_TS 那份清单是**在本机跑出来的实测结果**，
-  // 它对「版本差」天然瞎，所以要有一条与运行环境无关的静态网。
-  it("node 档的测试不引用 jsdom/Node21+ 才有的全局（按成员访问算）", () => {
-    const BANNED = /\bnavigator\s*[.[]/;
+  // 全局。2026-10-09 就栽过一次——mcpConnectActions.test.ts 里往全局上 defineProperty
+  // 本机全绿、CI 三条连片红；2026-10-21 copyToClipboard.test.ts 又踩了同一个坑（四条红）。
+  // DOM_NEEDED_TS 那份清单是**在本机跑出来的实测结果**，它对「版本差」天然瞎，
+  // 所以要有一条与运行环境无关的静态网。
+  //
+  // 两条都算违规：① 直接读它的成员（点号或方括号访问）；② 把它当已存在的对象去改
+  // （对全局 defineProperty）。只挡 ① 会漏掉整个「挂 mock」这类写法——正是踩过的形态。
+  // 注意：本文件自己也在扫描范围内，注释里也不要写出会被这两条正则命中的字面量。
+  it("node 档的测试不假定 jsdom/Node21+ 才有的全局已存在", () => {
+    const BANNED = [/\bnavigator\s*[.[]/, /\bdefineProperty\(\s*navigator\b/];
     const inList = new Set(list);
     const hits = [...trackedTests()]
       .filter((f) => f.endsWith(".ts") && !inList.has(f))
-      .filter((f) => BANNED.test(fs.readFileSync(path.join(ROOT, f), "utf8")));
-    expect(hits, `这些 node 档测试直接访问了 navigator 的成员: ${hits.join(", ")}`).toEqual([]);
+      .filter((f) => {
+        const src = fs.readFileSync(path.join(ROOT, f), "utf8");
+        return BANNED.some((re) => re.test(src));
+      });
+    expect(
+      hits,
+      `这些 node 档测试假定了 navigator 存在（读成员或挂 mock），CI 的 Node 20 会 ReferenceError。` +
+        `改用 vi.stubGlobal("navigator", …) + vi.unstubAllGlobals(): ${hits.join(", ")}`,
+    ).toEqual([]);
   });
 });

@@ -167,7 +167,7 @@ describe("复制 stdio 卡片", () => {
   /**
    * 造一个能记录内容的假剪贴板，**两条通道都接**。
    *
-   * 必须用 `vi.stubGlobal` 而不是 `Object.defineProperty(navigator, …)`：本文件跑在
+   * 必须用 `vi.stubGlobal` 而不是往全局对象上直接 defineProperty：本文件跑在
    * node 环境下（见 vitest.config.ts 的 projects），而 `navigator` 是 **Node 21+ 才有的
    * 全局**——本机 Node 24 摸得到、CI 的 Node 20 直接 `ReferenceError: navigator is not
    * defined`（2026-10-09 CI 实测，三条用例连片红）。stubGlobal 是「没有就造一个」，
