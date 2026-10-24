@@ -808,18 +808,11 @@ impl DataStore {
                     .query_map(param_refs.as_slice(), |row| {
                         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<(String, String)>, _>>()
                     .map_err(|e| e.to_string())?;
-                let mut paths = Vec::new();
-                for row in rows {
-                    let (item_type, content) = row.map_err(|e| e.to_string())?;
-                    match item_type.as_str() {
-                        "image" if !content.is_empty() => paths.push(content),
-                        "rich" => paths
-                            .extend(Self::extract_local_image_files_from_rich_content(&content)),
-                        _ => {}
-                    }
-                }
-                paths
+                drop(stmt);
+                Self::image_file_candidates(&rows)
             };
 
             // v6.4 先删 FTS 索引（须在主表 DELETE 前按 rowid 匹配——之后 rowid 就查不到了）
@@ -894,6 +887,36 @@ impl DataStore {
                     .map(|p| p.to_string_lossy().into_owned())
             })
             .collect()
+    }
+
+    /// 「记录引用了哪些本地图片文件」的单一口径：image 的 content（图片路径）
+    /// + rich 的内嵌 file:// 图。delete_history 与自动清理的文件清扫共用
+    /// （规则 #11.1：各写一份 match，第 7 个调用点出现时口径就会漂移）。
+    pub(crate) fn image_file_candidates(rows: &[(String, String)]) -> Vec<String> {
+        rows.iter()
+            .flat_map(|(item_type, content)| match item_type.as_str() {
+                "image" if !content.is_empty() => vec![content.clone()],
+                "rich" => Self::extract_local_image_files_from_rich_content(content),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    /// 自动清理专用：记录已被**永久删除**（无撤销）后，清扫其引用的本地图片文件。
+    ///
+    /// 🔴 手动清空（clear_history_with_undo 把 deleted_items 交给前端做撤销）
+    /// **不能**调这个：撤销会把指向已删文件的记录原样重插，图片就裂了。
+    /// 仍被其它记录引用的文件由 cleanup_orphaned_image_files 兜底不删。
+    pub fn purge_image_files_for(&self, items: &[HistoryItem]) {
+        if items.is_empty() {
+            return;
+        }
+        let rows: Vec<(String, String)> = items
+            .iter()
+            .map(|i| (i.item_type.clone(), i.content.clone()))
+            .collect();
+        let paths = Self::image_file_candidates(&rows);
+        self.cleanup_orphaned_image_files(&paths);
     }
 
     /// 事务提交后调用：逐个检查候选图片文件是否还被其它历史记录引用（同一张图片可能
@@ -1190,6 +1213,24 @@ impl DataStore {
             ),
             params![workspace, cutoff_str],
         );
+        // B3：FTS 索引随主表一起清（两者按 rowid 对齐）。不清的话 SQLite 复用
+        // rowid 后已删内容会命中新条目；撤销重插会重建索引，本清理对撤销无副作用。
+        let _ = conn.execute(
+            &format!(
+                "DELETE FROM history_fts WHERE rowid IN
+                 (SELECT rowid FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{})",
+                preserve_sql,
+            ),
+            params![workspace, cutoff_str],
+        );
+        let _ = conn.execute(
+            &format!(
+                "DELETE FROM image_ocr_fts WHERE rowid IN
+                 (SELECT rowid FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{})",
+                preserve_sql,
+            ),
+            params![workspace, cutoff_str],
+        );
         let del_sql = format!(
             "DELETE FROM history WHERE workspace = ?1 AND pinned = 0 AND time < ?2{}",
             preserve_sql,
@@ -1205,6 +1246,18 @@ impl DataStore {
                 Err(e.to_string())
             }
         }
+    }
+
+    /// 库里出现过的工作区去重列表（自动清理的覆盖范围，B7）。
+    pub fn distinct_workspaces(&self) -> Result<Vec<String>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT workspace FROM history")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
     /// 统计当前会被清理策略命中的过期记录数（超过指定天数且未置顶）。
@@ -1362,9 +1415,31 @@ impl DataStore {
         }
 
         // 3. 事务删除（与读取使用完全相同的 WHERE，保证一致性）
-        let delete_sql = format!("DELETE FROM history{}", where_clause);
-        // 改用 RAII 事务：COMMIT 失败时不回滚会让事务永久挂在共享连接上，Transaction drop 时自动 ROLLBACK 可避免
+        // B3：派生数据随主表一起删（与 delete_history / clear_history_with_undo
+        // 同口径）。撤销重插会重建索引与摘要，此清理对撤销无副作用。
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let derived_delete_sqls = [
+            format!(
+                "DELETE FROM history_fts WHERE rowid IN (SELECT rowid FROM history{})",
+                where_clause
+            ),
+            format!(
+                "DELETE FROM image_ocr_fts WHERE rowid IN (SELECT rowid FROM history{})",
+                where_clause
+            ),
+            format!(
+                "DELETE FROM history_summaries WHERE history_id IN (SELECT id FROM history{})",
+                where_clause
+            ),
+            format!(
+                "DELETE FROM semantic_vectors WHERE history_id IN (SELECT id FROM history{})",
+                where_clause
+            ),
+        ];
+        for sql in &derived_delete_sqls {
+            let _ = conn.execute(sql, param_refs.as_slice());
+        }
+        let delete_sql = format!("DELETE FROM history{}", where_clause);
         let result = conn.execute(&delete_sql, param_refs.as_slice());
         match result {
             Ok(count) => {

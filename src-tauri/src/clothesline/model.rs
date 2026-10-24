@@ -185,9 +185,43 @@ pub fn valid_anchors(value: &serde_json::Value) -> bool {
     }) && value["left"]["x"].as_f64() < value["right"]["x"].as_f64()
 }
 
+/// 贴图拖到桌面时该往哪里送。放在 model 里是因为 `pending_pin` 就在这里，
+/// 而这三条去向正是它的用法约定。收成纯函数，便于在没有 AppHandle 时钉住。
+#[derive(Debug, PartialEq, Eq)]
+pub enum PinRoute {
+    /// 窗口露着：直接发给前端判定挂不挂。
+    Emit,
+    /// 页面还在建：记下来等 ready 重放，否则第一张图会白拖。
+    Replay,
+    /// 就绪但不可见（截图在途 / 从未请求）：不接收。
+    Refuse,
+}
+
+pub fn route_pin_drag(shown: bool, ready: bool) -> PinRoute {
+    if shown {
+        PinRoute::Emit
+    } else if ready {
+        PinRoute::Refuse
+    } else {
+        PinRoute::Replay
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pin_drag_route_follows_visibility_not_foreground() {
+        // 贴图拖到桌面时由「窗口是否露着 / 页面是否就绪」决定去向，
+        // 与前台是桌面还是微信无关（旧版按 is_desktop 判，从微信里拖就被误杀）。
+        assert_eq!(route_pin_drag(true, true), PinRoute::Emit);
+        assert_eq!(route_pin_drag(true, false), PinRoute::Emit, "窗口露着就直接发");
+        // 页面还在建：重放，别丢用户的第一张图。
+        assert_eq!(route_pin_drag(false, false), PinRoute::Replay);
+        // 就绪但不可见（截图在途 / 从未请求）：拒绝，且不许写 pending_pin ——
+        // pending_pin 只在 ready 时消费，写进去会留到下次建窗重放旧拖拽。
+        assert_eq!(route_pin_drag(false, true), PinRoute::Refuse);
+    }
     #[test]
     fn interrupted_pin_move_never_hangs_until_mouse_release() {
         assert!(!should_commit_pin_move(Some((10, 10)), (30, 40), true));

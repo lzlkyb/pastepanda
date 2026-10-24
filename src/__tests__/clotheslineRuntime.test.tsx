@@ -496,3 +496,29 @@ describe("晾衣绳真实控制器接收事务", () => {
     expect(bridge.showPin).toHaveBeenCalledTimes(4);
   });
 });
+
+describe("工具条静默态", () => {
+  const nav = () => document.querySelector("#ropeToolbar") as HTMLElement;
+  const toggle = () => document.querySelector("#toolbarToggle") as HTMLElement;
+  it("默认收起，只有一颗把手；悬停展开、移开收起", async () => {
+    dispose = await mountClothesline(fakeBridge());
+    expect(nav().dataset.open).toBe("false");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.pointerEnter(nav());
+    expect(nav().dataset.open).toBe("true");
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    fireEvent.pointerLeave(nav());
+    await waitFor(() => expect(nav().dataset.open).toBe("false"));
+  });
+  it("展开态的箭头点一下真的会收起（不是画个箭头就完事）", async () => {
+    dispose = await mountClothesline(fakeBridge());
+    fireEvent.pointerEnter(nav());
+    expect(nav().dataset.open).toBe("true");
+    fireEvent.click(toggle());
+    expect(nav().dataset.open).toBe("false");
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    // 再点一次要能重新展开：只朝一个方向生效的按钮同样是「点了没反应」。
+    fireEvent.click(toggle());
+    expect(nav().dataset.open).toBe("true");
+  });
+});

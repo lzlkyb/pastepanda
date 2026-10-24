@@ -53,7 +53,10 @@ fn raise_above_desktop(win: &tauri::WebviewWindow) {
             use windows::Win32::Foundation::HWND;
             use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOP, SWP_NOMOVE, SWP_NOSIZE, SWP_NOACTIVATE};
             if let Ok(hwnd) = target.hwnd() {
-                // Activating Progman must not cover the desktop rope. Keep ordinary Z order, without stealing focus.
+                // 激活 Progman 不能盖住绳层，所以桌面为前台时要抬回来。
+                // 注意：这里用 HWND_TOP 而不是 HWND_BOTTOM —— 后者会把窗口排到桌面图标
+                // （SHELL 的列表视图）之下，导致整根绳点不到。抬升只在桌面上下文发生，
+                // 普通应用在前台时不会走到这里，因此不会把绳子顶到微信上面。
                 unsafe { let _ = SetWindowPos(HWND(hwnd.0), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
             }
         });
@@ -77,8 +80,9 @@ pub(super) fn sync_visibility(app: &AppHandle) {
     }
     let show = {
         let m = model();
+        // 刻意不再传前台信息：绳子是否显示与「谁在前台」无关，
+        // 被应用窗口盖住是 Z 序的事，不是可见性判断的事。
         desktop::can_show(
-            desktop::is_desktop(),
             m.snapshot.enabled,
             m.suspended,
             m.captures,
@@ -110,7 +114,12 @@ pub(super) fn sync_visibility(app: &AppHandle) {
             let _ = app.emit_to(LABEL, "clothesline-visible", true);
             start_poll(app);
         }
-        raise_above_desktop(&win);
+        // 只在桌面是前台时才抬到顶层：否则会被 Progman 盖住看不见。
+        // 切到普通应用时不抬——窗口 always_on_top(false)，自然待在应用窗口之下，
+        // 露出来的桌面部分仍然可见，被盖住的部分本就不该看见。
+        if desktop::on_desktop() {
+            raise_above_desktop(&win);
+        }
     }
 }
 
@@ -267,6 +276,12 @@ pub(crate) fn hide(app: &AppHandle) {
     REQUESTED.store(false, Ordering::SeqCst);
     hide_window(app);
 }
+/// 绳窗口此刻是否真的露着。用于「要不要走转场动画」这类与前台无关的判断，
+/// 取代过去那套 `desktop::is_desktop()`（那个语义是「桌面是否完全干净」）。
+pub(super) fn is_shown(app: &AppHandle) -> bool {
+    app.get_webview_window(LABEL)
+        .is_some_and(|w| w.is_visible().unwrap_or(false))
+}
 fn hide_window(app: &AppHandle) {
     POLL.fetch_add(1, Ordering::SeqCst);
     if let Some(win) = app.get_webview_window(LABEL) {
@@ -382,6 +397,9 @@ fn start_poll(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut inside = false;
+        // 时间滞回：进入立即切换，退出延时确认。指针斜着划出边界时不会闪断，
+        // 也不再需要「进入 8px / 保持 10px」那对互相牵制的空间参数。
+        let mut left_at: Option<std::time::Instant> = None;
         let mut ticks = 0;
         while POLL.load(Ordering::SeqCst) == mine {
             let Some(win) = app.get_webview_window(LABEL) else {
@@ -408,19 +426,33 @@ fn start_poll(app: &AppHandle) {
                 };
                 #[cfg(not(windows))]
                 let pressed_inside = false;
-                // 进入交互态的容差原来只有 2px：鼠标必须精确落到 region 边缘 2px 内，
-                // 窗口才从「穿透」切回可交互，差一点就直接点穿到桌面（用户感受是
-                // 「明明在图上，点了没反应」）。放宽到 8px，进入后用 10px 形成滞回。
+                // 进入容差仍留 8px（鼠标必须落在 region 边缘内一点才切回可交互，
+                // 2px 时用户「明明在图上却点不动」）；退出不再靠更大的空间阈值，
+                // 改成延时 150ms 确认——人手斜着划出边界时给一次回摆的机会。
                 let hit = model().hit(
                     (x - origin.x as f64) / scale,
                     (y - origin.y as f64) / scale,
-                    if inside { 10.0 } else { 8.0 },
+                    8.0,
                     pressed_inside,
                 );
-                if hit != inside {
-                    inside = hit;
-                    let _ = set_pointer_passthrough(&win, !hit);
-                    let _ = app.emit_to(LABEL, "clothesline-hover", hit);
+                let next = if hit {
+                    left_at = None;
+                    true
+                } else if !inside {
+                    false
+                } else {
+                    let since = *left_at.get_or_insert_with(std::time::Instant::now);
+                    if since.elapsed() >= std::time::Duration::from_millis(150) {
+                        left_at = None;
+                        false
+                    } else {
+                        true
+                    }
+                };
+                if next != inside {
+                    inside = next;
+                    let _ = set_pointer_passthrough(&win, !next);
+                    let _ = app.emit_to(LABEL, "clothesline-hover", next);
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(60));
@@ -439,10 +471,10 @@ fn cursor() -> Option<(f64, f64)> {
 pub fn pin_drag(app: &AppHandle, mut pin: Pin, drop: bool) -> bool {
     #[cfg(windows)]
     { pin.point = cursor().map(|(x, y)| [x, y]); }
-    if !desktop::is_desktop() {
-        pin_drag_cancel(app);
-        return false;
-    }
+    // 这里原本还有一道「不在桌面就 cancel」。常驻显示之后绳子始终在，
+    // 而那道门用的是同一套「前台是不是桌面」的猜测：从微信里把贴图拖向桌面时
+    // 前台是贴图自己、桌面被微信挡着 ⇒ 直接 cancel，用户看到的是「拖不动」。
+    // 开关与挂起由下面的 model 检查负责，与前台无关。
     {
         let m = model();
         if !m.snapshot.enabled || m.suspended {
@@ -462,50 +494,35 @@ pub fn pin_drag(app: &AppHandle, mut pin: Pin, drop: bool) -> bool {
             m.snapshot.scale = monitor.scale_factor();
         }
     }
-    let near = {
-        let m = model();
-        let wa = m.snapshot.work_area;
-        let scale = m.snapshot.scale;
-        let anchors = m.snapshot.anchors.as_ref();
-        let top = anchors
-            .and_then(|v| v.get("left"))
-            .and_then(|v| v.get("y"))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(32.0 / (wa.height / scale).max(1.0));
-        let bottom = anchors
-            .and_then(|v| v.get("right"))
-            .and_then(|v| v.get("y"))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(top);
-        let near_y = |y| y >= wa.y + top.min(bottom) * wa.height - 40.0 * scale
-            && y <= wa.y + top.max(bottom) * wa.height + 180.0 * scale;
-        near_y(pin.rect.y) || pin.point.is_some_and(|p| near_y(p[1]))
-    };
-    if near
-        || app
-            .get_webview_window(LABEL)
-            .is_some_and(|w| w.is_visible().unwrap_or(false))
-    {
-        if !app
-            .get_webview_window(LABEL)
-            .is_some_and(|w| w.is_visible().unwrap_or(false))
-        {
+    // 挂不挂回只由前端的 nativeSlot 一处决定（±24/±64，拖拽激活态 ±48/±96）。
+    // 这里原本还有第二套判据：按锚点 y 范围 [最小 − 40, 最大 + 180] 粗筛「够不够近」，
+    // 判不近就直接 return false、连事件都不发。它与前端阈值不同步，于是出现
+    // 「界面显示幽灵位、松手却挂不上」这种两套口径打架的现象。
+    let shown = app
+        .get_webview_window(LABEL)
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    match model::route_pin_drag(shown, READY.load(Ordering::SeqCst)) {
+        model::PinRoute::Replay => {
+            // 只有「页面还没 ready」才有稍后重放的意义：那是「拖到绳上但窗口还在建」的
+            // 竞态，丢掉就等于用户第一张图白拖。窗口已就绪却不可见，说明是截图在途或
+            // 从未请求过绳，这时不该接收——pending_pin 只在 ready 时消费，写进去会一直
+            // 留到下次建窗，把一次很久以前的拖拽重放出来。
             model().pending_pin = Some((pin.clone(), drop));
-        }
-        if near {
             ensure(app);
+            return true;
         }
-        return app.emit_to(
-            LABEL,
-            if drop {
-                "clothesline-pin-drop"
-            } else {
-                "clothesline-pin-preview"
-            },
-            pin,
-        ).is_ok();
+        model::PinRoute::Refuse => return false,
+        model::PinRoute::Emit => {}
     }
-    false
+    app.emit_to(
+        LABEL,
+        if drop {
+            "clothesline-pin-drop"
+        } else {
+            "clothesline-pin-preview"
+        },
+        pin,
+    ).is_ok()
 }
 pub fn restore_drag_pin(app: &AppHandle, pin: Pin) -> bool {
     if !model().snapshot.enabled { return false; }

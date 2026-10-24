@@ -27,6 +27,10 @@ interface ToastItem {
    * 与 `action === "undo"` 的区别：那条是历史记录的「撤销删除」，写死了 `restoreDeleted()`。
    */
   onAction?: () => void;
+  /** 同文案无动作错误的合并计数（批次②）：连着失败时显示「已连续 N 次」。 */
+  mergeCount?: number;
+  /** 合并匹配用的原始文案（批次②）：显示文案带「（已连续 N 次）」后缀后不再等于原文。 */
+  mergeBase?: string;
 }
 
 interface ToastContextType {
@@ -50,6 +54,21 @@ let toastId = 0;
  * 蒸馏区那条撤销条用的是同一个数（规则 #11：口径单一来源）。
  */
 export const UNDO_WINDOW_MS = 6000;
+
+/**
+ * 批次②（通知治理 · 方案 A，2026-10-24）的时长口径。
+ *
+ * 改前 `error` 默认 duration=0 **常驻**——错误风暴时最多 5 条堆在右上角、
+ * 逐条手关，是「通知频繁打扰」的第一根因。新口径：
+ * - 无动作 error：[`ERROR_TOAST_MS`] 自动消失（悬停暂停/进度条照旧）；
+ * - 带重试/撤销动作的 error：[`ERROR_ACTION_TOAST_MS`]——动作入口不能悄悄
+ *   蒸发，但也不必永驻；
+ * - success：[`SUCCESS_TOAST_MS`] 一闪而过（复制/粘贴是高频操作，4 秒太吵）；
+ * - info：维持 4s（被动通知需要读完）。
+ */
+export const ERROR_TOAST_MS = 12000;
+export const ERROR_ACTION_TOAST_MS = 30000;
+export const SUCCESS_TOAST_MS = 2000;
 
 /**
  * 一条 toast 的关闭计时器。
@@ -125,12 +144,37 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toast = useCallback((message: string, type: ToastType = "info", duration?: number, onRetry?: () => void, actionLabel?: string, copyText?: string, action?: string, onAction?: () => void) => {
-    const d = duration ?? (type === "error" ? 0 : 4000);
+    const hasAction = Boolean(onRetry || onAction || action);
+    // 批次②（方案 A）：error 不再常驻——无动作 12s、带动作 30s；success 缩到 2s。
+    const d = duration ?? (type === "error"
+      ? (hasAction ? ERROR_ACTION_TOAST_MS : ERROR_TOAST_MS)
+      : type === "success" ? SUCCESS_TOAST_MS : 4000);
     // Recovery/undo actions belong to their own operation and must never merge.
-    if (!onRetry && !onAction && !action && currentToasts.current.some(t =>
-      t.type === type && t.message === message && t.copyText === copyText && !t.onRetry && !t.onAction && !t.action)) return;
+    if (!hasAction) {
+      // 批次②：同文案无动作错误仍在屏上时不堆新条，改为合并计数 + 重置计时。
+      // 改前是静默丢弃——连着失败 5 次，用户只看到第 1 条，不知道还在持续失败。
+      if (type === "error") {
+        const prev = currentToasts.current.find(t =>
+          t.type === "error" && t.mergeBase === message && !t.onRetry && !t.onAction && !t.action);
+        if (prev) {
+          const count = (prev.mergeCount ?? 1) + 1;
+          commit(currentToasts.current.map(t => t.id === prev.id
+            ? { ...t, message: `${message}（已连续 ${count} 次）`, mergeCount: count, duration: d }
+            : t));
+          const e = timers.current.get(prev.id);
+          if (e?.t) window.clearTimeout(e.t);
+          arm(prev.id, d);
+          return;
+        }
+      }
+      if (currentToasts.current.some(t =>
+        t.type === type && t.message === message && t.copyText === copyText && !t.onRetry && !t.onAction && !t.action)) return;
+    }
     const id = ++toastId;
-    const next = [...currentToasts.current, { id, type, message, duration: d, onRetry, actionLabel, copyText, action, onAction }];
+    const next = [...currentToasts.current, {
+      id, type, message, duration: d, onRetry, actionLabel, copyText, action, onAction,
+      ...(type === "error" && !hasAction ? { mergeBase: message } : {}),
+    }];
     const removed = next.splice(0, Math.max(0, next.length - MAX_TOASTS));
     removed.forEach(t => { const timer = timers.current.get(t.id); if (timer?.t) window.clearTimeout(timer.t); timers.current.delete(t.id); held.current.delete(t.id); });
     commit(next);

@@ -39,7 +39,7 @@ describe("晾衣绳原生接收协议", () => {
     const sizing = pin.slice(pin.indexOf('// 把**客户区**调成真正的'), pin.indexOf('// 小圆角：'));
     expect(sizing).toMatch(/SWP_NOMOVE\s*\|\s*SWP_NOZORDER\s*\|\s*SWP_NOACTIVATE/);
     expect(pin).toContain('if startup.is_some(){WS_POPUP}else{WS_POPUP | WS_VISIBLE}');
-    expect(source('clothesline/desktop.rs')).toContain('let next = foreground_context(previous, &class, surface, pin, exposed, inactive)');
+    expect(source('clothesline/desktop.rs')).toContain('let next = on_desktop_context(&class, surface || rope || pin, inactive)');
   });
   it("贴图重绘必须复用像素且显示兜底不能销毁待接力的交付数据", () => {
     const pin = source('pinned_window.rs');

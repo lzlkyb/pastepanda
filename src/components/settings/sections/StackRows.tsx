@@ -49,6 +49,18 @@ export function StackRows({ config, updateAndSave }: StackRowsProps) {
           </div>
         </>
       )}
+      {/* 批次②：常规入栈提示默认关（每次 Ctrl+C 都弹是最强打扰源之一）；
+          异常（栈满/拆不开）不受此开关控制。 */}
+      <ToggleRow icon="🔔" hue="paste" label="复制入栈提示" desc="栈模式下每次复制成功入栈时弹文字提示（默认关；栈满、表格没拆开等异常始终会提示）"
+        value={config.stack_capture_toast}
+        tooltip="关闭时入栈反馈由栈浮标与栈横幅的条数变化承担"
+        detailTitle="复制入栈提示"
+        detail={<>
+          <p>开启后，栈模式下每次复制都会弹「入栈 N 条」的文字确认。</p>
+          <p>默认关闭：条数变化在栈浮标和主窗口横幅上都能看到，无需每次念一遍。</p>
+          <p>栈已满、表格只放进一部分、看着像表格但没拆开——这些需要动手的异常不受此开关影响，始终提示。</p>
+        </>}
+        onChange={(v) => updateAndSave({ stack_capture_toast: v })} />
       {/* 栈浮标开关：放在「栈容量」上方 —— 它管的是「看得见什么」，容量管的是「攒多少」，
           先看到反馈再看到容量更符合从上往下读的顺序。 */}
       <ToggleRow icon="🎯" hue="paste" label="栈浮标" desc="开栈时贴在工作现场角落的小窗：条数、目标应用、下一条内容、粘贴结果"

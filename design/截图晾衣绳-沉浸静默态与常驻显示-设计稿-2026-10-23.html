@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>截图晾衣绳 · 沉浸静默态与常驻显示 · 设计稿 2026-10-23</title>
+<style>
+/* 令牌来源：src/styles/theme.css（浅色主题默认值）+ src/clothesline/clothesline.css :root
+   --card-bg #fff / --text-primary #0f172a / --border-color #e0e4eb / --accent-solid #027cbb
+   --paper #fdfdfb / --metal #cfd6de / --metal-dark #7f8b98 / --rope #e4e8f0 */
+* { box-sizing: border-box; }
+html { background: #f4f6fa; }
+body {
+  margin: 0; padding: 40px 32px 64px;
+  font: 14px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  color: #0f172a;
+}
+.page { max-width: 1520px; margin: 0 auto; }
+h1 { margin: 0 0 8px; font-size: 24px; font-weight: 600; letter-spacing: -0.2px; }
+.lede { margin: 0 0 6px; font-size: 15px; color: #3f4a5a; max-width: 76ch; }
+.lede strong { color: #0f172a; }
+.tags { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0 34px; }
+.tag {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  background: #e7f0f8; color: #145b80; border: 1px solid #c9dced;
+}
+.tag.warn { background: #fdf1e6; color: #8a5312; border-color: #f0d8bd; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(700px, 1fr)); gap: 28px; }
+figure { margin: 0; }
+.shot {
+  position: relative; width: 720px; height: 450px; max-width: 100%;
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,23,42,.14), 0 12px 28px rgba(15,23,42,.13);
+  border: 1px solid rgba(15,23,42,.10);
+}
+.stage {
+  position: absolute; left: 0; top: 0; width: 1440px; height: 900px;
+  transform: scale(.5); transform-origin: 0 0;
+}
+/* 模拟桌面壁纸（真实使用场景是用户壁纸，这里用深岩色，让白框照片和浅色工具条都可读） */
+.wall {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(120% 90% at 18% 6%, #23415f 0%, #16293e 42%, #0d1a29 100%),
+    #0d1a29;
+}
+.wall::after {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    radial-gradient(60% 42% at 76% 78%, rgba(96,140,180,.22), transparent 70%),
+    radial-gradient(38% 28% at 12% 88%, rgba(46,86,124,.28), transparent 72%);
+}
+/* 桌面图标（仅用于证明「绳在图标之上、应用窗口之下」） */
+.icons { position: absolute; left: 40px; top: 300px; display: grid; gap: 22px; }
+.icon { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; }
+.icon i {
+  width: 44px; height: 44px; border-radius: 9px;
+  background: linear-gradient(160deg, rgba(255,255,255,.34), rgba(255,255,255,.12));
+  border: 1px solid rgba(255,255,255,.28);
+}
+.icon b { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.78); }
+
+/* ── 绳 ── */
+.rope { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; pointer-events: none; }
+.rope path.base { fill: none; stroke: #e4e8f0; stroke-width: 2; stroke-linecap: round; }
+.rope path.shadow { fill: none; stroke: #0b1220; stroke-width: 4; stroke-linecap: round; opacity: .45; }
+.anchor { position: absolute; width: 26px; height: 26px; display: grid; place-items: center; }
+.anchor s {
+  display: block; width: 11px; height: 17px; border-radius: 4px;
+  border: 2px solid #cfd6de; background: #7f8b98;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+.anchor.ghost s { opacity: .34; }
+
+/* ── 悬挂相框 ── */
+.hang { position: absolute; width: 180px; transform: translateX(-50%); }
+.hang .clip {
+  position: absolute; left: 50%; top: -6px; width: 22px; height: 10px;
+  transform: translateX(-50%) rotate(var(--tilt, 0deg));
+  border-radius: 4px; background: linear-gradient(#cfd6de, #7f8b98, #cfd6de);
+  box-shadow: 0 1px 2px rgba(0,0,0,.28);
+}
+.hang .clip::after {
+  content: ""; position: absolute; left: 3px; right: 3px; top: 4px; height: 2px; background: #7f8b98;
+}
+.frame {
+  margin-top: 5px; padding: 8px 8px 8px; border-radius: 12px;
+  border: 1px solid #cfd6de; background: #fdfdfb;
+  box-shadow: 0 6px 18px rgba(5,12,24,.38);
+  position: relative;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.shotbody { position: relative; height: 118px; border-radius: 4px; overflow: hidden; }
+/* 第三张：聊天截图 */
+.chat { background: #f2f4f7; padding: 10px 10px 0; }
+.chat .b { height: 15px; border-radius: 6px; background: #d7dde6; margin-bottom: 7px; }
+.chat .b.me { background: #a9c9e0; margin-left: 42px; }
+.chat .b.short { width: 62%; }
+/* 第一张：深色编辑器 */
+.code { background: #131722; padding: 9px 10px; }
+.code .l { height: 5px; border-radius: 2px; background: #2f3a4d; margin-bottom: 6px; }
+.code .l.hi { background: #4b7fb5; }
+.code .l.w1 { width: 42%; } .code .l.w2 { width: 76%; } .code .l.w3 { width: 58%; }
+/* 第二张：浅色网页 */
+.web { background: #fff; padding: 9px 10px; border: 1px solid #e6eaf0; }
+.web .wbar { height: 7px; border-radius: 3px; background: #e8edf3; margin-bottom: 7px; }
+.web .hero { height: 46px; border-radius: 5px; background: linear-gradient(135deg, #cfe1f2, #a8c8e4); margin-bottom: 7px; }
+.web .col { display: flex; gap: 6px; }
+.web .col i { flex: 1; height: 24px; border-radius: 4px; background: #eef2f7; }
+
+/* hover 态：微抬 + 阴影加深 */
+.hang.hot .frame { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(5,12,24,.46); }
+/* 悬停才出现的「取下」按钮（温和派：保留能力，不常驻） */
+.take {
+  position: absolute; right: 6px; top: 6px;
+  font-size: 11px; line-height: 1; padding: 6px 8px; border-radius: 5px;
+  background: rgba(255,255,255,.94); color: #0f172a;
+  border: 1px solid rgba(15,23,42,.14); box-shadow: 0 2px 6px rgba(0,0,0,.18);
+  opacity: 0; transition: opacity .14s ease;
+}
+.hang.hot .take { opacity: 1; }
+/* 悬停才出现的文件名（常态不占位、不显示「已保存 · 」前缀） */
+.name {
+  position: absolute; left: 0; right: 0; bottom: -22px;
+  font-size: 11px; color: rgba(255,255,255,.9); text-align: center;
+  opacity: 0; transition: opacity .14s ease;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hang.hot .name { opacity: 1; }
+
+/* ── 折叠把手 / 展开工具条 ── */
+/* 折叠态：绳中点上一颗很轻的小把手（14px 高），不做边框不做底色块 */
+.grip {
+  position: absolute; width: 40px; height: 13px; border-radius: 7px;
+  background: rgba(255,255,255,.30);
+  border: 1px solid rgba(255,255,255,.34);
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.22);
+}
+.grip i { width: 2px; height: 5px; border-radius: 1px; background: rgba(255,255,255,.72); }
+/* 展开态：胶囊工具条，3 项 + 计数 */
+.bar {
+  position: absolute; height: 40px; display: inline-flex; align-items: center; gap: 2px;
+  padding: 4px; border-radius: 11px;
+  background: rgba(255,255,255,.97); border: 1px solid rgba(15,23,42,.10);
+  box-shadow: 0 12px 30px rgba(5,12,24,.34);
+  font-size: 12.5px;
+}
+.bar button {
+  font: inherit; font-size: 12.5px; height: 32px; padding: 0 12px;
+  border: 0; border-radius: 8px; background: transparent; color: #22303f;
+  white-space: nowrap; cursor: pointer;
+}
+.bar button:hover { background: #eef3f8; }
+.bar .danger { color: #a8322f; }
+.bar .count {
+  font-size: 12px; color: #6b7787; padding: 0 10px 0 6px;
+  border-left: 1px solid #e6ebf1; margin-left: 4px; white-space: nowrap;
+}
+
+/* 拖拽中的幽灵位：虚线框，无文字 */
+.slot {
+  position: absolute; width: 168px; height: 134px; border-radius: 10px;
+  border: 2px dashed rgba(140,208,196,.85);
+  background: rgba(140,208,196,.10);
+}
+/* 被拖走的照片：跟随指针，略倾，阴影更深 */
+.ghost-card {
+  position: absolute; width: 180px; transform: translateX(-50%) rotate(-5deg) scale(1.03);
+  filter: drop-shadow(0 18px 28px rgba(0,0,0,.46));
+  opacity: .96;
+}
+.pointer {
+  position: absolute; width: 16px; height: 22px;
+}
+.pointer::before {
+  content: ""; position: absolute; inset: 0;
+  background: #fff; clip-path: polygon(0 0, 0 100%, 34% 72%, 52% 100%, 68% 92%, 50% 66%, 78% 66%);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+}
+
+/* 半屏应用窗口（用于证明「失去焦点仍在」） */
+.win {
+  position: absolute; left: 700px; top: 0; width: 740px; height: 900px;
+  background: #f7f8fa; border-left: 1px solid rgba(0,0,0,.16);
+  box-shadow: -18px 0 48px rgba(0,0,0,.42);
+}
+.win .titlebar {
+  height: 46px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+  background: #eef1f5; border-bottom: 1px solid #dfe4ea;
+}
+.win .titlebar b { font-size: 14px; font-weight: 500; color: #2a3746; }
+.win .dot { width: 12px; height: 12px; border-radius: 50%; background: #cdd4dd; }
+.win .list { padding: 22px 24px; display: grid; gap: 16px; }
+.win .row { display: flex; gap: 12px; align-items: center; }
+.win .av { width: 40px; height: 40px; border-radius: 8px; background: #dfe6ee; flex: none; }
+.win .lines { flex: 1; display: grid; gap: 7px; }
+.win .ln { height: 9px; border-radius: 4px; background: #e3e8ef; }
+.win .ln.s { width: 58%; }
+.win .bubble {
+  margin-left: 40px; max-width: 420px; padding: 12px 14px; border-radius: 10px;
+  background: #fff; border: 1px solid #e2e7ee;
+  font-size: 13px; color: #3a4757; line-height: 1.7;
+}
+
+/* 图注 */
+figcaption { margin-top: 14px; }
+figcaption h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+figcaption p { margin: 0; font-size: 13px; color: #4a5566; }
+figcaption .del { color: #8a5312; }
+figcaption .add { color: #0d6152; }
+.badge {
+  display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  background: #0f766e; color: #fff; margin-right: 6px; vertical-align: 1px;
+}
+.badge.gray { background: #64748b; }
+
+/* 改动清单 */
+h3.sect { margin: 56px 0 14px; font-size: 18px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid #eef1f5; vertical-align: top; }
+th { background: #f7f9fc; font-weight: 600; color: #33404f; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+code { font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; background: #f1f4f9; padding: 1px 5px; border-radius: 4px; color: #24405c; }
+.keep { color: #0d6152; font-weight: 500; }
+.cut { color: #a8322f; font-weight: 500; }
+.notes { margin-top: 26px; padding: 18px 20px; background: #fff; border-radius: 10px; border-left: 3px solid #0f766e; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+.notes h4 { margin: 0 0 8px; font-size: 14px; }
+.notes ul { margin: 0; padding-left: 18px; font-size: 13px; color: #3f4a5a; }
+.notes li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>截图晾衣绳 · 沉浸静默态 + 常驻显示</h1>
+  <p class="lede">
+    默认只看得见<strong>绳和照片</strong>。工具条折叠成绳中点一颗小把手，鼠标靠近才展开；每张照片的按钮和文件名也只在悬停时浮现。
+    同时把「是否在桌面」的判断删掉——<strong>切到任何应用，绳子都还在露出来的桌面上</strong>，被应用窗口自然盖住的部分不需要我们判断。
+  </p>
+  <div class="tags">
+    <span class="tag">方案 A · 常驻显示</span>
+    <span class="tag">工具条折叠成把手</span>
+    <span class="tag">悬停才展开</span>
+    <span class="tag warn">尺寸 1:1（1440×900 缩放 50%）</span>
+  </div>
+
+  <div class="grid">
+
+    <!-- 场景 1：静默态 -->
+    <figure>
+      <div class="shot">
+        <div class="stage">
+          <div class="wall"></div>
+          <div class="icons">
+            <div class="icon"><i></i><b>此电脑</b></div>
+            <div class="icon"><i></i><b>回收站</b></div>
+          </div>
+          <svg class="rope" viewBox="0 0 1440 900">
+            <path class="shadow" d="M220,140 Q720,250 1220,140"/>
+            <path class="base" d="M220,140 Q720,250 1220,140"/>
+          </svg>
+          <div class="anchor" style="left:207px;top:127px"><s></s></div>
+          <div class="anchor" style="left:1207px;top:127px"><s></s></div>
+
+          <div class="hang" style="left:420px;top:176px;--tilt:-7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody code">
+              <div class="l hi w1"></div><div class="l w2"></div><div class="l w3"></div>
+              <div class="l w2"></div><div class="l w1"></div><div class="l w3"></div>
+            </div></div>
+          </div>
+          <div class="hang" style="left:720px;top:196px;--tilt:0deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody web">
+              <div class="wbar"></div><div class="hero"></div>
+              <div class="col"><i></i><i></i></div>
+            </div></div>
+          </div>
+          <div class="hang" style="left:1020px;top:176px;--tilt:7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody chat">
+              <div class="b short"></div><div class="b me"></div><div class="b"></div>
+              <div class="b me short"></div>
+            </div></div>
+          </div>
+
+          <div class="grip" style="left:700px;top:346px"><i></i><i></i><i></i></div>
+        </div>
+      </div>
+      <figcaption>
+        <h2>① 静默态（默认）</h2>
+        <p>
+          <span class="badge">核心</span>桌面只剩绳、照片、和绳中点一颗 40×13 的小把手。
+          <span class="del">删掉：</span>常驻 6 项工具条、每张卡的「取下为贴图」按钮、「已保存 · 文件名」、空绳两行文案。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 场景 2：悬停把手展开 -->
+    <figure>
+      <div class="shot">
+        <div class="stage">
+          <div class="wall"></div>
+          <svg class="rope" viewBox="0 0 1440 900">
+            <path class="shadow" d="M220,140 Q720,250 1220,140"/>
+            <path class="base" d="M220,140 Q720,250 1220,140"/>
+          </svg>
+          <div class="anchor" style="left:207px;top:127px"><s></s></div>
+          <div class="anchor" style="left:1207px;top:127px"><s></s></div>
+
+          <div class="hang" style="left:420px;top:176px;--tilt:-7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody code">
+              <div class="l hi w1"></div><div class="l w2"></div><div class="l w3"></div>
+              <div class="l w2"></div><div class="l w1"></div><div class="l w3"></div>
+            </div></div>
+          </div>
+          <div class="hang" style="left:720px;top:196px;--tilt:0deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody web">
+              <div class="wbar"></div><div class="hero"></div>
+              <div class="col"><i></i><i></i></div>
+            </div></div>
+          </div>
+          <div class="hang" style="left:1020px;top:176px;--tilt:7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody chat">
+              <div class="b short"></div><div class="b me"></div><div class="b"></div>
+              <div class="b me short"></div>
+            </div></div>
+          </div>
+
+          <div class="bar" style="left:573px;top:346px">
+            <button>收衣转贴图</button>
+            <button class="danger">大风吹走</button>
+            <button>贴图管理</button>
+            <span class="count">3 张</span>
+          </div>
+          <div class="pointer" style="left:884px;top:392px"></div>
+        </div>
+      </div>
+      <figcaption>
+        <h2>② 悬停把手：工具条展开</h2>
+        <p>
+          <span class="badge gray">悬停</span>鼠标靠近绳中点，把手展开成一颗胶囊。
+          <span class="del">删掉：</span>「锁定位置」「恢复默认」两项——设置页本来就有同名开关（<code>ClotheslineRows.tsx</code>），不必在桌面上重复。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 场景 3：悬停照片 -->
+    <figure>
+      <div class="shot">
+        <div class="stage">
+          <div class="wall"></div>
+          <svg class="rope" viewBox="0 0 1440 900">
+            <path class="shadow" d="M220,140 Q720,250 1220,140"/>
+            <path class="base" d="M220,140 Q720,250 1220,140"/>
+          </svg>
+          <div class="anchor" style="left:207px;top:127px"><s></s></div>
+          <div class="anchor" style="left:1207px;top:127px"><s></s></div>
+
+          <div class="hang" style="left:420px;top:176px;--tilt:-7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody code">
+              <div class="l hi w1"></div><div class="l w2"></div><div class="l w3"></div>
+              <div class="l w2"></div><div class="l w1"></div><div class="l w3"></div>
+            </div></div>
+          </div>
+
+          <div class="hang hot" style="left:720px;top:194px;--tilt:0deg">
+            <span class="clip"></span>
+            <div class="frame">
+              <div class="shotbody web">
+                <div class="wbar"></div><div class="hero"></div>
+                <div class="col"><i></i><i></i></div>
+              </div>
+              <span class="take">取下</span>
+            </div>
+            <span class="name">网页设计规范-v3.png</span>
+          </div>
+
+          <div class="hang" style="left:1020px;top:176px;--tilt:7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody chat">
+              <div class="b short"></div><div class="b me"></div><div class="b"></div>
+              <div class="b me short"></div>
+            </div></div>
+          </div>
+
+          <div class="pointer" style="left:742px;top:268px"></div>
+        </div>
+      </div>
+      <figcaption>
+        <h2>③ 悬停照片：能力浮现，不常驻</h2>
+        <p>
+          <span class="badge gray">悬停</span>照片抬起 2px、阴影加深；右上角浮出「取下」，绳下浮出文件名。
+          拖离绳带仍然是取下（主路径），按钮只是给不熟悉手势的人一条明路。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 场景 4：拖拽中 -->
+    <figure>
+      <div class="shot">
+        <div class="stage">
+          <div class="wall"></div>
+          <svg class="rope" viewBox="0 0 1440 900">
+            <path class="shadow" d="M220,140 Q720,250 1220,140"/>
+            <path class="base" d="M220,140 Q720,250 1220,140"/>
+          </svg>
+          <div class="anchor" style="left:207px;top:127px"><s></s></div>
+          <div class="anchor" style="left:1207px;top:127px"><s></s></div>
+
+          <div class="hang" style="left:420px;top:176px;--tilt:-7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody code">
+              <div class="l hi w1"></div><div class="l w2"></div><div class="l w3"></div>
+              <div class="l w2"></div><div class="l w1"></div><div class="l w3"></div>
+            </div></div>
+          </div>
+
+          <div class="slot" style="left:636px;top:198px"></div>
+
+          <div class="hang" style="left:1020px;top:176px;--tilt:7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody chat">
+              <div class="b short"></div><div class="b me"></div><div class="b"></div>
+              <div class="b me short"></div>
+            </div></div>
+          </div>
+
+          <div class="ghost-card" style="left:790px;top:420px">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody web">
+              <div class="wbar"></div><div class="hero"></div>
+              <div class="col"><i></i><i></i></div>
+            </div></div>
+          </div>
+          <div class="pointer" style="left:800px;top:470px"></div>
+        </div>
+      </div>
+      <figcaption>
+        <h2>④ 拖动中：只有幽灵位，没有文字</h2>
+        <p>
+          <span class="badge">核心</span>虚线幽灵框表示落点，被拖的照片跟手并略微放大。
+          <span class="del">删掉：</span>「松手调整顺序 · 拉离绳带取下」这句常驻教学——改成第一次使用出现 3 次，之后不再出现。
+        </p>
+      </figcaption>
+    </figure>
+
+    <!-- 场景 5：失去焦点 -->
+    <figure>
+      <div class="shot">
+        <div class="stage">
+          <div class="wall"></div>
+          <svg class="rope" viewBox="0 0 1440 900">
+            <path class="shadow" d="M220,140 Q720,250 1220,140"/>
+            <path class="base" d="M220,140 Q720,250 1220,140"/>
+          </svg>
+          <div class="anchor" style="left:207px;top:127px"><s></s></div>
+          <div class="anchor ghost" style="left:1207px;top:127px"><s></s></div>
+
+          <div class="hang" style="left:420px;top:176px;--tilt:-7deg">
+            <span class="clip"></span>
+            <div class="frame"><div class="shotbody code">
+              <div class="l hi w1"></div><div class="l w2"></div><div class="l w3"></div>
+              <div class="l w2"></div><div class="l w1"></div><div class="l w3"></div>
+            </div></div>
+          </div>
+
+          <div class="win">
+            <div class="titlebar">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <b>微信</b>
+            </div>
+            <div class="list">
+              <div class="row"><span class="av"></span><div class="lines"><div class="ln"></div><div class="ln s"></div></div></div>
+              <div class="row"><span class="av"></span><div class="lines"><div class="ln"></div><div class="ln s"></div></div></div>
+              <div class="bubble">图我收到了，排版那版也一起发我。</div>
+              <div class="row"><span class="av"></span><div class="lines"><div class="ln"></div><div class="ln s"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <h2>⑤ 失去焦点（当前问题的答案）</h2>
+        <p>
+          <span class="badge">本次修复</span>前面是微信半屏窗口，桌面上露出来的部分<strong>绳和照片仍在</strong>；
+          被窗口盖住的部分看不见——但那不是我们判断出来的，是 Z 序本来就这样。
+          <span class="del">删掉：</span><code>desktop.rs</code> 里「枚举所有窗口猜桌面是否暴露」的整套逻辑。
+        </p>
+      </figcaption>
+    </figure>
+
+  </div>
+
+  <h3 class="sect">改动清单（对应现有代码）</h3>
+  <table>
+    <thead>
+      <tr><th>项目</th><th>现在</th><th>改后</th><th>代码位置</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>工具条</td>
+        <td>常驻 6 项（收衣 / 大风 / 贴图管理 / 锁定 / 恢复默认 / 计数）</td>
+        <td class="keep">折叠成 40×13 把手，悬停展开为 3 项 + 计数</td>
+        <td><code>clothesline.html:19-21</code><br><code>runtime.mjs:346-356</code></td>
+      </tr>
+      <tr>
+        <td>每张卡的「取下为贴图」</td>
+        <td>常驻按钮，压在照片右上角</td>
+        <td class="keep">悬停才浮现，文案缩为「取下」</td>
+        <td><code>runtime.mjs:230-234</code></td>
+      </tr>
+      <tr>
+        <td>文件名</td>
+        <td>常驻「已保存 · 文件名」压掉照片底部 20px</td>
+        <td class="keep">删掉前缀与常驻占位，悬停显示在框外</td>
+        <td><code>runtime.mjs:227-229</code></td>
+      </tr>
+      <tr>
+        <td>拖拽教学</td>
+        <td>常驻「松手调整顺序 · 拉离绳带取下」</td>
+        <td class="keep">首次 3 次 coach mark，之后不再出现</td>
+        <td><code>gestures.mjs:173</code></td>
+      </tr>
+      <tr>
+        <td>幽灵位文案</td>
+        <td>虚线框中央写「挂在这里」</td>
+        <td class="keep">留框删字</td>
+        <td><code>clothesline.html:16</code></td>
+      </tr>
+      <tr>
+        <td>取下进度条</td>
+        <td>长条 + 「可拉回绳子取消」+ 取消按钮</td>
+        <td class="keep">整条删掉。准备期间照片自身半透明跟手，Esc 仍是取消</td>
+        <td><code>runtime.mjs:537</code></td>
+      </tr>
+      <tr>
+        <td>显示边界</td>
+        <td>EnumWindows 枚举所有窗口，猜「桌面是否暴露」</td>
+        <td class="cut">删除。常驻显示 + 保持窗口在 Z 序底部</td>
+        <td><code>desktop.rs:86-130</code><br><code>window.rs:65-115</code></td>
+      </tr>
+      <tr>
+        <td>Z 序</td>
+        <td><code>SetWindowPos(HWND_TOP)</code>（只在桌面时显示，看不出来）</td>
+        <td class="cut">改 <code>HWND_BOTTOM</code> + <code>WS_EX_NOACTIVATE</code>，交互后重压</td>
+        <td><code>window.rs:48-63</code></td>
+      </tr>
+      <tr>
+        <td>挂回判定</td>
+        <td>两套口径：原生 <code>near_y</code> −40/+180，前端 <code>nativeSlot</code> ±24/±64</td>
+        <td class="cut">删原生那套，只由 <code>nativeSlot</code> 一处决定</td>
+        <td><code>window.rs:465-483</code><br><code>runtime.mjs:1182</code></td>
+      </tr>
+      <tr>
+        <td>命中容差</td>
+        <td>进入 8px / 保持 10px 的<strong>空间</strong>滞回</td>
+        <td class="keep">进入即时、退出延时 150ms 的<strong>时间</strong>滞回</td>
+        <td><code>window.rs:414-424</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="notes">
+    <h4>两个必须实测的点（不实测不敢写进结论）</h4>
+    <ul>
+      <li><strong>Z 序</strong>：改 <code>HWND_BOTTOM</code> 后，照片是否仍在桌面图标之上（点得到）？用 <code>elementFromPoint</code> + 桌面实点验证，不看代码推。</li>
+      <li><strong>键盘与 <code>NOACTIVATE</code> 的取舍</strong>：<code>WS_EX_NOACTIVATE</code> 会让窗口收不到 Esc / 方向键。要么「按下时临时激活、随即压回底部」，要么放弃键盘只留鼠标。这一条会直接改交互，必须先做 20 行探针。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

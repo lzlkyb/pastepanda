@@ -37,19 +37,31 @@ export function useLenisRef(): RefObject<Lenis | null> | null {
 // 用全局引用计数支持嵌套弹框：最后一层关闭才真正恢复 Lenis。
 let modalScrollLockCount = 0;
 
+/** 当前是否有模态滚动锁在场。Lenis 的创建方（useSmoothScroll 等）在初始化时
+ *  读它：锁先于 Lenis 存在的窗口期（启动早期弹出的更新/里程碑弹窗）由创建方补锁。 */
+export function isModalScrollLocked(): boolean {
+  return modalScrollLockCount > 0;
+}
+
 export function useModalScrollLock(): void {
   const lenisRef = useLenisRef();
   useEffect(() => {
-    const lenis = lenisRef?.current ?? null;
     modalScrollLockCount += 1;
-    if (modalScrollLockCount === 1 && lenis) {
-      lenis.stop();
-    }
+    // 🔴 批次③：改前（a）挂载时捕获一次 Lenis 实例、（b）只在 count===1 时
+    // 尝试 stop——第一个弹窗先于 Lenis 就绪打开时就永远锁不上，之后第二个
+    // 弹窗看到 count===2 也不再尝试，弹框内滚轮穿透到底层列表。
+    // 现在：每次有弹窗进场都**现取** lenisRef.current 并 stop（幂等），
+    // Lenis 迟到的情况由创建方经 isModalScrollLocked() 补锁。
+    lenisRef?.current?.stop();
     return () => {
       modalScrollLockCount -= 1;
       if (modalScrollLockCount <= 0) {
         modalScrollLockCount = 0;
-        lenis?.start();
+        // 刻意读 cleanup 时刻的实例，不按 exhaustive-deps 建议拷贝挂载时的值：
+        // Lenis 可能在此期间销毁重建，恢复的必须是当前活着的那个——
+        // 「挂载时拷贝一份」正是本次修掉的 bug 形态（Lenis 迟到 = 锁不住/恢复错实例）。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        lenisRef?.current?.start();
       }
     };
   }, [lenisRef]);

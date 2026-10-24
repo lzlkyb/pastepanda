@@ -131,6 +131,20 @@ fn cleanup_note_trash(store: &crate::data_store::DataStore, config: &serde_json:
     }
 }
 
+/// 🔴 B7（2026-10-24 拍板：清理覆盖全部工作区）——自动清理要覆盖的工作区列表。
+///
+/// 改前只清 `config.current_workspace`，而 `clipboard_monitor` 的采集**永远写
+/// 「默认」工作区**（HistoryItem 构造硬编码）——用户切过工作区后，「默认」区
+/// 的记录永不过期，磁盘与 DB 持续膨胀，与用户设置的保留天数不符。
+/// 语义：过期跟记录本身走，不跟「用户当前在看哪个区」走。
+fn workspaces_to_auto_clean(current: &str, distinct: &[String]) -> Vec<String> {
+    if distinct.is_empty() {
+        // 没有历史记录时没有可清的；退回当前区名保持事件路径可测
+        return vec![current.to_string()];
+    }
+    distinct.to_vec()
+}
+
 /// 剪贴板历史的过期清理（原有行为，只是从 `run_once` 里拆出来了）。
 fn cleanup_history(
     handle: &AppHandle,
@@ -144,24 +158,64 @@ fn cleanup_history(
     if days == 0 {
         return; // 用户关闭了自动清理
     }
-    let workspace = config
+    let current = config
         .get("current_workspace")
         .and_then(|v| v.as_str())
         .unwrap_or("默认")
         .to_string();
-
-    match store.clear_history_with_undo(&workspace, Some(days as u32)) {
-        Ok((count, deleted)) if count > 0 => {
-            let deleted_ids: Vec<&str> = deleted.iter().map(|i| i.id.as_str()).collect();
-            if let Err(e) = handle.emit(
-                "auto-cleanup-done",
-                serde_json::json!({ "count": count, "deleted_ids": deleted_ids }),
-            ) {
-                log::warn!("[AutoCleanup] 发送清理事件失败: {}", e);
+    // B7：采集永远写「默认」区而旧实现只清 current_workspace——过期必须覆盖全部工作区。
+    let distinct = store.distinct_workspaces().unwrap_or_default();
+    let mut total = 0u32;
+    let mut all_deleted: Vec<_> = Vec::new();
+    for ws in workspaces_to_auto_clean(&current, &distinct) {
+        match store.clear_history_with_undo(&ws, Some(days as u32)) {
+            Ok((count, deleted)) => {
+                total += count;
+                all_deleted.extend(deleted);
             }
-            log::info!("[AutoCleanup] 已清理 {} 条过期记录", count);
+            Err(e) => log::warn!("[AutoCleanup] 清理工作区 {} 失败: {}", ws, e),
         }
-        Ok(_) => {}
-        Err(e) => log::warn!("[AutoCleanup] 清理失败: {}", e),
+    }
+    if total > 0 {
+        // B3：自动清理是**永久删除**（deleted 不进前端撤销栈），必须连图片
+        // 文件一起清扫——改前只删表，images/ 目录孤儿图片无限增长。
+        // 手动清空（commands::clear_history）有撤销，不能做这步。
+        store.purge_image_files_for(&all_deleted);
+        let deleted_ids: Vec<&str> = all_deleted.iter().map(|i| i.id.as_str()).collect();
+        if let Err(e) = handle.emit(
+            "auto-cleanup-done",
+            serde_json::json!({ "count": total, "deleted_ids": deleted_ids }),
+        ) {
+            log::warn!("[AutoCleanup] 发送清理事件失败: {}", e);
+        }
+        log::info!("[AutoCleanup] 已清理 {} 条过期记录（全部工作区）", total);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// B7 守卫：切到非默认工作区后，自动清理仍必须覆盖「默认」区
+    /// （采集永远写默认区——改前只清 current_workspace，默认区永不过期）。改前为红。
+    #[test]
+    fn auto_cleanup_must_cover_default_workspace() {
+        let distinct = vec!["默认".to_string(), "项目B".to_string()];
+        let targets = workspaces_to_auto_clean("项目B", &distinct);
+        assert!(
+            targets.iter().any(|w| w == "默认"),
+            "自动清理必须覆盖采集实际写入的「默认」工作区，实际只清了 {:?}",
+            targets
+        );
+    }
+
+    /// B7 守卫：所有工作区的过期记录都在清理范围内。
+    #[test]
+    fn auto_cleanup_covers_every_workspace() {
+        let distinct = vec!["默认".to_string(), "项目B".to_string(), "归档".to_string()];
+        let targets = workspaces_to_auto_clean("项目B", &distinct);
+        for ws in &distinct {
+            assert!(targets.contains(ws), "漏了工作区 {}", ws);
+        }
     }
 }

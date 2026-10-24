@@ -348,7 +348,7 @@ function App() {
   }, []);
 
   // 失焦自动隐藏（弹窗打开时跳过）—— 使用 useRef 避免闭包陷阱
-  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || freeDiff.open;
+  const dialogOpen = showSettings || showSequential || showSnippets || showExtract || showEncoding || showBatchReplace || showConfigDiff || showShortcuts || showQr || showDailyBrief || freeDiff.open;
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
@@ -845,8 +845,8 @@ function App() {
   // 使用 ref 存储弹窗状态，避免 handleKeyDown 依赖变化导致频繁重新注册事件
   // U4：moveToGroup 弹窗一并登记，Esc/导航键守卫才能感知它
   // 🔴 pinnedPanelOpen 同理：它是全屏遮罩，不登记就会在它上面按 Delete 删掉遮罩背后选中的卡片。
-  const dialogStatesRef = useRef({ showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel });
-  dialogStatesRef.current = { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel };
+  const dialogStatesRef = useRef({ showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel, showQr, showDailyBrief });
+  dialogStatesRef.current = { showSettings, showSequential, showSnippets, showExtract, showEncoding, showBatchReplace, showConfigDiff, showShortcuts, moveToGroup: !!moveToGroupItem, pinnedPanelOpen: showPinnedPanel, showQr, showDailyBrief };
 
   // U3：跟踪右键菜单开关（ContextMenu 打开/关闭时广播 app-ctxmenu-open/close 事件）
   const ctxMenuOpenRef = useRef(false);
@@ -891,6 +891,10 @@ function App() {
 
   // U51：跟踪文件详情弹窗开关（由 CardList 管理，广播 app-filedetail-open/close 事件）
   const fileDetailOpenRef = useRef(false);
+  // P1：跟踪合并粘贴面板开关（同上模式，CardList 广播 app-merge-open/close）。
+  // 不接的话：面板开着按 Delete 会删掉遮罩背后多选的卡片（keyboardActions 的
+  // dialogOpen 名单感知不到它）。
+  const mergeOpenRef = useRef(false);
   useEffect(() => {
     const onOpen = () => { fileDetailOpenRef.current = true; };
     const onClose = () => { fileDetailOpenRef.current = false; };
@@ -899,6 +903,16 @@ function App() {
     return () => {
       window.removeEventListener("app-filedetail-open", onOpen);
       window.removeEventListener("app-filedetail-close", onClose);
+    };
+  }, []);
+  useEffect(() => {
+    const onOpen = () => { mergeOpenRef.current = true; };
+    const onClose = () => { mergeOpenRef.current = false; };
+    window.addEventListener("app-merge-open", onOpen);
+    window.addEventListener("app-merge-close", onClose);
+    return () => {
+      window.removeEventListener("app-merge-open", onOpen);
+      window.removeEventListener("app-merge-close", onClose);
     };
   }, []);
 
@@ -917,7 +931,7 @@ function App() {
     const {
       showSettings, showSequential, showSnippets, showExtract,
       showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
-      pinnedPanelOpen,
+      pinnedPanelOpen, showQr, showDailyBrief,
     } = dialogStatesRef.current;
 
     const filtered = store.getFilteredItems();
@@ -938,6 +952,10 @@ function App() {
       showEncoding, showBatchReplace, showConfigDiff, moveToGroup, showShortcuts,
       pinnedPanelOpen,
       fileDetailOpen: fileDetailOpenRef.current,
+      mergeOpen: mergeOpenRef.current,
+      qrOpen: showQr,
+      dailyBriefOpen: showDailyBrief,
+      // showQr/showDailyBrief 来自上面的 dialogStatesRef.current 快照，不是闭包捕获
       anyStoreDialogOpen: anyDialogOpen(d),
       chainOpen: Boolean(d.chainText),
       chainEditOpen: Boolean(d.chainEdit),
@@ -1492,8 +1510,11 @@ function ShortcutPanel({ onClose }: { onClose: () => void }) {
       { desc: "粘贴选中", keys: "Enter" },
       { desc: dblDesc, keys: "双击卡片" },
       { desc: "右键编辑内容", keys: "右键菜单" },
-      { desc: "删除选中", keys: "Delete" },
+      { desc: "删除选中", keys: "Delete / Backspace" },
       { desc: "置顶 / 取消", keys: primaryShortcutLabel("d") },
+      { desc: "转为知识库笔记", keys: "n" },
+      { desc: "自由对比", keys: primaryShortcutLabel("shift+d") },
+      { desc: "聚焦搜索框", keys: primaryShortcutLabel("f") },
       { desc: "撤销删除", keys: primaryShortcutLabel("z") },
       { desc: "打开设置", keys: primaryShortcutLabel("s") },
       { desc: "打开帮助", keys: configuredShortcutLabel("ctrl+h", "") },

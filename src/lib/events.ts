@@ -20,7 +20,7 @@
  * 聚合只需要元信息，而图片的 `content` 是 base64，拉出来是白花内存。
  * 这同时也是隐私约束：每日整理的行为层零内容出网。
  */
-import { cleanSourceName } from "@/lib/utils";
+import { cleanSourceName, parseHistoryTime } from "@/lib/utils";
 
 /**
  * 分段阈值（秒）。相邻两条间隔**超过**它就断段。
@@ -69,15 +69,6 @@ export interface Segment {
   items: SegmentItem[];
 }
 
-/** `"2026-09-04 09:20:01"` → 毫秒数；解不出来返 `NaN`。 */
-function parseTime(s: string): number {
-  // 手拆而不是 `new Date(s)`：后者对 `"2026-09-04 09:20:01"` 这种带空格的写法
-  // 在不同引擎上行为不一致（Safari 直接返 Invalid Date）。
-  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(s);
-  if (!m) return NaN;
-  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
-}
-
 /** `"2026-09-04 09:20:01"` → `"09:20"`。 */
 function hhmm(s: string): string {
   return s.slice(11, 16);
@@ -94,7 +85,7 @@ export function segmentByGap(items: SegmentItem[], gapSecs: number): Segment[] {
   // 时间解不出来的直接丢掉。NaN 参与比较永远为 false，
   // 留着会让它后面所有条目都接不上段——静默地把整天揉成一段。
   const sorted = items
-    .map((it) => ({ it, t: parseTime(it.time) }))
+    .map((it) => ({ it, t: parseHistoryTime(it.time) }))
     .filter((x) => !Number.isNaN(x.t))
     .sort((a, b) => a.t - b.t);
   if (sorted.length === 0) return [];

@@ -83,7 +83,9 @@ fn save_image_bytes(bytes: &[u8], images_dir: &Path) -> Option<PathBuf> {
     }
     let file_path = images_dir.join(format!("{}.{}", hash, ext));
     if !file_path.exists() {
-        if let Err(e) = std::fs::write(&file_path, bytes) {
+        // B5：内容寻址文件走原子写（写一半崩溃的半截文件会被 exists() 当成
+        // 好文件永久复用成裂图）
+        if let Err(e) = crate::atomic_write::write_replace_bytes(&file_path, bytes) {
             log::error!("[HtmlImages] 写入图片失败: {}", e);
             return None;
         }

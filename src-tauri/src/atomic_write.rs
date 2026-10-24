@@ -61,6 +61,14 @@ pub fn finish_rename(tmp_path: &Path, final_path: &Path) -> Result<(), String> {
 /// Windows 上 `std::fs::rename` 走的是 `MoveFileEx + MOVEFILE_REPLACE_EXISTING`，
 /// 同卷内可以盖写已存在的目标。
 pub fn write_replace(final_path: &Path, content: &str) -> Result<(), String> {
+    write_replace_bytes(final_path, content.as_bytes())
+}
+
+/// [`write_replace`] 的字节版（图片/图标等二进制缓存文件）。
+/// B5（2026-10-24）：`html_images` / `icon_extractor` / `lan_sync` 原先各写一份
+/// 裸 `fs::write`——内容寻址文件（文件名 = hash）写一半崩溃会被 `exists()`
+/// 短路当成"已存在的好文件"永久复用成裂图。
+pub fn write_replace_bytes(final_path: &Path, content: &[u8]) -> Result<(), String> {
     if let Some(parent) = final_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("创建目录 {} 失败：{}", parent.display(), e))?;
@@ -70,7 +78,7 @@ pub fn write_replace(final_path: &Path, content: &str) -> Result<(), String> {
     {
         use std::io::Write;
         let mut f = std::fs::File::create(&tmp).map_err(|e| format!("创建临时文件失败：{}", e))?;
-        f.write_all(content.as_bytes())
+        f.write_all(content)
             .and_then(|_| f.sync_all())
             .map_err(|e| {
                 let _ = std::fs::remove_file(&tmp);

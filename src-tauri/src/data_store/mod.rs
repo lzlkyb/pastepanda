@@ -360,9 +360,81 @@ impl std::ops::Deref for DataStore {
     }
 }
 
+/// 最近一次坏库自救保留的原库路径（启动流程读它广播给前端）。
+static LAST_RECOVERY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// 读取「本次启动是否发生过坏库自救」（Some = 原库备份路径）。
+pub fn last_recovery_backup() -> Option<String> {
+    LAST_RECOVERY.lock().ok().and_then(|g| g.clone())
+}
+
+/// B4（2026-10-24 拍板：自动重建）——打开数据库；文件库损坏时改名保留原库并重建。
+///
+/// 🔴 改前 open/建表失败直接把 Err 往上传——lib.rs 弹窗 + exit(1)，用户没有
+/// 任何自助手段，只能手删文件、历史全丢。现在：`PRAGMA quick_check` 不通过
+/// （含「根本不是 sqlite 文件」）→ 原库连同 -wal/-shm 改名为
+/// `<path>.corrupt-<时间戳>` 保留 → 重建空库继续启动；重建也失败（磁盘只读等）
+/// 才回落到原来的致命错误路径。
+impl DataStore {
+    fn open_healthy_or_rebuild(path: &str) -> Result<Connection, rusqlite::Error> {
+        match Self::open_and_quick_check(path) {
+            Ok(conn) => Ok(conn),
+            Err(first) => {
+                if path == ":memory:" || !std::path::Path::new(path).exists() {
+                    return Err(first);
+                }
+                let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                let backup = format!("{}.corrupt-{}", path, stamp);
+                // WAL/SHM 是坏库状态的一部分，必须随主库一起挪走——
+                // 否则旧 -wal 会被新空库当成自己的日志去恢复，二次损坏。
+                if std::fs::rename(path, &backup).is_err() {
+                    // 改名都做不到（文件被锁/只读盘）：维持原致命路径
+                    return Err(first);
+                }
+                for suffix in ["-wal", "-shm"] {
+                    let side = format!("{}{}", path, suffix);
+                    if std::path::Path::new(&side).exists() {
+                        let _ = std::fs::rename(&side, format!("{}{}", backup, suffix));
+                    }
+                }
+                log::error!(
+                    "[DataStore] 数据库损坏（{}），原库已保留为 {}，重建空库继续",
+                    first,
+                    backup
+                );
+                if let Ok(mut g) = LAST_RECOVERY.lock() {
+                    *g = Some(backup);
+                }
+                Self::open_and_quick_check(path).map_err(|second| {
+                    log::error!("[DataStore] 重建空库仍失败: {}", second);
+                    second
+                })
+            }
+        }
+    }
+
+    fn open_and_quick_check(path: &str) -> Result<Connection, rusqlite::Error> {
+        let conn = Connection::open(path)?;
+        if path == ":memory:" {
+            return Ok(conn);
+        }
+        let healthy = conn
+            .query_row("PRAGMA quick_check", [], |r| r.get::<_, String>(0))
+            .map(|v| v == "ok")
+            .unwrap_or(false);
+        if !healthy {
+            return Err(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CORRUPT),
+                Some("quick_check 未通过".to_string()),
+            ));
+        }
+        Ok(conn)
+    }
+}
+
 impl DataStore {
     pub fn new(path: &str) -> Result<Self, rusqlite::Error> {
-        let conn = Connection::open(path)?;
+        let conn = Self::open_healthy_or_rebuild(path)?;
         let db_path = path.to_string();
 
         // 创建表

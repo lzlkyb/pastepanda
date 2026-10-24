@@ -2573,6 +2573,114 @@ fn test_value_preserve_unvalued_all_cleared() {
     assert_eq!(count, 2, "没有价值的过期记录照常全清");
 }
 
+// ============================================================
+// B3 守卫：过期/条件清理必须连同派生数据一起清（FTS 索引 / 摘要 / 向量）。
+// 改前 clear_history_with_undo 只删主表 + summaries + vectors，FTS 残留——
+// SQLite 复用 rowid 后已删内容会命中新条目；clear_history_conditions 更是
+// 连 summaries 都不删。改前以下两条用例为红。
+// ============================================================
+
+#[test]
+fn test_clear_history_with_undo_also_clears_fts() {
+    let store = make_store();
+    store.insert_history(&make_old_item("fts-old", 100)).unwrap();
+    {
+        let conn = store.lock_conn();
+        let fts: i64 =
+            conn.query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0)).unwrap();
+        assert!(fts >= 1, "前提：插入路径应已建立 FTS 行（前提失效则本测试无效）");
+        // 模拟该图片识别过文字（OCR 行按 history rowid 对齐）
+        let rowid: i64 = conn
+            .query_row("SELECT rowid FROM history WHERE id = 'fts-old'", [], |r| r.get(0))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO image_ocr_fts (rowid, ocr) VALUES (?1, '识别文字')",
+            rusqlite::params![rowid],
+        )
+        .unwrap();
+    }
+
+    let count = store.clear_history_with_undo("默认", Some(30)).unwrap().0;
+    assert_eq!(count, 1);
+
+    let conn = store.lock_conn();
+    let fts: i64 =
+        conn.query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0)).unwrap();
+    assert_eq!(fts, 0, "history_fts 残留会在 rowid 复用后让已删内容命中新条目");
+    let ocr: i64 =
+        conn.query_row("SELECT COUNT(*) FROM image_ocr_fts", [], |r| r.get(0)).unwrap();
+    assert_eq!(ocr, 0, "image_ocr_fts 残留同样污染搜索");
+}
+
+#[test]
+fn test_clear_history_conditions_clears_fts_and_summaries() {
+    let store = make_store();
+    store.insert_history(&make_old_item("cond-old", 100)).unwrap();
+    {
+        let conn = store.lock_conn();
+        // insert_history 可能已建摘要行（pending），用 OR REPLACE 保证样本就位
+        conn.execute(
+            "INSERT OR REPLACE INTO history_summaries (history_id, summary, created_at)
+             VALUES ('cond-old', '摘要', '2026-01-01 00:00:00')",
+            [],
+        )
+        .unwrap();
+    }
+
+    let (count, _) = store
+        .clear_history_conditions("默认", Some(30), None, None)
+        .unwrap();
+    assert_eq!(count, 1);
+
+    let conn = store.lock_conn();
+    let fts: i64 =
+        conn.query_row("SELECT COUNT(*) FROM history_fts", [], |r| r.get(0)).unwrap();
+    assert_eq!(fts, 0, "条件清理也必须清 FTS（与 delete_history 同口径）");
+    let summaries: i64 = conn
+        .query_row("SELECT COUNT(*) FROM history_summaries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(summaries, 0, "条件清理必须连摘要一起删，否则补向量会烧已删条目的预算");
+    let vectors: i64 = conn
+        .query_row("SELECT COUNT(*) FROM semantic_vectors", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(vectors, 0);
+}
+
+/// B3 机制守卫：自动清理的文件清扫只删**不再被任何记录引用**的图片文件。
+/// （手动清空路径不做文件清扫——撤销重插依赖文件还在；那条不对称由
+/// auto_cleanup 只调 purge_image_files_for、commands::clear_history 不调来保证。）
+#[test]
+fn test_purge_image_files_only_removes_unreferenced() {
+    let store = make_store();
+    let dir = std::env::temp_dir().join("pastepanda_test_purge_files");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join(format!("{}.png", std::process::id()));
+    std::fs::write(&file, b"png-bytes").unwrap();
+    let path_str = file.to_str().unwrap().to_string();
+
+    let mut a = make_old_item("img-a", 100);
+    a.item_type = "image".to_string();
+    a.content = path_str.clone();
+    let mut b = make_old_item("img-b", 100);
+    b.item_type = "image".to_string();
+    b.content = path_str.clone();
+    b.pinned = true; // 置顶躲过第一轮过期清理，模拟"文件仍被引用"
+    store.insert_history(&a).unwrap();
+    store.insert_history(&b).unwrap();
+
+    // 第一轮自动清理：只删了 a（b 置顶豁免）。文件仍被 b 引用，必须保留。
+    let (count, deleted) = store.clear_history_with_undo("默认", Some(30)).unwrap();
+    assert_eq!(count, 1, "置顶的 b 豁免，只有 a 被清");
+    store.purge_image_files_for(&deleted);
+    assert!(file.exists(), "仍被其它记录引用的文件不得删");
+
+    // b 改走手动删除（自带引用检查的文件清理），最后一条引用消失后文件应被清
+    let deleted = store.delete_history(&["img-b".to_string()]).unwrap();
+    assert_eq!(deleted, 1);
+    assert!(!file.exists(), "最后一条引用删除后文件应被清理");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn test_count_expired_matches_clear_with_preserve() {
     // 一致性约定：设置页的"过期计数"必须 = 实际清理数（豁免后都只算无价值条目）
@@ -9222,4 +9330,67 @@ fn test_human_revert_leaves_no_agent_mark_and_no_anchor() {
         pinned_after, pinned_before,
         "人自己点的回滚不该新锚一个版本（锚点只能手动清，乱锚会占死名额）"
     );
+}
+
+// ============================================================
+// B4 守卫：坏库自救（2026-10-24 拍板：自动重建）
+// 改前 DataStore::new 对损坏文件直接 Err → lib.rs 弹窗 + exit(1)，
+// 用户没有任何自助手段。改前此用例为红。
+// ============================================================
+#[test]
+fn test_corrupt_db_is_rebuilt_with_backup_kept() {
+    let dir = std::env::temp_dir().join("pastepanda_test_corrupt_db");
+    let _ = std::fs::create_dir_all(&dir);
+    let db = dir.join("clipboard.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let _ = std::fs::remove_file(&db);
+    // 先建健康库拿到真实文件路径布局，再整个写坏
+    {
+        let store = DataStore::new(&db_str).unwrap();
+        store
+            .insert_history(&make_item("a", "文本", "2026-01-01 00:00:00", "text"))
+            .unwrap();
+    }
+    let garbage = b"this is definitely not a sqlite database file!!!".to_vec();
+    std::fs::write(&db, &garbage).unwrap();
+
+    let store = DataStore::new(&db_str).expect("坏库必须自救重建，而不是让应用起不来");
+    store
+        .insert_history(&make_item("b", "新文本", "2026-01-02 00:00:00", "text"))
+        .unwrap();
+
+    // 原库以 .corrupt-* 保留，内容原封不动（供用户手工找回）
+    let kept: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+        .collect();
+    assert!(!kept.is_empty(), "坏库必须以 .corrupt-* 改名保留");
+    let kept_bytes = std::fs::read(kept[0].path()).unwrap();
+    assert_eq!(kept_bytes, garbage);
+    for e in std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()) {
+        let _ = std::fs::remove_file(e.path());
+    }
+}
+
+#[test]
+fn test_healthy_db_triggers_no_recovery() {
+    let dir = std::env::temp_dir().join(format!("pastepanda_test_healthy_db_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let db = dir.join("clipboard.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let _ = std::fs::remove_file(&db);
+
+    let store = DataStore::new(&db_str).unwrap();
+    store
+        .insert_history(&make_item("h", "健康", "2026-01-01 00:00:00", "text"))
+        .unwrap();
+
+    let corrupts: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+        .collect();
+    assert!(corrupts.is_empty(), "健康库不得触发自救改名");
+    let _ = std::fs::remove_dir_all(&dir);
 }

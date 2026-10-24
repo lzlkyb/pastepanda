@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 const source = (file: string) => readFileSync("src-tauri/src/" + file, "utf8");
+// 只判代码，不判注释：文件头说明「旧实现是 EnumWindows、为什么删掉」是有价值的文档，
+// 不该因为它提到旧名字就判红。
+const code = (file: string) =>
+  source(file)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
 describe("晾衣绳桌面边界", () => {
   it("页面 ready 与原生初始化成功必须都满足，初始化不能只回报排队成功", () => {
     const window = source('clothesline/window.rs');
@@ -28,11 +35,18 @@ describe("晾衣绳桌面边界", () => {
       /!NATIVE_READY\.load[\s\S]{0,200}set_pointer_passthrough\(&win, true\)[\s\S]{0,80}NATIVE_READY\.store\(true/,
     );
   });
-  it("鼠标进入挂图区域的余量足够，不再要求 2px 精度", () => {
-    // 窗口默认穿透，光标必须落进上报区域外扩 pad 内才切回可交互。
-    // 2px 时用户「明明在图上却点不动」，实测就是这里。
+  it("命中容器改时间滞回：进入即时、退出延时，不再用一对空间阈值互相牵制", () => {
+    // 旧写法是「进入 8px / 保持 10px」的空间滞回，指针斜着划出边界时会闪断；
+    // 现在进入仍然留 8px 容差（2px 时用户「明明在图上却点不动」），
+    // 退出改成 150ms 延时确认。
     const window = source("clothesline/window.rs");
-    expect(window).toContain("if inside { 10.0 } else { 8.0 }");
+    const poll = window.slice(window.indexOf("fn start_poll"), window.indexOf("fn cursor()"));
+    const hitCall = poll.slice(poll.indexOf("model().hit("), poll.indexOf("let next ="));
+    expect(hitCall).toContain("8.0");
+    expect(hitCall).not.toContain("10.0");
+    expect(poll).toContain("left_at.get_or_insert_with");
+    expect(poll).toContain("from_millis(150)");
+    expect(poll).not.toContain("if inside { 10.0 } else { 8.0 }");
   });
   it("不再提供撤销条，也不再用全局在途状态锁住整根绳子的操作", () => {
     // 2026-10-18 体验收敛：撤销条与「一张在途全绳禁用」是「点不动 + 提示太多」的两大来源。
@@ -56,7 +70,10 @@ describe("晾衣绳桌面边界", () => {
     const refresh = desktop.slice(desktop.indexOf('fn refresh('), desktop.indexOf('unsafe extern "system" fn foreground'));
     expect(refresh).toContain('let _refresh = REFRESH.lock()');
     expect(refresh.indexOf('let _refresh')).toBeLessThan(refresh.indexOf('GetForegroundWindow()'));
-    expect(refresh.indexOf('let _refresh')).toBeLessThan(refresh.indexOf('DESKTOP.store'));
+    // 状态提交（store 或 swap）必须在锁内，且晚于前台采样。
+    const commit = refresh.search(/DESKTOP\.(store|swap)\(/);
+    expect(commit).toBeGreaterThan(-1);
+    expect(refresh.indexOf('let _refresh')).toBeLessThan(commit);
     expect(refresh).not.toContain('drop(_refresh)');
   });
   it("桌面焦点变化时抬到桌面前且不激活窗口，显示仍在桌面门控之后", () => {
@@ -84,14 +101,37 @@ describe("晾衣绳桌面边界", () => {
     expect(pin).not.toMatch(/s\.rect\.width\s+as\s+f32\s*\/\s*img_width/);
     expect(pin).toContain("actual_pin_rect");
   });
-  it("所有显示出口统一走桌面门控，切换前台由事件驱动恢复", () => {
+  it("显示门控里不含前台信息，抬升只在桌面上下文发生", () => {
     const window = source("clothesline/window.rs");
     expect(window).toContain(".always_on_top(false)");
     expect(window).toContain("desktop::can_show");
     expect(source("clothesline/mod.rs")).toContain("desktop::install(app)");
     expect(window.match(/win\.show\(\)/g)).toHaveLength(1);
+    // 2026-10-23：「失去焦点绳子就没了」的根因是显示判断里带了「是否在桌面」。
+    // 常驻之后这一位必须彻底消失——前台是谁只决定要不要抬 Z 序，不决定显不显示。
+    const show = window.slice(window.indexOf("desktop::can_show"), window.indexOf("if !show"));
+    expect(show).not.toContain("is_desktop");
+    expect(show).not.toContain("on_desktop");
+    // 抬升仍然只认桌面上下文：否则切到微信时会把整根绳顶到微信上面。
+    const sync = window.slice(window.indexOf("pub(super) fn sync_visibility"), window.indexOf("pub(crate) fn ensure"));
+    expect(sync).toMatch(/if desktop::on_desktop\(\)\s*\{\s*raise_above_desktop\(&win\)/);
+    // 原生贴图拖拽不能再按「前台是不是桌面」硬挡：从微信里往桌面拖会被误杀。
     const drag = window.slice(window.indexOf("pub fn pin_drag("), window.indexOf("pub fn pin_drag_cancel"));
-    expect(drag).toContain("desktop::is_desktop()");
+    expect(drag).not.toContain("is_desktop");
+  });
+  it("不再枚举所有顶层窗口猜「桌面是否暴露」", () => {
+    // 旧 desktop_exposed() 用 EnumWindows 扫全屏，只要有任意一个可见窗口就判
+    // 「桌面被挡住」并隐藏绳子；多显示器 / 虚拟桌面 / UWP 宿主下必然误判。
+    // 这个能力现在由 Z 序免费提供，代码必须不再出现。
+    const desktop = code("clothesline/desktop.rs");
+    expect(desktop).not.toContain("EnumWindows");
+    expect(desktop).not.toContain("desktop_exposed");
+    expect(desktop).not.toContain("DWMWA_CLOAKED");
+    expect(desktop).toContain("fn on_desktop_context(");
+    // 显示判据只剩四个入参，前台信息不允许加回来。
+    const canShow = desktop.slice(desktop.indexOf("pub(super) fn can_show("), desktop.indexOf("pub(super) fn on_desktop("));
+    expect(canShow).toContain("enabled: bool");
+    expect(canShow).not.toContain("desktop: bool");
   });
   it("双击贴图不会隐式进入截图，右键重新编辑仍可显式调用", () => {
     const pin = source("pinned_window.rs");

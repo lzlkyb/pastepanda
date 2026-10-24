@@ -107,10 +107,12 @@ describe('Clothesline hardening regressions',()=>{
     dispose();dispose=undefined;
     document.body.innerHTML=fixture;
     document.getElementById('stageStatus')!.textContent='new controller';
-    document.getElementById('takeProgress')!.hidden=false;
     ready.resolve(bridge.pin);await waitFor(()=>expect(bridge.closePin).toHaveBeenCalled());
+    // stageStatus 是 renderCards 每次都会写的元素：disposed 判断一旦失效，
+    // 旧控制器的 renderCards 就会把它覆盖掉，这条断言就会红。
+    // （原来的 takeProgress 标记已随整条进度条一起删除。）
     expect(document.getElementById('stageStatus')!.textContent).toBe('new controller');
-    expect(document.getElementById('takeProgress')!.hidden).toBe(false);expect(bridge.restore).toHaveBeenCalledOnce();
+    expect(bridge.restore).toHaveBeenCalledOnce();
     expect(bridge.startDrag).not.toHaveBeenCalled();
   });
   it('clear removal awaiting IPC blocks photo drag detachment, not just action buttons',async()=>{

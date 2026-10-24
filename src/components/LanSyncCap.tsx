@@ -24,6 +24,10 @@ export function LanSyncCap() {
   const [devices, setDevices] = useState<PairedLite[]>([]);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // 🔴 批次③：轮询失败改前只 logger.warn——徽标停留在上一次的值，同步服务
+  // 挂了仍显示「运行中」。连续 2 次失败后改挂「状态未知」，不再替旧状态背书。
+  const [unknown, setUnknown] = useState(false);
+  const failStreak = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -34,8 +38,12 @@ export function LanSyncCap() {
       ]);
       setDevices(list);
       setRunning(alive);
+      failStreak.current = 0;
+      setUnknown(false);
     } catch (e) {
       logger.warn("剪贴板同步状态刷新失败", e);
+      failStreak.current += 1;
+      if (failStreak.current >= 2) setUnknown(true);
     }
   }, []);
 
@@ -68,11 +76,13 @@ export function LanSyncCap() {
   const online = devices.filter((d) => d.online);
   const last = online.find((d) => d.last_sync);
   // 文案恒为「同步」——状态靠圆点/角标/浮层说，行内不塞长句
-  const dotClass = !running
-    ? styles.dotBad
-    : online.length > 0
-      ? styles.dotOk
-      : styles.dot;
+  const dotClass = unknown
+    ? styles.dot // 未知：中性圆点，不亮也不红
+    : !running
+      ? styles.dotBad
+      : online.length > 0
+        ? styles.dotOk
+        : styles.dot;
 
   return (
     <div className={styles.wrap} ref={wrapRef}>
@@ -83,16 +93,18 @@ export function LanSyncCap() {
         aria-expanded={open}
         aria-haspopup="dialog"
         title={
-          !running
-            ? "剪贴板同步 · 监听未启动"
-            : online.length > 0
-              ? `剪贴板同步 · 在线 ${online.length} 台`
-              : "剪贴板同步 · 监听中，等待其他设备"
+          unknown
+            ? "剪贴板同步 · 状态未知（刷新失败）"
+            : !running
+              ? "剪贴板同步 · 监听未启动"
+              : online.length > 0
+                ? `剪贴板同步 · 在线 ${online.length} 台`
+                : "剪贴板同步 · 监听中，等待其他设备"
         }
       >
         <span className={`${styles.dot} ${dotClass}`} />
         <span>同步</span>
-        {running && online.length > 0 && (
+        {!unknown && running && online.length > 0 && (
           <span className={styles.badge} aria-label={`${online.length} 台在线`}>
             {online.length}
           </span>
@@ -115,8 +127,8 @@ export function LanSyncCap() {
           <div className={styles.body}>
             <div className={styles.row}>
               <span>状态</span>
-              <b className={!running ? styles.bad : undefined}>
-                {!running ? "监听未启动" : "监听中"}
+              <b className={unknown ? styles.muted : !running ? styles.bad : undefined}>
+                {unknown ? "状态未知" : !running ? "监听未启动" : "监听中"}
               </b>
             </div>
             <div className={styles.row}>
@@ -140,7 +152,7 @@ export function LanSyncCap() {
                 <b className={styles.muted}>本次运行还没有</b>
               </div>
             )}
-            {!running && (
+            {!unknown && !running && (
               <p className={styles.alert}>
                 端口可能被占用，或网卡无法加入组播。到设置里关掉再打开可重试。
               </p>

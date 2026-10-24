@@ -9,7 +9,7 @@ import { normalizeTheme } from "@/lib/theme";
 import { normalizeGlass } from "@/lib/todo/glass";
 import { ANCHOR_DEFAULT, normalizeAnchor, type AnchorKey } from "@/lib/todo/anchor";
 import { parseEventRange } from "@/lib/eventLabel";
-import { isHistoryQueryActive, parseHistoryWindow } from "@/lib/utils";
+import { isHistoryQueryActive, parseHistoryWindow, parseHistoryTime } from "@/lib/utils";
 import type { BarcodeHit } from "@/lib/utils";
 
 // ===== 数据类型 =====
@@ -166,6 +166,9 @@ export interface AppConfig {
   table_split_enabled: boolean; // 表格拆分入栈（方案 A/B）总开关，默认开
   table_split_format: "raw" | "field-value"; // 拆行后每条的文本格式：raw=原始行，field-value=字段: 值
   table_split_include_header: boolean; // 拆行时是否保留表头行，默认排除
+  /** 批次②：栈模式「复制入栈」文字提示（默认关——反馈交给栈浮标/横幅的条数变化，
+   *  异常如栈满/拆不开不受此开关控制、恒提示；决策收口在 lib/stack/captureNotice.ts）。 */
+  stack_capture_toast: boolean;
   /** 粘贴栈容量（50/100/200/500 四档，默认 500）。读取一律走
    *  `resolveStackMaxItems`，不要直接用它做 slice。 */
   stack_max_items: number;
@@ -552,6 +555,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   table_split_enabled: true,
   table_split_format: "raw",
   table_split_include_header: false,
+  stack_capture_toast: false,
   stack_max_items: STACK_MAX_ITEMS_DEFAULT,
   stack_hud_enabled: true,
   tray_menu_style: "native",
@@ -1330,8 +1334,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       } else {
         const r = parseHistoryWindow(timeFilter) ?? parseEventRange(timeFilter);
         if (r) {
-          cutoff = new Date(r.start.replace(" ", "T")).getTime();
-          until = new Date(r.end.replace(" ", "T")).getTime();
+          cutoff = parseHistoryTime(r.start);
+          until = parseHistoryTime(r.end);
         }
       }
     }
@@ -1370,7 +1374,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (cutoff > 0) {
         // 懒计算 timeStamp（只对需要的项计算一次）
         if (h.timeStamp === undefined) {
-          h.timeStamp = new Date(h.time.replace(" ", "T")).getTime();
+          h.timeStamp = parseHistoryTime(h.time);
         }
         if (h.timeStamp < cutoff) continue;
         // 事件筛选的上界，**含等号**：事件的首尾条目本身就属于这个事件
@@ -1400,8 +1404,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     items.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       // 懒计算 timeStamp
-      if (a.timeStamp === undefined) a.timeStamp = new Date(a.time.replace(" ", "T")).getTime();
-      if (b.timeStamp === undefined) b.timeStamp = new Date(b.time.replace(" ", "T")).getTime();
+      if (a.timeStamp === undefined) a.timeStamp = parseHistoryTime(a.time);
+      if (b.timeStamp === undefined) b.timeStamp = parseHistoryTime(b.time);
       return b.timeStamp - a.timeStamp;
     });
 

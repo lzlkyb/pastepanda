@@ -95,10 +95,19 @@ export async function deleteHistory(ids: string[]) {
       // action:"undo" 让 Toast 渲染可点击的「撤销」按钮（纯鼠标用户也能撤销，
       // 不再只依赖 Ctrl+Z）；键盘撤销与按钮撤销共用 restoreDeleted()
       window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `已删除 ${count} 条记录`, type: "info", action: "undo" } }));
+    } else {
+      // 🔴 批次③（规则 15.3）：删到 0 条多半是已被其它窗口删掉。UI 照常收敛
+      //（条目移出列表），但必须点破「为什么没有已删除提示」，不能装作无事发生。
+      window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: "没有记录被删除——可能已被其它窗口删除", type: "info" } }));
     }
     return count;
   } catch (e) {
+    // 🔴 批次③（规则 15.3）：改前这里只 logger.error + 返回 0——按 Delete 的
+    // 键盘路径、悬停/行内入口都不检查返回值，用户看到的就是「点了没反应」。
+    // 失败必须可见；本地列表保持不动（后端没删成，UI 不跟着撒谎）。
     logger.error("删除失败", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: `删除失败：${msg}`, type: "error" } }));
     return 0;
   }
 }

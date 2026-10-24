@@ -22,6 +22,7 @@
  */
 import { useEffect, useRef, type RefObject } from "react";
 import Lenis from "lenis";
+import { isModalScrollLocked } from "@/contexts/ScrollContext";
 
 export function useSmoothScroll(
   wrapperRef: RefObject<HTMLElement | null>,
@@ -62,6 +63,9 @@ export function useSmoothScroll(
       autoResize: true,
     });
     lenisRef.current = lenis;
+    // 🔴 批次③：模态滚动锁可能先于 Lenis 存在（启动早期弹出的更新/里程碑弹窗）——
+    // 那个窗口期 useModalScrollLock 里没有实例可 stop。创建方在此补锁。
+    if (isModalScrollLocked()) lenis.stop();
 
     // 可变 rafId：递归里持续更新，cleanup 才能取消「当前」帧。
     // 只 cancel 首帧的写法会让循环在卸载后永久存活（同 useVirtualScroll 里那条注释）。

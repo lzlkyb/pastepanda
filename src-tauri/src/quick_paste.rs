@@ -240,6 +240,9 @@ pub struct QuickPasteItem {
     pub time: String,
     pub source: String,
     pub content_type: String,
+    /// 图片条目的 OCR 识别文本：面板搜索图片靠它（P4），None=未识别过
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ocr_text: Option<String>,
 }
 
 /// 获取快捷粘贴面板数据（最近 N 条，置顶优先）
@@ -247,7 +250,9 @@ pub struct QuickPasteItem {
 pub fn get_quick_paste_data(
     store: tauri::State<'_, crate::data_store::DataStore>,
 ) -> Result<Vec<QuickPasteItem>, String> {
-    let items = store.get_recent_items(30)?;
+    let mut items = store.get_recent_items(30)?;
+    // P4：图片条目的 OCR 文本回填（与主窗口同一条批量回填路径）
+    let _ = store.load_ocr_texts_into_items(&mut items);
     let mut result: Vec<QuickPasteItem> = items
         .into_iter()
         .map(|item| QuickPasteItem {
@@ -259,6 +264,7 @@ pub fn get_quick_paste_data(
             time: item.time,
             source: item.source,
             content_type: item.content_type.unwrap_or_default(),
+            ocr_text: item.ocr_text,
         })
         .collect();
     // 置顶项排前，其余保持时间倒序（稳定排序）

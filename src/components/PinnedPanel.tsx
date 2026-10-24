@@ -58,30 +58,51 @@ export default function PinnedPanel({ open, onClose }: { open: boolean; onClose:
       setCopied(path);
       setTimeout(() => setCopied(null), 1200);
     } catch (e) {
+      // 🔴 批次③（规则 15.3）：改前只有 logger.warn——发布版没有控制台，等于点了没反应。
       logger.warn("复制贴图失败", e);
+      toast(`复制贴图失败：${e instanceof Error ? e.message : String(e)}`, "error");
     }
   };
 
   // 管理面板"旋转/翻转"：action 1=旋转90° 2=水平翻转（垂直翻转/恢复用贴图右键菜单或快捷键）
   const transformOne = (path: string, action: number) => {
-    void invoke("transform_pinned_image_by_path", { path, action }).catch((e) =>
-      logger.warn("贴图变换失败", e),
-    );
+    void invoke("transform_pinned_image_by_path", { path, action }).catch((e) => {
+      logger.warn("贴图变换失败", e);
+      toast(`贴图变换失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    });
   };
 
   const editOne = (path: string) => {
-    void invoke("open_pinned_edit", { path }).catch((e) => logger.warn("重编辑失败", e));
+    void invoke("open_pinned_edit", { path }).catch((e) => {
+      logger.warn("重编辑失败", e);
+      toast(`打开编辑失败：${e instanceof Error ? e.message : String(e)}`, "error");
+    });
     onClose();
   };
 
-  const closeOne = (path: string) => {
-    void invoke("close_pinned_image_by_path", { path });
-    setPaths((prev) => prev.filter((p) => p !== path));
+  // 🔴 批次③：改前是「先删列表再 fire-and-forget」——后端关窗失败时列表里
+  // 图片已消失、屏幕上贴图还在，界面与桌面相反。改为等后端确认成功才动列表；
+  // 失败弹错并重新拉列表（可能已部分关闭，以事实为准）。
+  const closeOne = async (path: string) => {
+    try {
+      await invoke("close_pinned_image_by_path", { path });
+      setPaths((prev) => prev.filter((p) => p !== path));
+    } catch (e) {
+      logger.warn("关闭贴图失败", e);
+      toast(`关闭贴图失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      void load();
+    }
   };
 
-  const closeAll = () => {
-    void invoke("close_pinned_image");
-    setPaths([]);
+  const closeAll = async () => {
+    try {
+      await invoke("close_pinned_image");
+      setPaths([]);
+    } catch (e) {
+      logger.warn("关闭全部贴图失败", e);
+      toast(`关闭全部贴图失败：${e instanceof Error ? e.message : String(e)}`, "error");
+      void load();
+    }
   };
   const hangOne=async(path:string)=>{
     setHanging(path);

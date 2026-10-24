@@ -19,6 +19,8 @@ interface PasteItem {
   time: string;
   source: string;
   content_type: string;
+  /** 图片条目的 OCR 识别文本（后端回填；搜图靠它，text 只是「[图片] WxH」占位） */
+  ocr_text?: string | null;
 }
 
 // ===== 类型标签 =====
@@ -166,7 +168,12 @@ export function QuickPastePanel() {
   const filtered = search.trim()
     ? items.filter((i) => {
         const kw = search.trim().toLowerCase();
-        return i.text.toLowerCase().includes(kw) || i.source.toLowerCase().includes(kw);
+        return (
+          i.text.toLowerCase().includes(kw) ||
+          i.source.toLowerCase().includes(kw) ||
+          // P4：图片条目的 text 是「[图片] WxH」占位符，不搜 OCR 文本等于搜不到图
+          (i.ocr_text ?? "").toLowerCase().includes(kw)
+        );
       })
     : items;
 
@@ -201,7 +208,8 @@ export function QuickPastePanel() {
     try {
       await invoke("delete_history", { ids: [id] });
       setItems((prev) => prev.filter((i) => i.id !== id));
-      showToast("已删除");
+      // 批次④（P3）：主窗收到删除广播后会压撤销栈，这里把恢复路径告诉用户
+      showToast("已删除，可在主窗口撤销");
     } catch (e) {
       logger.error("[QuickPaste] 删除失败", e);
       showToast("删除失败", true);
@@ -219,7 +227,10 @@ export function QuickPastePanel() {
       });
       showToast(pinned ? "已置顶" : "已取消置顶");
     } catch (e) {
+      // 🔴 批次③（规则 15.3）：同文件的 doDelete/doClearAll 失败都有 toast，
+      // 唯独这里漏了——点星标没反应会被当成软件坏了。
       logger.error("[QuickPaste] 置顶失败", e);
+      showToast("置顶失败", true);
     }
   }, [showToast]);
 

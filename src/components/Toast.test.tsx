@@ -67,6 +67,8 @@ describe("actionable feedback", () => {
     render(<ToastProvider><Actions /></ToastProvider>);
     fireEvent.click(screen.getByText("错误"));
     fireEvent.click(screen.getByText("错误"));
-    expect(screen.queryAllByText("保存失败，草稿已保留")).toHaveLength(1);
+    // 批次②：重复错误合并为一条并计数（改前是静默丢弃——持续失败被吞，没人知道还在失败）。
+    // 12s 自动消失等完整生命周期守卫在 __tests__/toastNoiseGovernance.test.tsx。
+    expect(screen.queryAllByText("保存失败，草稿已保留（已连续 2 次）")).toHaveLength(1);
   });
 });

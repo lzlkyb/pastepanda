@@ -34,6 +34,7 @@ import {
 } from "@/lib/api/dailyBrief";
 import { briefToText, dayTitle, TYPE_LABELS } from "@/lib/dailyBrief";
 import { useToast } from "@/components/Toast";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
 import styles from "./WeekReportDialog.module.css";
@@ -46,6 +47,9 @@ export const DailyBriefDialog = memo(function DailyBriefDialog({
   const { toast } = useToast();
   const aiStatus = useAiStatus();
   const { backdrop, panel } = useDialogAnim();
+  // 🔴 本弹窗不在 App 的 Esc 链名单里：不接这一份（捕获期 + stopPropagation），
+  // 按 Esc 会落到链尾 hide_window（整个主窗口消失、弹窗还挂着）。
+  useDialogEscape(onClose);
   const [date, setDate] = useState(() => toIsoDate(new Date()));
   const [rows, setRows] = useState<DayMetaRow[] | null>(null);
   const [aiText, setAiText] = useState<string | null>(null);

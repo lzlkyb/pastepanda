@@ -204,6 +204,51 @@ describe("deleteHistory", () => {
     expect(count).toBe(0);
   });
 
+  // ============================================================
+  // 🔴 批次③（2026-10-24）：删除失败必须可见（规则 15.3）
+  // 改前 catch 只 logger.error + 返回 0——按 Delete 界面毫无反应；
+  // count=0（多半已被其它窗口删掉）也一声不吭。两条改前均为红。
+  // ============================================================
+  it("批次③：invoke 失败弹错误 toast，且本地列表不动（UI 不撒谎）", async () => {
+    useAppStore.setState({
+      history: [{
+        id: "id-1", text: "A", time: "2026-01-01 12:00:00", type: "text",
+        content: "", pinned: false, source: "", workspace: "默认",
+      }],
+    });
+    const toastSpy = vi.fn();
+    window.addEventListener("app-toast", toastSpy);
+    try {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error("db locked"));
+      const count = await deleteHistory(["id-1"]);
+      expect(count).toBe(0);
+      expect(toastSpy).toHaveBeenCalledTimes(1);
+      expect(toastSpy.mock.calls[0][0].detail.type).toBe("error");
+      expect(useAppStore.getState().history, "后端删失败时本地列表不得移除").toHaveLength(1);
+    } finally {
+      window.removeEventListener("app-toast", toastSpy);
+    }
+  });
+
+  it("批次③：删到 0 条要点破原因，不能装作无事发生", async () => {
+    useAppStore.setState({
+      history: [{
+        id: "id-1", text: "A", time: "2026-01-01 12:00:00", type: "text",
+        content: "", pinned: false, source: "", workspace: "默认",
+      }],
+    });
+    const toastSpy = vi.fn();
+    window.addEventListener("app-toast", toastSpy);
+    try {
+      vi.mocked(invoke).mockResolvedValueOnce(0);
+      await deleteHistory(["id-1"]);
+      expect(toastSpy).toHaveBeenCalledTimes(1);
+      expect(toastSpy.mock.calls[0][0].detail.message).toContain("没有");
+    } finally {
+      window.removeEventListener("app-toast", toastSpy);
+    }
+  });
+
   it("dispatches app-toast with count", async () => {
     const toastSpy = vi.fn();
     window.addEventListener("app-toast", toastSpy as any);
@@ -215,14 +260,19 @@ describe("deleteHistory", () => {
     expect(toastSpy.mock.calls[0][0].detail.message).toContain("3");
   });
 
-  it("dispatches app-toast only if count > 0", async () => {
+  it("count = 0 不发「已删除」成功提示，改发一条点破原因的说明（批次③口径）", async () => {
     const toastSpy = vi.fn();
     window.addEventListener("app-toast", toastSpy as any);
 
     vi.mocked(invoke).mockResolvedValueOnce(0);
     await deleteHistory(["empty"]);
 
-    expect(toastSpy).not.toHaveBeenCalled();
+    // 批次③（规则 15.3）：删到 0 条不能一声不吭——那会被当成「按了没反应」。
+    // 但也不是成功提示：只发一条说明原因的 info。
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(toastSpy.mock.calls[0][0].detail.message).not.toContain("已删除");
+    expect(toastSpy.mock.calls[0][0].detail.type).toBe("info");
+    window.removeEventListener("app-toast", toastSpy as any);
   });
 });
 

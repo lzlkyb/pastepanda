@@ -25,7 +25,7 @@ import {
 import type { NoteFolder } from "@/lib/api";
 import { confirmDialog } from "@/lib/confirm";
 import { useToast } from "@/components/Toast";
-import { relativeTime, countChars, fmtCount } from "@/lib/utils";
+import { relativeTime, countChars, fmtCount, parseHistoryTime } from "@/lib/utils";
 import { getContentTypeMeta } from "@/lib/contentTypes";
 import { TagBadge, TagBadgeMore } from "@/components/TagBadge";
 import { useAppStore } from "@/stores/appStore";
@@ -47,10 +47,9 @@ const PREVIEW_LINES = 30;
  */
 function daysLeft(deletedAt: string | null | undefined, days: number): number | null {
   if (!deletedAt || days <= 0) return null;
-  // deleted_at 是本地时间字符串 `YYYY-MM-DD HH:mm:ss.SSS`，Safari 以外的引擎
-  // 直接 new Date() 解不了带空格的形式，换成 `T` 才稳（Tauri 是 WebView2，
-  // 但这里不依赖引擎的宽容处理）。
-  const t = new Date(deletedAt.replace(" ", "T")).getTime();
+  // deleted_at 是本地时间字符串 `YYYY-MM-DD HH:mm:ss.SSS`；
+  // parseHistoryTime 手拆解析，不依赖引擎对带空格格式的宽容（毫秒尾缀被忽略，日粒度无影响）
+  const t = parseHistoryTime(deletedAt);
   if (Number.isNaN(t)) return null;
   const elapsed = (Date.now() - t) / 86_400_000;
   return Math.max(0, Math.ceil(days - elapsed));

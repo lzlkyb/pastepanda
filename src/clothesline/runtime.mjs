@@ -50,6 +50,8 @@ export async function mountClothesline(bridge) {
     taking,
     get nativeReceiving() { return nativeReceivers.size > 0; },
     get clearing() { return !!clearOperation; },
+    // 几何拖动（端点/整绳）要避开批量收衣，与 renderCards 里的几何禁用条件同一口径。
+    get collecting() { return collecting; },
   };
   const cards = new Map();
   const regionCache = new Map();
@@ -79,8 +81,35 @@ export async function mountClothesline(bridge) {
     clearOperation = null;
   let toastTimer = 0;
   let waitingSnapshot = null;
+  // 工具条折叠状态：静默态只露一颗把手，悬停 / 键盘聚焦 / 收衣在途才展开。
+  let toolbarOpen = false,
+    toolbarHover = false,
+    toolbarFocus = false,
+    toolbarSuppressed = false,
+    toolbarTimer = 0;
+  // 拖拽教学只在前三次出现，之后只剩幽灵位自己说话。
+  // 常驻的「松手调整顺序 · 拉离绳带取下」每拖一次弹一次，是最吵的一处。
+  const COACH_KEY = "clothesline.coachLeft";
+  let coachLeft = 3;
+  try {
+    const saved = localStorage.getItem(COACH_KEY);
+    const parsed = Number(saved);
+    if (saved !== null && Number.isFinite(parsed)) coachLeft = Math.max(0, parsed);
+  } catch {
+    // 存储不可用（无痕 / 权限）时退回「每次都提示」，不影响主流程。
+  }
+  function useCoach() {
+    if (coachLeft <= 0) return false;
+    coachLeft -= 1;
+    try {
+      localStorage.setItem(COACH_KEY, String(coachLeft));
+    } catch {
+      // 同上：存不下也照常放行这一次提示。
+    }
+    return true;
+  }
   const reduced = () => systemReduce.matches;
-  const blocked = () => dragging || hovered || focused || collecting || state.nativeReceiving || handoffs.size > 0 || previewId !== null || !!clearOperation;
+  const blocked = () => dragging || hovered || focused || toolbarHover || collecting || state.nativeReceiving || handoffs.size > 0 || previewId !== null || !!clearOperation;
   const available = () => state.enabled && visible && !document.hidden && state.items.length > 0 && !reduced();
   const effects = createEffects({
     stage: $("stage"),
@@ -179,7 +208,7 @@ export async function mountClothesline(bridge) {
     regionsFrame = requestAnimationFrame(() => {
       regionsFrame = 0;
       if (!visible) return;
-      const selectors = "#hangs .hang,#anchorLeft,#anchorRight,#moveRope,#ropeToolbar,#toast,#takeProgress,#loupe,#queue";
+      const selectors = "#hangs .hang,#anchorLeft,#anchorRight,#moveRope,#ropeToolbar,#toast,#loupe,#queue";
       const regions = [...document.querySelectorAll(selectors)].filter(el => !el.hidden && el.style.visibility !== 'hidden').map(el => {
         if (el.classList.contains('hang')) {
           // 卡片带 translateX(-50%) + rotate()，按 --iw/--ih 手工拼矩形会漏掉旋转后的四角：
@@ -224,15 +253,17 @@ export async function mountClothesline(bridge) {
         const paper = document.createElement("div");
         paper.className = "frame";
         paper.append(photo(card.item));
-        const caption = document.createElement("span");
-        caption.className = "caption";
-        caption.textContent = "已保存 · " + card.item.name;
         const take = document.createElement("button");
         take.className = "takeOne";
-        take.textContent = "取下为贴图";
+        take.textContent = "取下";
         take.onclick = () => takeItem(card.item.id);
-        paper.append(caption, take);
-        el.append(paper);
+        const caption = document.createElement("span");
+        caption.className = "caption";
+        caption.textContent = card.item.name;
+        paper.append(take);
+        // caption 挂在 frame 之外、定位到 frame 内侧底边（css .caption bottom:10px）：
+        // 悬停才浮现，不再像旧版那样常驻占掉照片底部 20px 的留白。
+        el.append(paper, caption);
         $("hangs").append(el);
         cards.set(card.item.id, el);
         if (initialized && !reduced() && !state.pendingHangs.has(card.item.id) && !state.clearingIds.has(card.item.id))
@@ -275,7 +306,6 @@ export async function mountClothesline(bridge) {
         state.pins.some((p) => p.item.id === id && (p.pending || p.pendingBack));
     // 端点与整绳拖动和照片取挂正交，只避开批量动作与原生接收。
     const geometryBusy = state.nativeReceiving || !!clearOperation || collecting;
-    $("restoreAnchors").disabled = state.locked || geometryBusy;
     for (const id of ["anchorLeft", "anchorRight", "moveRope"]) $(id).disabled = state.locked || geometryBusy;
     $("stageStatus").textContent = !state.enabled
       ? "晾衣绳已关闭 · 原有采集照旧"
@@ -346,14 +376,18 @@ export async function mountClothesline(bridge) {
     const toolbar = $("ropeToolbar"),
       size = toolbarSize || (toolbarSize = { width: toolbar.offsetWidth, height: toolbar.offsetHeight }),
       width = size.width,
-      height = size.height;
+      // 收起 21px、展开 37px。若用实测高度决定「放照片下面还是放绳子上方」，
+      // 在屏幕底部附近悬停会来回跳：展开后放不下 → 移到上方 → 指针离开 → 收起 →
+      // 又放得下 → 移回下方。判定一律用固定预留高度，位置就与开合状态无关。
+      height = Math.max(size.height, 40);
     toolbar.style.left = clamp(middle.x - width / 2, 16, state.width - width - 16) + "px";
     const below = bottom + 12,
       above = Math.min(state.anchors.left.y, state.anchors.right.y) - height - 12;
     const toolbarTop = below + height < state.height - 16 ? below : Math.max(16, above);
     toolbar.style.top = toolbarTop + "px";
     $("queue").style.left = toolbar.style.left;
-    $("queue").style.top = clamp(toolbarTop + height + 8, 100, state.height - 80) + "px";
+    // 队列跟「此刻真实高度」走（收 21 / 展 37），不能用预留高度：那会在收起时多空 19px。
+    $("queue").style.top = clamp(toolbarTop + size.height + 8, 100, state.height - 80) + "px";
     sendRegions();
   }
   function stop() {
@@ -534,7 +568,6 @@ export async function mountClothesline(bridge) {
     };
     taking.add(id);
     if (handoff) handoffs.set(id, handoff);
-    if (continuous) { $("takeProgress").hidden = false; sendRegions(); }
     renderCards();
     try {
       const create = continuous ? bridge.dragTake : bridge.take;
@@ -586,7 +619,6 @@ export async function mountClothesline(bridge) {
       handoffs.delete(id);
       cancelledTakes.delete(id);
       if (!disposed) {
-        if (!handoffs.size) $("takeProgress").hidden = true;
         renderCards();
         draw(curve);
       }
@@ -714,6 +746,7 @@ export async function mountClothesline(bridge) {
     closePreview(false);
     collecting = true;
     batchStopped = false;
+    syncToolbar();
     const snapshot = geometry.cards.map(card => card.item),
       sources = new Map(snapshot.map((item) => [item.id, effects.capture(cards.get(item.id))]));
     renderCards();
@@ -750,6 +783,7 @@ export async function mountClothesline(bridge) {
     $("batchProgress").hidden = true;
     $("stopBatch").hidden = true;
     collecting = false;
+    syncToolbar();
     const succeeded = snapshot.filter((_, i) => results[i]);
     renderCards();
     if (!succeeded.length) {
@@ -1001,6 +1035,7 @@ export async function mountClothesline(bridge) {
       update(0, true);
     },
     onSlotPreview: previewSlot,
+    coach: useCoach,
   });
   for (const [id, side] of [
     ["anchorLeft", "left"],
@@ -1046,9 +1081,8 @@ export async function mountClothesline(bridge) {
     }
   };
   $("stopBatch").onclick = () => { batchStopped = true; $("stopBatch").disabled = true; };
-  $("cancelTake").onclick = () => { for (const handoff of handoffs.values()) handoff.cancel?.(); };
   $("stage").onpointermove = (e) => {
-    const next = !!e.target.closest(".hang,.loupe,.pinPanel,.pinGhost,.anchor,.moveGrip");
+    const next = !!e.target.closest(".hang,.loupe,.pinPanel,.pinGhost,.anchor,.moveGrip,.ropeToolbar");
     if (next !== hovered) {
       hovered = next;
       interactionChanged();
@@ -1070,19 +1104,57 @@ export async function mountClothesline(bridge) {
   };
   $("clear").onclick = () => bridge.safe(clearRope());
   $("gather").onclick = () => bridge.safe(gather());
-  $("locked").onchange = () => {
-    gestures.cancelDrag();
-    state.locked = $("locked").checked;
-    bridge.safe(bridge.config({ clothesline_locked: state.locked }));
-    renderCards();
+  // 工具条：静默态只露一颗 40×13 的把手，悬停或键盘聚焦才展开成胶囊。
+  // 收衣在途强制展开——进度是「触发常驻可见、结果就必须常驻可见」的同一条要求。
+  function syncToolbar() {
+    // 展开态把手会变成一颗向下的箭头，那是个「点了会收起」的承诺：
+    // 点它必须真的收起，否则就是又一次「点了没反应」。suppressed 就是这个状态，
+    // 指针离开或焦点从外部重新进入时归零。
+    const open = collecting || (!toolbarSuppressed && (toolbarHover || toolbarFocus));
+    if (open === toolbarOpen) return;
+    toolbarOpen = open;
+    $("ropeToolbar").dataset.open = String(open);
+    $("toolbarToggle").setAttribute("aria-expanded", String(open));
+    toolbarSize = null;
+    regionCache.delete("ropeToolbar");
+    if (curve) draw(curve);
+  }
+  $("ropeToolbar").addEventListener("pointerenter", () => {
+    clearTimeout(toolbarTimer);
+    toolbarHover = true;
+    syncToolbar();
+    // 悬停工具条时微风必须停：风每帧都会重算工具条位置，按钮会在指针底下漂。
+    interactionChanged();
+  });
+  $("ropeToolbar").addEventListener("pointerleave", () => {
+    clearTimeout(toolbarTimer);
+    toolbarTimer = setTimeout(() => {
+      toolbarHover = false;
+      toolbarSuppressed = false;
+      syncToolbar();
+      // pointerenter 里停过微风，这里必须重新排一次：scheduleWind 在被 blocked 时
+      // 根本不排定时器，不补这一次，「悬停时正在刮风」会让风永久停住。
+      interactionChanged();
+    }, 220);
+  });
+  $("toolbarToggle").onclick = () => {
+    // 开着 → 收起，收着 → 重新展开。两边都真的响应，不做「只朝一个方向生效」的按钮。
+    toolbarSuppressed = toolbarOpen;
+    syncToolbar();
   };
-  $("restoreAnchors").onclick = () => {
-    if ($("restoreAnchors").disabled) return;
-    state.anchors = defaultAnchors(state.width);
-    state.custom = false;
-    saveAnchors();
-    update(30);
-  };
+  $("ropeToolbar").addEventListener("focusin", (event) => {
+    const inside = event.relatedTarget && $("ropeToolbar").contains(event.relatedTarget);
+    if (!inside) toolbarSuppressed = false;
+    toolbarFocus = true;
+    syncToolbar();
+  });
+  $("ropeToolbar").addEventListener("focusout", (event) => {
+    if ($("ropeToolbar").contains(event.relatedTarget)) return;
+    toolbarFocus = false;
+    syncToolbar();
+  });
+  // 「锁定位置」「恢复默认」不再常驻桌面：设置页有同名开关与按钮
+  // （ClotheslineRows.tsx「锁定绳位置」/「恢复默认」）。桌面只留高频动作。
   systemReduce.onchange = () => update(0, true);
   document.onvisibilitychange = () => {
     if (document.hidden) {
@@ -1142,7 +1214,6 @@ export async function mountClothesline(bridge) {
     state.locked = snapshot.locked;
     $("enabled").checked = state.enabled;
     $("wind").checked = state.wind;
-    $("locked").checked = state.locked;
     if (configurationChanged || initial) {
       applyAnchors(snapshot.anchors);
       lastAnchors = structuredClone(snapshot.anchors);
@@ -1218,8 +1289,8 @@ export async function mountClothesline(bridge) {
     marker.style.width = "100px";
     marker.style.height = "70px";
     marker.hidden = false;
-    $("dragHint").textContent = "松手挂回 · Esc 取消";
-    $("dragHint").hidden = false;
+    // 不再在幽灵位旁边叠一句「松手挂回 · Esc 取消」：虚线框已经表达了落点，
+    // 而 Esc 在第一次用过之后就不需要再教。
     sendRegions();
   }
   async function nativeDrop(pin) {
@@ -1368,7 +1439,7 @@ export async function mountClothesline(bridge) {
     originals.clear();
     earlyNativeDrops.clear();
     awaitingDragAcks.clear();
-    [idleTimer, windTimer, toastTimer].forEach(clearTimeout);
+    [idleTimer, windTimer, toastTimer, toolbarTimer].forEach(clearTimeout);
     cancelAnimationFrame(regionsFrame);
     document.onkeydown = null;
     document.onvisibilitychange = null;

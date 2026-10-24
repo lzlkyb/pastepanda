@@ -1,14 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { AppConfig } from "@/stores/appStore";
 import { globalHotkeysTaken } from "@/lib/globalHotkeys";
-import { toastActionFailed } from "@/lib/utils";
+import { saveHotkey } from "@/lib/hotkeySave";
 import { HotkeyRecorder } from "../HotkeyRecorder";
 import { SettingTile } from "../ToggleRow";
 import styles from "../../Settings.module.css";
-
-async function reregisterQuiet(): Promise<void> {
-  await invoke("reregister_hotkeys");
-}
 
 /** 只移动录屏快捷键行，保留冲突检查、先保存再注册以及失败回滚。 */
 export function RecHotkeyRows({ config, updateAndSave }: {
@@ -28,18 +23,7 @@ export function RecHotkeyRows({ config, updateAndSave }: {
           value={config.rec_hotkey}
           allowClear
           taken={globalHotkeysTaken(config, "rec_hotkey")}
-          onChange={(v) => {
-            const oldVal = config.rec_hotkey;
-            void (async () => {
-              if (!await updateAndSave({ rec_hotkey: v })) return;
-              try {
-                await reregisterQuiet();
-              } catch (e) {
-                const restored = await updateAndSave({ rec_hotkey: oldVal });
-                toastActionFailed(`录屏快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
-              }
-            })();
-          }}
+          onChange={(v) => void saveHotkey(config, updateAndSave, "rec_hotkey", v, "录屏快捷键设置")}
         />
       </div>
       <div className={styles.sRow}>
@@ -52,18 +36,7 @@ export function RecHotkeyRows({ config, updateAndSave }: {
           value={config.rec_pause_hotkey}
           allowClear
           taken={globalHotkeysTaken(config, "rec_pause_hotkey")}
-          onChange={(v) => {
-            const oldVal = config.rec_pause_hotkey;
-            void (async () => {
-              if (!await updateAndSave({ rec_pause_hotkey: v })) return;
-              try {
-                await reregisterQuiet();
-              } catch (e) {
-                const restored = await updateAndSave({ rec_pause_hotkey: oldVal });
-                toastActionFailed(`暂停快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
-              }
-            })();
-          }}
+          onChange={(v) => void saveHotkey(config, updateAndSave, "rec_pause_hotkey", v, "暂停快捷键设置")}
         />
       </div>
       <div className={styles.sRow}>
@@ -76,18 +49,7 @@ export function RecHotkeyRows({ config, updateAndSave }: {
           value={config.rec_stop_hotkey}
           allowClear
           taken={globalHotkeysTaken(config, "rec_stop_hotkey")}
-          onChange={(v) => {
-            const oldVal = config.rec_stop_hotkey;
-            void (async () => {
-              if (!await updateAndSave({ rec_stop_hotkey: v })) return;
-              try {
-                await reregisterQuiet();
-              } catch (e) {
-                const restored = await updateAndSave({ rec_stop_hotkey: oldVal });
-                toastActionFailed(`停止快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
-              }
-            })();
-          }}
+          onChange={(v) => void saveHotkey(config, updateAndSave, "rec_stop_hotkey", v, "停止快捷键设置")}
         />
       </div>
       <div className={styles.sRow}>
@@ -100,18 +62,7 @@ export function RecHotkeyRows({ config, updateAndSave }: {
           value={config.rec_mark_hotkey}
           allowClear
           taken={globalHotkeysTaken(config, "rec_mark_hotkey")}
-          onChange={(v) => {
-            const oldVal = config.rec_mark_hotkey;
-            void (async () => {
-              if (!await updateAndSave({ rec_mark_hotkey: v })) return;
-              try {
-                await reregisterQuiet();
-              } catch (e) {
-                const restored = await updateAndSave({ rec_mark_hotkey: oldVal });
-                toastActionFailed(`标记时刻快捷键设置（${restored ? "已恢复原值" : "原值未能保存，请重试"}）`, e);
-              }
-            })();
-          }}
+          onChange={(v) => void saveHotkey(config, updateAndSave, "rec_mark_hotkey", v, "标记时刻快捷键设置")}
         />
       </div>
     </>

@@ -13,6 +13,8 @@ import { MotionPolicy } from "./components/MotionPolicy";
  * `rc_ask_state()` 主动问一次，之后跟着 `rc-session-changed` 重拉。
  */
 import React from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WindowCrashFallback } from "./components/WindowCrashFallback";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -48,7 +50,9 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MotionPolicy>
-      <RcAskPop />
+      <ErrorBoundary componentName="远程协助浮层" fallback={<WindowCrashFallback label="远程协助浮层" />}>
+        <RcAskPop />
+      </ErrorBoundary>
     </MotionPolicy>
   </React.StrictMode>,
 );

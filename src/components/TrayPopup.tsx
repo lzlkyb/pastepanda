@@ -156,6 +156,10 @@ export function TrayPopup() {
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
   const [dataLoaded, setDataLoaded] = useState(false); // 初始数据是否已加载
+  // 🔴 批次③（U3.5）：读取失败改前渲染成「还没有记录 · 复制点什么就会出现在这里」
+  // ——把「读不出来」说成「你去复制就有了」，同屏 stats 区的错误态还会跟它打架。
+  const [dataError, setDataError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [activeIdx, setActiveIdx] = useState(0); // 默认高亮第一项
   // 主题从本窗口独立 store 读取（popup-main 启动与收到 theme-changed 广播时写入），
   // 与 SkinScene 读同一份 store，保证场景与弹窗内容主题一致
@@ -203,11 +207,13 @@ export function TrayPopup() {
         setVersion(data.version);
         setMonitoring(data.monitoring);
         setRecents(data.recents);
+        setDataError(false);
         if (data.stats) {
           setStats(data.stats);
         }
       } catch (e) {
         console.warn("[TrayPopup] invoke get_tray_popup_data 失败:", e);
+        if (!cancelled) setDataError(true);
       } finally {
         if (!cancelled) setDataLoaded(true);
       }
@@ -249,7 +255,8 @@ export function TrayPopup() {
       if (unlisten1) unlisten1();
       if (unlisten2) unlisten2();
     };
-  }, []);
+    // reloadKey：错误态的「重试」按钮通过 bump 它让本 effect 整体重跑
+  }, [reloadKey]);
 
   // 全局鼠标按下监听 — 点击弹窗外任意位置时关闭（模拟原生右键菜单）
   // 用 mousedown 而非 click，因为 click 在失焦后可能不会被触发
@@ -642,7 +649,18 @@ export function TrayPopup() {
       <div className="tray-popup-divider" />
 
       {/* 最近记录区 */}
-      {recents.length > 0 ? (
+      {dataError && recents.length === 0 ? (
+        <div className="tray-popup-section-label tray-popup-load-error">
+          读取最近记录失败
+          <button
+            type="button"
+            className="tray-popup-menu-item"
+            onClick={() => setReloadKey((k) => k + 1)}
+          >
+            重试
+          </button>
+        </div>
+      ) : recents.length > 0 ? (
         <>
           <div className="tray-popup-section-label">
             <span className="section-label-icon">

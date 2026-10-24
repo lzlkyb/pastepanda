@@ -193,12 +193,30 @@ export function rcCheckTime(checkedAt: number): string {
   return new Date(checkedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+/**
+ * 解析库内时间字符串（`"2026-10-24 09:20:01"`，Rust 落库格式）→ 毫秒数。
+ *
+ * 🔴 **历史时间的唯一解析口径**（规则 11 收口）：此前 events.ts 手拆一份、
+ * appStore/TrashPanel/milestones 各写一份 `replace(" ", "T")`、relativeTime
+ * 裸 `new Date(s)`——裸解析对带空格格式在 Safari/WebKit 返回 Invalid Date
+ * （macOS 上全量卡片时间变「NaN月NaN日 周undefined」）。
+ *
+ * 手拆而不是 `new Date(s)`：不依赖各引擎对非 ISO 格式的宽容度。
+ * 解不出来返 `NaN`，调用方自判。
+ */
+export function parseHistoryTime(s: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(s);
+  if (!m) return NaN;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+}
+
 /** 相对时间格式化 */
 export function relativeTime(timeStr: string): string {
   if (!timeStr) return "";
   const now = new Date();
-  const date = new Date(timeStr);
-  const diffMs = now.getTime() - date.getTime();
+  const t = parseHistoryTime(timeStr);
+  if (Number.isNaN(t)) return timeStr; // 脏数据回显原文，而不是「NaN月NaN日 周undefined」
+  const diffMs = now.getTime() - t;
   const diffMin = Math.floor(diffMs / 60000);
   const diffHour = Math.floor(diffMs / 3600000);
   const diffDay = Math.floor(diffMs / 86400000);
@@ -209,6 +227,7 @@ export function relativeTime(timeStr: string): string {
   if (diffDay === 1) return "昨天";
   if (diffDay < 7) return `${diffDay}天前`;
 
+  const date = new Date(t);
   const month = date.getMonth() + 1;
   const day = date.getDate();
   const weekdays = ["日", "一", "二", "三", "四", "五", "六"];

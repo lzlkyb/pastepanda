@@ -191,8 +191,10 @@ pub async fn clothesline_hang_path(app: AppHandle, path: String) -> Result<(), S
     #[cfg(windows)]
     {
         let pin = crate::pinned_window::clothesline_pin_for_path(&path)?;
-        if !super::desktop::is_desktop() {
-            // 管理面板位于其它应用层：只接收记录，不能为了播放转场把整条绳盖上去。
+        // 旧条件是「不在桌面就只记记录、不播转场」。那个判据问的是「桌面是否被
+        // 完全挡住」，而这里真正关心的是「绳窗口现在能不能看见」——常驻之后二者
+        // 不再是一回事：微信在前台时桌面被挡着，但绳仍显示在露出的那部分桌面上。
+        if !window::is_shown(&app) {
             clothesline_return_pin(app, pin, None, None)?;
             return Ok(());
         }

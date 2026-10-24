@@ -341,6 +341,13 @@ export function CardList({ scrollRef: externalScrollRef, lenisRef: externalLenis
   // v6.4 C 合并粘贴：非空 = 打开合并面板
   const [mergeItems, setMergeItems] = useState<MergeItem[] | null>(null);
 
+  // 🔴 P1：合并面板开着这件事必须让 App 知道（键盘 Delete 守卫要拦遮罩背后的
+  // 多选删除）。CardList 局部 state App 看不见，走广播（同 fileDetailOpen 的 U51 模式）。
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(mergeItems ? "app-merge-open" : "app-merge-close"));
+    return () => { if (mergeItems) window.dispatchEvent(new CustomEvent("app-merge-close")); };
+  }, [mergeItems]);
+
   const handleBatchDelete = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore, HistoryItem, Tag, resolveStackMaxItems } from "@/stores/appStore";
 import { isTableSplitCandidate, looksLikeTableButUnsplit } from "@/lib/tableSplit";
+import { resolveStackCaptureNotice } from "@/lib/stack/captureNotice";
 import { logger } from "@/lib/logger";
 import { invalidateCountsCache } from "./cache";
 import { sequentialPaste, indexPaste } from "./sequential";
@@ -21,6 +22,30 @@ import { startHudAutoFollow } from "@/lib/stack/hudBridge";
 let lastLanToastAt = 0;
 
 /** 初始化 Tauri 后端连接 */
+/**
+ * 其它窗口（快捷粘贴 / 托盘 / MCP 等）删除记录后的主窗收敛。
+ *
+ * 🔴 批次④（P3）：改前只做本地过滤——从快捷粘贴面板删掉的记录在全应用
+ * 无处可撤销（主窗撤销栈只收主窗自己的删除路径，而 ✕ 恰好是最易误点的位置）。
+ * 现在改走 removeItems（快照 + 压撤销栈）：任何入口的删除都可在主窗
+ * Ctrl+Z / 撤销按钮恢复。
+ */
+export function applyExternalDeletion(ids: string[]) {
+  if (ids.length === 0) return;
+  // 事件到达时 DB 已删，但主窗内存里还有被删项——先快照再交给 removeItems，
+  // 它会连带压撤销栈（这正是 deleteHistory 走的同一条路）。主窗自己的删除路径
+  // 也会触发本事件，但那时 history 已被它自己的 removeItems 清过，快照为空、
+  // 不会重复压栈（removeItems 对空 deleted 不动撤销栈）。
+  const store = useAppStore.getState();
+  const idSet = new Set(ids);
+  const snapshot = [
+    ...store.history.filter((h) => idSet.has(h.id)),
+    ...(store.searchResults ?? []).filter((h) => idSet.has(h.id)),
+  ];
+  store.removeItems(ids, snapshot);
+  invalidateCountsCache();
+}
+
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
 
@@ -115,35 +140,28 @@ export async function initBackend(): Promise<() => void> {
       const typeLabel = t === "image" ? "图片" : t === "rich" ? "图文" : t === "file" ? "文件" : "文本";
       const isLanSync = event.payload.item.source?.startsWith("局域网:");
       if (store.stackMode) {
-        // 栈模式：入栈并使用专属提示；命中表格则自动按行拆分（方案 A）
+        // 栈模式：入栈并使用专属提示；命中表格则自动按行拆分（方案 A）。
+        // 批次②：提示文案的取舍收口在 resolveStackCaptureNotice——常规入栈
+        // 默认零提示（栈浮标/横幅的条数变化即反馈），栈满/拆不开等异常恒提示。
         const before = store.stackItems.length;
         const split = store.stackPushOrSplit(event.payload.item);
         const after = useAppStore.getState().stackItems.length;
-        if (split) {
-          // ❗ splitCount 是**真正入栈的条数**，不是表格行数。栈满时它是 0，
-          //   那时一条都没动，得说清楚为什么——以前这种情况会静默把数十条
-          //   旧条目顶掉，而提示只说「仅前 N 条入栈」。
-          //   上限是用户可调档位，文案读当前生效值（同一个 resolve，别自己算）。
-          const cap = resolveStackMaxItems(store.config.stack_max_items);
-          const message = split.splitCount === 0
-            ? `栈已满 ${cap} 条，表格没拆——先粘掉几条再复制`
-            : split.totalRows > split.splitCount
-              ? `表格 ${split.totalRows} 行，只放进前 ${split.splitCount} 条（栈上限 ${cap}）`
-              : `已按行拆 ${split.splitCount} 条入栈`;
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "info" } }));
-        } else if (after > before) {
-          // ❗ 拆不成时以前只说「入栈 N 条」，用户看不出是「认出是表格但没拆开」
-          //   还是「压根没试」（规则 #15.3）。只在真的像表格时才多说一句，
-          //   免得普通复制也被念一遍。
-          const it = event.payload.item;
-          const unsplit =
+        const grewBy = after - before;
+        const it = event.payload.item;
+        const message = resolveStackCaptureNotice({
+          stackMode: true,
+          captureToastEnabled: store.config.stack_capture_toast,
+          tableSplitEnabled: store.config.table_split_enabled,
+          split: split ? { totalRows: split.totalRows, splitCount: split.splitCount } : null,
+          grewBy,
+          unsplitTableLike: grewBy > 0 &&
             store.config.table_split_enabled &&
             isTableSplitCandidate(it.type) &&
-            looksLikeTableButUnsplit(it.text || "");
-          const msg = unsplit
-            ? "看着像表格，但没能按行拆开——已整条入栈"
-            : `入栈 ${after} 条`;
-          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message: msg, type: "info" } }));
+            looksLikeTableButUnsplit(it.text || ""),
+          stackCap: resolveStackMaxItems(store.config.stack_max_items),
+        });
+        if (message) {
+          window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, type: "info" } }));
         }
       } else {
         // U23：普通捕获静默记录（卡片出现在顶部即反馈），仅局域网同步这类"外部事件"才提示
@@ -211,14 +229,20 @@ export async function initBackend(): Promise<() => void> {
     unlistens.push(await listen<{ ids: string[] }>("history-items-deleted", (event) => {
       const ids = event.payload?.ids;
       if (!Array.isArray(ids) || ids.length === 0) return;
-      const deletedSet = new Set(ids);
-      useAppStore.setState((s) => ({
-        history: s.history.filter((h) => !deletedSet.has(h.id)),
-        selectedIds: new Set([...s.selectedIds].filter((id) => !deletedSet.has(id))),
-        focusId: s.focusId && deletedSet.has(s.focusId) ? null : s.focusId,
-        _filterCache: null,
+      applyExternalDeletion(ids);
+    }));
+
+    // B4：坏库自救的结果要告诉用户（历史为何变空、原库备份在哪）。
+    // 独立事件只在启动时至多发一次，不需要节流。
+    unlistens.push(await listen<{ backup: string }>("database-recovered", (event) => {
+      const backup = event.payload?.backup || "";
+      const file = backup.split(/[\\/]/).pop() || backup;
+      window.dispatchEvent(new CustomEvent("app-toast", {
+        detail: {
+          message: `检测到数据库损坏，已自动重建空库继续使用；原库已保留为 ${file}，可联系我们协助找回`,
+          type: "error",
+        },
       }));
-      invalidateCountsCache();
     }));
 
     // 监听自动清理完成事件（后端调度器启动首跑 + 每小时循环，替代原前端 setInterval）
