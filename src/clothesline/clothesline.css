@@ -123,9 +123,12 @@ input[type="checkbox"] {
 .anchor:hover {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
-.anchor:disabled,
-.moveGrip:disabled {
+.anchor:disabled {
   opacity: 0.65;
+  cursor: default;
+}
+.moveGrip:disabled {
+  opacity: 0.3;
   cursor: default;
 }
 .moveGrip {
@@ -140,8 +143,14 @@ input[type="checkbox"] {
   color: var(--rope);
   font-size: 11px;
   z-index: 40;
+  /* 静默态只留一个淡淡的轮廓：它常驻在绳中点，一直是桌面上最扎眼的一块。 */
+  opacity: 0.55;
+  transition: opacity 150ms ease;
 }
-.moveGrip:hover {
+.moveGrip:hover,
+.moveGrip:focus-visible,
+.moveGrip.dragging {
+  opacity: 1;
   background: var(--sample-accent);
 }
 .anchor.dragging,
@@ -162,11 +171,6 @@ input[type="checkbox"] {
   pointer-events: none;
   z-index: 46;
 }
-.slotMarker span {
-  background: var(--desktop);
-  padding: 4px;
-  border-radius: 4px;
-}
 .unclipped .clip {
   opacity: 0;
 }
@@ -184,7 +188,7 @@ input[type="checkbox"] {
 }
 .frame {
   margin-top: 5px;
-  padding: 8px 8px 20px;
+  padding: 8px;
   border: 1px solid var(--metal);
   border-radius: 12px;
   background: var(--paper);
@@ -230,31 +234,57 @@ input[type="checkbox"] {
   object-fit: contain;
   display: block;
 }
+/* 文件名与「取下」都只在悬停这张照片时出现。
+   常驻会把每张照片包成一圈 UI：上面一个按钮、下面一行「已保存 · …」。
+   文件名贴在相框内侧底部而不是框外下方：框外那块空间被常驻的工具条把手占着，
+   两者叠在一起会互相遮字（真渲染截图上「网页设计规范」被把手盖掉了一半）。 */
 .caption {
   position: absolute;
-  bottom: 4px;
-  left: 8px;
-  right: 8px;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 20px);
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
   font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+.hang:hover .caption,
+.hang:focus-within .caption {
+  opacity: 1;
 }
 .takeOne {
   position: absolute;
-  right: 0;
-  top: 0;
+  right: -1px;
+  top: -1px;
   z-index: 4;
-  min-height: 24px;
+  min-height: 22px;
   font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: var(--paper);
-  color: var(--paper-ink);
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+.hang:hover .takeOne,
+.hang:focus-within .takeOne {
+  opacity: 1;
+  pointer-events: auto;
 }
 .takeOne:hover {
-  background: var(--sample-soft);
+  background: var(--hover);
 }
 .emptyRope {
   pointer-events: auto;
@@ -391,34 +421,92 @@ body {
   stroke-width: 4;
   opacity: 0.65;
 }
+/* 静默态只有一颗 40×13 的小把手；悬停或键盘聚焦才展开成胶囊。
+   桌面常驻一个 7 项工具条会一直抢视线，折叠后回到「只剩绳和照片」。 */
 .ropeToolbar {
   position: absolute;
   z-index: 40;
   display: flex;
-  flex-wrap: wrap;
-  max-width: calc(100vw - 32px);
-  gap: 8px;
   align-items: center;
-  padding: 8px;
-  border-radius: 12px;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 4px;
+  border-radius: 999px;
   background: var(--card-bg);
   color: var(--text-primary);
   box-shadow: var(--shadow-md);
   font-size: 12px;
 }
+.ropeToolbar .toolbarToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 40px;
+  height: 13px;
+  min-height: 13px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ropeToolbar .toolbarToggle i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+.ropeToolbar[data-open="true"] .toolbarToggle {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+}
+.ropeToolbar[data-open="true"] .toolbarToggle i {
+  display: none;
+}
+/* 展开后把手收成一颗「收起」箭头，位置与大小都跟着胶囊走，不跳变。 */
+.ropeToolbar[data-open="true"] .toolbarToggle::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-left: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(1px, -1px);
+}
+.toolbarPanel {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.ropeToolbar[data-open="true"] .toolbarPanel {
+  display: flex;
+  animation: toolbarPanelIn 150ms ease-out;
+}
+@keyframes toolbarPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 #clear {
   color: var(--danger);
   background: var(--danger-bg);
 }
-.ropeToolbar label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.ropeToolbar button {
+  min-height: 28px;
   white-space: nowrap;
 }
-.ropeToolbar button {
-  min-height: 32px;
-  white-space: nowrap;
+#countValue {
+  color: var(--text-secondary);
 }
 .moveGrip {
   display: flex;
@@ -470,7 +558,6 @@ body {
 .loupeActions { flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 #previewLoad { margin: 0; font-size: 12px; max-height: 3em; overflow: auto; flex-shrink: 0; }
 .queuePages { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; }
-.takeProgress { position: absolute; bottom: 144px; left: 50%; transform: translateX(-50%); z-index: 80; max-width: 90vw; padding: 8px; border-radius: 8px; background: var(--card-bg); color: var(--text-primary); box-shadow: var(--shadow-md); font-size: 12px; }
 .loupe .photo img {
   object-fit: contain;
 }

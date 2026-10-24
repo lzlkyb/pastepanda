@@ -12,7 +12,7 @@ export function installGestures(options: {
     clearingIds: Set<string>;
     pendingHangs: Set<string>;
     taking?: Set<string>;
-    undoing?: boolean;
+    collecting?: boolean;
     nativeReceiving?: boolean;
     clearing?: boolean;
     pins: { item: { id: string }; pending?: boolean; pendingBack?: boolean }[];
@@ -34,4 +34,6 @@ export function installGestures(options: {
   onFinish: () => void;
   onGeometryCancel: (value: Anchors) => void;
   onSlotPreview: (id: string | null, slot: number | null) => (Point & {width?: number; height?: number}) | null | undefined;
+  /** 这次拖动是否显示教学文案；不传则一直显示。 */
+  coach?: () => boolean;
 }): { cancelDrag: () => void; isDragging: () => boolean; draggedId: () => string | null };

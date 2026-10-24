@@ -22,6 +22,7 @@ export function installGestures({
   onGeometryCancel,
   onSlotPreview,
   onError,
+  coach,
 }) {
   let drag = null;
   const zoom = () => parseFloat(stage.style.getPropertyValue("--zoom")) || 1;
@@ -37,9 +38,11 @@ export function installGestures({
   function begin(event, el, kind, id = null) {
     if (event.button !== 0 || drag) return;
     const state = getState();
+    // 原生接收与大风吹走是整根绳的事，仍然全局挡。
     if (state.nativeReceiving || state.clearing) return;
-    if (kind === 'card' && (state.pendingHangs.size || state.taking?.size || state.pins.some(p => p.pending || p.pendingBack))) return;
-    if (state.undoing || (kind !== "card" && (state.locked || state.clearingIds.size || state.pendingHangs.size || state.taking?.size || state.pins.some(p => p.pending || p.pendingBack)))) return;
+    // 取挂是逐张事务：只挡「这一张」自己。旧版拿 taking.size / pendingHangs.size /
+    // pins.some(pending) 当条件，一张图在途就把整根绳的拖动全锁死——而且这里不是
+    // disabled，是直接 return，按钮亮着却拖不动、连提示都没有。
     if (
       id !== null &&
       (state.taking?.has(id) ||
@@ -48,6 +51,8 @@ export function installGestures({
         state.pins.some((p) => p.item.id === id && (p.pending || p.pendingBack)))
     )
       return;
+    // 端点与整绳拖动和单张取挂正交，只避开锁定与批量收衣（与 runtime 的 geometryBusy 同口径）。
+    if (kind !== "card" && (state.locked || state.collecting)) return;
     drag = {
       el,
       kind,
@@ -64,6 +69,10 @@ export function installGestures({
       moved: false,
       slot: null,
       detached: false,
+      // 教学计数在「第一次真正显示落点」时才扣，不能写在 pointerdown 里：
+      // 单击一张照片也会走 begin()（松手不移就开预览），三次点击就能把
+      // 三次教学机会全吃掉，用户真正开始拖时反而什么都不显示了。
+      coach: null,
     };
     try { el.setPointerCapture(event.pointerId); }
     catch (error) { drag = null; onError?.(error); return; }
@@ -96,6 +105,11 @@ export function installGestures({
     const index = cards.findIndex((c) => p.x < c.x);
     return index < 0 ? cards.length : index;
   }
+  // 教学文案是否显示：整次拖动只判定一次（coach 会递减计数，不能每帧调）。
+  function coachAllowed() {
+    if (drag.coach === null) drag.coach = coach?.() ?? true;
+    return drag.coach;
+  }
   function showSlot(p, geometry, ignoreId, label) {
     const cards = geometry.cards.filter((c) => c.item.id !== ignoreId),
       slot = slotAt(p, geometry, ignoreId);
@@ -117,7 +131,7 @@ export function installGestures({
     marker.style.top = y + 6 + "px";
     marker.hidden = false;
     hint.textContent = label;
-    hint.hidden = false;
+    hint.hidden = !coachAllowed();
     return slot;
   }
   function move(event) {
