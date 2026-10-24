@@ -256,6 +256,11 @@ export function rcAskHide(): Promise<void> {
   return invoke("rc_ask_hide");
 }
 
+/** 改主意了：重新打开被「先不理它」收起的待答申请（角标上的「待答 N」入口）。 */
+export function rcAskReopen(): Promise<void> {
+  return invoke("rc_ask_reopen");
+}
+
 /** 方案 D：设置某台设备的「免确认直连」。`trusted=false` 即恢复每次询问。 */
 export function rcDeviceTrustSet(nodeId: string, trusted: boolean): Promise<void> {
   return invoke("rc_device_trust_set", { nodeId, trusted });

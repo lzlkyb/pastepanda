@@ -102,3 +102,26 @@
   opacity: 0.6;
   cursor: default;
 }
+
+/* C3（2026-10-24 审查）「待答 N」：比「结束」低一档危险度的入口键——accent
+   而非 danger。几何同 .stop 的口径（胶囊内垂直留白按行高算）。 */
+.ask {
+  flex: none;
+  padding: 1px 8px;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ask:hover {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.ask:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
