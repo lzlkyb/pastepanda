@@ -219,7 +219,10 @@ export function QuickPastePanel() {
       });
       showToast(pinned ? "已置顶" : "已取消置顶");
     } catch (e) {
+      // 🔴 批次③（规则 15.3）：同文件的 doDelete/doClearAll 失败都有 toast，
+      // 唯独这里漏了——点星标没反应会被当成软件坏了。
       logger.error("[QuickPaste] 置顶失败", e);
+      showToast("置顶失败", true);
     }
   }, [showToast]);
 

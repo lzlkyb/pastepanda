@@ -7,6 +7,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import Lenis from "lenis";
+import { isModalScrollLocked } from "@/contexts/ScrollContext";
 import type { Virtualizer } from "@tanstack/react-virtual";
 import type { HistoryItem } from "@/stores/appStore";
 
@@ -116,6 +117,8 @@ export function useVirtualScroll({
     });
 
     lenisRef.current = lenis;
+    // 🔴 批次③：同 useSmoothScroll——锁先于 Lenis 存在时由创建方补锁。
+    if (isModalScrollLocked()) lenis.stop();
 
     // 用可变 rafId 跟踪最新帧：递归里持续更新，cleanup 才能取消“当前”帧，
     // 否则只取消首帧、循环在卸载后永久存活（P0 资源泄漏）。

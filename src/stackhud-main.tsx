@@ -14,6 +14,8 @@ import { MotionPolicy } from "./components/MotionPolicy";
  * `stack-hud-update` 广播过来，而 `lib/stack/hudBridge.ts` 是唯一的推送出口。
  */
 import React from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WindowCrashFallback } from "./components/WindowCrashFallback";
 import ReactDOM from "react-dom/client";
 import { StackHud } from "./components/stack/StackHud";
 import { logger } from "./lib/logger";
@@ -45,7 +47,9 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MotionPolicy>
-      <StackHud />
+      <ErrorBoundary componentName="栈浮标" fallback={<WindowCrashFallback label="栈浮标" />}>
+        <StackHud />
+      </ErrorBoundary>
     </MotionPolicy>
   </React.StrictMode>,
 );

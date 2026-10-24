@@ -13,6 +13,8 @@ import { MotionPolicy } from "./components/MotionPolicy";
  * 是唯一的推送出口（B2 接真数据时建立）。
  */
 import React from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WindowCrashFallback } from "./components/WindowCrashFallback";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -89,7 +91,9 @@ window.addEventListener("unhandledrejection", (event) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MotionPolicy>
-      <TodoIsland />
+      <ErrorBoundary componentName="待办岛" fallback={<WindowCrashFallback label="待办岛" />}>
+        <TodoIsland />
+      </ErrorBoundary>
     </MotionPolicy>
   </React.StrictMode>,
 );

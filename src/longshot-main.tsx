@@ -9,6 +9,8 @@ import { MotionPolicy } from "./components/MotionPolicy";
  * 保持极简：不引 appStore、不引主窗口任何状态，只听一个事件、发一个事件。
  */
 import React from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WindowCrashFallback } from "./components/WindowCrashFallback";
 import ReactDOM from "react-dom/client";
 import { LongShotStatus } from "./components/screenshot/LongShotStatus";
 import { logger } from "./lib/logger";
@@ -41,7 +43,9 @@ listen<{ theme?: string }>("theme-changed", (e) => {
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <MotionPolicy>
-      <LongShotStatus />
+      <ErrorBoundary componentName="长截图状态窗" fallback={<WindowCrashFallback label="长截图状态窗" />}>
+        <LongShotStatus />
+      </ErrorBoundary>
     </MotionPolicy>
   </React.StrictMode>,
 );
