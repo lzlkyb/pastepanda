@@ -548,3 +548,44 @@ describe("resolveKeyAction — 收口时从 App.tsx 补进模型的分支", () =
     });
   });
 });
+
+// ============================================================
+// 🔴 P1 守卫：MergeDialog / QREditor / DailyBriefDialog / 快捷键面板
+// 这四个不在 dialogOpen 守卫名单里——开着它们按 Delete/Backspace 会删掉
+// 遮罩背后选中的卡片；Esc 则落到链尾 hide_window（整个主窗口消失、弹窗还挂着）。
+// 这三个弹窗自带 useDialogEscape（捕获期截停），链上只须「让位 + 守卫」。
+// 改前以下用例为红。
+// ============================================================
+describe("P1：三个游离弹窗 + 快捷键面板的键盘守卫", () => {
+  const strays: Array<[string, Partial<KeyEventHandlerState>]> = [
+    ["合并粘贴面板", { mergeOpen: true }],
+    ["二维码工具", { qrOpen: true }],
+    ["每日整理", { dailyBriefOpen: true }],
+    ["快捷键帮助面板", { showShortcuts: true }],
+  ];
+
+  it.each(strays)("%s 开着时 Delete 不得删背后选中的卡片", (_name, flags) => {
+    const action = resolveKeyAction(makeState({ key: "Delete", selectedIds: ["a"], ...flags }));
+    expect(action.type).toBe("ignore");
+  });
+
+  it.each(strays)("%s 开着时 Backspace 不得删背后选中卡片", (_name, flags) => {
+    const action = resolveKeyAction(makeState({ key: "Backspace", focusId: "a", ...flags }));
+    expect(action.type).toBe("ignore");
+  });
+
+  it.each(strays)("%s 开着时 n 不得把背后卡片转笔记", (_name, flags) => {
+    const action = resolveKeyAction(makeState({ key: "n", focusId: "a", ...flags }));
+    expect(action.type).toBe("ignore");
+  });
+
+  it.each(strays.slice(0, 3))("%s 开着时 Esc 让位给弹窗自带的关闭（不得隐藏主窗口）", (_name, flags) => {
+    const action = resolveKeyAction(makeState({ key: "Escape", ...flags }));
+    expect(action.type).toBe("ignore");
+  });
+
+  it("快捷键面板（无自带 Esc）开着时 Esc 仍走全局链关闭它", () => {
+    const action = resolveKeyAction(makeState({ key: "Escape", showShortcuts: true }));
+    expect(action).toEqual({ type: "close_dialog", dialog: "shortcuts" });
+  });
+});

@@ -33,6 +33,27 @@ describe("relativeTime", () => {
     const date = fmtLocal(d);
     expect(() => relativeTime(date)).not.toThrow();
   });
+
+  // F1 守卫：解不出的时间（脏数据/空壳串）不得渲染成「NaN月NaN日 周undefined」。
+  // 改前 new Date(垃圾) → Invalid Date → diffMin=NaN 穿过所有分支落到末尾格式化。
+  // 改前此用例为红。
+  it("returns original text for unparsable time instead of NaN soup", () => {
+    for (const bad of ["garbage", "not-a-date", "0000-00-00 00:00:00"]) {
+      const out = relativeTime(bad);
+      expect(out).not.toMatch(/NaN|undefined/);
+      expect(out.length).toBeGreaterThan(0);
+    }
+  });
+
+  // F1 守卫：带空格的库内时间格式必须可解析（Safari/WebKit 对
+  // new Date("YYYY-MM-DD HH:MM:SS") 返回 Invalid Date——Node 里测不出差异，
+  // 这里钉住「手拆解析」不依赖引擎宽容度）。
+  it("parses space-separated datetime without engine leniency", () => {
+    const d = new Date(Date.now() - 90 * 60 * 1000); // 90 分钟前
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const date = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    expect(relativeTime(date)).toBe("1小时前");
+  });
 });
 
 describe("truncate", () => {

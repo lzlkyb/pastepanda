@@ -2,7 +2,7 @@ use crate::data_store::{compute_pinyin_initials, DataStore, HistoryItem, TimeBum
 // 内容 md5 走共享实现：原先本文件自己拄了一份 `md5_hex`，注释写着“与
 // clipboard_monitor::md5_hex 同口径”——但那只是注释承诺。智能合并完全依赖
 // 两边真的算出同一个值，不一致就会堆重复记录。
-use crate::hashing::content_md5;
+use crate::hashing::{content_md5, md5_hex};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
@@ -57,6 +57,214 @@ struct LanMessage {
 /// （直接复用已有的 uuid 依赖，避免引入新的随机数 crate）
 pub fn generate_pairing_key() -> String {
     uuid::Uuid::new_v4().simple().to_string()
+}
+
+// ===== B1/B2 纯函数层：报文切分与去重指纹（守卫测试直接钉这里） =====
+
+/// v3 分片信封：密文信封（v2）整体超过 UDP 单包上限时切成多片传输。
+/// 老版本对端解不开 v3（字段对不上 v2 信封），会当"旧版本或伪造消息"丢弃——
+/// 安全失败，不产生错误行为。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LanFragment {
+    /// 协议版本，固定 3
+    v: u8,
+    /// 整条消息的 id（同一消息所有分片相同）
+    mid: String,
+    /// 分片序号，0 起
+    seq: u32,
+    /// 分片总数
+    total: u32,
+    /// 密文信封字节切片（base64）
+    chunk: String,
+}
+
+/// 单个 UDP 数据报能安全承载的**原始密文信封**字节数。
+/// IP 数据报硬上限 65507B、接收缓冲 64KB；分片信封自身还有 base64（4/3）+ JSON
+/// 开销（~150B），取 32KB 保证整体数据报稳定落在 65507 以下。
+const FRAGMENT_WIRE_BYTES: usize = 32 * 1024;
+
+/// 一条消息允许的最大分片数 = MAX_LAN_MESSAGE_BYTES / FRAGMENT_WIRE_BYTES。
+/// 接收端按它拒绝 total 异常的伪造分片（防声明超大 total 占内存）。
+const FRAGMENT_SLOTS_MAX: usize = 64;
+
+/// 把密文信封字节切成本端实际发出的 UDP 数据报列表。
+///
+/// 🔴 改前（bug）：整个信封当一个数据报发——图片 base64 后动辄几百 KB，
+/// Windows send_to 直接 WSAEMSGSIZE 失败且只有 debug 日志，等于图片从不同步成功。
+/// 修复：超 [`FRAGMENT_WIRE_BYTES`] 的信封切成 v3 分片，接收端重组后再走
+/// 原有 v2 解密路径——加密、GCM 认证、nonce 重放防护全部不变（分片只切外层密文）。
+fn wire_to_datagrams(payload: &[u8]) -> Vec<Vec<u8>> {
+    if payload.len() <= FRAGMENT_WIRE_BYTES {
+        return vec![payload.to_vec()];
+    }
+    let chunks: Vec<&[u8]> = payload.chunks(FRAGMENT_WIRE_BYTES).collect();
+    let total = chunks.len() as u32;
+    log::info!(
+        "[LanSync] 消息 {}B 超 UDP 单包上限，分 {} 片发送",
+        payload.len(),
+        total
+    );
+    let mid = uuid::Uuid::new_v4().simple().to_string();
+    chunks
+        .iter()
+        .enumerate()
+        .filter_map(|(seq, chunk)| {
+            let frag = LanFragment {
+                v: 3,
+                mid: mid.clone(),
+                seq: seq as u32,
+                total,
+                chunk: base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    chunk,
+                ),
+            };
+            serde_json::to_vec(&frag).ok()
+        })
+        .collect()
+}
+
+/// 同步消息的去重指纹（智能合并键）。
+///
+/// image 类型必须用**图片内容**算：改前用标签串「[图片同步] 来自 X」，
+/// 与图片内容无关——同一台设备连发两张不同图片会在对端撞同一个 hash，
+/// 第二张被静默丢弃、旧图被顶到顶部冒充新图（还留下无引用的孤儿 PNG）。
+/// 口径与本地采集一致（md5(RGBA 字节)，见 clipboard_monitor 的 img_hash），
+/// 这样「本机已复制的图」与「对端同步来的同一张图」也能命中合并。
+fn sync_hash_for(item_type: &str, final_text: &str, image_bytes: Option<&[u8]>) -> String {
+    if item_type == "image" {
+        if let Some(bytes) = image_bytes {
+            if let Ok(img) = image::load_from_memory(bytes) {
+                return md5_hex(img.into_rgba8().as_raw());
+            }
+            // 解不开（残缺字节）时退回文本口径：还能按标签合并，不至于堆重复记录
+            log::warn!("[LanSync] 同步图片字节无法解码为位图，去重指纹退回文本口径");
+        }
+    }
+    content_md5(final_text)
+}
+
+// ===== B1 接收端：分片重组 =====
+
+/// 一条分片消息的重组槽。multi-NIC 下同一分片会被投递多份，
+/// 靠「每槽只记一次」吸收重复。
+struct FragState {
+    parts: Vec<Option<Vec<u8>>>,
+    filled: usize,
+    bytes: usize,
+    first_seen: i64,
+}
+
+#[derive(Debug)]
+enum PacketFlow {
+    /// 不是 v3 分片（v2 信封 / 握手包 / 无法识别），走原有路径
+    NotFragment,
+    /// 分片已入账但还没收齐（或被丢弃）
+    Pending,
+    /// 收齐，携带重组出的完整密文信封
+    Complete(String),
+}
+
+/// 重组窗口（秒）：局域网内传输是毫秒级，超窗即放弃，防残缺消息长期占槽。
+const FRAGMENT_REASSEMBLY_SECS: i64 = 8;
+/// 已完成消息的重复投递吸收窗口（秒）：多网卡会把同一消息收两份以上，
+/// 完成态记一段时间用于静默丢弃迟到的重复分片，免得重复走
+/// 「重组成功 → nonce 去重丢弃」的弯路。
+const FRAGMENT_COMPLETE_MEMORY_SECS: i64 = 30;
+
+/// 收到一个数据报：若是 v3 分片则入账重组，收齐返回完整密文信封。
+///
+/// 安全边界：total 上限 = MAX_LAN_MESSAGE_BYTES / FRAGMENT_WIRE_BYTES（拒绝
+/// 声明超大 total 的伪造分片）；单片 decoded 长度不得超过切片粒度；重组
+/// 总字节数不得超过 MAX_LAN_MESSAGE_BYTES；槽位有数与超窗双上限。
+fn try_absorb_fragment(
+    text: &str,
+    reassembly: &mut HashMap<String, FragState>,
+    completed: &mut HashMap<String, i64>,
+    now_ts: i64,
+) -> PacketFlow {
+    // 廉价闸门：分片信封由本端 serde 序列化，首字段固定是 "v":3
+    if !text.starts_with("{\"v\":3") {
+        return PacketFlow::NotFragment;
+    }
+    let Ok(frag) = serde_json::from_str::<LanFragment>(text) else {
+        return PacketFlow::NotFragment;
+    };
+    let max_total = (MAX_LAN_MESSAGE_BYTES / FRAGMENT_WIRE_BYTES).max(1) as u32;
+    if frag.total == 0 || frag.total > max_total || frag.seq >= frag.total {
+        log::debug!(
+            "[LanSync] 丢弃非法分片 (seq={}, total={})",
+            frag.seq,
+            frag.total
+        );
+        return PacketFlow::Pending;
+    }
+    let Ok(bytes) =
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &frag.chunk)
+    else {
+        return PacketFlow::Pending;
+    };
+    if bytes.len() > FRAGMENT_WIRE_BYTES {
+        return PacketFlow::Pending; // 单片超过切片粒度，只可能是伪造
+    }
+    // 已完成消息的迟到重复分片：静默吸收
+    if completed
+        .get(&frag.mid)
+        .is_some_and(|t| now_ts - *t < FRAGMENT_COMPLETE_MEMORY_SECS)
+    {
+        return PacketFlow::Pending;
+    }
+    if !reassembly.contains_key(&frag.mid) {
+        // 新消息进组时才做过期清扫与槽位上限（低频路径，不逐包跑）
+        reassembly.retain(|_, s| now_ts - s.first_seen <= FRAGMENT_REASSEMBLY_SECS);
+        while reassembly.len() >= FRAGMENT_SLOTS_MAX {
+            let oldest = reassembly
+                .iter()
+                .min_by_key(|(_, s)| s.first_seen)
+                .map(|(k, _)| k.clone());
+            match oldest {
+                Some(k) => {
+                    reassembly.remove(&k);
+                }
+                None => break,
+            }
+        }
+        reassembly.insert(
+            frag.mid.clone(),
+            FragState {
+                parts: vec![None; frag.total as usize],
+                filled: 0,
+                bytes: 0,
+                first_seen: now_ts,
+            },
+        );
+    }
+    let Some(state) = reassembly.get_mut(&frag.mid) else {
+        return PacketFlow::Pending;
+    };
+    if state.parts[frag.seq as usize].is_none() {
+        state.parts[frag.seq as usize] = Some(bytes.clone());
+        state.filled += 1;
+        state.bytes += bytes.len();
+        if state.bytes > MAX_LAN_MESSAGE_BYTES {
+            reassembly.remove(&frag.mid);
+            return PacketFlow::Pending;
+        }
+    }
+    if state.filled < frag.total as usize {
+        return PacketFlow::Pending;
+    }
+    // 收齐：拼回完整密文信封（信封是 ASCII JSON，非法 UTF-8 直接丢弃）
+    let parts = reassembly.remove(&frag.mid).map(|s| s.parts).unwrap_or_default();
+    let wire: Vec<u8> = parts.into_iter().flatten().flatten().collect();
+    completed.insert(frag.mid.clone(), now_ts);
+    if completed.len() > FRAGMENT_SLOTS_MAX * 2 {
+        completed.retain(|_, t| now_ts - *t < FRAGMENT_COMPLETE_MEMORY_SECS);
+    }
+    match String::from_utf8(wire) {
+        Ok(s) => PacketFlow::Complete(s),
+        Err(_) => PacketFlow::Pending,
+    }
 }
 
 /// 配对密钥强度校验（修复 M14）：拒绝过短、超长、单一字符重复等弱密钥。
@@ -181,16 +389,21 @@ pub(crate) fn send_via_iface(
 ///
 /// 单块网卡失败只记 debug：虚拟网卡发不出去是常态，逐块 warn 会刷屏。
 /// 但**一块都没发出去**是真问题，必须记下来（规则 #15.3）。
+///
+/// ❗ 报文先经 [`wire_to_datagrams`] 切分：超 UDP 单包上限的信封（带图片的
+/// 消息）必须分片发送，否则 Windows send_to 直接 WSAEMSGSIZE 失败。
 fn send_multicast(payload: &[u8], what: &str) {
-    let mut sent = 0usize;
-    for ifaddr in multicast_ifaces() {
-        match send_via_iface(&ifaddr, MULTICAST_GROUP, MULTICAST_PORT, payload) {
-            Ok(()) => sent += 1,
-            Err(e) => log::debug!("[LanSync] 经网卡 {} 发送{}失败: {}", ifaddr, what, e),
+    for datagram in wire_to_datagrams(payload) {
+        let mut sent = 0usize;
+        for ifaddr in multicast_ifaces() {
+            match send_via_iface(&ifaddr, MULTICAST_GROUP, MULTICAST_PORT, &datagram) {
+                Ok(()) => sent += 1,
+                Err(e) => log::debug!("[LanSync] 经网卡 {} 发送{}失败: {}", ifaddr, what, e),
+            }
         }
-    }
-    if sent == 0 {
-        log::warn!("[LanSync] {}没能从任何一块网卡发出去", what);
+        if sent == 0 {
+            log::warn!("[LanSync] {}没能从任何一块网卡发出去", what);
+        }
     }
 }
 
@@ -918,6 +1131,9 @@ impl LanSync {
             }
 
             let mut buf = [0u8; 65536];
+            // B1 分片重组状态：监听线程私有，不跨线程共享
+            let mut frag_reassembly: HashMap<String, FragState> = HashMap::new();
+            let mut frag_completed: HashMap<String, i64> = HashMap::new();
             while running.load(Ordering::SeqCst) {
                 match socket.recv_from(&mut buf) {
                     Ok((len, _addr)) => {
@@ -933,6 +1149,20 @@ impl LanSync {
                         let Ok(text) = std::str::from_utf8(&buf[..len]) else {
                             continue;
                         };
+
+                        // 🔴 B1 修复：超 UDP 单包上限的消息以 v3 分片到达，先重组再走
+                        // 原有解密路径。加密 / GCM 认证 / nonce 重放防护不变。
+                        let wire_text: std::borrow::Cow<'_, str> = match try_absorb_fragment(
+                            text,
+                            &mut frag_reassembly,
+                            &mut frag_completed,
+                            chrono::Utc::now().timestamp(),
+                        ) {
+                            PacketFlow::NotFragment => std::borrow::Cow::Borrowed(text),
+                            PacketFlow::Pending => continue,
+                            PacketFlow::Complete(wire) => std::borrow::Cow::Owned(wire),
+                        };
+                        let text: &str = &wire_text;
 
                         // 🔴 握手包必须在解密**之前**分流。它们是明文的，
                         // 走下面那条路会被当成「解不开的包」丢掉——而那正是
@@ -1023,12 +1253,16 @@ impl LanSync {
                         let source = format!("局域网: {}", msg.device_name);
                         let item_type = msg.item_type.clone();
 
-                        let (final_text, content) = match item_type.as_str() {
+                        // image 先解码出字节（去重指纹要用），**查重命中就不落盘**。
+                        // 改前是先写 lan_*.png 再查重：同设备第二张图被丢弃的同时
+                        // 还留下无引用的孤儿文件。
+                        let mut pending_image: Option<Vec<u8>> = None;
+                        let (mut final_text, content) = match item_type.as_str() {
                             "image" if !msg.image_base64.is_empty() => {
-                                // 解码图片并保存到本地
-                                match save_synced_image(&msg.image_base64, &app_handle) {
-                                    Ok(path) => {
-                                        (format!("[图片同步] 来自 {}", msg.device_name), path)
+                                match decode_lan_image(&msg.image_base64) {
+                                    Ok(bytes) => {
+                                        pending_image = Some(bytes);
+                                        (format!("[图片同步] 来自 {}", msg.device_name), String::new())
                                     }
                                     Err(e) => {
                                         log::warn!("[LanSync] 保存同步图片失败: {}", e);
@@ -1071,7 +1305,7 @@ impl LanSync {
                         // 智能合并：同步消息按内容 md5 去重——同一内容被多台设备连续广播、
                         // 或本机已存在相同内容时，只更新时间不新建（此前 LAN 同步完全不去重，
                         // md5 也存 None，收到几条广播就堆几条重复记录）
-                        let sync_hash = content_md5(&final_text);
+                        let sync_hash = sync_hash_for(&item_type, &final_text, pending_image.as_deref());
                         let store = app_handle.try_state::<DataStore>();
                         let mut merged = false;
                         if let Some(ref store) = store {
@@ -1118,6 +1352,19 @@ impl LanSync {
                         }
                         if merged {
                             continue;
+                        }
+
+                        // 确认不合并后才把图片写进 images/（见 pending_image 注释）。
+                        // 写失败时把卡片文本降级为失败标签，避免出现指向空路径的 image 记录。
+                        let mut content = content;
+                        if let Some(bytes) = pending_image {
+                            match save_image_bytes(&bytes, &app_handle) {
+                                Ok(path) => content = path,
+                                Err(e) => {
+                                    log::warn!("[LanSync] 写入同步图片失败: {}", e);
+                                    final_text = format!("[图片同步失败] {}", e);
+                                }
+                            }
                         }
 
                         let item = HistoryItem {
@@ -1205,8 +1452,9 @@ impl LanSync {
     }
 }
 
-/// 将 base64 编码的图片保存到本地 images 目录，返回路径
-fn save_synced_image(base64_data: &str, app_handle: &AppHandle) -> Result<String, String> {
+/// 解码 LAN 同步消息里的 base64 图片为字节（含大小上限校验，不落盘）。
+/// 与写盘拆开：去重指纹与「查重命中不落盘」都要先拿到字节。
+fn decode_lan_image(base64_data: &str) -> Result<Vec<u8>, String> {
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_data)
         .map_err(|e| format!("base64 解码失败: {}", e))?;
 
@@ -1217,7 +1465,11 @@ fn save_synced_image(base64_data: &str, app_handle: &AppHandle) -> Result<String
             MAX_LAN_MESSAGE_BYTES
         ));
     }
+    Ok(bytes)
+}
 
+/// 将图片字节写入本地 images 目录，返回路径
+fn save_image_bytes(bytes: &[u8], app_handle: &AppHandle) -> Result<String, String> {
     let app_dir = app_handle
         .path()
         .app_data_dir()
@@ -1228,7 +1480,168 @@ fn save_synced_image(base64_data: &str, app_handle: &AppHandle) -> Result<String
     let file_name = format!("lan_{}.png", uuid::Uuid::new_v4());
     let file_path = images_dir.join(&file_name);
 
-    std::fs::write(&file_path, &bytes).map_err(|e| format!("写入图片文件失败: {}", e))?;
+    std::fs::write(&file_path, bytes).map_err(|e| format!("写入图片文件失败: {}", e))?;
 
     Ok(file_path.to_str().unwrap_or("").to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hashing::md5_hex;
+
+    /// 用 image crate 造一张小 PNG（本地采集的落盘格式），字节可直接当图片内容用。
+    fn tiny_png(rgba: &[u8]) -> Vec<u8> {
+        let img = image::RgbaImage::from_raw(2, 2, rgba.to_vec()).expect("尺寸匹配");
+        let mut buf = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buf, image::ImageFormat::Png)
+            .expect("编码 PNG");
+        buf.into_inner()
+    }
+
+    /// B2 守卫：同一设备连发两张**不同**图片，去重指纹必须不同。
+    /// 改前 hash 用标签串「[图片同步] 来自 X」——与内容无关，第二张图会被
+    /// 智能合并静默吞掉（旧图顶到顶部冒充新图）。改前此用例为红。
+    #[test]
+    fn same_device_two_images_must_not_collide() {
+        let label = "[图片同步] 来自 同一台设备";
+        let a = tiny_png(&[255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+        let b = tiny_png(&[0, 0, 0, 255, 10, 10, 10, 255, 20, 20, 20, 255, 30, 30, 30, 255]);
+        assert_ne!(
+            sync_hash_for("image", label, Some(&a)),
+            sync_hash_for("image", label, Some(&b)),
+            "不同图片内容必须得到不同去重指纹"
+        );
+    }
+
+    /// B2 守卫：同一张图片从不同设备同步过来（标签不同、内容相同）必须命中合并。
+    /// 改前不同标签 → 不同 hash → 堆重复记录。改前此用例为红。
+    #[test]
+    fn same_image_different_device_must_merge() {
+        let png = tiny_png(&[255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255]);
+        assert_eq!(
+            sync_hash_for("image", "[图片同步] 来自 设备A", Some(&png)),
+            sync_hash_for("image", "[图片同步] 来自 设备B", Some(&png)),
+            "相同图片内容必须得到相同去重指纹"
+        );
+    }
+
+    /// B2 守卫：图片指纹与本地采集口径一致（本地 = md5(RGBA 字节)，见
+    /// clipboard_monitor 的 img_hash），LAN 同步的本机已有副本才能命中合并。
+    #[test]
+    fn image_hash_matches_local_rgba_hash() {
+        let rgba = vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 0, 255];
+        let png = tiny_png(&rgba);
+        assert_eq!(
+            sync_hash_for("image", "ignored", Some(&png)),
+            md5_hex(&rgba),
+            "LAN 图片指纹必须与本地 RGBA 指纹同口径"
+        );
+    }
+
+    /// B1 守卫：发出的每个 UDP 数据报都必须落在 65507B 限制内。
+    /// 改前整个密文信封当一个包发——带图片的消息（几百 KB）在 Windows 上
+    /// send_to 直接 WSAEMSGSIZE 失败，图片从不到达对端且只有 debug 日志。
+    /// 改前此用例为红。
+    #[test]
+    fn datagrams_must_fit_udp_limit() {
+        let wire = vec![b'x'; 200 * 1024]; // 200KB：典型截图 base64 后的下限量级
+        for d in wire_to_datagrams(&wire) {
+            assert!(
+                d.len() <= 65507,
+                "单个数据报 {}B 超过 UDP 上限 65507B，会被系统直接拒发",
+                d.len()
+            );
+        }
+    }
+
+    /// B1 守卫：小报文保持单包直发（不为普通文本消息引入分片开销）。
+    #[test]
+    fn small_wire_stays_single_datagram() {
+        let wire = vec![b'x'; 1024];
+        let datagrams = wire_to_datagrams(&wire);
+        assert_eq!(datagrams.len(), 1);
+        assert_eq!(datagrams[0], wire);
+    }
+
+    /// B1 机制守卫：分片乱序到达 + 多网卡重复投递，仍能重组出与原文一致的信封。
+    #[test]
+    fn fragments_reassemble_out_of_order_with_duplicates() {
+        let mut wire = vec![b'x'; 100 * 1024];
+        let last = wire.len() - 1;
+        wire[0] = b'{';
+        wire[last] = b'}';
+        let datagrams = wire_to_datagrams(&wire);
+        assert!(datagrams.len() > 1, "100KB 必须被切成多片");
+
+        let mut reassembly = HashMap::new();
+        let mut completed = HashMap::new();
+        let mut completed_wire: Option<String> = None;
+        // 逆序投递（UDP 不保序）+ 每片投两遍（多网卡重复）
+        for d in datagrams.iter().rev() {
+            let text = std::str::from_utf8(d).unwrap();
+            for _ in 0..2 {
+                if let PacketFlow::Complete(w) =
+                    try_absorb_fragment(text, &mut reassembly, &mut completed, 1000)
+                {
+                    completed_wire = Some(w);
+                }
+            }
+        }
+        let w = completed_wire.expect("收齐后应重组完成");
+        assert_eq!(w.as_bytes(), wire);
+        // 收齐后迟到的重复分片必须被静默吸收，且槽位已释放
+        let dup = std::str::from_utf8(&datagrams[0]).unwrap();
+        assert!(matches!(
+            try_absorb_fragment(dup, &mut reassembly, &mut completed, 1001),
+            PacketFlow::Pending
+        ));
+        assert!(reassembly.is_empty(), "完成的 mid 必须释放槽位");
+    }
+
+    /// B1 机制守卫：伪造分片（seq 越界 / 声明超大 total / 单片超切片粒度）
+    /// 一律丢弃且不占重组槽位。
+    #[test]
+    fn malformed_fragments_rejected_without_slots() {
+        let mut reassembly = HashMap::new();
+        let mut completed = HashMap::new();
+        let mk = |seq: u32, total: u32, chunk: String| {
+            serde_json::json!({ "v": 3, "mid": "m-bad", "seq": seq, "total": total, "chunk": chunk })
+                .to_string()
+        };
+        // seq >= total
+        for text in [
+            mk(5, 3, String::new()),
+            mk(0, 999_999, String::new()), // 声明超大 total
+        ] {
+            assert!(matches!(
+                try_absorb_fragment(&text, &mut reassembly, &mut completed, 1000),
+                PacketFlow::Pending
+            ));
+        }
+        // 单片超切片粒度（32KB 的 base64 ≈ 43691B 文本）
+        let fat_chunk = "A".repeat(FRAGMENT_WIRE_BYTES * 2);
+        let fat = mk(0, 1, fat_chunk);
+        assert!(matches!(
+            try_absorb_fragment(&fat, &mut reassembly, &mut completed, 1000),
+            PacketFlow::Pending
+        ));
+        assert!(reassembly.is_empty(), "非法分片不得占用重组槽位");
+    }
+
+    /// B1 兼容守卫：普通 v2 信封与握手包不会被误当成分片。
+    #[test]
+    fn non_fragment_packets_pass_through() {
+        let mut reassembly = HashMap::new();
+        let mut completed = HashMap::new();
+        for text in [
+            "{\"v\":2,\"nonce\":\"a\",\"ct\":\"b\"}",
+            "{\"type\":\"hello\",\"device_id\":\"x\"}",
+        ] {
+            assert!(matches!(
+                try_absorb_fragment(text, &mut reassembly, &mut completed, 1000),
+                PacketFlow::NotFragment
+            ));
+        }
+    }
 }

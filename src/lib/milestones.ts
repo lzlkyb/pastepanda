@@ -15,6 +15,7 @@ import type { StickyStats } from "@/lib/api/sticky";
 // 成就数量统一用 achievements.ts 的实现，不在这里再手抄一份
 // （achievements.ts 不反向引用本文件，无循环依赖）。
 import { ACHIEVEMENTS, unlockedCount } from "@/lib/achievements";
+import { parseHistoryTime } from "@/lib/utils";
 
 export type MilestoneKind = "anniversary" | "hundred-k" | "awakening";
 
@@ -87,8 +88,9 @@ export function checkMilestones(s: StickyStats): MilestoneEvent | null {
   // 现改为按**真实日期**推周年（setFullYear），不再用 365 天硬编码，
   // 因此闰年不会逐年漂移（旧写法 4 年差 1 天）。
   if (s.firstHistoryAt) {
-    const first = new Date(s.firstHistoryAt.replace(" ", "T"));
-    if (!Number.isNaN(first.getTime())) {
+    const firstMs = parseHistoryTime(s.firstHistoryAt);
+    if (!Number.isNaN(firstMs)) {
+      const first = new Date(firstMs);
       // 最近一个已到达的周年日：先试今年，未到则回退到去年
       const ann = new Date(first);
       ann.setFullYear(now.getFullYear());

@@ -152,6 +152,10 @@ fn cleanup_history(
 
     match store.clear_history_with_undo(&workspace, Some(days as u32)) {
         Ok((count, deleted)) if count > 0 => {
+            // B3：自动清理是**永久删除**（deleted 不进前端撤销栈），必须连图片
+            // 文件一起清扫——改前只删表，images/ 目录孤儿图片无限增长。
+            // 手动清空（commands::clear_history）有撤销，不能做这步。
+            store.purge_image_files_for(&deleted);
             let deleted_ids: Vec<&str> = deleted.iter().map(|i| i.id.as_str()).collect();
             if let Err(e) = handle.emit(
                 "auto-cleanup-done",

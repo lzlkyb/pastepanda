@@ -15,6 +15,7 @@ import { mergeTexts, type MergeSeparator } from "@/lib/mergeText";
 import { useToast } from "@/components/Toast";
 import { useDialogAnim } from "@/lib/dialogMotion";
 import { FocusTrap } from "@/components/FocusTrap";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 import { Sparkles, Loader2 } from "lucide-react";
 import styles from "./MergeDialog.module.css";
 
@@ -45,6 +46,9 @@ export const MergeDialog = memo(function MergeDialog({
 }) {
   const { toast } = useToast();
   const { backdrop, panel } = useDialogAnim();
+  // 🔴 本面板不在 App 的 Esc 链名单里：不接这一份（捕获期 + stopPropagation），
+  // 按 Esc 会落到链尾 hide_window（整个主窗口消失、面板还挂着）。
+  useDialogEscape(onClose);
   const [separator, setSeparator] = useState<MergeSeparator>("newline");
   const [customSep, setCustomSep] = useState("、");
   // v6.4 C AI 增强：AI 合并结果覆盖预览（规则版保留在 merged）

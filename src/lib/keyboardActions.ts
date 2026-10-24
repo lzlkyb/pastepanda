@@ -110,6 +110,16 @@ export interface KeyEventHandlerState {
   showConfigDiff?: boolean;
   /** `dialogStore` 管的那批（卡片编辑 / 链运行 / 粘贴守卫 / 画像 / 里程碑 …）。 */
   anyStoreDialogOpen?: boolean;
+  /**
+   * 🔴 P1（2026-10-24）补齐的三个「游离弹窗」——组件本地/局部 state，一直没传进来：
+   * 合并粘贴面板（CardList 的 mergeItems）、二维码工具（App 的 showQr）、
+   * 每日整理（App 的 showDailyBrief）。不进名单的后果：开着它们按
+   * Delete/Backspace 删的是遮罩**背后**看不见的选中卡片。
+   * 三个弹窗自带 `useDialogEscape`（捕获期截停），Esc 链上只需让位。
+   */
+  mergeOpen?: boolean;
+  qrOpen?: boolean;
+  dailyBriefOpen?: boolean;
   // Esc 分层需要逐个知道是哪一个，不能只看汇总位。
   chainOpen?: boolean;
   chainEditOpen?: boolean;
@@ -202,9 +212,13 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     state.showEncoding ||
     state.showBatchReplace ||
     state.showConfigDiff ||
+    state.showShortcuts ||
     state.moveToGroup ||
     state.fileDetailOpen ||
     state.pinnedPanelOpen ||
+    state.mergeOpen ||
+    state.qrOpen ||
+    state.dailyBriefOpen ||
     state.anyStoreDialogOpen;
   const isListNavKey =
     LIST_NAV_KEYS.has(key) || (ctrlKey && LIST_NAV_CTRL_KEYS.has(key));
@@ -234,6 +248,9 @@ export function resolveKeyAction(state: KeyEventHandlerState): KeyAction {
     // 这两个自带 Esc（含未保存确认），全局不抢；也不能往下落到隐藏窗口。
     if (state.editorItemOpen) return { type: "ignore" };
     if (state.noteDraftOpen) return { type: "ignore" };
+    // P1：合并粘贴 / 二维码 / 每日整理同上——自带 useDialogEscape（捕获期截停），
+    // 全局链不抢；必须拦在这里，否则会落到链尾 hide_window（整个主窗口消失、弹窗还挂着）。
+    if (state.mergeOpen || state.qrOpen || state.dailyBriefOpen) return { type: "ignore" };
     // 排在 showSettings 之前：它是盖满全屏的遮罩，视觉上就是最上层。
     if (state.pinnedPanelOpen) return { type: "close_dialog", dialog: "pinnedPanel" };
     if (state.showSettings) return { type: "close_dialog", dialog: "settings" };

@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { X, Copy, Download, Image as ImageIcon, ClipboardPaste } from "lucide-react";
 import { ActionBtn } from "./editorBits";
 import { useToast } from "@/components/Toast";
 import { primaryShortcutLabel, errText } from "@/lib/utils";
 import { useQrCanvas } from "@/hooks/useQrCanvas";
+import { useDialogEscape } from "@/hooks/useDialogEscape";
 
 /**
  * 二维码双向编辑器（Tier2 · 复用 QRCodeDialog 的 qrcode 生成 + ScreenshotOverlay 的 jsqr 解码）：
@@ -53,12 +54,10 @@ export function QREditor({ initialText, onClose }: { initialText: string; onClos
 
   const isUrl = /^https?:\/\//i.test(text.trim());
 
-  // Esc 关闭
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // Esc 关闭。🔴 必须走 useDialogEscape（捕获期 + stopPropagation）：
+  // 本组件不在 App 的 Esc 链名单里，自带监听若在冒泡期，会与 App 链同时触发——
+  // 按一下 Esc，编辑器关了、主窗口也跟着隐藏（双动作）。
+  useDialogEscape(onClose);
 
   // ===== 生成：复制图片 / 保存 PNG =====
   const copyImage = useCallback(async () => {
