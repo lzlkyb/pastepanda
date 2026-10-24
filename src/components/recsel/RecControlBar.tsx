@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Ellipsis, GripVertical, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
+import { Ellipsis, Flag, GripVertical, Pause, Play, Square, TriangleAlert, X } from "lucide-react";
 import { recResizeControl } from "@/lib/api/rec";
 import { formatBytes, formatRecordingTime } from "@/lib/utils";
 import { recQualityOf } from "@/lib/recQuality";
@@ -33,10 +33,19 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
   finalizing: boolean;
 }) {
   const control = useRecControlState(finalizing, onStop);
-  const { setError } = control;
+  const { setError, markNote } = control;
   const saving = finalizing || control.status?.finalizing;
   const [collapsed, setCollapsed] = useState(false);
   const [panel, setPanel] = useState<"more" | "notice" | null>(null);
+  // R2（2026-10-24 审查）：保存期本地秒表——status 轮询在 finalizing 时已停，
+  // 「它还活着」的证据只能自己走。计数用累加不用 Date.now 差值，fake timers 下更直白。
+  const [savingSecs, setSavingSecs] = useState(0);
+  useEffect(() => {
+    if (!saving) { setSavingSecs(0); return; }
+    setSavingSecs(0);
+    const t = window.setInterval(() => setSavingSecs(s => s + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [saving]);
   const [armDiscard, setArmDiscard] = useState(false);
   const [surface, setSurface] = useState<HTMLDivElement | null>(null);
   const resizeQueue = useRef(Promise.resolve());
@@ -89,7 +98,10 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
   if (saving) return (
     <div className={styles.root}>
       <div className={styles.surface} ref={setSurface}>
-        <div className={styles.row} role="status">正在保存录像…</div>
+        <div className={styles.row} role="status">
+          正在保存录像…{savingSecs > 0 && ` 已 ${savingSecs}s`}
+          {savingSecs >= 10 && <span className={styles.savingNote}> · 长录像收尾需要一点时间，请勿此刻退出</span>}
+        </div>
       </div>
     </div>
   );
@@ -100,6 +112,7 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
           aria-label={`展开录屏控制条，${stateLabel}${problem ? `，异常：${problem}` : ""}`}>
           <i className={stateDot} />
           <span className={styles.clock}>{clock}</span>
+          {markNote && <span className={styles.markNote}><Flag size={11} aria-hidden="true" />{markNote}</span>}
           {preparing && <span className={styles.state}>{stateLabel}</span>}
           {problem && <span className={styles.tinyProblem}><TriangleAlert size={12} aria-hidden="true" />异常</span>}
         </button>
@@ -155,6 +168,11 @@ export function RecControlBar({ qualityLabel, onStop, finalizing }: {
             <span className={styles.clock}>{clock}</span>
             {preparing && <span className={styles.state}>{stateLabel}</span>}
           </span>
+          {markNote && (
+            <span className={styles.markNote} role="status">
+              <Flag size={11} aria-hidden="true" />{markNote}
+            </span>
+          )}
           {/* 🔴 准备期不渲染暂停：`preparing` 时后端还没开录，暂停必失败，
            * 旧版把它画成一枚 68px 的灰按钮——既是点不动的死控件，又把这一态
            * 的自然宽度顶到 336px（超过窗口初值 320，右侧「更多」被裁一截）。

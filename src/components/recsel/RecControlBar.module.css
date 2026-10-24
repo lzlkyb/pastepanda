@@ -177,6 +177,22 @@
   color: var(--warning);
 }
 
+/* R1（2026-10-24 审查）：标记确认——短暂出现（≈2.4s）的回话，成功语义色。
+ * 收起态与主条共用一档字号（11px，同 .state）。 */
+.markNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 11px;
+  color: var(--success);
+}
+
+/* R2：保存超过 10s 后的安抚句（U1：>10s 要么可取消要么给说法）。 */
+.savingNote {
+  color: var(--shot-bar-muted);
+}
+
 /* 收起态：整枚就是「展开」按钮，宽度由内容决定（不再靠 TS 里的 80/104 两个常量）。
  * min-width 兜住原生窗口的下限（control_layout::resize 要求 logical.w ≥ 80），
  * 否则计时还在 `--:--` 时这一帧的尺寸会被后端判为无效。 */

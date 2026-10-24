@@ -135,13 +135,29 @@ pub fn start(app: AppHandle, opts: RecOpts, out_path: PathBuf) -> Result<(), Str
     Ok(())
 }
 
-/// 标记时刻（四期 1.3）：全局热键入口。仅录制中有效；sidecar 关闭时静默
-/// （Mark 无处可记，四期只记录不展示——五期渲染时间线刻度）。
-pub fn send_mark() {
+/// 标记时刻（四期 1.3）：全局热键入口。仅录制中有效；写入 sidecar 元数据轨道，
+/// 五期渲染时间线刻度。
+/// 🔴 2026-10-24 审查 R1：**无论写没写上都要回话**——热键零反馈 = 用户不知道
+/// 记没记上（§17.3 有反馈不靠猜）。`recorded=false`（事件记录关闭）由控制条
+/// 就地提示；非录制期本入口不会被调（热键侧有 `status().recording` 闸）。
+pub fn send_mark(app: &AppHandle) {
     let slot = ACTIVE.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some(tx) = slot.as_ref().and_then(|a| a.events.as_ref()) {
+    let Some(a) = slot.as_ref() else { return };
+    let recorded = a.events.is_some();
+    if let Some(tx) = a.events.as_ref() {
         let _ = tx.try_send(RecEvent::Mark);
     }
+    let elapsed = session_clock::elapsed_ms(
+        a.started,
+        a.ready,
+        a.paused_total_ms,
+        a.paused_since,
+        Instant::now(),
+    );
+    let _ = app.emit(
+        "rec-marked",
+        serde_json::json!({ "recorded": recorded, "elapsedMs": elapsed }),
+    );
 }
 
 /// 请求停止（discard=true = 落盘后删除，即「取消并丢弃」）。

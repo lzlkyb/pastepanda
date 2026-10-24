@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 
@@ -96,5 +96,68 @@ describe("控制条窗口尺寸由内容决定", () => {
     const block = css.slice(start, css.indexOf("}", start));
     expect(block).not.toMatch(/max-(width|height)/);
     expect(block).toMatch(/flex:\s*none/);
+  });
+});
+
+/**
+ * 审查 R1 / R2（2026-10-24）：标记热键的回话与保存期的「活着」证据。
+ * R1 的失败方式是静默——Rust 改名/删 emit、或前端删监听，编译全绿、用户只是
+ * 从此按热键没反应；事件名两端同名另有源码对读守卫（recMarkFeedbackContract.test.ts）。
+ */
+describe("标记反馈（R1）与保存期秒表（R2）", () => {
+  const listenHandlers: Record<string, (e: { payload: unknown }) => void> = {};
+
+  function captureListen() {
+    h.listen.mockImplementation(((ev: unknown, cb: unknown) => {
+      listenHandlers[String(ev)] = cb as (e: { payload: unknown }) => void;
+      return Promise.resolve(() => {});
+    }) as typeof h.listen);
+  }
+
+  it("rec-marked(recorded) → 主条闪「已标记 mm:ss」，约 2.4s 后自己收掉", async () => {
+    h.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "rec_status") return Promise.resolve(okStatus(0));
+      return Promise.resolve(undefined);
+    });
+    captureListen();
+    render(<RecControlBar qualityLabel="高清" onStop={() => {}} finalizing={false} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => {
+      listenHandlers["rec-marked"]({ payload: { recorded: true, elapsedMs: 83_000 } });
+    });
+    expect(screen.getByText(/已标记 01:23/)).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(screen.queryByText(/已标记/)).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it("rec-marked(recorded=false) → 异常面板说清「为什么没记上 + 去哪开」，不默默吞掉", async () => {
+    h.invoke.mockImplementation((cmd: string) => {
+      if (cmd === "rec_status") return Promise.resolve(okStatus(0));
+      return Promise.resolve(undefined);
+    });
+    captureListen();
+    render(<RecControlBar qualityLabel="高清" onStop={() => {}} finalizing={false} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => {
+      listenHandlers["rec-marked"]({ payload: { recorded: false, elapsedMs: 1000 } });
+    });
+    // problem 非空 → notice 面板自动展开（组件头既有机制），错误文案指到真实设置名。
+    // 本文件在 fake timers 下，findBy 的轮询不会自己前进——setState 在上面那个
+    // act 里已落定，直接同步取即可（文件头注释的既有教训）。
+    expect(screen.getByText(/记录点击与按键事件/)).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it("保存态：秒数滚动，超 10s 补「请勿此刻退出」（U1：>10s 要么可取消要么给说法）", async () => {
+    const { getByText, queryByText } = render(
+      <RecControlBar qualityLabel="高清" onStop={() => {}} finalizing={true} />,
+    );
+    expect(getByText(/正在保存录像/)).toBeTruthy();
+    expect(queryByText(/请勿此刻退出/)).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(11_000); });
+    expect(getByText(/已 11s/)).toBeTruthy();
+    expect(getByText(/请勿此刻退出/)).toBeTruthy();
+    vi.useRealTimers();
   });
 });

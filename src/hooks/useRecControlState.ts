@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { recSetPaused, recStatus, type RecStatus } from "@/lib/api/rec";
+import { formatRecordingTime } from "@/lib/utils";
 
 /** One backend clock/status query, without overlapping requests or local timer drift. */
 export function useRecControlState(finalizing: boolean, onStop: (discard: boolean) => void | Promise<void>) {
@@ -8,6 +9,9 @@ export function useRecControlState(finalizing: boolean, onStop: (discard: boolea
   const [queryError, setQueryError] = useState("");
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState<{ action: "pause" | "resume" | "stop"; message: string } | null>(null);
+  /** R1（2026-10-24 审查）：标记热键的回话（≈2.4s 自动收掉）；null = 没有要显示的。 */
+  const [markNote, setMarkNote] = useState<string | null>(null);
+  const markTimer = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const pausePending = useRef(false);
   const statusEpoch = useRef(0);
@@ -39,11 +43,25 @@ export function useRecControlState(finalizing: boolean, onStop: (discard: boolea
         setStatus(previous => previous ? { ...previous, paused: e.payload.paused } : previous);
       }
     });
+    // R1：标记热键的回话。写上了 → 主条闪「已标记 mm:ss」；没写上（事件记录关）
+    // → 走 error 通道：notice 面板自动展开，说清「为什么没记上 + 去哪开」。
+    const unlistenMark = listen<{ recorded: boolean; elapsedMs?: number }>("rec-marked", e => {
+      if (!alive) return;
+      if (e.payload?.recorded) {
+        setMarkNote(`已标记 ${formatRecordingTime(e.payload.elapsedMs ?? 0)}`);
+        if (markTimer.current !== null) window.clearTimeout(markTimer.current);
+        markTimer.current = window.setTimeout(() => setMarkNote(null), 2400);
+      } else {
+        setError("标记没记上：「记录点击与按键事件」未开启，本次录像不带标记（设置 → 录屏 → 记录点击与按键事件）。");
+      }
+    });
     return () => {
       alive = false;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
+      if (markTimer.current !== null) window.clearTimeout(markTimer.current);
       void unlisten.then(fn => fn());
+      void unlistenMark.then(fn => fn());
     };
   }, [finalizing]);
   const togglePause = useCallback(async () => {
@@ -74,5 +92,5 @@ export function useRecControlState(finalizing: boolean, onStop: (discard: boolea
     }
   }, [onStop]);
   return { status, error: [actionError?.message, error, queryError].filter(Boolean).join("；"),
-    failedAction: actionError?.action, setError, busy, togglePause, stop };
+    failedAction: actionError?.action, setError, markNote, busy, togglePause, stop };
 }
