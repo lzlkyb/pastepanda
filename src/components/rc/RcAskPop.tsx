@@ -195,7 +195,7 @@ export function RcAskPop() {
         </button>
       </div>
       <div className={styles.meta}>
-        指纹 <span className={styles.fp}>{fingerprintOf(head.peer)}</span> · 申请：
+        指纹 <span className={styles.fp} title="对方的设备指纹——与这台设备「详情」页显示的一致才同意">{fingerprintOf(head.peer)}</span> · 申请：
         <b>{rcAskGrantText(head.capability)}</b>
         {rows.length > 1 && <div className={styles.extra}>另有 {rows.length - 1} 条在等，逐条答</div>}
       </div>

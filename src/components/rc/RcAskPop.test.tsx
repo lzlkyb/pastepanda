@@ -119,6 +119,14 @@ describe("RcAskPop 待答复态", () => {
     });
     expect((await screen.findByText(/同意失败/)).textContent).toContain("门禁拒绝");
   });
+
+  it("指纹旁要有核对指引（L4：安全决策不摆一个没人会核对的码）", async () => {
+    askState.mockResolvedValue(st({ pending: [knock()] }));
+    render(<RcAskPop />);
+    await screen.findByText(/DESKTOP-7K2 想远程这台电脑/);
+    // 常驻教学行（RC_ASK_HINT）必须教「怎么核对」——指纹只有码没有指引 = 摆设
+    expect(screen.getByText(/核对指纹/)).toBeTruthy();
+  });
 });
 
 describe("RcAskPop 原因行（设计稿 §丙-① 第③ 点）", () => {

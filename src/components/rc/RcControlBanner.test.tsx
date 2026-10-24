@@ -212,8 +212,9 @@ describe("RcControlBanner 胶囊 + 抽屉（2026-09-24 方案 B）", () => {
       // 顺带把抽屉展开（jsdom 不拦这种结构，只有这条断言拦得住）。
       expect(badge!.parentElement!.classList.contains(styles.ctrlPill)).toBe(true);
       expect(badge!.closest(`.${styles.ctrlPillMain}`)).toBeNull();
-      // 橙点徽标同时亮起（有需要处理的状态，与文件请求同一判据）
-      expect(container.querySelector(`.${styles.ctrlBadge}`)).not.toBeNull();
+      // 橙点不再管 inputHold：它有自己的常驻徽标（上面那枚 pillHold），再亮橙点
+      // = 同一件事亮两盏灯（2026-10-24 审查 C4）。橙点只留给「只在抽屉里」的提示。
+      expect(container.querySelector(`.${styles.ctrlBadge}`)).toBeNull();
       fireEvent.click(badge!);
       expect(onToggleInputHold).toHaveBeenCalledTimes(1);
     });

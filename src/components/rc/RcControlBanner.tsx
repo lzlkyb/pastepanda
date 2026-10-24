@@ -109,8 +109,10 @@ export function RcControlBanner({
   const rootRef = useRef<HTMLDivElement>(null);
   const drawerId = useId();
 
+  /* 橙点只管「不展开抽屉就看不见」的提示；inputHold / videoPaused 在胶囊行各有
+     常驻徽标（pillHold / pillPause，规则 15.1），计入橙点 = 同一件事亮两盏灯。 */
   const hasNotes = Boolean(
-    scopeNotice || streamNotice || file.asks.length > 0 || spkMutedByPeer || inputHold
+    scopeNotice || streamNotice || file.asks.length > 0 || spkMutedByPeer
   );
 
   // 丙-③：暂停徽标的文案判据收在 `@/lib/rcVideoPause`（与抽屉里那颗键同一措辞源）。
