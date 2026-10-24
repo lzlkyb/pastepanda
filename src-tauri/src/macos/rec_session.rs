@@ -297,17 +297,28 @@ pub fn set_paused(app: &AppHandle, paused: bool) -> Result<(), String> {
     let _ = app.emit("rec-paused", serde_json::json!({"paused":paused}));
     Ok(())
 }
-pub fn send_mark() {
-    let token = ACTIVE
+/// 标记时刻：全局热键入口。仅录制中有效；native 侧经 recorded_event(kind=3)
+/// 写入 sidecar（disabled 时 record 是 no-op）。
+/// 🔴 2026-10-24 审查 R1：与 Windows 侧（rec/session.rs::send_mark）同口径——
+/// 无论写没写上都要回话（§17.3）；sidecar 关闭时 `recorded=false`，控制条就地
+/// 提示「为什么没记上」。锁内只拷值再放锁：recorded_event 在 state.queue 上
+/// 重进 ACTIVE，别持锁调原生（原实现「先拷 token」的写法就是为此，别改回去）。
+pub fn send_mark(app: &AppHandle) {
+    let info = ACTIVE
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .as_ref()
-        .map(|a| a.token);
-    if let Some(token) = token {
-        unsafe {
-            pp_rec_mark(token);
-        }
+        .map(|a| (a.token, a.sidecar.active()));
+    let Some((token, recorded)) = info else { return };
+    let (mut frames, mut elapsed) = (0u64, 0u64);
+    unsafe {
+        pp_rec_mark(token);
+        pp_rec_progress(token, &mut frames, &mut elapsed);
     }
+    let _ = app.emit(
+        "rec-marked",
+        serde_json::json!({ "recorded": recorded, "elapsedMs": elapsed }),
+    );
 }
 extern "C" fn recorded_event(
     token: u64,

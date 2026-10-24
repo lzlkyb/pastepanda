@@ -88,7 +88,7 @@ impl SidecarRecorder {
         }
     }
 
-    #[allow(dead_code)] // 诊断 API：主链路只用 record/warning，这四个方法仅测试引用
+    #[allow(dead_code)] // Windows 构建下无调用方（macOS 会话的 send_mark 与测试在 cfg(macos) 里）
     pub fn active(&self) -> bool {
         self.enabled
     }
