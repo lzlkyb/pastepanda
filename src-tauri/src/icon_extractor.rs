@@ -416,7 +416,7 @@ impl IconCache {
         let filename = format!("{:016x}.png", hasher.finish());
         let icon_path = self.cache_dir.join(&filename);
         // B5：缓存文件走原子写
-        crate::atomic_write::write_replace_bytes(&icon_path, bytes).ok()?;
+        crate::atomic_write::write_replace_bytes(&icon_path, &bytes).ok()?;
         if let Ok(mut files) = self.icon_files.lock() {
             files.insert(filename.clone(), icon_path);
         }
