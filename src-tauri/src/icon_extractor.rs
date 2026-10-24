@@ -362,7 +362,8 @@ impl IconCache {
                 return None;
             }
 
-            if let Err(e) = std::fs::write(&icon_path, &png_data) {
+            // B5：缓存文件走原子写（同 html_images 的理由）
+            if let Err(e) = crate::atomic_write::write_replace_bytes(&icon_path, &png_data) {
                 log::warn!("[IconExtractor] 写入图标文件失败: {}", e);
                 return None;
             }
@@ -414,7 +415,8 @@ impl IconCache {
         exe_path.to_string_lossy().hash(&mut hasher);
         let filename = format!("{:016x}.png", hasher.finish());
         let icon_path = self.cache_dir.join(&filename);
-        std::fs::write(&icon_path, bytes).ok()?;
+        // B5：缓存文件走原子写
+        crate::atomic_write::write_replace_bytes(&icon_path, bytes).ok()?;
         if let Ok(mut files) = self.icon_files.lock() {
             files.insert(filename.clone(), icon_path);
         }

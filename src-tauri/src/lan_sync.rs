@@ -1480,7 +1480,9 @@ fn save_image_bytes(bytes: &[u8], app_handle: &AppHandle) -> Result<String, Stri
     let file_name = format!("lan_{}.png", uuid::Uuid::new_v4());
     let file_path = images_dir.join(&file_name);
 
-    std::fs::write(&file_path, bytes).map_err(|e| format!("写入图片文件失败: {}", e))?;
+    // B5：写入走原子写——半截文件不该被后续的记录引用成裂图
+    crate::atomic_write::write_replace_bytes(&file_path, bytes)
+        .map_err(|e| format!("写入图片文件失败: {}", e))?;
 
     Ok(file_path.to_str().unwrap_or("").to_string())
 }

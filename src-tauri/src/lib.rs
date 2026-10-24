@@ -434,6 +434,15 @@ pub fn run() {
             let store = match data_store::DataStore::new(db_path_str) {
                 Ok(s) => {
                     log::info!("[BOOT] 4 数据库打开成功");
+                    // B4：坏库自救过要让用户知道（历史为何变空、原库备份在哪）
+                    if let Some(backup) = data_store::last_recovery_backup() {
+                        if let Err(e) = app.handle().emit(
+                            "database-recovered",
+                            serde_json::json!({ "backup": backup }),
+                        ) {
+                            log::warn!("[BOOT] 广播坏库自救事件失败: {}", e);
+                        }
+                    }
                     s
                 }
                 Err(e) => {

@@ -22,6 +22,30 @@ import { startHudAutoFollow } from "@/lib/stack/hudBridge";
 let lastLanToastAt = 0;
 
 /** 初始化 Tauri 后端连接 */
+/**
+ * 其它窗口（快捷粘贴 / 托盘 / MCP 等）删除记录后的主窗收敛。
+ *
+ * 🔴 批次④（P3）：改前只做本地过滤——从快捷粘贴面板删掉的记录在全应用
+ * 无处可撤销（主窗撤销栈只收主窗自己的删除路径，而 ✕ 恰好是最易误点的位置）。
+ * 现在改走 removeItems（快照 + 压撤销栈）：任何入口的删除都可在主窗
+ * Ctrl+Z / 撤销按钮恢复。
+ */
+export function applyExternalDeletion(ids: string[]) {
+  if (ids.length === 0) return;
+  // 事件到达时 DB 已删，但主窗内存里还有被删项——先快照再交给 removeItems，
+  // 它会连带压撤销栈（这正是 deleteHistory 走的同一条路）。主窗自己的删除路径
+  // 也会触发本事件，但那时 history 已被它自己的 removeItems 清过，快照为空、
+  // 不会重复压栈（removeItems 对空 deleted 不动撤销栈）。
+  const store = useAppStore.getState();
+  const idSet = new Set(ids);
+  const snapshot = [
+    ...store.history.filter((h) => idSet.has(h.id)),
+    ...(store.searchResults ?? []).filter((h) => idSet.has(h.id)),
+  ];
+  store.removeItems(ids, snapshot);
+  invalidateCountsCache();
+}
+
 export async function initBackend(): Promise<() => void> {
   const store = useAppStore.getState();
 
@@ -205,14 +229,20 @@ export async function initBackend(): Promise<() => void> {
     unlistens.push(await listen<{ ids: string[] }>("history-items-deleted", (event) => {
       const ids = event.payload?.ids;
       if (!Array.isArray(ids) || ids.length === 0) return;
-      const deletedSet = new Set(ids);
-      useAppStore.setState((s) => ({
-        history: s.history.filter((h) => !deletedSet.has(h.id)),
-        selectedIds: new Set([...s.selectedIds].filter((id) => !deletedSet.has(id))),
-        focusId: s.focusId && deletedSet.has(s.focusId) ? null : s.focusId,
-        _filterCache: null,
+      applyExternalDeletion(ids);
+    }));
+
+    // B4：坏库自救的结果要告诉用户（历史为何变空、原库备份在哪）。
+    // 独立事件只在启动时至多发一次，不需要节流。
+    unlistens.push(await listen<{ backup: string }>("database-recovered", (event) => {
+      const backup = event.payload?.backup || "";
+      const file = backup.split(/[\\/]/).pop() || backup;
+      window.dispatchEvent(new CustomEvent("app-toast", {
+        detail: {
+          message: `检测到数据库损坏，已自动重建空库继续使用；原库已保留为 ${file}，可联系我们协助找回`,
+          type: "error",
+        },
       }));
-      invalidateCountsCache();
     }));
 
     // 监听自动清理完成事件（后端调度器启动首跑 + 每小时循环，替代原前端 setInterval）

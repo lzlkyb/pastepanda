@@ -597,6 +597,28 @@ impl CaptureQueue {
 // md5_hex 已移到 `crate::hashing`（内容哈希的单一实现）——之前 lan_sync 又拄了一份
 // 并在注释里声明“与本函数同口径”，而智能合并完全依赖两边真的同口径。
 use crate::hashing::md5_hex;
+
+/// 🔴 B6：把 RGBA 压到 `max_bytes` 内（保持宽高比，Lanczos3——与落盘路径的
+/// 1080px 缩放同款滤镜）。≤max 原样返回；解不出位图返回 None（防御，理论不可达）。
+pub(crate) fn cap_rgba_bytes(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    max_bytes: usize,
+) -> Option<(Vec<u8>, u32, u32)> {
+    if rgba.len() <= max_bytes {
+        return Some((rgba.to_vec(), width, height));
+    }
+    let img = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;
+    // 面积与字节数成正比：缩放系数取预算比的平方根
+    let scale = ((max_bytes as f64) / (rgba.len() as f64)).sqrt();
+    let new_w = ((width as f64 * scale).floor() as u32).max(1);
+    let new_h = ((height as f64 * scale).floor() as u32).max(1);
+    let resized =
+        image::imageops::resize(&img, new_w, new_h, image::imageops::FilterType::Lanczos3);
+    Some((resized.into_raw(), new_w, new_h))
+}
+
 // 图片本地化已移到 `crate::html_images`（剪贴板采集与 URL 抓取两条路径共用，规则 #11）
 // 本函数里只有 windows 采集路径用到；其余平台不 import 免生 unused 警告
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -1299,37 +1321,55 @@ fn stage1_capture(
     // ── 图片 ──（文本为空或读取失败时探测）
     if let Ok(img) = clipboard.get_image() {
         if img.width > 0 && img.height > 0 {
-            // 图片大小限制：超过 50MB（RGBA bytes）则跳过
+            // 图片大小限制：超过 50MB（RGBA bytes）按比例降采样入库
+            // 🔴 B6（2026-10-24 拍板：内容不丢）——改前直接静默丢弃（仅 warn 日志），
+            // 5K 屏整屏复制（5120×2880×4 ≈ 59MB）什么都不会发生、也没有任何提示。
             const MAX_IMAGE_BYTES: usize = 50 * 1024 * 1024;
-            if img.bytes.len() > MAX_IMAGE_BYTES {
-                log::warn!(
-                    "[ClipboardMonitor] 图片过大 ({} bytes)，跳过记录",
-                    img.bytes.len()
-                );
-                dedup.clear();
+
+            // 自粘贴判定与短窗去重按**原图**口径（剪贴板里放的是原图，
+            // 粘贴引擎报备的也是原图 hash）
+            let orig_hash = md5_hex(&img.bytes);
+            if own_write_skip(paste_suppress, &[&orig_hash], "image", WriteKind::Image) {
                 return true;
             }
-
-            let img_hash = md5_hex(&img.bytes);
-
-            if own_write_skip(paste_suppress, &[&img_hash], "image", WriteKind::Image) {
-                return true;
-            }
-
-            if dedup.is_recent(&img_hash) {
+            if dedup.is_recent(&orig_hash) {
                 log::info!(
                     "[ClipboardMonitor] 跳过采集 reason=dedup kind=image hash8={}",
-                    hash8(&img_hash)
+                    hash8(&orig_hash)
                 );
                 return true;
             }
-            dedup.note(&img_hash);
+            dedup.note(&orig_hash);
+
+            let (rgba, width, height) = match cap_rgba_bytes(
+                &img.bytes,
+                img.width as u32,
+                img.height as u32,
+                MAX_IMAGE_BYTES,
+            ) {
+                Some(v) => v,
+                None => {
+                    log::warn!("[ClipboardMonitor] 图片字节无法解析为位图，跳过记录");
+                    dedup.clear();
+                    return true;
+                }
+            };
+            if rgba.len() < img.bytes.len() {
+                log::info!(
+                    "[ClipboardMonitor] 图片 {}MB 超 50MB 上限，降采样为 {}x{} 入库",
+                    img.bytes.len() / 1024 / 1024,
+                    width,
+                    height
+                );
+            }
+            // 入库口径 = 实际存储的像素（同一张图重复采集走同一条降采样路，hash 稳定）
+            let img_hash = md5_hex(&rgba);
 
             let (title, exe_path) = capture_foreground_source(app_handle);
             queue.push(CapturedItem::Image {
-                rgba: img.bytes.into_owned(),
-                width: img.width,
-                height: img.height,
+                rgba,
+                width: width as usize,
+                height: height as usize,
                 hash: img_hash,
                 title,
                 exe_path,
@@ -3163,4 +3203,41 @@ mod macos_listener;
 #[cfg(target_os = "macos")]
 fn run_polling_listener(running: Arc<AtomicBool>, app: AppHandle, suppress: Arc<PasteSuppress>, strip: Arc<std::sync::RwLock<bool>>) {
     macos_listener::run(running, app, suppress, strip);
+}
+
+#[cfg(test)]
+mod cap_bytes_tests {
+    use super::cap_rgba_bytes;
+
+    /// B6 机制守卫：超限图被压回预算内且保持宽高比（改前这类图被静默丢弃）。
+    #[test]
+    fn oversized_rgba_is_capped_not_dropped() {
+        // 64×64 RGBA = 16KB，预算 4KB → 面积缩到 1/4
+        let (w, h) = (64u32, 64u32);
+        let rgba: Vec<u8> = (0..(w * h * 4) as usize).map(|i| (i % 251) as u8).collect();
+        let (out, nw, nh) = cap_rgba_bytes(&rgba, w, h, 4 * 1024).expect("必须能降采样");
+        assert!(out.len() <= 8 * 1024, "缩放后字节应接近预算（{}B）", out.len());
+        assert_eq!(nw, nh, "正方形输入保持宽高比");
+        assert!(nw < w, "确实发生了缩放");
+    }
+
+    /// B6 机制守卫：预算内的图原样通过（不重编码、不损失）。
+    #[test]
+    fn within_budget_passes_through() {
+        let (w, h) = (8u32, 8u32);
+        let rgba: Vec<u8> = (0..(w * h * 4) as usize).map(|i| i as u8).collect();
+        let (out, nw, nh) = cap_rgba_bytes(&rgba, w, h, 1024 * 1024).unwrap();
+        assert_eq!((out, nw, nh), (rgba.clone(), w, h));
+    }
+
+    /// B6 机制守卫：5K 屏整屏复制（59MB RGBA）不再被丢弃。
+    #[test]
+    fn five_k_screen_capture_fits() {
+        let (w, h) = (5120u32, 2880u32);
+        let rgba: Vec<u8> = vec![7u8; (w as usize) * (h as usize) * 4];
+        let (out, nw, nh) =
+            cap_rgba_bytes(&rgba, w, h, 50 * 1024 * 1024).expect("5K 整屏必须可入库");
+        assert!(out.len() <= 50 * 1024 * 1024);
+        assert_eq!(nw * nh * 4, out.len() as u32);
+    }
 }

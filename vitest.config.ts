@@ -15,6 +15,7 @@ const MAX_WORKERS = 10;
 // 需要真实 DOM 的纯 .ts 测试：不在这个清单里的 .ts 测试跑在 node 环境下。
 // 判据是实测（跑一遍 node 环境，收集失败清单），不是靠正则猜。
 const DOM_NEEDED_TS: string[] = [
+  "src/__tests__/externalDeletionUndo.test.ts",
   "scripts/prepare-android.test.ts",
   "src-mobile/devices/useMobileFileSend.test.ts",
   "src-mobile/devices/useMobileReceiveDir.test.ts",

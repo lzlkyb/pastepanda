@@ -9331,3 +9331,66 @@ fn test_human_revert_leaves_no_agent_mark_and_no_anchor() {
         "人自己点的回滚不该新锚一个版本（锚点只能手动清，乱锚会占死名额）"
     );
 }
+
+// ============================================================
+// B4 守卫：坏库自救（2026-10-24 拍板：自动重建）
+// 改前 DataStore::new 对损坏文件直接 Err → lib.rs 弹窗 + exit(1)，
+// 用户没有任何自助手段。改前此用例为红。
+// ============================================================
+#[test]
+fn test_corrupt_db_is_rebuilt_with_backup_kept() {
+    let dir = std::env::temp_dir().join("pastepanda_test_corrupt_db");
+    let _ = std::fs::create_dir_all(&dir);
+    let db = dir.join("clipboard.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let _ = std::fs::remove_file(&db);
+    // 先建健康库拿到真实文件路径布局，再整个写坏
+    {
+        let store = DataStore::new(&db_str).unwrap();
+        store
+            .insert_history(&make_item("a", "文本", "2026-01-01 00:00:00", "text"))
+            .unwrap();
+    }
+    let garbage = b"this is definitely not a sqlite database file!!!".to_vec();
+    std::fs::write(&db, &garbage).unwrap();
+
+    let store = DataStore::new(&db_str).expect("坏库必须自救重建，而不是让应用起不来");
+    store
+        .insert_history(&make_item("b", "新文本", "2026-01-02 00:00:00", "text"))
+        .unwrap();
+
+    // 原库以 .corrupt-* 保留，内容原封不动（供用户手工找回）
+    let kept: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+        .collect();
+    assert!(!kept.is_empty(), "坏库必须以 .corrupt-* 改名保留");
+    let kept_bytes = std::fs::read(kept[0].path()).unwrap();
+    assert_eq!(kept_bytes, garbage);
+    for e in std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()) {
+        let _ = std::fs::remove_file(e.path());
+    }
+}
+
+#[test]
+fn test_healthy_db_triggers_no_recovery() {
+    let dir = std::env::temp_dir().join(format!("pastepanda_test_healthy_db_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let db = dir.join("clipboard.db");
+    let db_str = db.to_str().unwrap().to_string();
+    let _ = std::fs::remove_file(&db);
+
+    let store = DataStore::new(&db_str).unwrap();
+    store
+        .insert_history(&make_item("h", "健康", "2026-01-01 00:00:00", "text"))
+        .unwrap();
+
+    let corrupts: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+        .collect();
+    assert!(corrupts.is_empty(), "健康库不得触发自救改名");
+    let _ = std::fs::remove_dir_all(&dir);
+}

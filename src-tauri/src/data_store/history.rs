@@ -1248,6 +1248,18 @@ impl DataStore {
         }
     }
 
+    /// 库里出现过的工作区去重列表（自动清理的覆盖范围，B7）。
+    pub fn distinct_workspaces(&self) -> Result<Vec<String>, String> {
+        let conn = self.lock_conn();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT workspace FROM history")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
     /// 统计当前会被清理策略命中的过期记录数（超过指定天数且未置顶）。
     /// SQL 条件与 clear_history_with_undo 完全一致，保证设置页展示的数量 = 实际清理数量。
     /// 前端内存列表是分页缓存（仅部分记录），不能用来全量统计。
