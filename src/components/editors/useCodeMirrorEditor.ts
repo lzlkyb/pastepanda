@@ -37,7 +37,13 @@ import {
   indentMore,
   indentLess,
 } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle, indentOnInput } from "@codemirror/language";
+import {
+  syntaxHighlighting,
+  defaultHighlightStyle,
+  indentOnInput,
+  foldGutter,
+  foldKeymap,
+} from "@codemirror/language";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { planLinePrefix } from "@/lib/mdLinePrefix";
 import { toggleTaskAt } from "@/lib/markdown/tasks";
@@ -333,6 +339,9 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
 
     const extensions: Extension[] = [
       lineNumbers(),
+      // 代码折叠：折叠规则本身由语言包提供（markdown 的标题/列表折叠来自
+      // @codemirror/lang-markdown，json/html 来自各自语言包），这里只装沟槽与键位
+      foldGutter(),
       highlightActiveLine(),
       indentOnInput(),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -390,6 +399,8 @@ export function useCodeMirrorEditor(opts: CodeMirrorEditorOptions) {
         // search() 早就装了，但搜索面板的快捷键在 searchKeymap 里 ——
         // 没这一行的话 Ctrl+F 没有任何反应，整个搜索功能根本没入口。
         ...searchKeymap,
+        // 折叠键位（Ctrl-Q / Ctrl-[ / Ctrl-] 等），与 foldGutter 配对
+        ...foldKeymap,
         ...defaultKeymap,
         indentWithTab,
       ]),

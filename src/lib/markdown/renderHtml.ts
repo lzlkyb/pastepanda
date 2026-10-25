@@ -14,6 +14,7 @@ import {
 import { scanTaskItemsFromTokens } from "@/lib/markdown/tasks";
 import { transformAlerts } from "@/lib/markdown/alerts";
 import { FORM_SUGAR_EXT } from "@/lib/markdown/formSugar";
+import { extractMathSource, restoreMathHtml } from "@/lib/markdown/math";
 
 // ─── marked 全局配置（只执行一次）──────────────────────────
 marked.setOptions({
@@ -236,11 +237,15 @@ export function renderMarkdownHtml(text: string, baseDir?: string | null): strin
       const scan = scanTaskItemsFromTokens(marked.lexer(text), text);
       activeTasks = scan.complete ? scan.items : null;
     }
-    const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(text, baseDir)) as string);
-    return DOMPurify.sanitize(raw, {
+    // 数学公式在解析前抽走（防 marked 吃掉公式里的 * / _），消毒后回填。
+    // 占位符是纯字母数字，不动 checkbox / 图片改写的任何对齐（见 math.ts）。
+    const prot = extractMathSource(text);
+    const raw = transformAlerts(marked.parse(rewriteLocalImagePaths(prot.text, baseDir)) as string);
+    const clean = DOMPurify.sanitize(raw, {
       ADD_TAGS: ["input"],
       ADD_ATTR: ["type", "checked", "disabled"],
     });
+    return prot.maths.length ? restoreMathHtml(clean, prot.maths) : clean;
   } catch {
     return "";
   } finally {

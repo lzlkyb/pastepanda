@@ -20,6 +20,7 @@ import { ensureFieldNames, type FieldInfo } from "./formFields";
 import { escapeHtml } from "./html";
 import { resolveLocalPath } from "./imageSrc";
 import { headingHtml, resetHeadingSlugState } from "./headingAnchor";
+import { extractMathSource, restoreMathHtml } from "./math";
 import { mapMermaidTheme } from "@/lib/mermaidBlock";
 
 export interface ExportRenderOptions {
@@ -34,6 +35,8 @@ export interface ExportRenderResult {
   fields: FieldInfo[];
   /** 正文里任务勾选框的数量（供 exportDoc 决定要不要嵌运行时） */
   taskCount: number;
+  /** 数学公式数量（供 exportBuild 决定要不要内嵌 KaTeX 样式与字体） */
+  mathCount: number;
   warnings: string[];
 }
 
@@ -291,14 +294,17 @@ export async function renderMarkdownForExport(
   // 标题 slug 计数必须每次归零，否则同一文档导出两次会得到 标题-1
   resetHeadingSlugState();
 
+  // 数学公式在解析前抽走（与预览侧 renderHtml 同一套判据，规则 #11 单一数据源）
+  const prot = extractMathSource(text);
+
   let html: string;
   try {
-    html = transformAlerts(instance.parse(text) as string);
+    html = transformAlerts(instance.parse(prot.text) as string);
   } catch {
-    return { html: "", fields: [], taskCount: 0, warnings: ["解析失败：文档可能包含无法解析的结构"] };
+    return { html: "", fields: [], taskCount: 0, mathCount: 0, warnings: ["解析失败：文档可能包含无法解析的结构"] };
   }
   if (!html.trim()) {
-    return { html: "", fields: [], taskCount: 0, warnings: ["文档是空的，没有可导出的内容"] };
+    return { html: "", fields: [], taskCount: 0, mathCount: 0, warnings: ["文档是空的，没有可导出的内容"] };
   }
 
   // 图片占位必须在消毒前打（见 markLocalImages 注释）
@@ -338,7 +344,9 @@ export async function renderMarkdownForExport(
   const cache = await runJobs(marked.jobs, warnings);
   html = applyInlineJobs(html, marked.jobs, cache);
   html = await renderMermaidBlocks(html, mermaidSources, theme, warnings);
+  // 数学回填与 mermaid 同一信任模型：产自受控库（KaTeX），故放消毒之后
+  html = restoreMathHtml(html, prot.maths);
 
   const fields = ensureFieldNames(html);
-  return { html: fields.html, fields: fields.fields, taskCount: taskSeq, warnings };
+  return { html: fields.html, fields: fields.fields, taskCount: taskSeq, mathCount: prot.maths.length, warnings };
 }

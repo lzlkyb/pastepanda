@@ -775,3 +775,17 @@
   font-size: 12px;
   line-height: 1.6;
 }
+
+/* 数学公式（KaTeX，lib/markdown/math.ts 回填） */
+/* 渲染失败：红色源码——公式坏没坏一眼可辨，别只留一行黑字让人猜（U3.5） */
+.md :global(.md-math-error) {
+  color: var(--danger);
+  font-family: 'Cascadia Code', 'SF Mono', Consolas, 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+/* 块级公式：超宽（矩阵/长推导）横向滚动而不是被分栏边缘裁掉 */
+.md :global(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
