@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { RcAskPop } from "./RcAskPop";
-import { rcApproveInbound, rcAskHide, rcAskState, rcDenyInbound } from "@/lib/api/rcCommands";
+import { rcApproveInbound, rcAskHide, rcAskReopen, rcAskState, rcDenyInbound } from "@/lib/api/rcCommands";
 import type { RcAskHost, RcAskMode, RcAskNote, RcInboundKnock, RcSession } from "@/lib/api/rc";
 
 /** 批准成功的返回值这里没人读，只需要过类型。 */
@@ -21,6 +21,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@/lib/api/rcCommands", () => ({
   rcAskState: vi.fn(),
   rcAskHide: vi.fn().mockResolvedValue(undefined),
+  rcAskReopen: vi.fn().mockResolvedValue(undefined),
   rcApproveInbound: vi.fn().mockResolvedValue({}),
   rcDenyInbound: vi.fn().mockResolvedValue(undefined),
   rcEndSession: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +29,7 @@ vi.mock("@/lib/api/rcCommands", () => ({
 
 const askState = vi.mocked(rcAskState);
 const askHide = vi.mocked(rcAskHide);
+const reopen = vi.mocked(rcAskReopen);
 const approve = vi.mocked(rcApproveInbound);
 const deny = vi.mocked(rcDenyInbound);
 
@@ -62,6 +64,7 @@ const st = (over: Partial<ReturnType<typeof base>> = {}) => ({ ...base(), ...ove
 beforeEach(() => {
   askState.mockReset();
   askHide.mockReset().mockResolvedValue(undefined);
+  reopen.mockReset().mockResolvedValue(undefined);
   approve.mockReset().mockResolvedValue(OK);
   deny.mockReset().mockResolvedValue(undefined);
 });
@@ -119,6 +122,14 @@ describe("RcAskPop 待答复态", () => {
     });
     expect((await screen.findByText(/同意失败/)).textContent).toContain("门禁拒绝");
   });
+
+  it("指纹旁要有核对指引（L4：安全决策不摆一个没人会核对的码）", async () => {
+    askState.mockResolvedValue(st({ pending: [knock()] }));
+    render(<RcAskPop />);
+    await screen.findByText(/DESKTOP-7K2 想远程这台电脑/);
+    // 常驻教学行（RC_ASK_HINT）必须教「怎么核对」——指纹只有码没有指引 = 摆设
+    expect(screen.getByText(/核对指纹/)).toBeTruthy();
+  });
 });
 
 describe("RcAskPop 原因行（设计稿 §丙-① 第③ 点）", () => {
@@ -170,5 +181,16 @@ describe("RcAskPop 形态分流（丙-②）", () => {
     askState.mockResolvedValue(st({ mode: "capsule" }));
     render(<RcAskPop />);
     await vi.waitFor(() => expect(askHide).toHaveBeenCalled());
+  });
+
+  it("C3：角标给被收起的待答留回路——摆「待答 N」，点击调 rc_ask_reopen", async () => {
+    // 被控中 + 有一条早于收起动作的申请（mode_of 判 Capsule 的那条路径）
+    askState.mockResolvedValue(st({ mode: "capsule", host: hostRow(), pending: [knock()] }));
+    render(<RcAskPop />);
+    const btn = await screen.findByRole("button", { name: /待答 1/ });
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(reopen).toHaveBeenCalledTimes(1);
   });
 });

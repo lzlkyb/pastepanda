@@ -376,6 +376,15 @@ pub fn rc_ask_hide(app: AppHandle) {
     sync(&app, mode_now());
 }
 
+/// 改主意了：把「先不理它」压下的待答申请重新摆出来（2026-10-24 审查 C3）。
+/// 收起标记清零后 `mode_of` 里 `newest > 0` 恒成立 → `on_change` 把 Ask 卡换回来。
+/// pending 为空时换算结果是 Capsule/Hidden，等于无动作，不必设防重。
+#[tauri::command]
+pub fn rc_ask_reopen(app: AppHandle) {
+    DISMISSED_MS.store(0, Ordering::SeqCst);
+    on_change(&app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

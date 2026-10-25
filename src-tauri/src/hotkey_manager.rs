@@ -539,7 +539,7 @@ pub fn register_global_hotkeys(app: &AppHandle, config: &HotkeyConfig) -> Result
                 #[cfg(any(windows, target_os = "macos"))]
                 {
                     if crate::rec::session::status().recording {
-                        crate::rec::session::send_mark();
+                        crate::rec::session::send_mark(_app);
                     }
                 }
             }

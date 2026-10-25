@@ -24,7 +24,13 @@ import type { RcAskHost } from "@/lib/api/rc";
 import { rcPrivElapsedText, rcPrivGrantText, rcPrivIsHot, rcPrivWhoText } from "@/lib/rcPrivPill";
 import styles from "./RcPrivPill.module.css";
 
-export function RcPrivPill({ host }: { host: RcAskHost }) {
+export function RcPrivPill({ host, pendingAsks = 0, onReopen }: {
+  host: RcAskHost;
+  /** C3（2026-10-24 审查）：被「先不理它」收起的待答申请数；>0 时摆「待答 N」入口。 */
+  pendingAsks?: number;
+  /** 点「待答 N」重新打开确认卡。失败在本角标内提示（独立 webview 拿不到主窗 toast）。 */
+  onReopen?: () => Promise<void>;
+}) {
   const [now, setNow] = useState(() => Date.now());
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -46,6 +52,19 @@ export function RcPrivPill({ host }: { host: RcAskHost }) {
       .finally(() => setBusy(false));
   }, []);
 
+  /** C3：重开被收起的待答。成功后 Rust 换档成 Ask 卡（rc_ask_reopen 清收起标记）。 */
+  const reopen = useCallback(() => {
+    if (!onReopen) return;
+    setBusy(true);
+    setErr(null);
+    void onReopen()
+      .then(() => {
+        /* 换档由 Rust 侧 on_change 完成，成功后本角标会被确认卡替换 */
+      })
+      .catch((e) => setErr(`没能打开待答：${String(e)}`))
+      .finally(() => setBusy(false));
+  }, [onReopen]);
+
   const hot = rcPrivIsHot(host.capability);
   return (
     <div
@@ -60,6 +79,17 @@ export function RcPrivPill({ host }: { host: RcAskHost }) {
           <span className={styles.grant}>{rcPrivGrantText(host.capability)}</span>
           <span className={styles.time}>{rcPrivElapsedText(host.started_ms, now)}</span>
         </>
+      )}
+      {pendingAsks > 0 && onReopen && (
+        <button
+          type="button"
+          className={styles.ask}
+          disabled={busy}
+          onClick={reopen}
+          title={`还有 ${pendingAsks} 条远程申请待答（已收起，超时会自动拒绝）——点击重新打开`}
+        >
+          待答 {pendingAsks}
+        </button>
       )}
       <button
         type="button"

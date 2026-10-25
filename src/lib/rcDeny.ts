@@ -84,7 +84,9 @@ const BY_CODE: Record<string, Omit<RcErrorInfo, "reason">> = {
   },
   channel_down: {
     title: "远程通道未启动",
-    hint: "在工具箱点「开启远程通道」，或先完成一次配对。",
+    // 批7 起「启动远程通道」按钮已并入标题栏状态位（RcA2TitleBar），「工具箱」在
+    // A2 布局里不存在——错误提示指路到不存在的入口，用户只能反复撞同一堵墙。
+    hint: "点远程电脑窗口顶部的「通道未启动」状态位开启，或先完成一次配对。",
     kind: "offline",
   },
   connection_lost: {

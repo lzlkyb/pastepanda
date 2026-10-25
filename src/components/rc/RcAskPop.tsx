@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { X } from "lucide-react";
-import { rcAskHide, rcAskState, rcApproveInbound, rcDenyInbound } from "@/lib/api/rcCommands";
+import { rcAskHide, rcAskReopen, rcAskState, rcApproveInbound, rcDenyInbound } from "@/lib/api/rcCommands";
 import type { RcAskHost, RcAskMode, RcAskNote, RcInboundKnock } from "@/lib/api/rc";
 import { fingerprintOf } from "@/lib/fingerprint";
 import {
@@ -143,7 +143,11 @@ export function RcAskPop() {
   // 分流判据在 Rust（`mode_of`）：它同时看得见 pending、原因行和会话相位，
   // 前端自己再算一遍就是两处真相（改一档忘改另一档 = 角标或卡片凭空消失）。
   if (mode === "capsule") {
-    return host ? <RcPrivPill host={host} /> : null;
+    // C3（2026-10-24 审查）：角标给被收起的待答留一条回路——改主意随时能重开，
+    // 不必等新敲门或 120s 超时。rows 与后端 pending 同源（同一份 rc_ask_state）。
+    return host ? (
+      <RcPrivPill host={host} pendingAsks={rows.length} onReopen={() => rcAskReopen()} />
+    ) : null;
   }
 
   const head = rows[0] ?? null;
@@ -195,7 +199,7 @@ export function RcAskPop() {
         </button>
       </div>
       <div className={styles.meta}>
-        指纹 <span className={styles.fp}>{fingerprintOf(head.peer)}</span> · 申请：
+        指纹 <span className={styles.fp} title="对方的设备指纹——与这台设备「详情」页显示的一致才同意">{fingerprintOf(head.peer)}</span> · 申请：
         <b>{rcAskGrantText(head.capability)}</b>
         {rows.length > 1 && <div className={styles.extra}>另有 {rows.length - 1} 条在等，逐条答</div>}
       </div>

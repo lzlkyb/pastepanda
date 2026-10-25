@@ -78,3 +78,17 @@ describe("窗口过期要与「从未配对」分开", () => {
     expect(info.title).toBe("尚未远程配对");
   });
 });
+
+/**
+ * 🔴 2026-10-24 审查 C1：channel_down 的 hint 曾写「在工具箱点『开启远程通道』」，
+ * 但批7 已把该按钮并入远程电脑窗口顶部的状态位，「工具箱」在 A2 布局里不存在。
+ * 与上面「要指到真实存在的按钮」同一纪律：hint 里出现的入口名必须是现存 UI。
+ */
+describe("channel_down 要指到现存的入口", () => {
+  it("不提「工具箱」，指到标题栏状态位", () => {
+    const info = explainRcError("[channel_down] 远程通道未启动");
+    expect(info.kind).toBe("offline");
+    expect(info.hint).not.toContain("工具箱");
+    expect(info.hint).toContain("状态位");
+  });
+});

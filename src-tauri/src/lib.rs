@@ -1240,6 +1240,7 @@ pub fn run() {
             // 丙-①：入站申请的独立置顶浮层（主窗可能整场没开，告知不能只住主窗）
             rc::ask_pop::rc_ask_state,
             rc::ask_pop::rc_ask_hide,
+            rc::ask_pop::rc_ask_reopen,
             // 局域网配对（A3）：附近设备 + 配对码核对
             commands::rc_nearby_status,
             commands::rc_nearby_pair,
