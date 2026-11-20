@@ -42,7 +42,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          # macos-14 已被 GitHub 完全下线（2026-07-06 结束支持、2026-11-02 镜像移除，
+          # 跑起来直接报 configuration 'macos-14-arm64-us-default' is not supported）。
+          # arm64 腿换 macos-15：与 x86_64 腿的 macos-15-intel 同 OS 版本，
+          # 保证矩阵只验架构差异、不掺入 OS 版本变量。
+          - runner: macos-15
             architecture: arm64
           - runner: macos-15-intel
             architecture: x86_64
