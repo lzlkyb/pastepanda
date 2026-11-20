@@ -39,16 +39,38 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      - name: 缓存 MNN 预编译（避免每次构建联网下载 180MB）
+      # MNN 预编译的落点机制：build.rs 设了 MNN_PREBUILT_CHECKOUT_CACHE=1 时
+      # 才会把「下载 + 解压 + 静态库改名」写进下面的 checkout 级目录；不设时
+      # 它写 OUT_DIR，这个缓存路径永远是空目录（曾经就这样空转了很久，每次
+      # CI 都重新下一遍）。键嵌 build 脚本内容哈希：build.rs / build_support.rs
+      # 任何改动（含 MNN_PREBUILT_VERSION 版本常量）都会换键，不会恢复到旧版
+      # MNN。不放 restore-keys：内容寻址的缓存做前缀回退 = 把旧版本当新的用。
+      - name: 缓存 MNN 预编译（下载约 12MB，解压后约 130MB）
+        id: mnn-cache
         uses: actions/cache@v4
         with:
           path: src-tauri/vendor/ocr-rs/3rd_party/prebuilt
-          key: ${{ runner.os }}-mnn-prebuilt-dev
-          restore-keys: ${{ runner.os }}-mnn-prebuilt-
+          key: ${{ runner.os }}-mnn-prebuilt-${{ hashFiles('src-tauri/vendor/ocr-rs/build.rs', 'src-tauri/vendor/ocr-rs/build_support.rs') }}
 
       - name: 运行 Rust 测试
         run: cargo test
         working-directory: src-tauri
+        env:
+          MNN_PREBUILT_CHECKOUT_CACHE: "1"
+
+      # 缓存未命中时，本 run 必须自己把 MNN 填进缓存目录——填充逻辑坏了的话
+      # CI 照样绿（只是缓存继续空转），没人会发现，所以这里显式校验。
+      - name: 校验 MNN 预编译已落入缓存目录
+        if: steps.mnn-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="src-tauri/vendor/ocr-rs/3rd_party/prebuilt"
+          if [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+            echo "::error::$dir 仍为空：MNN_PREBUILT_CHECKOUT_CACHE 分支没生效，缓存依旧空转"
+            exit 1
+          fi
+          echo "MNN 预编译已就绪: $(ls "$dir")"
 
   # ============================================================
   # 前端测试

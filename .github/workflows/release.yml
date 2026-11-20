@@ -126,21 +126,37 @@ jobs:
 
           Write-Host "✅ 版本校验通过: conf=tag=$confVer，手册下载链接一致"
 
-      - name: 缓存 MNN 预编译（避免每次构建联网下载 180MB）
+      # 同 test.yml：build.rs 设了 MNN_PREBUILT_CHECKOUT_CACHE=1 才会把 MNN
+      # 预编译写进这个 checkout 级目录，缓存才真的有内容可存。键嵌 build 脚本
+      # 内容哈希（版本常量在里面），不放 restore-keys（前缀回退会恢复旧版本）。
+      - name: 缓存 MNN 预编译（下载约 12MB，解压后约 130MB）
+        id: mnn-cache
         uses: actions/cache@v4
         with:
           path: src-tauri/vendor/ocr-rs/3rd_party/prebuilt
-          key: ${{ runner.os }}-mnn-prebuilt-dev
-          restore-keys: ${{ runner.os }}-mnn-prebuilt-
+          key: ${{ runner.os }}-mnn-prebuilt-${{ hashFiles('src-tauri/vendor/ocr-rs/build.rs', 'src-tauri/vendor/ocr-rs/build_support.rs') }}
 
       - name: 构建 Tauri 应用
         shell: pwsh
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
+          MNN_PREBUILT_CHECKOUT_CACHE: "1"
         run: |
           $env:TAURI_SIGNING_PRIVATE_KEY = $env:TAURI_KEY_FILE
           npx tauri build
+
+      # 缓存未命中时本 run 必须自己填上，否则缓存静默空转（同 test.yml）。
+      - name: 校验 MNN 预编译已落入缓存目录
+        if: steps.mnn-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $dir = "src-tauri\vendor\ocr-rs\3rd_party\prebuilt"
+          if (-not (Get-ChildItem -Path $dir -ErrorAction SilentlyContinue)) {
+            Write-Host "::error::$dir 仍为空：MNN_PREBUILT_CHECKOUT_CACHE 分支没生效，缓存依旧空转"
+            exit 1
+          }
+          Write-Host "MNN 预编译已就绪"
 
       - name: 列出构建产物（调试）
         if: always()

@@ -229,6 +229,25 @@ fn get_mnn_include_dirs(manifest_dir: &Path) -> Vec<PathBuf> {
     );
 }
 
+/// Opt-in switch: let build.rs *fill* the checkout-level cache directory
+/// (`<crate>/3rd_party/prebuilt`) instead of only reading it.
+///
+/// Why opt-in rather than default: `cargo publish` verification forbids
+/// modifying the package source directory, so build.rs must never write into
+/// the checkout by default. CI is the one caller that needs the fill: the
+/// actions/cache step saves `3rd_party/prebuilt` after the first build, and a
+/// cache only pays off if the directory it saves is the one build.rs writes.
+/// Accepts "1" or "true" (case-insensitive); anything else means disabled.
+fn checkout_cache_enabled() -> bool {
+    match env::var("MNN_PREBUILT_CHECKOUT_CACHE") {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            v == "1" || v == "true"
+        }
+        Err(_) => false,
+    }
+}
+
 /// Download and extract prebuilt MNN library from GitHub releases.
 /// Returns the path to the extracted directory containing lib/ and include/.
 fn download_prebuilt_mnn(manifest_dir: &Path, asset_name: &str, os: &str) -> PathBuf {
@@ -236,8 +255,10 @@ fn download_prebuilt_mnn(manifest_dir: &Path, asset_name: &str, os: &str) -> Pat
     let local_extract_dir = local_cache_dir.join(asset_name);
 
     // Keep using an existing checkout-level cache for local developer builds,
-    // but never create it from build.rs: cargo publish verification forbids
-    // modifying the package source directory.
+    // but never create it from build.rs by default: cargo publish verification
+    // forbids modifying the package source directory. Set
+    // MNN_PREBUILT_CHECKOUT_CACHE=1 to opt into writing there (CI does this so
+    // the actions/cache step has a populated directory to save).
     if local_extract_dir.join("lib").exists() && local_extract_dir.join("include").exists() {
         println!(
             "cargo:warning=Using cached prebuilt MNN from: {}",
@@ -248,8 +269,13 @@ fn download_prebuilt_mnn(manifest_dir: &Path, asset_name: &str, os: &str) -> Pat
         return local_extract_dir;
     }
 
-    let cache_dir =
-        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set")).join("prebuilt");
+    // Where to download+extract when no cache hits: the checkout-level cache
+    // directory when opted in (CI), otherwise OUT_DIR (default, publish-safe).
+    let cache_dir = if checkout_cache_enabled() {
+        local_cache_dir.clone()
+    } else {
+        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR is not set")).join("prebuilt")
+    };
     let extract_dir = cache_dir.join(asset_name);
 
     if extract_dir.join("lib").exists() && extract_dir.join("include").exists() {
