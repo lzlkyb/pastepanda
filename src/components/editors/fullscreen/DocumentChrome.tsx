@@ -22,6 +22,7 @@ import { FocusChrome } from "./FocusChrome";
 import { PreviewErrorBoundary } from "./PreviewErrorBoundary";
 import { useTaskProgress } from "./useTaskProgress";
 import { useExportHtml } from "@/components/markdown/useExportHtml";
+import { useExportPdf } from "@/components/markdown/useExportPdf";
 import type { DocumentFileApi } from "./useDocumentFile";
 import type { DocumentViewApi } from "./useDocumentView";
 import type { EditorPrefs } from "./useEditorPrefs";
@@ -96,13 +97,18 @@ export function DocumentChrome({
   // 放在这里而不是预览组件里：面板头在预览组件之外，进度要跟「正在编辑的源文」走。
   const taskProgress = useTaskProgress(file.text, spec.key === "markdown");
 
-  // 导出 HTML：hook 必须无条件调用（rules-of-hooks），是否暴露入口由 spec 决定
+  // 导出（HTML / PDF）：hook 必须无条件调用（rules-of-hooks），是否暴露入口由 spec 决定
   const { exportHtml, exporting: exportingHtml } = useExportHtml({
     text: file.text,
     baseDir: file.docDir,
     fileName: file.fileName,
   });
-  const canExportHtml = spec.key === "markdown";
+  const { exportPdf, exporting: exportingPdf } = useExportPdf({
+    text: file.text,
+    baseDir: file.docDir,
+    fileName: file.fileName,
+  });
+  const canExport = spec.key === "markdown";
 
   return (
     <>
@@ -130,8 +136,10 @@ export function DocumentChrome({
         onSave={() => void file.handleSave()}
         onClose={onClose}
         onFocusMode={view.toggleFocus}
-        onExportHtml={canExportHtml ? () => void exportHtml() : undefined}
+        onExportHtml={canExport ? () => void exportHtml() : undefined}
         exportingHtml={exportingHtml}
+        onExportPdf={canExport ? () => void exportPdf() : undefined}
+        exportingPdf={exportingPdf}
       />
 
       {/* 标签栏（宿主渲染，仅活动标签收到） */}

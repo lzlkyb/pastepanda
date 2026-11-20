@@ -891,7 +891,7 @@ impl DataStore {
 
     /// 「记录引用了哪些本地图片文件」的单一口径：image 的 content（图片路径）
     /// + rich 的内嵌 file:// 图。delete_history 与自动清理的文件清扫共用
-    /// （规则 #11.1：各写一份 match，第 7 个调用点出现时口径就会漂移）。
+    ///   （规则 #11.1：各写一份 match，第 7 个调用点出现时口径就会漂移）。
     pub(crate) fn image_file_candidates(rows: &[(String, String)]) -> Vec<String> {
         rows.iter()
             .flat_map(|(item_type, content)| match item_type.as_str() {
