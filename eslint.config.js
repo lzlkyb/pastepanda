@@ -14,6 +14,8 @@ export default tseslint.config(
         "document", "window", "getComputedStyle", "Image", "CustomEvent",
         "AbortController", "performance", "requestAnimationFrame", "cancelAnimationFrame",
         "setTimeout", "clearTimeout", "structuredClone", "crypto", "matchMedia",
+        // 拖拽教学计数（runtime.mjs 的 useCoach）：webview 里可用，已带 try/catch 兜底。
+        "localStorage",
       ].map((name) => [name, "readonly"])),
     },
   },
