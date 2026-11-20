@@ -404,17 +404,25 @@ fn extract_tar_gz(archive: &Path, dest_dir: &Path) {
 
 /// Extract a .zip archive.
 fn extract_zip(archive: &Path, dest_dir: &Path) {
-    // On Windows, use powershell's Expand-Archive
+    // On Windows, use the in-box bsdtar (System32\tar.exe), which reads zip
+    // natively. Do NOT use PowerShell Expand-Archive: GitHub's windows-latest
+    // image 20261111.635 ships a PowerShell whose Archive module fails with
+    // "Cannot find an overload for ExtractToDirectory (3 args)", making
+    // Expand-Archive deterministically fail and the MNN prebuilt never get
+    // extracted (breaks every Windows cargo build in CI). The System32 path
+    // is explicit so a GNU tar earlier on PATH (no zip support) can't shadow
+    // it; WOW64 redirection lands on SysWOW64\tar.exe for 32-bit hosts, which
+    // also exists.
     if cfg!(target_os = "windows") {
-        let ps_cmd = format!(
-            "Expand-Archive -Force -Path '{}' -DestinationPath '{}'",
-            archive.to_str().unwrap(),
-            dest_dir.to_str().unwrap()
-        );
-        let status = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps_cmd])
+        let status = Command::new(r"C:\Windows\System32\tar.exe")
+            .args([
+                "-xf",
+                archive.to_str().unwrap(),
+                "-C",
+                dest_dir.to_str().unwrap(),
+            ])
             .status()
-            .expect("Failed to run powershell");
+            .expect("Failed to run tar");
         if !status.success() {
             panic!("Failed to extract {}", archive.display());
         }
