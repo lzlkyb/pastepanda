@@ -87,6 +87,13 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = "$EXPECTED_ARCH"
           sw_vers
+      # 不缓存 MNN 预编译（与 test.yml 的有意分歧，别「补全」）：源资产仅 12MB
+      # （mnn-dev-macos-universal.tar.gz），GitHub 内网下载 + 解压秒级；而
+      # actions/cache 的载荷是解压后的 131MB——命中一次传的比直接下大 11 倍，
+      # 按「缓存传输成本不得高于重建成本」的口径是负优化（2026-11-21 实测：
+      # 131MB save 3s、miss 恢复 1s，直接下 12MB 同为秒级）。这两条腿的大头是
+      # 全量编译（17m/43m），真要提速加的是 cargo 缓存，不是 MNN 缓存。
+      # 源资产显著变大时重新评估此结论。
       - name: Build and independently decode software AV1 fixtures
         env:
           EXPECTED_ARCH: ${{ matrix.architecture }}

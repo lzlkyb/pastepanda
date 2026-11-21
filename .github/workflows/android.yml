@@ -101,6 +101,11 @@ jobs:
       - name: 恢复原生插件 / 清单 / 原生库到 gen/android
         run: node scripts/prepare-android.mjs
 
+      # 不缓存 MNN 预编译（与 test.yml 的有意分歧，别「补全」）：源资产仅 12MB
+      # （mnn-dev-android-arm64-v8a.tar.gz），下载 + 解压秒级；actions/cache 的
+      # 载荷是解压后的 131MB，命中一次传的比直接下大 11 倍，按「缓存传输成本不得
+      # 高于重建成本」的口径是负优化。本工作流是手动 dispatch 的发布线（历史上仅
+      # 跑过 3 次），冷启动无妨；编译侧已有 sccache。源资产显著变大时重新评估。
       - name: 构建未签名 release APK
         shell: bash
         env:
