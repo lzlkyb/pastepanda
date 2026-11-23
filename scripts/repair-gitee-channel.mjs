@@ -28,6 +28,15 @@
  *   404 至少会降级到 ghproxy/GitHub，过期 manifest 会让用户彻底收不到更新。
  *   同理，指向不存在附件的 manifest 也不许发出去（第 3 步：Gitee 发行版 API 清单为主、
  *   Range 直链探测为辅 —— runner 到 Gitee 下载域名经常连不上，只看直链会永远卡死）。
+ *
+ * 🔴 两份 manifest 的「期望版本」各自独立算（2026-11-20 事故）：
+ *   桌面与手机是两条独立发布线——桌面 release.yml 推 tag 即发，APK android.yml 手动
+ *   dispatch。桌面-only 的 Release（v7.2.12 起）没有 apk-update.json 资产，若拿最新
+ *   Release 当两份 manifest 的共同期望版本，就会把健康的 apk-update-gitee.json
+ *   （停在最新带 APK 的 7.2.11）判成「需修复」→ 派生 404 → 每轮 exit 1 空转。
+ *   ⇒ 桌面期望 = GH_TAG 或最新 Release；APK 期望 = 自带 apk-update.json 的最新
+ *   Release（GH_TAG 恰好带该资产时才算数，否则照样往前找）。纯函数
+ *   selectApkTargetRelease 钉住这个口径，单测见 repair-gitee-channel.test.ts。
  */
 
 import { spawnSync } from "node:child_process";
@@ -64,6 +73,28 @@ export const TARGETS = [
   { name: "updater-gitee.json", ghSource: "updater.json", kind: "desktop", list: "endpoints" },
   { name: "apk-update-gitee.json", ghSource: "apk-update.json", kind: "apk", list: "apkEndpoints" },
 ];
+
+/** GitHub /releases 数组里是否带某个资产名（逐个精确比对，缺 assets 不算带）。 */
+export function releaseHasAsset(release, assetName) {
+  return Array.isArray(release?.assets) && release.assets.some((a) => a?.name === assetName);
+}
+
+/**
+ * 从 GitHub releases 列表（新→旧）里挑「自带 apk-update.json 资产」的最新一个。
+ *
+ * 🔴 桌面与手机是两条**独立**的发布线：桌面走 release.yml（推 tag 即发），
+ * APK 走 android.yml（手动 dispatch，历史上只发过 3 次）。桌面-only 的 Release
+ * （如 v7.2.12）里没有 apk-update.json，此时 apk-update-gitee.json 的正确状态
+ * 是「最新带 APK 的那个版本」（7.2.11），不是最新 Release 的版本。拿最新
+ * Release 当共同期望版本，就会把一条健康的 APK manifest 判成「需修复」，
+ * 继而从桌面-only Release 派生 → 404 → 整轮 exit 1：2026-11-20 11:00Z 起
+ * 定时自愈每小时两次全红，就是这么来的（通道本身没坏，是判据错了）。
+ * 找不到返回 null（从未发过 APK），调用方按旧行为响亮地失败，不许编版本。
+ */
+export function selectApkTargetRelease(releases) {
+  if (!Array.isArray(releases)) return null;
+  return releases.find((r) => releaseHasAsset(r, "apk-update.json")) ?? null;
+}
 
 const info = (m) => console.log(`\x1b[36m[repair-gitee]\x1b[0m ${m}`);
 const ok = (m) => console.log(`\x1b[32m[OK]\x1b[0m ${m}`);
@@ -228,7 +259,33 @@ async function main() {
   }
   info(`目标版本：tag=${tag} version=${expectedVersion}`);
 
-  // 2) 现状探针：Gitee 上两份 manifest 读得到吗、版本是不是目标版本
+  // 1b) APK 线的目标 tag 单独算：桌面与手机是两条独立发布线（文件头「2026-11-20 事故」段）。
+  //     桌面-only 的 Release 没有 apk-update.json，拿它当两份 manifest 的共同期望版本，
+  //     就会把一条健康的 APK manifest 判成「需修复」→ 从桌面 tag 派生 404 → 整轮 exit 1。
+  const releasesList = await getJson(`https://api.github.com/repos/${GH_REPO}/releases?per_page=100`);
+  if (!Array.isArray(releasesList.body)) {
+    fail(`拿不到 releases 清单（${releasesList.error || releasesList.status}），无法判定 APK 通道的目标版本`);
+  }
+  let apkTag = null;
+  if (tag) {
+    const pinned = releasesList.body.find((r) => r?.tag_name === tag);
+    if (pinned && releaseHasAsset(pinned, "apk-update.json")) apkTag = tag;
+  }
+  if (!apkTag) apkTag = selectApkTargetRelease(releasesList.body)?.tag_name ?? null;
+  // 每份 manifest 各自的期望版本与源 tag。从未发过 APK 时 APK 侧退回桌面版本：
+  // 保持旧行为（响亮失败），不许凭空给 APK 编一个版本。
+  const expectedByTarget = {
+    "updater-gitee.json": expectedVersion,
+    "apk-update-gitee.json": apkTag ? apkTag.replace(/^v/, "") : expectedVersion,
+  };
+  const tagByTarget = { "updater-gitee.json": tag, "apk-update-gitee.json": apkTag || tag };
+  info(
+    apkTag
+      ? `APK 线目标版本：tag=${apkTag} version=${expectedByTarget["apk-update-gitee.json"]}（与桌面线各自独立）`
+      : "APK 线：GitHub 上没有任何带 apk-update.json 的 Release（从未发过 APK？）",
+  );
+
+  // 2) 现状探针：Gitee 上两份 manifest 读得到吗、版本是不是各自的目标版本
   const state = {};
   for (const t of TARGETS) {
     const probe = await getJson(giteeRawManifestUrl(GITEE_REPO, t.name), 1);
@@ -237,8 +294,9 @@ async function main() {
     // 记成「文件不存在」那样的否定证据（2026-10-08 CI 就出现过：日志说 fetch
     // failed，annotation 却说读到 404）。
     const reason = probe.body ? `读到 version=${got}` : `读不到（${probe.error || `HTTP ${probe.status}`}）`;
-    state[t.name] = { healthy: got === expectedVersion, got, raw: probe, reason };
-    info(`探针 ${t.name}: ${reason} → ${state[t.name].healthy ? "健康" : "需修复"}`);
+    const expected = expectedByTarget[t.name];
+    state[t.name] = { healthy: got === expected, got, raw: probe, reason, expected };
+    info(`探针 ${t.name}: ${reason} → ${state[t.name].healthy ? "健康" : `需修复（期望 ${expected}）`}`);
   }
   if (TARGETS.every((t) => state[t.name].healthy)) {
     ok("Gitee 通道两份 manifest 都在且版本正确，本次无需动作。");
@@ -266,19 +324,24 @@ async function main() {
       info(`跳过 ${t.name}（它本身是健康的，不要拿新内容去覆盖一条正在工作的 manifest）`);
       continue;
     }
-    const src = await getJson(`${GH_RELEASE_PREFIX}${tag}/${t.ghSource}`);
+    // 每份 manifest 从**自己那条发布线**的 tag 派生：桌面线用桌面 tag，APK 线用 apkTag
+    // （拿不到 apkTag 时退回桌面 tag，走下面 404 分支响亮失败）。
+    const srcTag = tagByTarget[t.name];
+    const src = await getJson(`${GH_RELEASE_PREFIX}${srcTag}/${t.ghSource}`);
     if (!src.body) {
       // 404 与「取不到」必须分开：把网络抖动当成「这个 Release 没有 APK 资产」，
       // 就会每天安静地少修一份，而日志读起来像是有意为之。
       if (t.kind === "apk" && src.status === 404) {
-        warn(`${t.ghSource} 在该 Release 不存在（HTTP 404），只修桌面侧`);
+        warn(`${t.ghSource} 在 Release ${srcTag} 不存在（HTTP 404），只修桌面侧`);
         skipped.push(`${t.name}：GitHub 侧没有 ${t.ghSource}`);
         continue;
       }
-      fail(`读不到 ${t.ghSource}（${src.error || src.status}）：${GH_RELEASE_PREFIX}${tag}/${t.ghSource}`);
+      fail(`读不到 ${t.ghSource}（${src.error || src.status}）：${GH_RELEASE_PREFIX}${srcTag}/${t.ghSource}`);
     }
-    if (src.body.version !== expectedVersion) {
-      fail(`${t.ghSource} 的 version=${src.body.version} 与 tag ${tag} 不一致，拒绝据此生成 Gitee manifest`);
+    if (src.body.version !== expectedByTarget[t.name]) {
+      fail(
+        `${t.ghSource} 的 version=${src.body.version} 与 tag ${srcTag} 不一致（期望 ${expectedByTarget[t.name]}），拒绝据此生成 Gitee manifest`,
+      );
     }
     let derived;
     try {
@@ -316,7 +379,7 @@ async function main() {
     if (missing.length) {
       skipped.push(
         `${t.name}：manifest 指向的包不在 Gitee 发行版附件里（${missing.join(", ")}）。` +
-          `补救 = 重跑发版 CI 的「上传安装包到 Gitee 发行版」/ android.yml 的三源发布，或本地 tools/upload-exe-to-gitee.ps1 -Version ${expectedVersion}`,
+          `补救 = 重跑发版 CI 的「上传安装包到 Gitee 发行版」/ android.yml 的三源发布，或本地 tools/upload-exe-to-gitee.ps1 -Version ${expectedByTarget[t.name]}`,
       );
       continue;
     }
@@ -366,14 +429,18 @@ async function main() {
   // 5) 三段验证：GitHub sha → Gitee 分支 sha → Gitee raw 读得到且版本对
   //    推上去 ≠ 客户端读得到；卡在哪一段就打印哪一段，不再一句「读不到」把三种成因混成一团。
   //    built 里只会是不健康的这几份（健康的上面已 continue，不拿新内容去覆盖正在工作的 manifest）
+  // 每份 manifest 验各自的版本：APK 修到 7.2.11、桌面修到 7.2.12 时，
+  // 拿桌面版本去验 APK 会把一次成功的修复判成 CDN 段失败。
   const expectedVersions = {};
-  for (const b of built) expectedVersions[b.name] = expectedVersion;
+  for (const b of built) expectedVersions[b.name] = expectedByTarget[b.name];
   try {
     await verifyChannel({ ghRepo: GH_REPO, giteeRepo: GITEE_REPO, pushedSha, expected: expectedVersions });
   } catch (e) {
     fail(`三段验证未通过（分支存在=${branchExists}）：${e?.message ?? e}`);
   }
-  note(`Gitee 通道已恢复到 ${tag}（${built.map((b) => b.name).join(", ")}）`);
+  note(
+    `Gitee 通道已恢复（${built.map((b) => `${b.name}=${expectedByTarget[b.name]}`).join(", ")}）`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
