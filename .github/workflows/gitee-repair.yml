@@ -16,6 +16,11 @@ run-name: Gitee 通道自愈${{ github.event.inputs.dry_run == 'true' && '（仅
 #
 # 职责边界：只在「读不到 / 读到的是过期版本」时动作；内容全部从 GitHub 已发布的 Release 资产派生，
 #   不重新构建、不签名、不碰 GitHub Release，也不需要桌面/Android 构建环境。
+#
+# 🔴 桌面与手机是两条独立发布线（2026-11-20 事故）：桌面走 release.yml（推 tag 即发），
+#   APK 走 android.yml（手动 dispatch）。桌面-only 的 Release（v7.2.12 起）没有
+#   apk-update.json，脚本按「各自线的最新可用版本」分别判定两份 manifest 的期望版本，
+#   不拿桌面版本去要求 APK——否则健康的 apk-update-gitee.json 会被误判「需修复」而每轮空转。
 on:
   schedule:
     # 🔴 档期形态有三条实测教训，改动前请先读：
@@ -35,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要恢复的 tag（留空 = GitHub 最新 Release）"
+        description: "要恢复的桌面 tag（留空 = 最新 Release；APK 是独立发布线，取自带 apk-update.json 的最新 Release，仅当此 tag 自带该资产时才随它）"
         required: false
         type: string
       dry_run:

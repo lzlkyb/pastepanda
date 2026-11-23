@@ -8,7 +8,9 @@ import {
   deriveManifest,
   giteeRawManifestUrl,
   giteeReleasesApiUrl,
+  releaseHasAsset,
   sanitizeUrl,
+  selectApkTargetRelease,
   toGiteeUrl,
 } from "./repair-gitee-channel.mjs";
 
@@ -150,5 +152,47 @@ it("sanitizeUrl 把令牌剥干净，带后续参数也不能漏尾巴", () => {
   expect(s).toContain("access_token=***");
   expect(s).toContain("x=1");
   expect(sanitizeUrl("https://a/?access_token=SECRET")).toBe("https://a/?access_token=***");
+});
+
+// ─── APK 目标发行版的选取：桌面与手机是两条独立发布线 ───
+// 2026-11-20 v7.2.12 只发了桌面（Release 里没有 apk-update.json 资产，APK 发布线
+// android.yml 是手动 dispatch，最后一个 APK 还是 7.2.11）。自愈却拿「最新 Release」
+// 当两份 manifest 的共同期望版本 ⇒ apk-update-gitee.json（7.2.11，本就是最新可用
+// APK 的版本）被判「需修复」→ 从 v7.2.12 派生 404 → built 为空 → 整轮 exit 1，
+// 从 11-20 11:00Z 起每个定时档（每小时两次）全红。下面钉住正确的选取口径。
+const fakeRelease = (tag: string, withApk: boolean) => ({
+  tag_name: tag,
+  assets: [
+    { name: `PastePanda_${tag.replace(/^v/, "")}_x64-setup.exe` },
+    ...(withApk
+      ? [{ name: "apk-update.json" }, { name: `PastePanda_${tag.replace(/^v/, "")}_universal-release.apk` }]
+      : []),
+  ],
+});
+
+it("最新 Release 是桌面-only 时，APK 目标取更近的、带 apk-update.json 的那个", () => {
+  const releases = [fakeRelease("v7.2.12", false), fakeRelease("v7.2.11", true), fakeRelease("v7.2.10", true)];
+  expect(selectApkTargetRelease(releases)?.tag_name).toBe("v7.2.11");
+});
+
+it("最新 Release 自带 APK 资产时就取它，不往前翻旧账", () => {
+  const releases = [fakeRelease("v7.2.13", true), fakeRelease("v7.2.12", false), fakeRelease("v7.2.11", true)];
+  expect(selectApkTargetRelease(releases)?.tag_name).toBe("v7.2.13");
+});
+
+it("任何 Release 都没有 APK → null（调用方按「从未发过 APK」处理，不许编一个版本出来）", () => {
+  expect(selectApkTargetRelease([fakeRelease("v7.2.12", false)])).toBeNull();
+  expect(selectApkTargetRelease([])).toBeNull();
+  expect(selectApkTargetRelease(null)).toBeNull();
+  expect(selectApkTargetRelease(undefined)).toBeNull();
+  expect(selectApkTargetRelease([{ tag_name: "v1" }, { tag_name: "v2", assets: null }])).toBeNull();
+});
+
+it("releaseHasAsset：资产名逐个精确比对，缺 assets / 空资产不算带", () => {
+  expect(releaseHasAsset(fakeRelease("v7.2.11", true), "apk-update.json")).toBe(true);
+  expect(releaseHasAsset(fakeRelease("v7.2.12", false), "apk-update.json")).toBe(false);
+  expect(releaseHasAsset({ tag_name: "v1" }, "apk-update.json")).toBe(false);
+  // 前缀/后缀相近的资产名不许蒙混（apk-update.json vs apk-update-gitee.json）
+  expect(releaseHasAsset({ assets: [{ name: "apk-update-gitee.json" }] }, "apk-update.json")).toBe(false);
 });
 
